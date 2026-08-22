@@ -1,0 +1,2949 @@
+[
+  {
+    "cores": [
+      401734251
+    ],
+    "crypts": 34,
+    "name": "Admin",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -887291759,
+      -1515417355,
+      854740464
+    ],
+    "crypts": 3,
+    "name": "Altar",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "36, 55, 35"
+      ],
+      "chest": [
+        "51, 88, 45",
+        "19, 83, 43",
+        "11, 44, 39"
+      ],
+      "item": [
+        "14, 71, 48"
+      ],
+      "wither": [
+        "17, 93, 27"
+      ]
+    },
+    "secrets": 6,
+    "shape": "L",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1225876440
+    ],
+    "crypts": 0,
+    "name": "Andesite",
+    "prince": false,
+    "secretDetails": {
+      "item": [
+        "1, 69, 28"
+      ],
+      "wither": [
+        "6, 69, 22"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -310562774,
+      -1971358555
+    ],
+    "crypts": 4,
+    "name": "Archway",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "1, 70, 2"
+      ],
+      "item": [
+        "10, 82, 26",
+        "54, 89, 12"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -266663350
+    ],
+    "crypts": 1,
+    "name": "Arrow Trap",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "14, 69, 4"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -796043875,
+      -1255750689,
+      568120592,
+      -1101741042
+    ],
+    "crypts": 5,
+    "name": "Atlas",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "5, 72, 57"
+      ],
+      "chest": [
+        "36, 57, 15",
+        "31, 78, 52",
+        "11, 82, 31"
+      ],
+      "item": [
+        "55, 76, 28"
+      ],
+      "wither": [
+        "38, 78, 4"
+      ]
+    },
+    "secrets": 6,
+    "shape": "2x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1330091682,
+      1507645498
+    ],
+    "crypts": 0,
+    "name": "Balcony",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "4, 60, 25"
+      ],
+      "chest": [
+        "27, 69, 15",
+        "20, 42, 28"
+      ],
+      "item": [
+        "14, 51, 7"
+      ]
+    },
+    "secrets": 4,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1437745663
+    ],
+    "crypts": 1,
+    "name": "Banners",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "27, 72, 15"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1988120993
+    ],
+    "crypts": 0,
+    "name": "Basement",
+    "prince": false,
+    "secretDetails": {
+      "wither": [
+        "5, 66, 25"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      858547867
+    ],
+    "crypts": 2,
+    "name": "Beams",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "7, 81, 2"
+      ],
+      "item": [
+        "8, 92, 24"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1683958445
+    ],
+    "crypts": 1,
+    "name": "Big Red Flag",
+    "prince": true,
+    "secretDetails": {
+      "item": [
+        "26, 75, 25",
+        "20, 75, 23"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -2045161706
+    ],
+    "crypts": 1,
+    "name": "Black Flag",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "27, 80, 3",
+        "28, 80, 25"
+      ],
+      "item": [
+        "22, 59, 27"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      247260010,
+      -1321708551
+    ],
+    "crypts": 0,
+    "name": "Blood",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "BLOOD"
+  },
+  {
+    "cores": [
+      -2145777523
+    ],
+    "crypts": 4,
+    "name": "Blue Skulls",
+    "prince": false,
+    "secretDetails": {
+      "item": [
+        "27, 77, 29"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      611509416,
+      -69522265,
+      -1222808417,
+      1207872627
+    ],
+    "crypts": 0,
+    "name": "Boulder",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "PUZZLE"
+  },
+  {
+    "cores": [
+      737355971,
+      -1772378361,
+      -1934124136
+    ],
+    "crypts": 6,
+    "name": "Bridges",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "48, 97, 2"
+      ],
+      "chest": [
+        "41, 52, 21",
+        "3, 82, 15"
+      ],
+      "item": [
+        "55, 81, 17"
+      ],
+      "wither": [
+        "53, 53, 13",
+        "53, 52, 17"
+      ]
+    },
+    "secrets": 6,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1981375124,
+      -1697928445,
+      2013812402,
+      -510446577
+    ],
+    "crypts": 21,
+    "name": "Buttons",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "57, 69, 60",
+        "31, 73, 13",
+        "2, 81, 50",
+        "53, 55, 31",
+        "56, 81, 2"
+      ]
+    },
+    "secrets": 5,
+    "shape": "2x2",
+    "trappedChests": [
+      "48, 81, 59"
+    ],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1596537682
+    ],
+    "crypts": 0,
+    "name": "Cage",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "12, 72, 20"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      228010098
+    ],
+    "crypts": 0,
+    "name": "Cages",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "7, 58, 11"
+      ],
+      "item": [
+        "28, 98, 5"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1589717623,
+      -1735934542
+    ],
+    "crypts": 3,
+    "name": "Carpets",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "15, 85, 15"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1427572405,
+      -1649249958,
+      1488785230,
+      -608723055
+    ],
+    "crypts": 5,
+    "name": "Cathedral",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "59, 86, 3",
+        "42, 77, 13"
+      ],
+      "chest": [
+        "19, 60, 7",
+        "28, 82, 3",
+        "38, 59, 36"
+      ],
+      "item": [
+        "49, 59, 23",
+        "33, 93, 47",
+        "20, 90, 44"
+      ]
+    },
+    "secrets": 8,
+    "shape": "2x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -40255360,
+      -1373694830,
+      1619262682
+    ],
+    "crypts": 5,
+    "name": "Catwalk",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "24, 63, 27",
+        "24, 50, 15",
+        "89, 49, 18",
+        "84, 63, 14"
+      ],
+      "item": [
+        "80, 50, 6"
+      ],
+      "wither": [
+        "80, 50, 8"
+      ]
+    },
+    "secrets": 6,
+    "shape": "1x3",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1014639795
+    ],
+    "crypts": 0,
+    "name": "Cell",
+    "prince": false,
+    "secretDetails": {
+      "item": [
+        "10, 69, 22"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1640669181
+    ],
+    "crypts": 0,
+    "name": "Chains",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "27, 69, 10",
+        "17, 86, 14"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1661509090,
+      1142551210,
+      -91763797
+    ],
+    "crypts": 6,
+    "name": "Chambers",
+    "prince": true,
+    "secretDetails": {
+      "bat": [
+        "33, 84, 57"
+      ],
+      "chest": [
+        "53, 57, 47",
+        "4, 69, 57",
+        "7, 69, 40",
+        "15, 83, 2"
+      ]
+    },
+    "secrets": 5,
+    "shape": "L",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1637884810
+    ],
+    "crypts": 1,
+    "name": "Cobble Wall Pillar",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "28, 60, 12",
+        "12, 61, 17"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1702667539,
+      1539737422
+    ],
+    "crypts": 0,
+    "name": "Creeper Beams",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "PUZZLE"
+  },
+  {
+    "cores": [
+      -1703365984
+    ],
+    "crypts": 6,
+    "name": "Criss Cross",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "15, 66, 6"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1524532888,
+      303704633
+    ],
+    "crypts": 2,
+    "name": "Crypt",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "13, 60, 15",
+        "44, 86, 26",
+        "2, 81, 16",
+        "19, 89, 2"
+      ],
+      "item": [
+        "46, 88, 16"
+      ]
+    },
+    "secrets": 5,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1098877023,
+      -303833880,
+      1570539822
+    ],
+    "crypts": 4,
+    "name": "Deathmite",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "83, 97, 26"
+      ],
+      "chest": [
+        "69, 60, 10",
+        "12, 69, 15",
+        "83, 92, 27",
+        "67, 82, 15"
+      ],
+      "item": [
+        "88, 69, 6"
+      ]
+    },
+    "secrets": 6,
+    "shape": "1x3",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      209023789,
+      -1362204483
+    ],
+    "crypts": 0,
+    "name": "Default",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "CHAMPION"
+  },
+  {
+    "cores": [
+      -1170957570,
+      930758748,
+      -1712087966
+    ],
+    "crypts": 3,
+    "name": "Diagonal",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "32, 72, 5"
+      ],
+      "chest": [
+        "90, 77, 14",
+        "69, 60, 29",
+        "11, 60, 9"
+      ]
+    },
+    "secrets": 4,
+    "shape": "1x3",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1774635702,
+      -1769546380,
+      1660831815
+    ],
+    "crypts": 4,
+    "name": "Dino Site",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "9, 48, 34"
+      ],
+      "chest": [
+        "54, 52, 51",
+        "24, 92, 29"
+      ],
+      "item": [
+        "47, 57, 36"
+      ]
+    },
+    "secrets": 4,
+    "shape": "L",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1433465812
+    ],
+    "crypts": 3,
+    "name": "Dip",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "18, 78, 16",
+        "2, 78, 24"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -359065157
+    ],
+    "crypts": 2,
+    "name": "Dome",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "25, 72, 24"
+      ],
+      "chest": [
+        "26, 78, 27"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1105757856,
+      -245768277
+    ],
+    "crypts": 7,
+    "name": "Doors",
+    "prince": true,
+    "secretDetails": {
+      "bat": [
+        "46, 65, 15"
+      ],
+      "chest": [
+        "5, 87, 28",
+        "31, 51, 17",
+        "8, 58, 17",
+        "8, 58, 13"
+      ]
+    },
+    "secrets": 5,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1580355473
+    ],
+    "crypts": 0,
+    "name": "Double Diamond",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "11, 82, 19"
+      ],
+      "item": [
+        "24, 65, 21"
+      ],
+      "wither": [
+        "6, 69, 6"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1771620796
+    ],
+    "crypts": 0,
+    "name": "Dragon",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "CHAMPION"
+  },
+  {
+    "cores": [
+      572967817
+    ],
+    "crypts": 6,
+    "name": "Drop",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "5, 59, 15",
+        "25, 77, 2"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1731916985
+    ],
+    "crypts": 6,
+    "name": "Dueces",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "8, 74, 7"
+      ],
+      "chest": [
+        "2, 78, 15"
+      ],
+      "item": [
+        "10, 70, 6"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [
+      "12, 79, 15"
+    ],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -773731886
+    ],
+    "crypts": 0,
+    "name": "Duncan",
+    "prince": false,
+    "secretDetails": {
+      "item": [
+        "12, 89, 7"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1040949775
+    ],
+    "crypts": 1,
+    "name": "End",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "15, 69, 6"
+      ],
+      "wither": [
+        "6, 63, 2"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1568107708,
+      1016740646,
+      -500805418
+    ],
+    "crypts": 0,
+    "name": "Entrance",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "ENTRANCE"
+  },
+  {
+    "cores": [
+      1699558291
+    ],
+    "crypts": 0,
+    "name": "Fairy",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "FAIRY"
+  },
+  {
+    "cores": [
+      -478415601,
+      -1457601147,
+      -330410219,
+      339220335
+    ],
+    "crypts": 8,
+    "name": "Flags",
+    "prince": true,
+    "secretDetails": {
+      "bat": [
+        "52, 75, 38"
+      ],
+      "chest": [
+        "37, 67, 58",
+        "11, 97, 7",
+        "14, 108, 27",
+        "14, 108, 41",
+        "59, 87, 41"
+      ],
+      "item": [
+        "53, 69, 23"
+      ]
+    },
+    "secrets": 7,
+    "shape": "2x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1233421270,
+      -1026339636
+    ],
+    "crypts": 0,
+    "name": "Gold",
+    "prince": false,
+    "secretDetails": {
+      "wither": [
+        "14, 69, 13"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -761728087
+    ],
+    "crypts": 1,
+    "name": "Golden Oasis",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "12, 63, 23",
+        "13, 63, 25"
+      ],
+      "redstone_key": [
+        "12, 71, 8"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1415285188,
+      1179958533
+    ],
+    "crypts": 2,
+    "name": "Grand Library",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "23, 93, 2",
+        "31, 58, 15"
+      ],
+      "item": [
+        "28, 57, 18"
+      ],
+      "wither": [
+        "6, 80, 3"
+      ]
+    },
+    "secrets": 4,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -445424242
+    ],
+    "crypts": 0,
+    "name": "Granite",
+    "prince": false,
+    "secretDetails": {
+      "item": [
+        "14, 61, 24"
+      ],
+      "wither": [
+        "13, 61, 29"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      2120591949,
+      -158798003,
+      -492697125,
+      1401440220
+    ],
+    "crypts": 4,
+    "name": "Grass Ruin",
+    "prince": true,
+    "secretDetails": {
+      "chest": [
+        "3, 55, 14",
+        "11, 107, 10"
+      ],
+      "wither": [
+        "48, 81, 24"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1897365738,
+      1554646756,
+      -948870403
+    ],
+    "crypts": 2,
+    "name": "Gravel",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "35, 91, 13"
+      ],
+      "chest": [
+        "35, 69, 11"
+      ],
+      "item": [
+        "87, 69, 8",
+        "67, 87, 12"
+      ],
+      "wither": [
+        "92, 69, 3",
+        "66, 87, 14"
+      ]
+    },
+    "secrets": 6,
+    "shape": "1x3",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      345110461
+    ],
+    "crypts": 0,
+    "name": "Hall",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -422188303,
+      1342855152,
+      -193310450,
+      -63709668
+    ],
+    "crypts": 1,
+    "name": "Hallway",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "28, 69, 3",
+        "54, 69, 5",
+        "85, 85, 6"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x4",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      532033871,
+      772555178,
+      12932695,
+      -451294633
+    ],
+    "crypts": 0,
+    "name": "Higher Blaze",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "2, 118, 27"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "PUZZLE"
+  },
+  {
+    "cores": [
+      -1760291245,
+      -1978361054,
+      296162988
+    ],
+    "crypts": 0,
+    "name": "Ice Fill",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "PUZZLE"
+  },
+  {
+    "cores": [
+      -1935059567
+    ],
+    "crypts": 0,
+    "name": "Ice Path",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "PUZZLE"
+  },
+  {
+    "cores": [
+      -1453798340
+    ],
+    "crypts": 0,
+    "name": "Jumping Skulls",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "26, 62, 23"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1584071344
+    ],
+    "crypts": 1,
+    "name": "King Midas",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "CHAMPION"
+  },
+  {
+    "cores": [
+      -209400283
+    ],
+    "crypts": 0,
+    "name": "Knight",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "7, 70, 25"
+      ],
+      "chest": [
+        "25, 69, 29",
+        "24, 69, 29"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1383154038
+    ],
+    "crypts": 0,
+    "name": "Lava Pit",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "15, 63, 13",
+        "23, 92, 3"
+      ],
+      "item": [
+        "3, 88, 15"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "RARE"
+  },
+  {
+    "cores": [
+      -978602983,
+      380885496,
+      775925733
+    ],
+    "crypts": 4,
+    "name": "Lava Ravine",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "12, 64, 35"
+      ],
+      "chest": [
+        "29, 88, 9",
+        "29, 88, 7",
+        "58, 86, 47",
+        "23, 67, 57"
+      ],
+      "item": [
+        "16, 51, 32"
+      ]
+    },
+    "secrets": 6,
+    "shape": "L",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1714157045,
+      -1993264728,
+      603311905,
+      701734944
+    ],
+    "crypts": 0,
+    "name": "Layers",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "5, 69, 2",
+        "13, 69, 26",
+        "47, 69, 47",
+        "54, 78, 56"
+      ],
+      "item": [
+        "25, 70, 28",
+        "35, 59, 51",
+        "47, 79, 34",
+        "7, 96, 56"
+      ]
+    },
+    "secrets": 8,
+    "shape": "L",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1802556365
+    ],
+    "crypts": 1,
+    "name": "Leaves",
+    "prince": true,
+    "secretDetails": {
+      "chest": [
+        "14, 81, 27"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -746623875
+    ],
+    "crypts": 1,
+    "name": "Locked Away",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "26, 75, 29"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -2047804629
+    ],
+    "crypts": 0,
+    "name": "Logs",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "1, 70, 23",
+        "1, 70, 24",
+        "9, 78, 23",
+        "9, 78, 24"
+      ]
+    },
+    "secrets": 4,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1706511054
+    ],
+    "crypts": 3,
+    "name": "Long Hall",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "18, 62, 23",
+        "28, 82, 15",
+        "28, 81, 25"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      346498219
+    ],
+    "crypts": 1,
+    "name": "Lots Of Floors",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "25, 84, 7",
+        "5, 69, 28",
+        "1, 76, 5"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1634303713,
+      836276290,
+      -368258246
+    ],
+    "crypts": 0,
+    "name": "Lower Blaze",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "2, 68, 27"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "PUZZLE"
+  },
+  {
+    "cores": [
+      -1698169177,
+      -1271013785
+    ],
+    "crypts": 0,
+    "name": "Mage",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "56, 84, 8"
+      ],
+      "chest": [
+        "16, 70, 17",
+        "42, 62, 15"
+      ],
+      "wither": [
+        "58, 82, 5"
+      ]
+    },
+    "secrets": 4,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -483212802,
+      903214460,
+      1560229487,
+      -404366932
+    ],
+    "crypts": 4,
+    "name": "Market",
+    "prince": true,
+    "secretDetails": {
+      "bat": [
+        "8, 63, 47"
+      ],
+      "chest": [
+        "16, 86, 56",
+        "32, 61, 48",
+        "46, 79, 48"
+      ],
+      "wither": [
+        "7, 59, 44"
+      ]
+    },
+    "secrets": 5,
+    "shape": "L",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      11478607,
+      -87815519,
+      378746928
+    ],
+    "crypts": 4,
+    "name": "Melon",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "7, 76, 27"
+      ],
+      "chest": [
+        "59, 69, 58",
+        "41, 85, 56",
+        "33, 80, 53",
+        "15, 69, 35",
+        "26, 79, 1",
+        "5, 82, 4"
+      ]
+    },
+    "secrets": 7,
+    "shape": "L",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -426869109,
+      -1221777440,
+      -1307386539,
+      1047393900
+    ],
+    "crypts": 11,
+    "name": "Mines",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "9, 82, 21",
+        "41, 80, 12",
+        "9, 108, 17",
+        "9, 109, 30",
+        "31, 99, 58",
+        "56, 78, 58",
+        "60, 43, 50"
+      ],
+      "item": [
+        "1, 89, 57",
+        "53, 48, 8",
+        "4, 54, 56"
+      ]
+    },
+    "secrets": 10,
+    "shape": "2x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1887133217
+    ],
+    "crypts": 0,
+    "name": "Mirror",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "3, 55, 17"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1966870012,
+      413891265,
+      89601117
+    ],
+    "crypts": 2,
+    "name": "Mossy",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "72, 87, 11"
+      ],
+      "chest": [
+        "2, 69, 4",
+        "63, 95, 15",
+        "47, 89, 4"
+      ]
+    },
+    "secrets": 4,
+    "shape": "1x4",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1105560183
+    ],
+    "crypts": 0,
+    "name": "Multi Colored",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "25, 70, 4"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1454306453
+    ],
+    "crypts": 0,
+    "name": "Mural",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "26, 83, 7"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -318955448,
+      1845755617,
+      213187878,
+      159772204
+    ],
+    "crypts": 4,
+    "name": "Museum",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "31, 70, 60",
+        "34, 83, 11",
+        "31, 70, 9",
+        "48, 62, 6"
+      ],
+      "wither": [
+        "42, 93, 53"
+      ]
+    },
+    "secrets": 5,
+    "shape": "2x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -24124692
+    ],
+    "crypts": 0,
+    "name": "Mushroom",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "16, 80, 17"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      685189989,
+      1341481957
+    ],
+    "crypts": 1,
+    "name": "New Trap",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "21, 92, 21"
+      ],
+      "chest": [
+        "26, 90, 14",
+        "5, 67, 12"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [
+      "23, 81, 3"
+    ],
+    "type": "TRAP"
+  },
+  {
+    "cores": [
+      555433530
+    ],
+    "crypts": 2,
+    "name": "Old Trap",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "22, 90, 9"
+      ],
+      "chest": [
+        "26, 83, 4",
+        "23, 90, 17",
+        "4, 71, 9"
+      ]
+    },
+    "secrets": 4,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "TRAP"
+  },
+  {
+    "cores": [
+      -731842069
+    ],
+    "crypts": 0,
+    "name": "Overgrown",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "6, 79, 15"
+      ],
+      "item": [
+        "4, 70, 2"
+      ],
+      "wither": [
+        "5, 87, 19"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1733526007
+    ],
+    "crypts": 1,
+    "name": "Overgrown Chains",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "26, 86, 20"
+      ],
+      "item": [
+        "3, 81, 3"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      293859581
+    ],
+    "crypts": 0,
+    "name": "Painting",
+    "prince": false,
+    "secretDetails": {
+      "item": [
+        "24, 69, 21"
+      ],
+      "wither": [
+        "6, 80, 21"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -2017538786,
+      -1193662659
+    ],
+    "crypts": 1,
+    "name": "Pedestal",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "31, 70, 15",
+        "7, 94, 21",
+        "32, 60, 23"
+      ],
+      "item": [
+        "50, 61, 18"
+      ],
+      "wither": [
+        "53, 61, 22"
+      ]
+    },
+    "secrets": 5,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1909726248
+    ],
+    "crypts": 1,
+    "name": "Perch",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "15, 74, 1"
+      ],
+      "item": [
+        "20, 76, 20"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -677193200,
+      348144433,
+      -144277522,
+      1555105710
+    ],
+    "crypts": 9,
+    "name": "Pipes",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "122, 57, 19"
+      ],
+      "chest": [
+        "107, 45, 15",
+        "63, 55, 26",
+        "119, 54, 5",
+        "7, 42, 3",
+        "117, 62, 26"
+      ],
+      "item": [
+        "49, 32, 6"
+      ]
+    },
+    "secrets": 7,
+    "shape": "1x4",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      499535149,
+      -893228718,
+      1949809498
+    ],
+    "crypts": 2,
+    "name": "Pirate",
+    "prince": true,
+    "secretDetails": {
+      "bat": [
+        "15, 63, 45"
+      ],
+      "chest": [
+        "17, 83, 60",
+        "46, 84, 57",
+        "15, 60, 46"
+      ],
+      "item": [
+        "4, 60, 58"
+      ],
+      "wither": [
+        "19, 60, 4"
+      ]
+    },
+    "secrets": 6,
+    "shape": "L",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      471611598,
+      -667088569,
+      1074247336,
+      -2004693413,
+      -365495648
+    ],
+    "crypts": 4,
+    "name": "Pit",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "9, 78, 27"
+      ],
+      "chest": [
+        "113, 92, 28",
+        "7, 65, 7",
+        "20, 91, 9"
+      ],
+      "item": [
+        "3, 76, 26"
+      ]
+    },
+    "secrets": 5,
+    "shape": "1x4",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -201293195,
+      -270010267
+    ],
+    "crypts": 6,
+    "name": "Pressure Plates",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "20, 70, 15",
+        "23, 59, 7",
+        "59, 94, 15",
+        "60, 94, 7"
+      ],
+      "item": [
+        "4, 70, 23",
+        "58, 69, 7"
+      ]
+    },
+    "secrets": 6,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1841326379
+    ],
+    "crypts": 1,
+    "name": "Prison Cell",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "10, 76, 23"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -506014541,
+      1738369645
+    ],
+    "crypts": 7,
+    "name": "Purple Flags",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "32, 67, 7",
+        "39, 49, 29",
+        "59, 49, 24"
+      ],
+      "item": [
+        "27, 49, 28"
+      ],
+      "wither": [
+        "6, 57, 28"
+      ]
+    },
+    "secrets": 5,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1973783771
+    ],
+    "crypts": 0,
+    "name": "Quad Lava",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "5, 70, 25",
+        "19, 60, 10"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1294587458,
+      -473760957,
+      1362159018,
+      -623838003
+    ],
+    "crypts": 9,
+    "name": "Quartz Knight",
+    "prince": true,
+    "secretDetails": {
+      "bat": [
+        "27, 61, 15"
+      ],
+      "chest": [
+        "6, 63, 27",
+        "21, 89, 24",
+        "111, 88, 2",
+        "18, 90, 24"
+      ],
+      "item": [
+        "66, 84, 5",
+        "95, 79, 26"
+      ]
+    },
+    "secrets": 7,
+    "shape": "1x4",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      467086204
+    ],
+    "crypts": 0,
+    "name": "Quiz",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "PUZZLE"
+  },
+  {
+    "cores": [
+      84492913
+    ],
+    "crypts": 2,
+    "name": "Raccoon",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "6, 77, 24",
+        "27, 69, 24",
+        "21, 69, 24",
+        "26, 84, 8"
+      ]
+    },
+    "secrets": 4,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -122878197
+    ],
+    "crypts": 3,
+    "name": "Rail Track",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "5, 77, 23",
+        "20, 70, 9"
+      ],
+      "chest": [
+        "28, 63, 7"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "RARE"
+  },
+  {
+    "cores": [
+      969360112,
+      -413892945,
+      -1835653887,
+      -2113703313
+    ],
+    "crypts": 1,
+    "name": "Rails",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "55, 51, 10"
+      ],
+      "chest": [
+        "8, 49, 60",
+        "30, 64, 29",
+        "30, 72, 34",
+        "56, 66, 6"
+      ],
+      "item": [
+        "27, 70, 29"
+      ],
+      "wither": [
+        "25, 70, 28",
+        "6, 49, 10",
+        "3, 49, 10"
+      ]
+    },
+    "secrets": 9,
+    "shape": "2x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1100138732,
+      -312463759
+    ],
+    "crypts": 4,
+    "name": "Rare Carpets",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "15, 85, 15"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "RARE"
+  },
+  {
+    "cores": [
+      324952356
+    ],
+    "crypts": 0,
+    "name": "Rare Overgrown",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "6, 74, 7"
+      ],
+      "chest": [
+        "5, 69, 7"
+      ],
+      "item": [
+        "19, 84, 28"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "RARE"
+  },
+  {
+    "cores": [
+      975202727
+    ],
+    "crypts": 0,
+    "name": "Rare Pillars",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "24, 69, 19"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "RARE"
+  },
+  {
+    "cores": [
+      -136249797,
+      -1227811248,
+      183181792
+    ],
+    "crypts": 1,
+    "name": "Red Blue",
+    "prince": true,
+    "secretDetails": {
+      "chest": [
+        "57, 70, 5",
+        "39, 90, 26"
+      ],
+      "item": [
+        "60, 86, 22"
+      ],
+      "wither": [
+        "79, 83, 15"
+      ]
+    },
+    "secrets": 4,
+    "shape": "1x3",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -910728718
+    ],
+    "crypts": 2,
+    "name": "Red Green",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "29, 75, 15"
+      ],
+      "item": [
+        "13, 77, 28",
+        "1, 61, 15"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -910084996,
+      507162865,
+      -1003273572
+    ],
+    "crypts": 0,
+    "name": "Redstone Crypt",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "9, 69, 3",
+        "29, 70, 15"
+      ],
+      "redstone_key": [
+        "4, 71, 4"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1201747741
+    ],
+    "crypts": 4,
+    "name": "Redstone Key",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "28, 62, 23"
+      ],
+      "item": [
+        "26, 69, 5"
+      ],
+      "redstone_key": [
+        "19, 66, 7",
+        "10, 70, 26"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [
+      "18, 69, 29"
+    ],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -431042870,
+      1067142031
+    ],
+    "crypts": 4,
+    "name": "Redstone Warrior",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "24, 58, 15",
+        "30, 83, 27"
+      ],
+      "item": [
+        "58, 78, 29"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      2096280987
+    ],
+    "crypts": 1,
+    "name": "Ritual",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "17, 86, 26"
+      ],
+      "chest": [
+        "15, 80, 3",
+        "27, 69, 2"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1422335734
+    ],
+    "crypts": 1,
+    "name": "Sand Dragon",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "15, 86, 26"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "RARE"
+  },
+  {
+    "cores": [
+      -250841468,
+      1051398674
+    ],
+    "crypts": 1,
+    "name": "Sarcophagus",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "20, 70, 25"
+      ],
+      "chest": [
+        "15, 69, 4"
+      ],
+      "wither": [
+        "18, 68, 27"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      985559670
+    ],
+    "crypts": 0,
+    "name": "Scaffolding",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "5, 82, 28"
+      ],
+      "item": [
+        "18, 82, 8"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1340451353
+    ],
+    "crypts": 2,
+    "name": "Shadow Assassin",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "CHAMPION"
+  },
+  {
+    "cores": [
+      -383839515
+    ],
+    "crypts": 0,
+    "name": "Silver Sword",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "18, 69, 13"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -964062507,
+      1634568406
+    ],
+    "crypts": 0,
+    "name": "Skull",
+    "prince": true,
+    "secretDetails": {
+      "chest": [
+        "2, 88, 15",
+        "52, 91, 7"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1869477795
+    ],
+    "crypts": 2,
+    "name": "Slabs",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "22, 85, 3",
+        "23, 85, 3"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1411140078,
+      259893698,
+      -934865289
+    ],
+    "crypts": 1,
+    "name": "Slime",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "14, 52, 14"
+      ],
+      "chest": [
+        "29, 87, 14"
+      ],
+      "item": [
+        "3, 86, 10",
+        "90, 57, 15"
+      ],
+      "wither": [
+        "20, 86, 15"
+      ]
+    },
+    "secrets": 5,
+    "shape": "1x3",
+    "trappedChests": [
+      "83, 82, 23"
+    ],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1443984195
+    ],
+    "crypts": 1,
+    "name": "Sloth",
+    "prince": true,
+    "secretDetails": {
+      "item": [
+        "8, 69, 22"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -402076302
+    ],
+    "crypts": 1,
+    "name": "Small Stairs",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "3, 82, 6"
+      ],
+      "item": [
+        "24, 63, 3"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1913475441
+    ],
+    "crypts": 5,
+    "name": "Small Waterfall",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "3, 82, 22"
+      ],
+      "wither": [
+        "6, 77, 26"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1806844932,
+      -1972984353,
+      1554385730
+    ],
+    "crypts": 3,
+    "name": "Spider",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "55, 86, 35"
+      ],
+      "chest": [
+        "28, 50, 4",
+        "22, 28, 40",
+        "49, 84, 36",
+        "10, 83, 56",
+        "15, 92, 31",
+        "27, 84, 32"
+      ],
+      "item": [
+        "26, 91, 39",
+        "25, 92, 34"
+      ]
+    },
+    "secrets": 9,
+    "shape": "L",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1783145864
+    ],
+    "crypts": 2,
+    "name": "Spikes",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "2, 54, 7"
+      ],
+      "chest": [
+        "4, 91, 11"
+      ],
+      "wither": [
+        "1, 53, 8"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1379718720
+    ],
+    "crypts": 2,
+    "name": "Staircase",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "28, 66, 3"
+      ],
+      "item": [
+        "12, 78, 27"
+      ],
+      "wither": [
+        "22, 75, 2"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -110819856,
+      -412442610,
+      347558447,
+      1742157676
+    ],
+    "crypts": 1,
+    "name": "Stairs",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "44, 88, 28",
+        "31, 88, 22",
+        "8, 70, 9"
+      ],
+      "item": [
+        "37, 86, 36"
+      ]
+    },
+    "secrets": 4,
+    "shape": "2x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      89038004
+    ],
+    "crypts": 1,
+    "name": "Steps",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "15, 73, 4"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      2871551
+    ],
+    "crypts": 1,
+    "name": "Stone Window",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "4, 71, 16",
+        "23, 80, 7"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "RARE"
+  },
+  {
+    "cores": [
+      -1119681571,
+      1145035786,
+      867203649,
+      -1408489731
+    ],
+    "crypts": 6,
+    "name": "Supertall",
+    "prince": true,
+    "secretDetails": {
+      "bat": [
+        "2, 72, 2",
+        "53, 112, 8"
+      ],
+      "chest": [
+        "36, 142, 51",
+        "31, 142, 56",
+        "26, 142, 51"
+      ],
+      "item": [
+        "31, 102, 53"
+      ]
+    },
+    "secrets": 6,
+    "shape": "2x2",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1028263412
+    ],
+    "crypts": 0,
+    "name": "Teleport Maze",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "PUZZLE"
+  },
+  {
+    "cores": [
+      149013071
+    ],
+    "crypts": 0,
+    "name": "Temple",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "2, 65, 25"
+      ],
+      "chest": [
+        "16, 54, 15"
+      ],
+      "item": [
+        "20, 78, 28"
+      ]
+    },
+    "secrets": 3,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      10815171
+    ],
+    "crypts": 0,
+    "name": "Three Floors",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "12, 89, 13"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "RARE"
+  },
+  {
+    "cores": [
+      706778228
+    ],
+    "crypts": 0,
+    "name": "Three Weirdos",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "PUZZLE"
+  },
+  {
+    "cores": [
+      1284331749
+    ],
+    "crypts": 0,
+    "name": "Tic Tac Toe",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "9, 69, 25"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "PUZZLE"
+  },
+  {
+    "cores": [
+      1433801203
+    ],
+    "crypts": 0,
+    "name": "Tombstone",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "15, 70, 26"
+      ],
+      "wither": [
+        "27, 76, 16"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "RARE"
+  },
+  {
+    "cores": [
+      -1739190866
+    ],
+    "crypts": 0,
+    "name": "Tomioka",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      764739836
+    ],
+    "crypts": 3,
+    "name": "Trinity",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "2, 94, 26",
+        "8, 87, 18"
+      ],
+      "chest": [
+        "14, 75, 27"
+      ],
+      "item": [
+        "7, 74, 27"
+      ]
+    },
+    "secrets": 4,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "RARE"
+  },
+  {
+    "cores": [
+      1926580020
+    ],
+    "crypts": 0,
+    "name": "Vinny 8 Ball",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "26, 69, 17"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "RARE"
+  },
+  {
+    "cores": [
+      -1317208041
+    ],
+    "crypts": 0,
+    "name": "Water",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "12, 67, 5"
+      ],
+      "chest": [
+        "2, 69, 5"
+      ]
+    },
+    "secrets": 2,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1189701780,
+      1969875314,
+      -1693390703
+    ],
+    "crypts": 0,
+    "name": "Water Board",
+    "prince": false,
+    "secrets": 0,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "PUZZLE"
+  },
+  {
+    "cores": [
+      -900052545,
+      1250775146,
+      -1178837923,
+      889929231
+    ],
+    "crypts": 3,
+    "name": "Waterfall",
+    "prince": true,
+    "secretDetails": {
+      "bat": [
+        "70, 61, 3",
+        "88, 46, 27"
+      ],
+      "chest": [
+        "34, 84, 23",
+        "121, 81, 15",
+        "82, 78, 3",
+        "42, 82, 21",
+        "53, 44, 27"
+      ],
+      "item": [
+        "8, 44, 28"
+      ]
+    },
+    "secrets": 8,
+    "shape": "1x4",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      461449517,
+      -1282931220,
+      -366777218
+    ],
+    "crypts": 5,
+    "name": "Well",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "11, 88, 50",
+        "18, 91, 25",
+        "60, 89, 47"
+      ],
+      "item": [
+        "14, 57, 15",
+        "59, 91, 35"
+      ],
+      "wither": [
+        "2, 95, 59",
+        "7, 95, 56"
+      ]
+    },
+    "secrets": 7,
+    "shape": "L",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      1027475588,
+      -861792494,
+      -466107657
+    ],
+    "crypts": 6,
+    "name": "Withermancer",
+    "prince": true,
+    "secretDetails": {
+      "chest": [
+        "59, 55, 45",
+        "15, 104, 20",
+        "29, 111, 15"
+      ],
+      "wither": [
+        "1, 111, 15"
+      ]
+    },
+    "secrets": 4,
+    "shape": "L",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      57348208,
+      -1118502013,
+      -1469136799
+    ],
+    "crypts": 8,
+    "name": "Wizard",
+    "prince": false,
+    "secretDetails": {
+      "bat": [
+        "23, 53, 8"
+      ],
+      "chest": [
+        "17, 92, 26",
+        "90, 89, 24"
+      ],
+      "item": [
+        "3, 76, 21"
+      ]
+    },
+    "secrets": 4,
+    "shape": "1x3",
+    "trappedChests": [],
+    "type": "NORMAL"
+  },
+  {
+    "cores": [
+      -1784103580
+    ],
+    "crypts": 1,
+    "name": "Zodd",
+    "prince": false,
+    "secretDetails": {
+      "chest": [
+        "7, 70, 3"
+      ]
+    },
+    "secrets": 1,
+    "shape": "1x1",
+    "trappedChests": [],
+    "type": "NORMAL"
+  }
+]

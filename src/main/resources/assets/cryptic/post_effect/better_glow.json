@@ -1,0 +1,82 @@
+{
+    "targets": {
+        "spread": {},
+        "line": {}
+    },
+    "passes": [
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "cryptic:post/better_glow_spread",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:entity_outline"
+                }
+            ],
+            "output": "spread",
+            "uniforms": {
+                "GlowConfig": [
+                    {
+                        "name": "SpreadDir",
+                        "type": "vec2",
+                        "value": [ 1.0, 0.0 ]
+                    },
+                    {
+                        "name": "Radius",
+                        "type": "float",
+                        "value": 2.0
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "cryptic:post/better_glow_line",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "spread"
+                },
+                {
+                    "sampler_name": "Mask",
+                    "target": "minecraft:entity_outline"
+                }
+            ],
+            "output": "line",
+            "uniforms": {
+                "GlowConfig": [
+                    {
+                        "name": "SpreadDir",
+                        "type": "vec2",
+                        "value": [ 0.0, 1.0 ]
+                    },
+                    {
+                        "name": "Radius",
+                        "type": "float",
+                        "value": 2.0
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "minecraft:post/blit",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "line"
+                }
+            ],
+            "output": "minecraft:entity_outline",
+            "uniforms": {
+                "BlitConfig": [
+                    {
+                        "name": "ColorModulate",
+                        "type": "vec4",
+                        "value": [ 1.0, 1.0, 1.0, 1.0 ]
+                    }
+                ]
+            }
+        }
+    ]
+}

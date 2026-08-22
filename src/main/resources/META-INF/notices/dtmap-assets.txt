@@ -1,0 +1,9 @@
+The dungeon map's check marks, question mark, player pointer and Prince crown,
+the door-key pickup sound, and the room database in assets/cryptic/map/rooms.json
+are taken from dtMap.
+
+Source: https://github.com/ricedotwho/dtMap
+dtMap is licensed under the BSD 3-Clause License, Copyright (c) 2026 rice.who.
+The full licence text is in licenses/dtMap-LICENSE.txt.
+
+The Prince crown artwork is credited in dtMap to "ziyno".

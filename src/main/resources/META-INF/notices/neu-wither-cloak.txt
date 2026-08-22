@@ -1,0 +1,5 @@
+The Wither Cloak Effect is behaviorally adapted from NotEnoughUpdates' historical
+WitherCloakChanger and uses the shield texture supplied for that feature.
+
+Source: https://github.com/NotEnoughUpdates/NotEnoughUpdates
+NotEnoughUpdates is licensed under the GNU Lesser General Public License v3.0.

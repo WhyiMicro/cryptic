@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 1,
+	"id": "cryptic",
+	"version": "${version}",
+	"name": "cryptic",
+	"description": "",
+	"authors": [
+		"iMicro"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "MIT License",
+	"icon": "assets/cryptic/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			{
+				"value": "imicro.cryptic.Cryptic",
+				"adapter": "kotlin"
+			}
+		],
+		"client": [
+			{
+				"value": "imicro.cryptic.CrypticClient",
+				"adapter": "kotlin"
+			}
+		]
+	},
+	"mixins": [
+		"cryptic.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.1.2",
+		"java": ">=25",
+		"fabric-api": "*",
+		"fabric-language-kotlin": "*"
+	}
+}

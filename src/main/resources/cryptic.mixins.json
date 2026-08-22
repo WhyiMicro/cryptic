@@ -1,0 +1,28 @@
+{
+	"required": true,
+	"package": "imicro.cryptic.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"AvatarRendererMixin",
+		"BossHealthOverlayAccessor",
+		"ClientPacketListenerMixin",
+		"CreeperPowerLayerMixin",
+		"EntityMixin",
+		"EntityRendererMixin",
+		"HumanoidModelMixin",
+		"ItemInHandRendererMixin",
+		"ItemInHandLayerMixin",
+		"LightmapRenderStateExtractorMixin",
+		"LivingEntityMixin",
+		"MinecraftMixin",
+		"NameTagFeatureRendererMixin",
+		"PlayerTabOverlayMixin",
+		"ShaderManagerMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
