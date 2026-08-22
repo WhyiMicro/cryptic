@@ -12,6 +12,7 @@ import net.minecraft.client.KeyMapping
 import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.network.chat.Component
 import java.util.Locale
+import org.lwjgl.glfw.GLFW
 import imicro.cryptic.gui.CrypticScreen
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.config.ConfigManager
@@ -47,11 +48,18 @@ object CrypticClient : ClientModInitializer {
 	private var openGuiRequested = false
 	private var hudEditorRequested = false
 
+	/**
+	 * Right shift out of the box, which almost nothing else in Minecraft wants.
+	 *
+	 * Only a fresh install sees this: once a key has been bound, Minecraft's own
+	 * options file is what remembers it, and rebinding through the controls
+	 * screen or the menu's own bind button overrides it for good.
+	 */
 	val openGuiKey = KeyMappingHelper.registerKeyMapping(
 		KeyMapping(
 			"key.${Cryptic.MOD_ID}.open_gui",
 			InputConstants.Type.KEYSYM,
-			InputConstants.UNKNOWN.value,
+			GLFW.GLFW_KEY_RIGHT_SHIFT,
 			keyCategory,
 		),
 	)

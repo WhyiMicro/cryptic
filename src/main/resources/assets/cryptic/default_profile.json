@@ -1,0 +1,250 @@
+{
+  "format": "cryptic-profile",
+  "version": 1,
+  "profile": "Default",
+  "modules": {
+    "auto_sprint": {
+      "enabled": false
+    },
+    "class_colors": {
+      "enabled": false,
+      "settings": {
+        "apply_to_self": true,
+        "archer_color": "#FFAA00",
+        "berserk_color": "#AA0000",
+        "healer_color": "#FF55FF",
+        "mage_color": "#55FFFF",
+        "tank_color": "#00AA00",
+        "unknown_color": "#FFFFFF",
+        "show_names": false,
+        "show_letter": false,
+        "through_walls": false,
+        "scale": 2.0,
+        "height": 2.5
+      }
+    },
+    "dungeon_map": {
+      "enabled": false,
+      "settings": {
+        "background": "#46000000",
+        "padding": 5.0,
+        "reveal": "As you explore",
+        "predict_rooms": true,
+        "instant_room_update": true,
+        "normal_color": "#6B3A11",
+        "blood_color": "#FF0000",
+        "entrance_color": "#148500",
+        "puzzle_color": "#750085",
+        "trap_color": "#D87F33",
+        "champion_color": "#FEDF00",
+        "fairy_color": "#F4138B",
+        "rare_color": "#FFCB59",
+        "unexplored_color": "#1E1E1E",
+        "darken_unexplored": 50.0,
+        "door_thickness": 8.0,
+        "normal_door_color": "#6B3A11",
+        "wither_door_color": "#000000",
+        "blood_door_color": "#FF0000",
+        "entrance_door_color": "#148500",
+        "room_style": "Name + secrets",
+        "checkmark_size": 10.0,
+        "name_scale": 0.45,
+        "question_marks": false,
+        "prince_marker": false,
+        "player_heads": true,
+        "marker_size": 10.0,
+        "class_outline": true,
+        "player_color": "#FFFFFF",
+        "self_marker": "Map pointer",
+        "facing_arrow": true,
+        "leap_names": true,
+        "leap_name_scale": 0.75
+      }
+    },
+    "dungeon_score": {
+      "enabled": false,
+      "settings": {
+        "placement": "Under the map",
+        "paul": "Auto",
+        "show_in_boss": true,
+        "minimal_in_boss": true,
+        "announce_270": false,
+        "message_270": "270 score",
+        "announce_300": true,
+        "message_300": "300 score"
+      }
+    },
+    "door_keys": {
+      "enabled": false,
+      "settings": {
+        "pickup_sound": true,
+        "volume": 1.0,
+        "mode": "Both",
+        "wither_key": true,
+        "wither_color": "#6E202020",
+        "blood_key": true,
+        "blood_color": "#6EFF0000",
+        "line_width": 2.0,
+        "through_walls": true,
+        "tracers": true,
+        "tracer_width": 2.0
+      }
+    },
+    "door_highlight": {
+      "enabled": false,
+      "settings": {
+        "show_locked": true,
+        "show_unlocked": true,
+        "show_normal": true,
+        "hide_useless": true,
+        "show_fairy": true,
+        "locked_outline": "#FFFF0000",
+        "locked_fill": "#40FF0000",
+        "unlocked_outline": "#FF00FF00",
+        "unlocked_fill": "#4000FF00",
+        "normal_outline": "#33FFFFFF",
+        "normal_fill": "#00FFFFFF",
+        "fairy_outline": "#FFF4138B",
+        "fairy_fill": "#40F4138B",
+        "line_width": 3.0,
+        "fill_through_walls": false
+      }
+    },
+    "breaker_helper": {
+      "enabled": false,
+      "settings": {
+        "protect_secrets": true,
+        "zero_ping": false
+      }
+    },
+    "no_debuff": {
+      "enabled": false,
+      "settings": {
+        "blindness": true,
+        "nausea": true
+      }
+    },
+    "hidden_mobs": {
+      "enabled": false,
+      "settings": {
+        "fels": true,
+        "shadow_assassins": true
+      }
+    },
+    "room_alerts": {
+      "enabled": false,
+      "settings": {
+        "alert_cleared": true,
+        "cleared_title": "Cleared",
+        "alert_secrets": true,
+        "secrets_title": "Secrets Done",
+        "play_sound": true,
+        "volume": 0.25
+      }
+    },
+    "leap_message": {
+      "enabled": false,
+      "settings": {
+        "message": "-> <player>"
+      }
+    },
+    "etherwarp": {
+      "enabled": false,
+      "settings": {
+        "overlay": true,
+        "mode": "Filled outline",
+        "line_width": 1.0,
+        "full_block": false,
+        "phase": true,
+        "show_fail": true,
+        "outline_color": "#0088FF",
+        "fill_color": "#320088FF",
+        "invalid_outline_color": "#FF0000",
+        "invalid_fill_color": "#32FF0000",
+        "custom_sound": true,
+        "sound": "Pling",
+        "volume": 0.5,
+        "pitch": 1.0
+      }
+    },
+    "wither_outline": {
+      "enabled": false,
+      "settings": {
+        "per_boss_colors": false,
+        "color": "#FFFFFF",
+        "maxor_color": "#AE00FF",
+        "storm_color": "#4BA8FF",
+        "goldor_color": "#DFA000",
+        "necron_color": "#DF4700"
+      }
+    },
+    "animations": {
+      "enabled": false,
+      "settings": {
+        "item_scale": 0.0,
+        "position_x": 0.0,
+        "position_y": 0.0,
+        "position_z": 0.0,
+        "left_hand": false,
+        "block_hitting": false,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0,
+        "swing_x": 1.0,
+        "swing_y": 1.0,
+        "swing_z": 1.0,
+        "swing_speed": 0.0,
+        "ignore_haste": false,
+        "disable_hand_movement": false,
+        "disable_equip_animation": false,
+        "disable_swing_animation": false,
+        "terminator_only": false
+      }
+    },
+    "fullbright": {
+      "enabled": false
+    },
+    "better_glow": {
+      "enabled": false,
+      "settings": {
+        "fill": true,
+        "fill_opacity": 15.0
+      }
+    },
+    "custom_nametags": {
+      "enabled": false,
+      "settings": {
+        "custom_name": false,
+        "custom_tag": "",
+        "show_own_nametag": true,
+        "drop_shadow": true,
+        "background_opacity": 20.0
+      }
+    },
+    "wither_cloak_effect": {
+      "enabled": false,
+      "settings": {
+        "shield_count": 5.0,
+        "shield_speed": 2.0,
+        "shield_distance": 0.8
+      }
+    },
+    "click_gui": {
+      "settings": {
+        "accent_color": "#806BFF"
+      }
+    }
+  },
+  "hud": {
+    "dungeon_map": {
+      "x": 0.285406976744186,
+      "y": 0.20486111111111108,
+      "scale": 1.0
+    },
+    "dungeon_score": {
+      "x": 0.02,
+      "y": 0.45,
+      "scale": 1.0
+    }
+  }
+}

@@ -158,9 +158,17 @@ class DropdownSetting(
 	}
 }
 
+/**
+ * A key a module can be bound to.
+ *
+ * Deliberately not part of a profile. A profile is a set of preferences worth
+ * swapping between — colours, thresholds, what is switched on — and none of
+ * that should silently move the keys under someone's fingers. Where a bind is
+ * a real Minecraft key mapping, Minecraft's own options file is what remembers
+ * it, and the controls screen can rebind it like any other.
+ */
 class KeybindSetting(
 	initialKeyName: String = "None",
-	val profileBacked: Boolean = true,
 	private val currentKeyName: (() -> String)? = null,
 	private val onKeyChanged: ((InputConstants.Key?) -> Unit)? = null,
 ) {

@@ -21,7 +21,6 @@ object ClickGui {
 	)
 
 	private val guiKeybind = KeybindSetting(
-		profileBacked = false,
 		currentKeyName = {
 			if (CrypticClient.openGuiKey.isUnbound) {
 				"None"
@@ -41,8 +40,12 @@ object ClickGui {
 		id = "edit_hud",
 		label = "Edit HUD",
 		// The menu is in the way of the thing being arranged, so it closes and
-		// hands over to the editor rather than opening it on top of itself.
-		action = { Minecraft.getInstance().execute { Hud.openEditor() } },
+		// hands over to the editor rather than opening it on top of itself. The
+		// menu goes along as the way back, so escape returns to it.
+		action = {
+			val parent = Minecraft.getInstance().screen
+			Minecraft.getInstance().execute { Hud.openEditor(parent) }
+		},
 	)
 
 	@JvmField

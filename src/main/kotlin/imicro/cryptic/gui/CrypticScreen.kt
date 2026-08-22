@@ -56,9 +56,26 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
     private var searchFocusRequested = false
     private val expansion = mutableMapOf<Module, Float>()
 
-    /** How far the module list is scrolled, and how far it is allowed to go. */
-    private var scrollOffset = 0f
-    private var maxScroll = 0f
+    /**
+     * How far the module list is scrolled, and how far it is allowed to go.
+     *
+     * The offset outlives the screen, the same as the open cards and the chosen
+     * tab do: closing the menu to try a setting and opening it again should put
+     * you back where you were looking, not at the top of a list you have
+     * already scrolled past once.
+     */
+    private var scrollOffset: Float
+        get() = SESSION_SCROLL_OFFSET
+        set(value) { SESSION_SCROLL_OFFSET = value }
+
+    /**
+     * Kept alongside the offset, because the offset is clamped against it on
+     * the frame before it has been recomputed. A fresh screen starting from
+     * zero here would clamp the restored offset straight back to the top.
+     */
+    private var maxScroll: Float
+        get() = SESSION_MAX_SCROLL
+        set(value) { SESSION_MAX_SCROLL = value }
 
     private val togglePosition = mutableMapOf<Module, Float>()
     private val settingTogglePosition = mutableMapOf<ToggleModuleSetting, Float>()
@@ -71,6 +88,9 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
     private val numericBuffer = ImString(32)
     private var numericFocusRequested = false
     private val colorHexBuffers = mutableMapOf<ColorModuleSetting, ImString>()
+
+    /** The swatch whose hex field is waiting to be focused, for one frame. */
+    private var colorHexFocusRequested: ColorModuleSetting? = null
     private val textBuffers = mutableMapOf<TextModuleSetting, ImString>()
     private var editingTextId: String? = null
     private var toast: Toast? = null
@@ -1335,6 +1355,9 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
 
         if (interactive && hit(setting.widgetIds.control, swatchX, swatchY, swatchWidth, swatchHeight)) {
             colorHexBuffers.getOrPut(setting) { ImString(9) }.set(setting.hexDigits)
+            // Focused and selected on open, so a hex on the clipboard can go
+            // straight in with one paste.
+            colorHexFocusRequested = setting
             ImGui.openPopup(popupId)
         }
 
@@ -1393,11 +1416,17 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
             val hexBuffer = colorHexBuffers.getOrPut(setting) { ImString(9).also { it.set(setting.hexDigits) } }
             ImGui.setNextItemWidth(dp(150f, scale))
             pushFieldFont(dp(10f, scale), dp(20f, scale), dp(6f, scale))
+            if (colorHexFocusRequested === setting) {
+                colorHexFocusRequested = null
+                ImGui.setKeyboardFocusHere()
+            }
             val hexChanged = ImGui.inputTextWithHint(
                 "##color_hex",
                 if (setting.supportsAlpha) "AARRGGBB" else "RRGGBB",
                 hexBuffer,
-                ImGuiInputTextFlags.CharsHexadecimal or ImGuiInputTextFlags.CharsUppercase,
+                ImGuiInputTextFlags.CharsHexadecimal or
+                    ImGuiInputTextFlags.CharsUppercase or
+                    ImGuiInputTextFlags.AutoSelectAll,
             )
             popFieldFont()
             if (hexChanged) setting.setHex(hexBuffer.get())
@@ -1973,6 +2002,8 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
         // Kept in memory across CrypticScreen instances, but deliberately not
         // written to config: restarting the client returns every card to closed.
         val SESSION_EXPANDED_MODULES = mutableSetOf<Module>()
+        var SESSION_SCROLL_OFFSET = 0f
+        var SESSION_MAX_SCROLL = 0f
         var SESSION_SELECTED_CATEGORY = ModuleCategory.GENERAL
 
         val MODULES = ModuleRegistry.modules

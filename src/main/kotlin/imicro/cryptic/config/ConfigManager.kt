@@ -56,6 +56,9 @@ object ConfigManager {
     private const val FORMAT = "cryptic-profile"
     private const val FORMAT_VERSION = 1
     private const val DEFAULT_PROFILE = "Default"
+
+    /** The profile the jar ships with, used on a first run and to seed "Default". */
+    private const val SHIPPED_DEFAULT_PATH = "/assets/cryptic/default_profile.json"
     private const val SAVE_DEBOUNCE_NANOS = 250_000_000L
 
     private val logger = LoggerFactory.getLogger("cryptic/config")
@@ -83,12 +86,21 @@ object ConfigManager {
         runCatching {
             Files.createDirectories(profileDirectory)
             val defaultPath = profilePath(DEFAULT_PROFILE)
-            if (!Files.exists(defaultPath)) writeAtomically(defaultPath, encodeCurrent(DEFAULT_PROFILE))
+            val shipped = shippedDefault()
+            if (!Files.exists(defaultPath)) {
+                writeAtomically(defaultPath, shipped?.let(gson::toJson) ?: encodeCurrent(DEFAULT_PROFILE))
+            }
 
             if (Files.exists(liveConfigPath)) {
                 val root = parseAndValidate(Files.readString(liveConfigPath))
                 activeProfile = root.string("profile")?.takeIf(String::isNotBlank) ?: DEFAULT_PROFILE
                 apply(root)
+            } else if (shipped != null) {
+                // A first run has nothing to restore, so the settings the jar
+                // ships with are what it starts from. Every module is off; what
+                // the bundled profile carries is a sensible arrangement of each,
+                // so switching one on is all it takes.
+                apply(shipped)
             }
 
             persistNow(encodeCurrent(activeProfile))
@@ -290,9 +302,6 @@ object ConfigManager {
         for (index in modules.indices) {
             val module = modules[index]
             if (module.supportsToggle) hash = hash.mix(if (module.enabled) 1L else 0L)
-            if (module.supportsKeybind && module.keybind.profileBacked) {
-                hash = hash.mix(module.keybind.keyName.hashCode().toLong())
-            }
             if (module.hasDemoSettings) {
                 hash = hash.mix(module.slider.value.toRawBits())
                 hash = hash.mix(module.range.lower.toRawBits())
@@ -390,9 +399,6 @@ object ConfigManager {
 
     private fun encodeModule(module: Module) = JsonObject().apply {
         if (module.supportsToggle) addProperty("enabled", module.enabled)
-        if (module.supportsKeybind && module.keybind.profileBacked) {
-            addProperty("keybind", module.keybind.keyName)
-        }
         if (module.hasDemoSettings) {
             add("slider", JsonObject().also { it.addProperty("value", module.slider.value) })
             add("range", JsonObject().also {
@@ -431,9 +437,6 @@ object ConfigManager {
         ModuleRegistry.byId.forEach { (id, module) ->
             val value = modules.objectOrNull(id) ?: return@forEach
             if (module.supportsToggle) value.boolean("enabled")?.let { module.enabled = it }
-            if (module.supportsKeybind && module.keybind.profileBacked) {
-                value.string("keybind")?.let { module.keybind.keyName = it.take(40).ifBlank { "None" } }
-            }
             if (module.hasDemoSettings) {
                 value.objectOrNull("slider")?.double("value")?.let {
                     module.slider.value = it.coerceIn(module.slider.min, module.slider.max)
@@ -468,6 +471,21 @@ object ConfigManager {
             }
         }
     }
+
+    /**
+     * The profile bundled in the jar, or null when it cannot be read.
+     *
+     * Loaded through the class loader rather than Minecraft's resource manager,
+     * because the config is read while the client is still starting and the
+     * resource manager is not ready to answer yet.
+     */
+    private fun shippedDefault(): JsonObject? = runCatching {
+        val stream = ConfigManager::class.java.getResourceAsStream(SHIPPED_DEFAULT_PATH)
+            ?: return@runCatching null
+        parseAndValidate(stream.bufferedReader().use { it.readText() })
+    }.onFailure {
+        logger.error("Could not read Cryptic's bundled default profile", it)
+    }.getOrNull()
 
     private fun parseAndValidate(json: String): JsonObject {
         val root = JsonParser.parseString(json).asJsonObject
