@@ -21,7 +21,16 @@ object ImGuiRuntime {
     private var initialized = false
     private var broken = false
     private var context: ImGuiContext? = null
-    private var fontScale = -1
+    /**
+     * The size the atlas is baked at, once, for the life of the process.
+     *
+     * Dear ImGui 1.92 rasterizes each requested size on demand, and every draw
+     * here asks for its own, so this only sets the default for text that does
+     * not. Rebuilding the atlas when Minecraft's GUI scale changed is what
+     * corrupted the native heap: in 1.92 the OpenGL backend owns the atlas'
+     * textures, and clearing it out from under that bookkeeping double-frees.
+     */
+    private const val ATLAS_SCALE = 2
     private var lastFrameNanos = 0L
     private var controlDown = false
     private var shiftDown = false
@@ -81,8 +90,6 @@ object ImGuiRuntime {
             // native platform windows. Keeping this disabled also means there is
             // no UpdatePlatformWindows lifecycle for another mod to interfere with.
             ImGui.getIO().removeConfigFlags(ImGuiConfigFlags.ViewportsEnable)
-            ensureFontScale(minecraft)
-
             updatePlatformIo(minecraft)
             gl3.newFrame()
             ImGui.newFrame()
@@ -116,7 +123,6 @@ object ImGuiRuntime {
             ImGuiRuntime::class.java.getResourceAsStream("/assets/cryptic/font/fa-solid-900.ttf"),
         ) { "Missing bundled Font Awesome Free Solid font" }.use { it.readBytes() }
 
-        fontScale = minecraft.window.guiScale
         buildFontAtlas()
 
         val style = ImGui.getStyle()
@@ -231,17 +237,6 @@ object ImGuiRuntime {
         }
     }
 
-    private fun ensureFontScale(minecraft: Minecraft) {
-        val desiredScale = minecraft.window.guiScale
-        if (desiredScale == fontScale) return
-
-        val io = ImGui.getIO()
-        io.fonts.clear()
-        fontScale = desiredScale
-        buildFontAtlas()
-        gl3.destroyFontsTexture()
-    }
-
     private fun updatePlatformIo(minecraft: Minecraft) {
         val io = ImGui.getIO()
         val window = minecraft.window
@@ -341,7 +336,7 @@ object ImGuiRuntime {
         textSizes.clear()
 
         val io = ImGui.getIO()
-        font = io.fonts.addFontFromMemoryTTF(fontBytes, 11f * fontScale)
+        font = io.fonts.addFontFromMemoryTTF(fontBytes, 11f * ATLAS_SCALE)
 
         // Merge Font Awesome into Inter so icon constants can be used in any
         // ordinary ImGui label without changing fonts during rendering.
@@ -351,7 +346,7 @@ object ImGuiRuntime {
         }
         io.fonts.addFontFromMemoryTTF(
             iconFontBytes,
-            10f * fontScale,
+            10f * ATLAS_SCALE,
             iconConfig,
             FONT_AWESOME_GLYPH_RANGES,
         )

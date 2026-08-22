@@ -129,7 +129,7 @@ object DoorHighlight {
 	val normalOutline = ColorModuleSetting(
 		id = "normal_outline",
 		label = "Normal outline",
-		defaultRgb = 0x008080,
+		defaultRgb = 0xFFFFFF,
 		supportsAlpha = true,
 		defaultAlpha = 255,
 		visibleIf = { showNormal.value },
@@ -139,7 +139,7 @@ object DoorHighlight {
 	val normalFill = ColorModuleSetting(
 		id = "normal_fill",
 		label = "Normal fill",
-		defaultRgb = 0x008080,
+		defaultRgb = 0xFFFFFF,
 		supportsAlpha = true,
 		defaultAlpha = 0,
 		visibleIf = { showNormal.value },
@@ -313,8 +313,21 @@ object DoorHighlight {
 		val peeked = !leadsOut && peeksFairyWitherDoor(door, current)
 		if (!leadsOut && !peeked) return null
 
-		if (door.type == DungeonDoor.Type.WITHER || door.type == DungeonDoor.Type.BLOOD) {
-			if (door.opened) return null
+		// The way in to the fairy room, marked from outside it. Hypixel paints
+		// this doorway in the fairy room's own colour on the map item, so it
+		// arrives typed as a wither door and would otherwise be read as one and
+		// then dropped for standing open. The way *out* of the fairy room is a
+		// different door, and stays a wither door.
+		if (leadsOut &&
+			current.type != DungeonRoom.Type.FAIRY &&
+			door.rooms.any { it.type == DungeonRoom.Type.FAIRY }
+		) {
+			return if (showFairy.value) fairyOutline to fairyFill else null
+		}
+
+		if (!door.opened &&
+			(door.type == DungeonDoor.Type.WITHER || door.type == DungeonDoor.Type.BLOOD)
+		) {
 			val keyed = if (door.type == DungeonDoor.Type.WITHER) witherKeys > 0 else hasBloodKey
 			if (keyed && !showUnlocked.value) return null
 			if (!keyed && !showLocked.value) return null
@@ -325,16 +338,8 @@ object DoorHighlight {
 		// doorways are the next room's business, not this one's.
 		if (peeked) return null
 
-		// The way in to the fairy room, marked from outside. Standing in the
-		// room it leads to, the same doorway is just the way back out, so it
-		// only reads as the fairy door while you are still looking for it.
-		if (showFairy.value &&
-			current.type != DungeonRoom.Type.FAIRY &&
-			door.rooms.any { it.type == DungeonRoom.Type.FAIRY }
-		) {
-			return fairyOutline to fairyFill
-		}
-
+		// An opened wither door is a doorway like any other, and is worth
+		// marking on the way back through if there is still anything past it.
 		if (!showNormal.value) return null
 		if (hideUseless.value && door.rooms.none { isUseful(it, current, mutableSetOf()) }) return null
 		return normalOutline to normalFill
