@@ -178,6 +178,48 @@
         "necron_color": "#DF4700"
       }
     },
+    "terminal_solver": {
+      "enabled": false,
+      "settings": {
+        "term_size": 2.0,
+        "slot_gap": 2.0,
+        "show_numbers": true,
+        "resource_pack_font": false,
+        "first_click_protection": 500.0,
+        "account_for_server_lag": false,
+        "lag_protection_ticks": 8.0,
+        "rubix_left_click": false,
+        "melody_click_protection": false,
+        "solving": "Manual terms",
+        "click_delay": {
+          "lower": 50.0,
+          "upper": 150.0
+        },
+        "reaction_delay": true,
+        "background_color": "#FF1A1A1A",
+        "panes_color": "#FF55FF55",
+        "rubix_color_1": "#FF55FF55",
+        "rubix_color_2": "#FF2B802B",
+        "rubix_reverse_color_1": "#FFAA0000",
+        "rubix_reverse_color_2": "#FF550000",
+        "order_color_1": "#FF55FF55",
+        "order_color_2": "#FF2B802B",
+        "order_color_3": "#FF154015",
+        "starts_with_color": "#FF55FF55",
+        "select_color": "#FF55FF55",
+        "melody_column_color": "#FFAA00AA",
+        "melody_pointer_color": "#FF55FF55",
+        "melody_slot_color": "#FF262626",
+        "queue_text_color": "#FFFFFFFF"
+      }
+    },
+    "terminal_simulator": {
+      "enabled": false,
+      "settings": {
+        "ping": 0.0,
+        "skip_click_protection": false
+      }
+    },
     "animations": {
       "enabled": false,
       "settings": {

@@ -3,8 +3,10 @@
 	"package": "imicro.cryptic.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
+		"AbstractContainerScreenMixin",
 		"AvatarRendererMixin",
 		"BossHealthOverlayAccessor",
+		"ClientCommonPacketListenerMixin",
 		"ClientPacketListenerMixin",
 		"CreeperPowerLayerMixin",
 		"EntityMixin",
@@ -17,6 +19,7 @@
 		"MinecraftMixin",
 		"NameTagFeatureRendererMixin",
 		"PlayerTabOverlayMixin",
+		"ScreenMixin",
 		"ShaderManagerMixin"
 	],
 	"injectors": {

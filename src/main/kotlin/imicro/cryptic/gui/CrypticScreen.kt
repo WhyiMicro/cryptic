@@ -43,6 +43,9 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
     private var openDropdown: DropdownSource? = null
     private var draggingLowerRangeHandle = true
 
+    /** The same, for a range that belongs to a setting rather than a demo card. */
+    private var draggingLowerSettingHandle = true
+
     private var animatedTabX = Float.NaN
     private var tabAnimationStartX = Float.NaN
     private var tabContentProgress = 1f
@@ -1110,6 +1113,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
             firstVisible = false
             rows += when (setting) {
                 is SliderModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
+                is RangeModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
                 is ToggleModuleSetting -> CUSTOM_TOGGLE_ROW_HEIGHT
                 is ButtonModuleSetting -> CUSTOM_BUTTON_ROW_HEIGHT
                 is ColorModuleSetting -> CUSTOM_COLOR_ROW_HEIGHT
@@ -1156,6 +1160,10 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
             when (setting) {
                 is SliderModuleSetting -> {
                     drawCustomSlider(draw, setting, cardX, rowY, cardWidth, scale, interactive)
+                    rowY += dp(CUSTOM_SLIDER_ROW_HEIGHT, scale)
+                }
+                is RangeModuleSetting -> {
+                    drawCustomRange(draw, setting, cardX, rowY, cardWidth, scale, interactive)
                     rowY += dp(CUSTOM_SLIDER_ROW_HEIGHT, scale)
                 }
                 is ToggleModuleSetting -> {
@@ -1473,6 +1481,97 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
             val ratio = ((ImGui.getMousePosX() - barX) / barWidth).coerceIn(0f, 1f)
             val raw = setting.min + (setting.max - setting.min) * ratio
             setting.value = snapSliderValue(raw, setting.min, setting.max, setting.step)
+        }
+    }
+
+    /**
+     * A slider with two handles, laid out on the same row a single slider gets
+     * so the two read as the same kind of control.
+     *
+     * Which handle a drag grabs is decided once, when the drag starts, from
+     * whichever end the press was nearer: deciding it per frame would let the
+     * handles swap under the cursor halfway through a drag.
+     */
+    private fun drawCustomRange(
+        draw: ImDrawList,
+        setting: RangeModuleSetting,
+        cardX: Float,
+        rowY: Float,
+        cardWidth: Float,
+        scale: Float,
+        interactive: Boolean,
+    ) {
+        val barX = cardX + dp(SLIDER_X, scale)
+        val barY = rowY + dp(9f, scale)
+        val barWidth = cardWidth - dp(SLIDER_X + 14f, scale)
+        val trackHeight = dp(4f, scale)
+        val span = setting.max - setting.min
+        val lower = ((setting.lower - setting.min) / span).toFloat().coerceIn(0f, 1f)
+        val upper = ((setting.upper - setting.min) / span).toFloat().coerceIn(0f, 1f)
+
+        drawEditableRangeTokens(draw, setting, cardX + dp(14f, scale), rowY + dp(3f, scale), scale, interactive)
+
+        draw.addRectFilled(barX, barY, barX + barWidth, barY + trackHeight, contentColor(TRACK), trackHeight / 2f)
+        draw.addRectFilled(
+            barX + barWidth * lower,
+            barY,
+            barX + barWidth * upper,
+            barY + trackHeight,
+            contentColor(ACCENT),
+            trackHeight / 2f,
+        )
+        drawSliderHandle(draw, barX + barWidth * lower, barY + trackHeight / 2f, scale)
+        drawSliderHandle(draw, barX + barWidth * upper, barY + trackHeight / 2f, scale)
+
+        hit(setting.widgetIds.control, barX, barY - dp(5f, scale), barWidth, dp(14f, scale))
+        if (interactive && ImGui.isItemActivated()) {
+            val value = settingRangeValueAt(setting, ImGui.getMousePosX(), barX, barWidth)
+            draggingLowerSettingHandle = abs(value - setting.lower) <= abs(value - setting.upper)
+        }
+        if (interactive && ImGui.isItemActive()) {
+            val raw = settingRangeValueAt(setting, ImGui.getMousePosX(), barX, barWidth)
+            if (draggingLowerSettingHandle) {
+                setting.lower = snapSliderValue(raw, setting.min, setting.upper, setting.step)
+            } else {
+                setting.upper = snapSliderValue(raw, setting.lower, setting.max, setting.step)
+            }
+        }
+    }
+
+    private fun settingRangeValueAt(
+        setting: RangeModuleSetting,
+        mouseX: Float,
+        barX: Float,
+        barWidth: Float,
+    ): Double {
+        val ratio = ((mouseX - barX) / barWidth).coerceIn(0f, 1f)
+        return setting.min + (setting.max - setting.min) * ratio
+    }
+
+    private fun drawEditableRangeTokens(
+        draw: ImDrawList,
+        setting: RangeModuleSetting,
+        x: Float,
+        y: Float,
+        scale: Float,
+        interactive: Boolean,
+    ) {
+        val fontSize = dp(9.5f, scale)
+        val labelText = setting.labelWithColon
+        val lowerText = setting.displayLower
+        val upperText = setting.displayUpper
+        val lowerX = x + textWidth(labelText, fontSize) + dp(4f, scale)
+        val lowerWidth = maxOf(textWidth(lowerText, fontSize), dp(13f, scale))
+        val separatorX = lowerX + lowerWidth + dp(3f, scale)
+        val upperX = separatorX + textWidth("-", fontSize) + dp(3f, scale)
+
+        drawText(draw, labelText, x, y, TEXT, fontSize)
+        drawEditableNumericToken(draw, setting.lowerIds, lowerText, lowerX, y, scale, interactive) { entered ->
+            setting.lower = snapSliderValue(entered, setting.min, setting.upper, setting.step)
+        }
+        drawText(draw, "-", separatorX, y, TEXT, fontSize)
+        drawEditableNumericToken(draw, setting.upperIds, upperText, upperX, y, scale, interactive) { entered ->
+            setting.upper = snapSliderValue(entered, setting.lower, setting.max, setting.step)
         }
     }
 

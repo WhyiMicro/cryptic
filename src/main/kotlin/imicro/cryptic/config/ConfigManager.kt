@@ -8,6 +8,7 @@ import imicro.cryptic.gui.ModuleRegistry
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
+import imicro.cryptic.gui.RangeModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
@@ -313,6 +314,7 @@ object ConfigManager {
                 hash = when (val setting = settings[settingIndex]) {
                     is ToggleModuleSetting -> hash.mix(if (setting.value) 1L else 0L)
                     is SliderModuleSetting -> hash.mix(setting.value.toRawBits())
+                    is RangeModuleSetting -> hash.mix(setting.lower.toRawBits()).mix(setting.upper.toRawBits())
                     is ColorModuleSetting -> hash.mix(setting.argb.toLong())
                     is DropdownModuleSetting -> hash.mix(setting.selectedIndex.toLong())
                     is TextModuleSetting -> hash.mix(setting.value.hashCode().toLong())
@@ -413,6 +415,10 @@ object ConfigManager {
                     when (setting) {
                         is ToggleModuleSetting -> settings.addProperty(setting.id, setting.value)
                         is SliderModuleSetting -> settings.addProperty(setting.id, setting.value)
+                        is RangeModuleSetting -> settings.add(setting.id, JsonObject().also {
+                            it.addProperty("lower", setting.lower)
+                            it.addProperty("upper", setting.upper)
+                        })
                         is ColorModuleSetting -> settings.addProperty(setting.id, setting.hex)
                         is DropdownModuleSetting -> settings.addProperty(setting.id, setting.selected)
                         is TextModuleSetting -> settings.addProperty(setting.id, setting.value)
@@ -461,6 +467,12 @@ object ConfigManager {
                         is ToggleModuleSetting -> settings.boolean(setting.id)?.let { setting.value = it }
                         is SliderModuleSetting -> settings.double(setting.id)?.let {
                             setting.value = it.coerceIn(setting.min, setting.max)
+                        }
+                        is RangeModuleSetting -> settings.objectOrNull(setting.id)?.let { range ->
+                            val lower = (range.double("lower") ?: setting.lower).coerceIn(setting.min, setting.max)
+                            val upper = (range.double("upper") ?: setting.upper).coerceIn(setting.min, setting.max)
+                            setting.lower = minOf(lower, upper)
+                            setting.upper = maxOf(lower, upper)
                         }
                         is ColorModuleSetting -> settings.string(setting.id)?.let(setting::setHex)
                         is DropdownModuleSetting -> settings.string(setting.id)?.let(setting::select)

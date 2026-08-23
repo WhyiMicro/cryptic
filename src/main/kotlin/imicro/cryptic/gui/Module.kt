@@ -250,6 +250,58 @@ class SliderModuleSetting(
 	fun reset() { value = defaultValue }
 }
 
+/**
+ * Two numbers that bound each other, drawn as one slider with two handles.
+ *
+ * What a range is for here is picking a number that is not always the same one:
+ * [random] draws from it, so a delay built on this varies instead of repeating.
+ */
+class RangeModuleSetting(
+	id: String,
+	label: String,
+	val defaultLower: Double,
+	val defaultUpper: Double,
+	val min: Double,
+	val max: Double,
+	val step: Double,
+	val description: String = "",
+	visibleIf: () -> Boolean = { true },
+): ModuleSetting(id, label, visibleIf) {
+	private val format: (Double) -> String = { raw ->
+		if (step >= 1.0) {
+			raw.roundToInt().toString()
+		} else {
+			String.format(Locale.ROOT, "%.2f", raw).trimEnd('0').trimEnd('.')
+		}
+	}
+
+	private val lowerLabel = NumberLabel(format)
+	private val upperLabel = NumberLabel(format)
+
+	var lower: Double = defaultLower
+	var upper: Double = defaultUpper
+
+	val displayLower: String get() = lowerLabel.of(lower)
+	val displayUpper: String get() = upperLabel.of(upper)
+
+	/**
+	 * Each end is separately editable, so each needs identifiers of its own.
+	 * Built on first use, because a setting only knows its qualified identifier
+	 * once the owning module has attached it.
+	 */
+	val lowerIds: WidgetIds by lazy { WidgetIds("${widgetIds.editorKey}_lower") }
+	val upperIds: WidgetIds by lazy { WidgetIds("${widgetIds.editorKey}_upper") }
+
+	/** A value somewhere in the range, inclusive of both ends. */
+	fun random(): Double =
+		if (upper <= lower) lower else lower + Math.random() * (upper - lower)
+
+	fun reset() {
+		lower = defaultLower
+		upper = defaultUpper
+	}
+}
+
 class ColorModuleSetting(
 	id: String,
 	label: String,
@@ -392,6 +444,8 @@ object ModuleRegistry {
 		imicro.cryptic.feature.LeapMessage.module,
 		imicro.cryptic.feature.Etherwarp.module,
 		imicro.cryptic.feature.WitherOutline.module,
+		imicro.cryptic.feature.TerminalSolver.module,
+		imicro.cryptic.feature.TerminalSimulator.module,
 		imicro.cryptic.feature.Animations.module,
 		imicro.cryptic.feature.Fullbright.module,
 		imicro.cryptic.feature.BetterGlow.module,

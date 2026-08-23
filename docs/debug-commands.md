@@ -170,6 +170,7 @@ map.
 ```
 /cryptic                  opens the menu
 /cryptic hud              opens the HUD placement editor
+/cryptic termsim          opens the terminal simulator
 /cryptic config export    copies the active profile to the clipboard
 /cryptic config import    loads a profile from the clipboard, without activating it
 /cryptic etherwarp sound <name>   picks the Etherwarp sound
@@ -179,3 +180,12 @@ The menu has its own button for the HUD editor, at the right end of the
 navigation bar. Opened that way, escape returns you to the menu; opened with the
 command, escape closes to the game. **Ctrl+F** opens the menu's search from
 anywhere inside it.
+
+The terminal simulator is the way to see the Terminal Solver without a Floor 7
+run: it opens the same six terminals client-side, and the solver draws over them
+exactly as it would in the boss room. Its own module card, in the Floor 7 tab,
+has the same button plus a **Ping** slider — set that to your real ping and the
+terminals answer as slowly as Hypixel would, which is the point of practising at
+all. The solver's first click protection applies there too, so a click in the
+first half second goes nowhere; **Skip click protection** turns that off for
+practice without touching what happens in a real dungeon.

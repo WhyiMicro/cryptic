@@ -38,15 +38,18 @@ import imicro.cryptic.feature.HiddenMobs
 import imicro.cryptic.feature.LeapMessage
 import imicro.cryptic.feature.NoDebuff
 import imicro.cryptic.feature.RoomAlerts
+import imicro.cryptic.feature.TerminalSimulator
 import imicro.cryptic.feature.Etherwarp
 import imicro.cryptic.feature.WitherCloakEffect
 import imicro.cryptic.feature.WitherOutline
+import imicro.cryptic.terminal.Terminals
 
 /** Client-only setup: key mappings and screens belong here, not in [Cryptic]. */
 object CrypticClient : ClientModInitializer {
 	private val keyCategory = KeyMapping.Category.register(Cryptic.id("cryptic"))
 	private var openGuiRequested = false
 	private var hudEditorRequested = false
+	private var termSimRequested = false
 
 	/**
 	 * Right shift out of the box, which almost nothing else in Minecraft wants.
@@ -336,6 +339,13 @@ object CrypticClient : ClientModInitializer {
 						},
 					)
 					.then(
+						ClientCommands.literal("termsim").executes {
+							// Same deferral again, for the same reason.
+							termSimRequested = true
+							1
+						},
+					)
+					.then(
 						ClientCommands.literal("etherwarp")
 							.then(ClientCommands.literal("sound")
 								.then(
@@ -393,6 +403,8 @@ object CrypticClient : ClientModInitializer {
 			RoomAlerts.tick(client)
 			// Which of the four withers is up only matters while they are colored apart.
 			DungeonBoss.tick(client, WitherOutline.needsBossTracking)
+			// Escape closes a terminal without the server saying so.
+			Terminals.tick(client)
 			WitherCloakEffect.tick(client)
 
 			while (openGuiKey.consumeClick()) {
@@ -402,6 +414,11 @@ object CrypticClient : ClientModInitializer {
 			if (openGuiRequested) {
 				openGuiRequested = false
 				openGui(client)
+			}
+
+			if (termSimRequested) {
+				termSimRequested = false
+				TerminalSimulator.open()
 			}
 
 			if (hudEditorRequested) {
