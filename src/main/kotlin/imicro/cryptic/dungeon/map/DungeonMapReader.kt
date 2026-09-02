@@ -264,6 +264,15 @@ object DungeonMapReader {
 	/**
 	 * Reads each room's progress from the middle of its tile, trying every tile
 	 * it covers because only the part you have seen is painted.
+	 *
+	 * The order the tiles are tried in is the whole trick. Hypixel paints a
+	 * room's progress onto one tile only — the top-left one — and leaves the
+	 * rest of a big room in its plain colour, so the tiles have to be read
+	 * top-left first rather than in whatever order the two sources happened to
+	 * claim them. [DungeonFloor.claim] grows a room outwards from the tile it
+	 * was first seen from, which for a room approached from its far side puts
+	 * the near tile at the front of the list: reading that one back gives plain
+	 * brown, and a cleared room is never seen to clear.
 	 */
 	private fun readStates(colors: ByteArray) {
 		val rs = roomSize ?: return
@@ -271,12 +280,15 @@ object DungeonMapReader {
 		val stride = rs + 4
 
 		DungeonFloor.rooms.forEach { room ->
-			val painted = room.tiles.firstNotNullOfOrNull { tile ->
+			val ordered = room.tiles.sortedWith(compareBy({ it.x }, { it.z }))
+			val fallback = ordered.firstOrNull() ?: return@forEach
+
+			val painted = ordered.firstNotNullOfOrNull { tile ->
 				val index = sc.add(tile.multiply(stride)).mapIndex()
 				if (index >= colors.size) return@firstNotNullOfOrNull null
 				colors[index].toInt().takeIf { it != 0 }?.let { tile to it }
 			}
-			room.updateState(painted?.first ?: room.tiles.first(), painted?.second ?: 0)
+			room.updateState(painted?.first ?: fallback, painted?.second ?: 0)
 		}
 	}
 

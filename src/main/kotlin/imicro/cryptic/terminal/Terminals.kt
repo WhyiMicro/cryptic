@@ -32,8 +32,9 @@ object Terminals {
 		// only have seen the last of them, so the handler — and with it the
 		// clock the click protection runs on — starts again until the first
 		// click says the terminal is really being played.
-		current?.let { if (!it.clicked && it.windowCount <= 2) closed() }
+		current?.let { if (!it.everClicked && it.windowCount <= 2) closed() }
 
+		TerminalDebug.windowOpened(title, TerminalType.of(title))
 		if (TerminalType.of(title) == null) {
 			// Some other menu, which means the terminal is behind us — and the
 			// solver must not end up painted over an auction house.
@@ -48,13 +49,48 @@ object Terminals {
 		}
 
 		current?.windowOpened()
+		// Hypixel answers a click by opening the terminal again, so this — and
+		// not a slot update inside the window already open — is the click being
+		// answered. Told after the handler, so the window has been counted.
+		TerminalClicks.onWindowOpened()
 	}
 
+	/** Set by a slot update, cleared by the tick that solves for it. */
+	private var dirty = false
+	private var dirtyItems: List<ItemStack> = emptyList()
+	private var dirtySlot = 0
+
+	/**
+	 * A slot of the open terminal changed.
+	 *
+	 * Nothing is solved here, only noted. Hypixel used to answer a click by
+	 * opening the whole chest again, so waiting for the last slot of a window
+	 * was a reliable "the board is complete, solve it". It does not do that any
+	 * more — the chest stays open and the slots that changed are sent on their
+	 * own — and waiting for a last slot that never arrives meant never solving
+	 * at all.
+	 *
+	 * So every change counts, and the tick decides when to act on it. That still
+	 * collapses the opening fill, which is fifty-odd packets in a row, into one
+	 * solve.
+	 */
 	fun slotUpdated(slot: Int, items: List<ItemStack>) {
 		val handler = current ?: return
-		// Only a real re-solve is worth telling the clicking about; most slot
-		// packets are one more square of a window still being drawn.
-		if (handler.slotUpdated(slot, items)) TerminalClicks.onSolved(handler)
+		if (slot !in 0 until handler.type.windowSize) return
+		dirty = true
+		dirtySlot = slot
+		dirtyItems = items
+	}
+
+	/** Solves for whatever changed since the last tick, once. */
+	private fun solvePending() {
+		if (!dirty) return
+		dirty = false
+
+		val handler = current ?: return
+		val solved = handler.resolve(dirtyItems)
+		TerminalDebug.solved(handler, dirtySlot, dirtyItems, solved)
+		if (solved) TerminalClicks.onSolved(handler)
 	}
 
 	/**
@@ -70,6 +106,8 @@ object Terminals {
 	fun closed() {
 		current = null
 		currentTitle = null
+		dirty = false
+		dirtyItems = emptyList()
 		TerminalClicks.reset()
 	}
 
@@ -79,6 +117,7 @@ object Terminals {
 	 */
 	fun tick(client: Minecraft) {
 		if (current != null && client.screen !is AbstractContainerScreen<*>) closed()
+		solvePending()
 		TerminalClicks.tick()
 	}
 }

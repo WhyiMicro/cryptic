@@ -40,6 +40,11 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
     private var selectedCategory = SESSION_SELECTED_CATEGORY
     private val expandedModules = SESSION_EXPANDED_MODULES
     private var awaitingKeybind: Module? = null
+
+    /** Descriptions trimmed to the card, remade only when the card resizes. */
+    private val fitted = HashMap<String, String>()
+    private var fittedSize = 0f
+    private var fittedWidth = 0f
     private var openDropdown: DropdownSource? = null
     private var draggingLowerRangeHandle = true
 
@@ -173,6 +178,22 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
         ImGuiRuntime.mousePosition(event.x(), event.y())
         if (!openingComplete) return true
+
+        // A bind waiting for a key takes a mouse button too, any of them, left
+        // included: holding left click is how an auto clicker is normally run,
+        // and a thumb button is the natural home for a zoom.
+        //
+        // Binding left does not cost the menu its own button. The badge arms on
+        // the release of the click that hit it, so the press captured here is
+        // always a later one; and in the menu a bind is only a name on a badge,
+        // never something the menu itself reads.
+        val module = awaitingKeybind
+        if (module != null) {
+            module.keybind.setKey(InputConstants.Type.MOUSE.getOrCreate(event.button()))
+            awaitingKeybind = null
+            return true
+        }
+
         ImGuiRuntime.mouseButton(event.button(), true)
         return true
     }
@@ -1032,7 +1053,19 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
                 dp(9f, scale),
             )
         }
-        drawText(draw, module.description, descriptionX, y + dp(28f, scale), MUTED_TEXT, dp(9.5f, scale))
+        // Clipped to the card. A description is one line and cards are a fixed
+        // width, so a long one used to run out past the right edge and carry on
+        // over whatever was beside it.
+        val descriptionSize = dp(9.5f, scale)
+        val descriptionRoom = (x + width - dp(14f, scale)) - descriptionX
+        drawText(
+            draw,
+            fitToWidth(module.id, module.description, descriptionSize, descriptionRoom),
+            descriptionX,
+            y + dp(28f, scale),
+            MUTED_TEXT,
+            descriptionSize,
+        )
 
         var settingsOverlay: DropdownOverlay? = null
         var dropdownHovered = false
@@ -1913,14 +1946,22 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
         val reveal = easeOutCubic(overlay.progress)
         val popupHeight = buttonHeight + optionsHeight * reveal
 
-        draw.pushClipRect(popupX, popupY, popupX + popupWidth, popupY + popupHeight, true)
-        draw.addRectFilled(popupX, popupY, popupX + popupWidth, popupY + popupHeight, contentColor(TRACK), dp(8f, scale))
+        // A dropdown near the bottom of the window would open past it, and a
+        // card is not scrolled by a popup floating over it, so the options go
+        // above the control instead. The control itself does not move.
+        val flipped = popupY + popupHeight > ImGui.getIO().displaySizeY - dp(8f, scale)
+        val popupTop = if (flipped) popupY + buttonHeight - popupHeight else popupY
+        val buttonTop = if (flipped) popupTop + popupHeight - buttonHeight else popupTop
+        val rowsTop = if (flipped) popupTop else popupTop + buttonHeight
+
+        draw.pushClipRect(popupX, popupTop, popupX + popupWidth, popupTop + popupHeight, true)
+        draw.addRectFilled(popupX, popupTop, popupX + popupWidth, popupTop + popupHeight, contentColor(TRACK), dp(8f, scale))
         val border = dp(2f, scale)
         draw.addRectFilled(
             popupX + border,
-            popupY + border,
+            popupTop + border,
             popupX + popupWidth - border,
-            popupY + popupHeight - border,
+            popupTop + popupHeight - border,
             contentColor(SURFACE),
             dp(6f, scale),
         )
@@ -1930,12 +1971,12 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
             overlay.buttonHovered -> TEXT
             else -> MUTED_TEXT
         }
-        drawCenteredText(draw, source.selected, popupX, popupY, popupWidth, buttonHeight, buttonColor, dp(10f, scale))
+        drawCenteredText(draw, source.selected, popupX, buttonTop, popupWidth, buttonHeight, buttonColor, dp(10f, scale))
         draw.addRectFilled(
             popupX + border,
-            popupY + buttonHeight - dp(1f, scale),
+            if (flipped) buttonTop else buttonTop + buttonHeight - dp(1f, scale),
             popupX + popupWidth - border,
-            popupY + buttonHeight,
+            if (flipped) buttonTop + dp(1f, scale) else buttonTop + buttonHeight,
             contentColor(TRACK),
         )
 
@@ -1945,7 +1986,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
         for (index in options.indices) {
             if (index == selectedIndex) continue
             val option = options[index]
-            val rowY = popupY + buttonHeight + rowHeight * rowIndex
+            val rowY = rowsTop + rowHeight * rowIndex
             // The region is claimed for the whole opening animation, so a row
             // the popup has already covered cannot be clicked through it, but
             // the option only takes effect once the popup is really open.
@@ -2036,6 +2077,30 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
         return ImGui.invisibleButton(id, width.coerceAtLeast(1f), height.coerceAtLeast(1f), ImGuiMouseButton.Left)
     }
 
+    /**
+     * A line trimmed to fit, with an ellipsis where it was cut.
+     *
+     * Measuring a string costs a walk through it, and this runs for every card
+     * every frame, so the answer is kept until the thing that could change it
+     * does: the card's width, or the text size the menu scale gives it.
+     */
+    private fun fitToWidth(key: String, text: String, size: Float, maxWidth: Float): String {
+        if (size != fittedSize || maxWidth != fittedWidth) {
+            fitted.clear()
+            fittedSize = size
+            fittedWidth = maxWidth
+        }
+        return fitted.getOrPut(key) { ellipsize(text, size, maxWidth) }
+    }
+
+    private fun ellipsize(text: String, size: Float, maxWidth: Float): String {
+        if (maxWidth <= 0f || textWidth(text, size) <= maxWidth) return text
+
+        var end = text.length
+        while (end > 0 && textWidth(text.take(end) + ELLIPSIS, size) > maxWidth) end--
+        return if (end <= 0) ELLIPSIS else text.take(end).trimEnd() + ELLIPSIS
+    }
+
     private fun drawText(draw: ImDrawList, text: String, x: Float, y: Float, color: Int, size: Float) {
         draw.addText(ImGuiRuntime.font, size.roundToInt().coerceAtLeast(1), x, y, contentColor(color), text)
     }
@@ -2098,6 +2163,9 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
     )
 
     private companion object {
+        /** Three dots rather than the single glyph, which the bundled font may lack. */
+        private const val ELLIPSIS = "..."
+
         // Kept in memory across CrypticScreen instances, but deliberately not
         // written to config: restarting the client returns every card to closed.
         val SESSION_EXPANDED_MODULES = mutableSetOf<Module>()

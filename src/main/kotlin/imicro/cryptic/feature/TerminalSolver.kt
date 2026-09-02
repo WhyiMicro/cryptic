@@ -174,32 +174,23 @@ object TerminalSolver {
 		options = listOf("Manual terms", "Que terms", "Auto terms"),
 		defaultIndex = 0,
 		description = "Manual sends each click as you make it. " +
-			"Que buffers clicks and sends them in order. " +
-			"Auto plays the terminal for you.",
+			"Que answers your clicks at once on screen and sends them one at a time, re-sending any the server " +
+			"missed. " +
+			"Auto plays the whole terminal without being asked.",
 	)
 
 	@JvmField
 	val clickDelay = RangeModuleSetting(
 		id = "click_delay",
 		label = "Click delay (ms)",
-		defaultLower = 50.0,
+		defaultLower = 100.0,
 		defaultUpper = 150.0,
 		min = 0.0,
-		max = 500.0,
+		max = 300.0,
 		step = 5.0,
-		description = "The gap between clicks, drawn fresh from this range each time so it never repeats. " +
-			"Applies once the first click protection is over.",
-		visibleIf = { solvingMode.selectedIndex != MANUAL_SOLVING },
-	)
-
-	@JvmField
-	val reactionDelay = ToggleModuleSetting(
-		id = "reaction_delay",
-		label = "Reaction delay",
-		defaultValue = true,
-		description = "Waits the click delay after the server answers, so each click carries a reaction time " +
-			"on top of your ping — what playing by hand looks like. Off, the delay runs from the last click " +
-			"instead, and on a slow connection it has usually elapsed before the answer arrives, so it rarely applies.",
+		description = "The gap between clicks going out, drawn fresh from this range each time so it never " +
+			"repeats. Your own clicks are answered on screen at once whatever this says; this only paces " +
+			"what reaches the server. Too low and the terminal stops keeping up.",
 		visibleIf = { solvingMode.selectedIndex != MANUAL_SOLVING },
 	)
 
@@ -320,12 +311,21 @@ object TerminalSolver {
 	)
 
 	@JvmField
+	val showQueue = ToggleModuleSetting(
+		id = "show_queue",
+		label = "Show queue depth",
+		defaultValue = true,
+		description = "Writes how many clicks are still waiting to go out under the terminal.",
+		visibleIf = { solvingMode.selectedIndex == QUEUE_SOLVING },
+	)
+
+	@JvmField
 	val queueTextColor = ColorModuleSetting(
 		id = "queue_text_color",
 		label = "Queue text",
 		defaultRgb = 0xFFFFFF,
 		supportsAlpha = true,
-		visibleIf = { solvingMode.selectedIndex == QUEUE_SOLVING },
+		visibleIf = { solvingMode.selectedIndex == QUEUE_SOLVING && showQueue.value },
 	)
 
 	@JvmField
@@ -350,7 +350,6 @@ object TerminalSolver {
 			melodyClickProtection,
 			solvingMode,
 			clickDelay,
-			reactionDelay,
 			colorSection,
 			backgroundColor,
 			panesColor,
@@ -366,6 +365,7 @@ object TerminalSolver {
 			melodyColumnColor,
 			melodyPointerColor,
 			melodySlotColor,
+			showQueue,
 			queueTextColor,
 		),
 	)
@@ -506,7 +506,7 @@ object TerminalSolver {
 			pose.popMatrix()
 		}
 
-		if (solvingMode.selectedIndex == QUEUE_SOLVING) {
+		if (solvingMode.selectedIndex == QUEUE_SOLVING && showQueue.value) {
 			val pose = context.pose()
 			pose.pushMatrix()
 			pose.translate(

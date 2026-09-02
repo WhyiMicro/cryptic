@@ -2,6 +2,8 @@ package imicro.cryptic.feature
 
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.gui.ButtonModuleSetting
+import imicro.cryptic.gui.ColorModuleSetting
+import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.ToggleModuleSetting
@@ -43,10 +45,72 @@ object HiddenMobs {
 		description = "Reveals one again after it blinks out of sight.",
 	)
 
-	private val configurableSettings = listOf(fels, shadowAssassins)
+	private val highlightSection = SectionModuleSetting("highlight_section", "Highlight")
+
+	/**
+	 * Boxing the two lives here rather than with the other highlights, because
+	 * revealing a mob and marking it are the same job: an invisible Fel that has
+	 * been un-hidden is still an enderman in a dark room, and a Shadow Assassin
+	 * that has blinked back in is still behind you.
+	 *
+	 * The drawing is still [Highlight]'s — it owns the render pass and there is
+	 * no sense in having two — so these are the settings it asks.
+	 */
+	@JvmField
+	val highlightFels = ToggleModuleSetting(
+		id = "highlight_fels",
+		label = "Highlight Fels",
+		description = "Boxes them as well as revealing them.",
+	)
+
+	@JvmField
+	val felColor = ColorModuleSetting(
+		id = "fel_color",
+		label = "Fel",
+		defaultRgb = 0xFF55FF,
+		supportsAlpha = true,
+		defaultAlpha = 0x80,
+		visibleIf = { highlightFels.value },
+	)
+
+	@JvmField
+	val highlightShadowAssassins = ToggleModuleSetting(
+		id = "highlight_shadow_assassins",
+		label = "Highlight Shadow Assassins",
+		description = "Boxes one after it blinks, which is the moment it is about to be behind you.",
+	)
+
+	@JvmField
+	val shadowAssassinColor = ColorModuleSetting(
+		id = "shadow_assassin_color",
+		label = "Shadow Assassin",
+		defaultRgb = 0xFFFFFF,
+		supportsAlpha = true,
+		defaultAlpha = 0x80,
+		visibleIf = { highlightShadowAssassins.value },
+	)
+
+	/** The name a Shadow Assassin's health tag carries, which is how it is known. */
+	const val SHADOW_ASSASSIN_NAME = SHADOW_ASSASSIN
+
+	private val configurableSettings = listOf(
+		fels,
+		shadowAssassins,
+		highlightSection,
+		highlightFels,
+		felColor,
+		highlightShadowAssassins,
+		shadowAssassinColor,
+	)
 
 	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurableSettings.forEach { if (it is ToggleModuleSetting) it.reset() }
+		configurableSettings.forEach {
+			when (it) {
+				is ToggleModuleSetting -> it.reset()
+				is ColorModuleSetting -> it.reset()
+				else -> Unit
+			}
+		}
 	})
 
 	@JvmField

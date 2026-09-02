@@ -6,6 +6,49 @@
     "auto_sprint": {
       "enabled": false
     },
+    "zoom": {
+      "enabled": false,
+      "settings": {
+        "initial_zoom": 4.0,
+        "transition": "Ease out",
+        "scroll_zoom": true,
+        "cinematic_camera": false,
+        "affect_hand_fov": false
+      }
+    },
+    "no_jump_delay": {
+      "enabled": false
+    },
+    "auto_clicker": {
+      "enabled": false,
+      "settings": {
+        "cps": {
+          "lower": 8.0,
+          "upper": 12.0
+        },
+        "pattern": "Jitter",
+        "mode": "Hold"
+      }
+    },
+    "experiment_solver": {
+      "enabled": false,
+      "settings": {
+        "next_color": "#9955FF55",
+        "later_color": "#555555FF",
+        "show_order": true,
+        "auto_click": false,
+        "click_delay": {
+          "lower": 180.0,
+          "upper": 320.0
+        },
+        "run_table": false,
+        "focus": "Most XP",
+        "renews": 0.0,
+        "serums": 0.0,
+        "superpairs_by_hand": false,
+        "buy_experience": false
+      }
+    },
     "class_colors": {
       "enabled": false,
       "settings": {
@@ -128,7 +171,11 @@
       "enabled": false,
       "settings": {
         "fels": true,
-        "shadow_assassins": true
+        "shadow_assassins": true,
+        "highlight_fels": false,
+        "fel_color": "#80FF55FF",
+        "highlight_shadow_assassins": false,
+        "shadow_assassin_color": "#80FFFFFF"
       }
     },
     "room_alerts": {
@@ -138,6 +185,14 @@
         "cleared_title": "Cleared",
         "alert_secrets": true,
         "secrets_title": "Secrets Done",
+        "room_complete": false,
+        "complete_title": "Room Complete!",
+        "alert_prince": true,
+        "prince_title": "Prince Killed!",
+        "alert_mimic": true,
+        "mimic_title": "Mimic Killed!",
+        "alert_bats": true,
+        "bats_title": "Bats Done!",
         "play_sound": true,
         "volume": 0.25
       }
@@ -178,24 +233,111 @@
         "necron_color": "#DF4700"
       }
     },
+    "highlight": {
+      "enabled": false,
+      "settings": {
+        "hide_non_star_names": true,
+        "highlight_starred": true,
+        "star_glow": false,
+        "star_style": "Outline",
+        "star_phase": false,
+        "star_color": "#80FFFF55",
+        "highlight_bats": true,
+        "highlight_mimic": true,
+        "highlight_mimic_chest": false,
+        "mimic_chest_color": "#A0D11D05",
+        "highlight_prince": true,
+        "special_glow": false,
+        "special_style": "Outline",
+        "special_phase": true,
+        "special_color": "#8055FF55",
+        "special_tracers": false,
+        "line_width": 2.0,
+        "color_portal": false,
+        "below_s_color": "#A0FF1010",
+        "s_color": "#A0FFD700",
+        "s_plus_color": "#A040FF00"
+      }
+    },
+    "secrets": {
+      "enabled": false,
+      "settings": {
+        "auto_close_chest": false,
+        "extract_items": false,
+        "extract_healing_potion": false,
+        "extract_decoy": false,
+        "extract_inflatable_jerry": false,
+        "extract_spirit_leap": false,
+        "extract_trap": false,
+        "extract_training_weights": false,
+        "extract_defuse_kit": false,
+        "extract_dungeon_chest_key": false,
+        "extract_treasure_talisman": false,
+        "extract_revive_stone": false,
+        "extract_architect_s_first_draft": false,
+        "extract_secret_dye": false,
+        "hitboxes_only_in_dungeons": true,
+        "lever_hitbox": false,
+        "button_hitbox": false,
+        "skull_hitbox": false,
+        "mushroom_hitbox": false,
+        "highlight_clicked": true,
+        "highlight_time": 2000.0,
+        "clicked_style": "Filled outline",
+        "clicked_fill_color": "#5055FF55",
+        "clicked_outline_color": "#FF55FF55",
+        "locked_color": "#66FF5555",
+        "clicked_phase": true,
+        "secret_sound": false,
+        "sound": "Experience Orb",
+        "volume": 1.0,
+        "pitch": 1.0
+      }
+    },
+    "render_optimizer": {
+      "enabled": false,
+      "settings": {
+        "hide_falling_blocks": false,
+        "hide_experience_orbs": false,
+        "hide_lightning": false,
+        "hide_death_animation": false,
+        "hide_dying_armor_stands": false,
+        "hide_zero_health": false,
+        "hide_explosion_particles": false,
+        "hide_archer_passive": false,
+        "hide_healer_fairy": false,
+        "hide_soul_weaver": false,
+        "hide_tentacle_head": false,
+        "hide_fire_on_entities": false,
+        "hide_fire_overlay": false,
+        "fire_overlay_opacity": 100.0
+      }
+    },
+    "hide_players": {
+      "enabled": false,
+      "settings": {
+        "only_in_dungeons": true,
+        "hide_all": false,
+        "distance": 3.0
+      }
+    },
     "terminal_solver": {
       "enabled": false,
       "settings": {
         "term_size": 2.0,
         "slot_gap": 2.0,
-        "show_numbers": true,
-        "resource_pack_font": false,
         "first_click_protection": 500.0,
         "account_for_server_lag": false,
         "lag_protection_ticks": 8.0,
+        "show_numbers": true,
+        "resource_pack_font": false,
         "rubix_left_click": false,
         "melody_click_protection": false,
         "solving": "Manual terms",
         "click_delay": {
-          "lower": 50.0,
+          "lower": 100.0,
           "upper": 150.0
         },
-        "reaction_delay": true,
         "background_color": "#FF1A1A1A",
         "panes_color": "#FF55FF55",
         "rubix_color_1": "#FF55FF55",
@@ -210,11 +352,11 @@
         "melody_column_color": "#FFAA00AA",
         "melody_pointer_color": "#FF55FF55",
         "melody_slot_color": "#FF262626",
+        "show_queue": true,
         "queue_text_color": "#FFFFFFFF"
       }
     },
     "terminal_simulator": {
-      "enabled": false,
       "settings": {
         "ping": 0.0,
         "skip_click_protection": false

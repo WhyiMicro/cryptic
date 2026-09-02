@@ -157,13 +157,48 @@ class RubixHandler : TerminalHandler(TerminalType.RUBIX) {
 		if (stepsFor(slotIndex) >= 3) GLFW.GLFW_MOUSE_BUTTON_RIGHT else GLFW.GLFW_MOUSE_BUTTON_MIDDLE
 
 	/**
+	 * Steps the short way round, which is what a click actually costs here.
+	 */
+	override fun clicksNeededFor(slotIndex: Int): Int {
+		val forward = stepsFor(slotIndex)
+		return if (forward < 3) forward else ORDER.size - forward
+	}
+
+	/**
+	 * A pane that still wants clicks is still worth clicking, whichever way
+	 * round it has become quicker to get there.
+	 */
+	override fun reaim(slotIndex: Int, button: Int): Int? =
+		if (slotIndex in solution) preferredButton(slotIndex) else null
+
+	/**
 	 * A forward click takes one step off; a backward one adds a step, because
 	 * the solution counts forward steps and going back the long way is the
 	 * same as going forward [ORDER].size times.
 	 */
 	override fun predict(slotIndex: Int, button: Int) {
 		if (slotIndex !in solution) return
-		if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) solution.add(slotIndex) else solution.remove(slotIndex)
+
+		if (button != GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+			solution.remove(slotIndex)
+			return
+		}
+
+		solution.add(slotIndex)
+
+		// A whole loop is the same as standing still, so a pane that has gone all
+		// the way round is finished and its entries have to go.
+		//
+		// Leaving them was the long-running rubix fault. The overlay hid it —
+		// it draws `forward - ORDER.size`, which for a full loop is zero, so the
+		// pane went blank and looked done — while everything counting entries
+		// still saw a pane wanting work: [canClick] kept accepting clicks on it,
+		// [reaim] kept queued clicks alive against it, and one more click took it
+		// to six entries, which the overlay then drew as "1". A pane the server
+		// had already finished asking for, asking to be clicked again.
+		if (solution.count { it == slotIndex } >= ORDER.size) {
+			solution.removeAll { it == slotIndex }
+		}
 	}
 
 	private fun stepsFor(slotIndex: Int) = solution.count { it == slotIndex }
@@ -271,12 +306,10 @@ class SelectAllHandler(color: DyeColor) : TerminalHandler(TerminalType.SELECT) {
  * Press the button as the moving pane crosses the marked column.
  *
  * Unlike the other five this has no solution to work towards: it is a moving
- * target, so it re-solves on every slot update and the grid is drawn whole,
- * with a resting colour under the slots that are not lit.
+ * target, so the grid is drawn whole, with a resting colour under the slots that
+ * are not lit. Every board now re-solves, so it no longer has to ask for that.
  */
 class MelodyHandler : TerminalHandler(TerminalType.MELODY) {
-	override fun canSolve(items: List<ItemStack>, changedSlot: Int): Boolean = true
-
 	override fun solve(items: List<ItemStack>): List<Int> {
 		val magenta = items.indexOfFirst { it.item == Items.MAGENTA_STAINED_GLASS_PANE }
 		val lime = items.indexOfLast { it.item == Items.LIME_STAINED_GLASS_PANE }

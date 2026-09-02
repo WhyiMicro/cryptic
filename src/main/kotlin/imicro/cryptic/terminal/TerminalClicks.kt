@@ -51,15 +51,42 @@ object TerminalClicks {
 	 */
 	private const val LOST_CLICK_TIMEOUT_MILLIS = 800L
 
-	private data class PendingClick(val slot: Int, val button: Int)
+	/** How many times one click is worth sending before it is written off. */
+	private const val MAX_SENDS = 3
+
+	private data class PendingClick(val slot: Int, val button: Int, var sends: Int = 0)
 
 	private val pending = ArrayDeque<PendingClick>()
 
+	/**
+	 * True while a click is on the wire that no window has answered yet.
+	 *
+	 * A flag and nothing more, which is what NoammAddons has and is the point.
+	 * Several attempts here kept the sent clicks themselves and guessed the
+	 * board forward over them, so a pane the player had dealt with would not
+	 * flicker back while the answer was in transit. Every one of those attempts
+	 * eventually counted a click twice: a click that has landed and a click
+	 * still travelling look identical from the client, and once the delay was
+	 * low enough for two to be out at once there was no telling which was which.
+	 *
+	 * So the board is guessed forward for exactly what is *queued* — clicks
+	 * certainly not sent — and nothing else. Whatever is on the wire is the
+	 * server's business, and the board it sends back is the answer. All this
+	 * decides is whether a click the player makes goes out at once or gets in
+	 * line behind one already gone.
+	 */
+	private var clickOnWire = false
+
+	/**
+	 * What the board wanted of each slot at the last solve.
+	 *
+	 * The difference between one board and the next is the only honest signal
+	 * that a click arrived, so it has to be remembered rather than inferred.
+	 */
+	private var lastNeeded: Map<Int, Int> = emptyMap()
+
 	/** The earliest the next click may go out, which is what paces all of this. */
 	private var nextClickAt = 0L
-
-	/** Clicks sent that the server has yet to answer with a window. */
-	private var inFlight = 0
 
 	/** When the last click went out, for noticing one that never comes back. */
 	private var lastSentAt = 0L
@@ -84,21 +111,47 @@ object TerminalClicks {
 		if (mode == AUTO) return
 
 		val button = handler.buttonFor(slot, requested)
-		if (!handler.canClick(slot, button)) return
+		if (!handler.canClick(slot, button)) {
+			TerminalDebug.playerClick(handler, slot, button, "refused: not part of the solution")
+			return
+		}
 
 		if (mode == MANUAL) {
-			if (handler.blocksClicks()) return
+			if (handler.blocksClicks()) {
+				TerminalDebug.playerClick(handler, slot, button, "dropped: click protection")
+				TerminalDebug.blocked(handler)
+				return
+			}
+			TerminalDebug.playerClick(handler, slot, button, "sending now")
 			send(handler, slot, button)
 			return
 		}
 
-		pending.addLast(PendingClick(slot, button))
 		// Moved on straight away, so the next click is worked out against where
 		// the terminal is going rather than where it still is.
 		handler.predict(slot, button)
-		// The first click of a terminal has nothing ahead of it and should not
-		// feel delayed, so the queue is given a chance to drain immediately.
+
+		// Every click becomes an intent. Nothing is sent from here: the queue is
+		// the record of what the player has asked for, and [drain] is the only
+		// thing that puts one on the wire, one at a time and never faster than the
+		// delay. Sending straight from here is what let a new click overtake a
+		// queue that had not drained yet.
+		pending.addLast(PendingClick(slot, button))
+		TerminalDebug.playerClick(handler, slot, button, "queued behind ${pending.size - 1}")
 		drain(handler)
+	}
+
+	/**
+	 * Hypixel answering a click by opening the terminal again.
+	 *
+	 * This is what lets go of the click on the wire. A slot update inside the
+	 * window already open cannot do that job: the board it describes can still
+	 * be the one from before the click.
+	 */
+	fun onWindowOpened() {
+		if (!clickOnWire) return
+		clickOnWire = false
+
 	}
 
 	/**
@@ -106,38 +159,103 @@ object TerminalClicks {
 	 * know whether what is queued still makes sense.
 	 */
 	fun onSolved(handler: TerminalHandler) {
-		// One window comes back per click the server got through, so this is
-		// how far ahead of it the player still is.
-		val answeredAClick = inFlight > 0
-		if (answeredAClick) inFlight--
-
-		// With **Reaction delay** on, the gap is counted from here instead of
-		// from the send, which is what puts a reaction time between the server
-		// showing a new board and the next click answering it. Only a window
-		// that answered a click of ours starts one: the window a terminal opens
-		// with was already reacted to, by the click that opened it.
-		if (answeredAClick && TerminalSolver.reactionDelay.value) {
-			nextClickAt = System.currentTimeMillis() + gap()
+		// A board coming back is the server's answer now. Hypixel used to reopen
+		// the whole chest for that and no longer does, so the window that used to
+		// release the click never arrives — and waiting for it left every click
+		// after the first looking like it was still on the wire.
+		if (clickOnWire) {
+			clickOnWire = false
 		}
 
 		if (mode != QUEUE) return
-		val head = pending.firstOrNull() ?: return
 
-		// The fresh solution is the truth. If the queue no longer fits it, the
-		// player and the server have diverged and replaying stale clicks would
-		// only make that worse.
-		if (!handler.canClick(head.slot, head.button)) {
-			pending.clear()
+		settle(handler)
+		drain(handler)
+	}
+
+	/**
+	 * Reconciles what the player has asked for against the board that just came
+	 * back, and paints the difference away.
+	 *
+	 * This is the whole of the mode. A click the player made is an *intent*, and
+	 * an intent outlives the packet that carried it: it is only given up when the
+	 * board itself stops asking for that slot. Until then it stays queued, stays
+	 * hidden from the player, and goes out again when its turn comes round.
+	 *
+	 * That is what makes the terminal answer a hand rather than a connection. A
+	 * click the server dropped used to reappear as an un-clicked pane and had to
+	 * be found and clicked a second time; now the pane stays dealt with on screen
+	 * and the queue quietly sends it again.
+	 *
+	 * The reconciliation is one rule: nobody can have more clicks outstanding on
+	 * a slot than the board still asks for. Whatever the server's own count has
+	 * dropped by is what arrived, and those intents are done with.
+	 */
+	private fun settle(handler: TerminalHandler) {
+		val serverWanted = handler.solution.size
+		if (pending.isEmpty()) {
+			TerminalDebug.boards(handler, serverWanted, 0)
 			return
 		}
-		// Solving threw the predictions away, so they go back on.
+
+		// What the board wants of each slot the player has asked about, read
+		// before any prediction goes back on.
+		val nowNeeded = pending.map { it.slot }.distinct().associateWith(handler::clicksNeededFor)
+
+		// How much of that requirement has fallen away since the last board is
+		// how many of the player's clicks arrived. Anything else is guesswork:
+		// asking only "does this slot still want clicks?" cannot settle an intent
+		// on a slot that wants several, so on rubix a click that had plainly
+		// landed stayed queued and went out again — the terminal sat there being
+		// clicked back and forth on the same pane.
+		val landed = HashMap<Int, Int>()
+		for ((slot, need) in nowNeeded) {
+			val before = lastNeeded[slot] ?: need
+			landed[slot] = (before - need).coerceAtLeast(0)
+		}
+
+		val kept = ArrayList<PendingClick>(pending.size)
+		val takenPerSlot = HashMap<Int, Int>()
+		for (intent in pending) {
+			// Oldest first: the click that landed is the one that was sent.
+			val arrived = landed.getOrDefault(intent.slot, 0)
+			if (arrived > 0) {
+				landed[intent.slot] = arrived - 1
+				continue
+			}
+
+			// And never more outstanding than the board still asks for, which
+			// catches anything the difference alone missed.
+			val wanted = nowNeeded[intent.slot] ?: 0
+			val taken = takenPerSlot.getOrDefault(intent.slot, 0)
+			if (taken >= wanted) continue
+
+			// The board can move under a queued click without finishing its slot
+			// — rubix panes change which way round they are quicker to reach — so
+			// it is re-aimed rather than dropped.
+			val aimed = handler.reaim(intent.slot, intent.button) ?: continue
+
+			// A click the server keeps ignoring is not going to start working.
+			// Giving up hands the pane back to the player, who can see it again
+			// and click it, which is better than a queue quietly clicking forever.
+			if (intent.sends >= MAX_SENDS) {
+				TerminalDebug.note("giving up on slot ${intent.slot} after ${intent.sends} sends")
+				continue
+			}
+
+			kept.add(PendingClick(intent.slot, aimed, intent.sends))
+			takenPerSlot[intent.slot] = taken + 1
+		}
+
+		lastNeeded = handler.solution.distinct().associateWith(handler::clicksNeededFor)
+
+		val satisfied = pending.size - kept.size
+		pending.clear()
+		pending.addAll(kept)
 		pending.forEach { handler.predict(it.slot, it.button) }
 
-		// Straight away rather than on the next tick: the queue is already
-		// paying a round trip per click, and making it wait up to another 50ms
-		// for the tick to come round would be latency for its own sake. The gap
-		// in [drain] still applies, so this cannot answer a window instantly.
-		drain(handler)
+		if (satisfied > 0) TerminalDebug.settled(satisfied, pending.size)
+		TerminalDebug.boards(handler, serverWanted, pending.size)
 	}
 
 	fun tick() {
@@ -153,18 +271,19 @@ object TerminalClicks {
 	/**
 	 * Lets go of a click the server never answered.
 	 *
-	 * Nothing may go out while a click is outstanding, so one that is dropped —
-	 * refused, or answered by a window that never arrives — would otherwise
-	 * wedge the queue shut for the rest of the terminal. What is behind it is
-	 * thrown away rather than sent, because by then nobody knows what the board
-	 * looks like, and the next real window will say. NoammAddons calls the same
-	 * thing its resync timeout.
+	 * A click nothing ever came back for leaves a prediction standing over a
+	 * board that never changed, which is a pane shown as done when it is not.
+	 * Letting go of it puts the board back to what the server actually said.
+	 * NoammAddons calls the same thing its resync timeout.
 	 */
 	private fun giveUpOnLostClick() {
-		if (inFlight == 0) return
+		if (!clickOnWire) return
 		if (System.currentTimeMillis() - lastSentAt < LOST_CLICK_TIMEOUT_MILLIS) return
-		inFlight = 0
-		pending.clear()
+		// Only the wire is given up on, never the queue. An intent the server
+		// silently dropped is exactly the one worth sending again, and the board
+		// is what decides when it has finally landed.
+		clickOnWire = false
+		TerminalDebug.note("no board came back in ${LOST_CLICK_TIMEOUT_MILLIS}ms; re-sending ${pending.size} queued")
 	}
 
 	fun reset() {
@@ -172,7 +291,8 @@ object TerminalClicks {
 		// Zero rather than a delay: the first click of a new terminal waits on
 		// the protection, and should not then wait on this as well.
 		nextClickAt = 0L
-		inFlight = 0
+		clickOnWire = false
+		lastNeeded = emptyMap()
 		draining = false
 		lastSentAt = System.currentTimeMillis()
 		lastMelodySlot = null
@@ -183,39 +303,31 @@ object TerminalClicks {
 	/**
 	 * Lets the next queued click out, if it is time and it is allowed to.
 	 *
-	 * Two conditions, and both have to hold.
-	 *
-	 * **Nothing outstanding.** The server has to have answered the last click
-	 * before the next one goes out, so there is never more than one click on
-	 * the wire. Sending a second against a window the server has already
-	 * replaced is the part of queueing that could not be mistaken for a person,
-	 * and it is also the part that may simply be discarded — a click carries
-	 * the id of the window it was made in, and that window is gone.
-	 *
-	 * **Not faster than a hand.** A window coming back is not licence to answer
-	 * it instantly, so a gap from [TerminalSolver.clickDelay] has to have passed
-	 * as well. Where that gap is counted from is
-	 * [TerminalSolver.reactionDelay]'s to say, and it is the whole difference
-	 * between the two timings:
-	 *
-	 * - On, it runs from the window arriving, so each click is spaced by the
-	 *   round trip *plus* a reaction — which is what a hand produces, and the
-	 *   only setting under which the gap reliably does anything.
-	 * - Off, it runs from the last send, so it overlaps the round trip rather
-	 *   than adding to it. On a slow connection the gap has usually elapsed
-	 *   before the answer even arrives, leaving the round trip alone to space
-	 *   the clicks; on a fast one the gap becomes the floor.
+	 * One condition, and it is the human one: a gap from
+	 * [TerminalSolver.clickDelay] has to have passed since the last click went
+	 * out. There is nothing to react to any more — the board answers in place
+	 * rather than being sent again — so the gap simply spaces the clicks.
 	 */
 	private fun drain(handler: TerminalHandler) {
 		// The simulator answers a click inside the call that sent it, so this
 		// can be re-entered; the queue is left for the next tick instead.
 		if (draining) return
 		val head = pending.firstOrNull() ?: return
-		if (handler.blocksClicks()) return
-		if (inFlight > 0) return
+		if (handler.blocksClicks()) {
+			TerminalDebug.blocked(handler)
+			return
+		}
+		// One on the wire at a time. Released by the next board, or by the resync
+		// timeout when the server never answers — which is when it is sent again.
+		if (clickOnWire) return
 		if (System.currentTimeMillis() < nextClickAt) return
 
-		pending.removeFirst()
+		// Left in the queue on purpose: an intent is only given up when the board
+		// says the slot is done, so a click the server drops is sent again rather
+		// than lost.
+		head.sends++
+		if (head.sends > 1) TerminalDebug.resent(head.slot, head.button, head.sends)
+
 		draining = true
 		try {
 			send(handler, head.slot, head.button)
@@ -265,12 +377,13 @@ object TerminalClicks {
 	 */
 	private fun send(handler: TerminalHandler, slot: Int, button: Int) {
 		lastClickedSlot = slot
-		inFlight++
+		clickOnWire = true
 		lastSentAt = System.currentTimeMillis()
 		// Always set, whatever the toggle says: it is the floor that stops a
 		// click going out before the last one has had time to matter, and with
 		// Reaction delay on the window arriving pushes it further out still.
 		nextClickAt = System.currentTimeMillis() + gap()
+		TerminalDebug.sent(slot, button)
 		handler.click(slot, button)
 	}
 

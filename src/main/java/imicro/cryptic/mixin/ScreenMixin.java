@@ -1,5 +1,6 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.feature.ExperimentSolver;
 import imicro.cryptic.feature.TerminalSolver;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -23,5 +24,15 @@ public abstract class ScreenMixin {
         if (TerminalSolver.renderCustomGui((Screen) (Object) this, graphics, mouseX, mouseY)) {
             info.cancel();
         }
+    }
+
+    /**
+     * The experiment solver paints over the chest rather than in place of it,
+     * so it goes at the tail: the board is what has to be memorised, and
+     * replacing it would take away the thing being solved.
+     */
+    @Inject(method = "extractRenderStateWithTooltipAndSubtitles", at = @At("TAIL"))
+    private void cryptic$drawExperiment(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo info) {
+        ExperimentSolver.render((Screen) (Object) this, graphics);
     }
 }
