@@ -165,10 +165,36 @@ map.
 
 ---
 
+## Watching the Experimentation Table
+
+```
+/cryptic debug experiments
+```
+
+A toggle, and the odd one out: it does not change what Cryptic does, it reports
+what Cryptic sees.
+
+The table is a chest, and a chest is a screen, so chat cannot be typed into at
+any of the moments worth knowing about. Asking after the fact is no good either —
+by then the interesting menu is several menus ago. So this watches instead:
+while it is on, every menu that opens, every round the solver reads, and every
+decision the table runner makes is announced in chat as it happens.
+
+It also writes a slot-by-slot dump of each menu — item id, count, name and lore
+for every filled slot — into `logs/latest.log`. That dump is the point. The rules
+the runner works the table with came from a mod for Minecraft 1.8.9 and none of
+them could be checked against a real table, so one run with this on is enough to
+correct every slot number and every line of lore at once.
+
+Run one experiment with it switched on, then send the log.
+
+---
+
 ## Not a debug switch
 
 ```
 /cryptic                  opens the menu
+/cryptic version          says which build is installed
 /cryptic hud              opens the HUD placement editor
 /cryptic termsim          opens the terminal simulator
 /cryptic config export    copies the active profile to the clipboard

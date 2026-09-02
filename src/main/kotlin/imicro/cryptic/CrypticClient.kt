@@ -3,6 +3,7 @@ package imicro.cryptic
 import com.mojang.blaze3d.platform.InputConstants
 import com.mojang.brigadier.arguments.StringArgumentType
 import net.fabricmc.api.ClientModInitializer
+import net.fabricmc.loader.api.FabricLoader
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
@@ -35,13 +36,23 @@ import imicro.cryptic.feature.DoorKeys
 import imicro.cryptic.feature.DungeonMap
 import imicro.cryptic.feature.DungeonScore
 import imicro.cryptic.feature.HiddenMobs
+import imicro.cryptic.feature.HidePlayers
+import imicro.cryptic.feature.Highlight
+import imicro.cryptic.feature.RenderOptimizer
+import imicro.cryptic.feature.Secrets
 import imicro.cryptic.feature.LeapMessage
 import imicro.cryptic.feature.NoDebuff
 import imicro.cryptic.feature.RoomAlerts
 import imicro.cryptic.feature.TerminalSimulator
 import imicro.cryptic.feature.Etherwarp
+import imicro.cryptic.feature.ExperimentSolver
+import imicro.cryptic.experiment.ExperimentDebug
+import imicro.cryptic.experiment.ExperimentRunner
+import imicro.cryptic.experiment.ExperimentTracker
 import imicro.cryptic.feature.WitherCloakEffect
 import imicro.cryptic.feature.WitherOutline
+import imicro.cryptic.feature.Zoom
+import imicro.cryptic.terminal.TerminalDebug
 import imicro.cryptic.terminal.Terminals
 
 /** Client-only setup: key mappings and screens belong here, not in [Cryptic]. */
@@ -67,6 +78,39 @@ object CrypticClient : ClientModInitializer {
 		),
 	)
 
+	/**
+	 * Unbound out of the box, unlike the menu's key.
+	 *
+	 * A zoom key is held rather than tapped, so it has to be a key the person
+	 * using it already has a spare thumb or finger on, and there is no answer to
+	 * that which is right for everybody. Binding C — the usual choice — would
+	 * also silently take the key from whatever else claimed it.
+	 */
+	val zoomKey = KeyMappingHelper.registerKeyMapping(
+		KeyMapping(
+			"key.${Cryptic.MOD_ID}.zoom",
+			InputConstants.Type.KEYSYM,
+			InputConstants.UNKNOWN.value,
+			keyCategory,
+		),
+	)
+
+	/**
+	 * Unbound out of the box, for the same reason as the zoom key.
+	 *
+	 * Registered as KEYSYM only because something has to be the default for a
+	 * bind that has none. The menu will happily rebind it onto a mouse button,
+	 * which arrives through this same mapping system.
+	 */
+	val autoClickerKey = KeyMappingHelper.registerKeyMapping(
+		KeyMapping(
+			"key.${Cryptic.MOD_ID}.auto_clicker",
+			InputConstants.Type.KEYSYM,
+			InputConstants.UNKNOWN.value,
+			keyCategory,
+		),
+	)
+
 	override fun onInitializeClient() {
 		Hud.initialize()
 		// Elements register before the profile is read, or the placements in it
@@ -84,6 +128,8 @@ object CrypticClient : ClientModInitializer {
 		LeapMessage.initialize()
 		WitherCloakEffect.initialize()
 		CustomNametags.initialize()
+		Highlight.initialize()
+		Secrets.initialize()
 
 		ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
 			dispatcher.register(
@@ -265,6 +311,58 @@ object CrypticClient : ClientModInitializer {
 								DoorKeys.play()
 								1
 							})
+							.then(ClientCommands.literal("experiments").executes { context ->
+								// A switch rather than a question, because the
+								// table is a chest and a chest is a screen: chat
+								// cannot be typed into at any of the moments worth
+								// knowing about, so it has to watch instead of
+								// being asked afterwards.
+								val watching = ExperimentDebug.toggle()
+								if (!watching) {
+									context.source.sendFeedback(
+										Component.literal("Experiment watch off."),
+									)
+									return@executes 1
+								}
+
+								val note = if (!ExperimentSolver.module.enabled) {
+									" Turn the Experiment Solver module on as well."
+								} else {
+									""
+								}
+								context.source.sendFeedback(
+									Component.literal(
+										"Experiment watch on: every menu and every decision is announced here " +
+											"and written to logs/latest.log, slot by slot.$note",
+									),
+								)
+								context.source.sendFeedback(
+									Component.literal(
+										"Now: ${ExperimentTracker.status} — runner ${ExperimentRunner.status}, " +
+											"${ExperimentRunner.renewsUsed} renews used",
+									),
+								)
+								1
+							})
+							.then(ClientCommands.literal("terminals").executes { context ->
+								// Same reason as the experiment watch: a terminal
+								// is a chest, chat cannot be typed into behind one,
+								// and the simulator drives the same solver without
+								// reproducing the fault — so the difference is in
+								// what Hypixel sends, and that has to be recorded.
+								val watching = TerminalDebug.toggle()
+								context.source.sendFeedback(
+									Component.literal(
+										if (watching) {
+											"Terminal watch on: every window, solve and click is announced here and " +
+												"written to logs/latest.log with the board it was working from."
+										} else {
+											"Terminal watch off."
+										},
+									),
+								)
+								1
+							})
 							.then(ClientCommands.literal("scan").executes { context ->
 								// The world scan is invisible when it works and
 								// invisible when it does not, so it can say so.
@@ -331,6 +429,20 @@ object CrypticClient : ClientModInitializer {
 							),
 					)
 					.then(
+						// What is actually installed, which is the first thing
+						// worth knowing when a fix is supposed to have shipped.
+						ClientCommands.literal("version").executes { context ->
+							val mod = FabricLoader.getInstance().getModContainer(Cryptic.MOD_ID).orElse(null)
+							val version = mod?.metadata?.version?.friendlyString ?: "unknown"
+							val minecraft = FabricLoader.getInstance().getModContainer("minecraft")
+								.map { it.metadata.version.friendlyString }.orElse("unknown")
+							context.source.sendFeedback(
+								Component.literal("Cryptic $version for Minecraft $minecraft"),
+							)
+							1
+						},
+					)
+					.then(
 						ClientCommands.literal("hud").executes {
 							// Same deferral as the menu: the chat screen is still
 							// closing while this runs.
@@ -381,6 +493,7 @@ object CrypticClient : ClientModInitializer {
 
 		ClientTickEvents.END_CLIENT_TICK.register { client ->
 			AutoSprint.tick(client)
+			Zoom.tick(client)
 			// One tab-list scan feeds every module that needs to know the party.
 			DungeonTeam.tick(
 				client,
@@ -392,7 +505,9 @@ object CrypticClient : ClientModInitializer {
 				WitherOutline.module.enabled || DungeonMap.module.enabled ||
 					DungeonScore.module.enabled || DoorHighlight.module.enabled ||
 					RoomAlerts.module.enabled || BreakerHelper.module.enabled ||
-					HiddenMobs.module.enabled,
+					HiddenMobs.module.enabled || Highlight.module.enabled ||
+					Secrets.module.enabled || RenderOptimizer.module.enabled ||
+					HidePlayers.module.enabled,
 			)
 			// The score's ingredients are read once and shared, map included.
 			DungeonStats.tick(client, DungeonMap.module.enabled || DungeonScore.module.enabled)
@@ -405,6 +520,9 @@ object CrypticClient : ClientModInitializer {
 			DungeonBoss.tick(client, WitherOutline.needsBossTracking)
 			// Escape closes a terminal without the server saying so.
 			Terminals.tick(client)
+			ExperimentSolver.tick(client)
+			Highlight.tick(client)
+			Secrets.tick()
 			WitherCloakEffect.tick(client)
 
 			while (openGuiKey.consumeClick()) {

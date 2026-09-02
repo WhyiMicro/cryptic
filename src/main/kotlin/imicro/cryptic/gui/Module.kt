@@ -432,6 +432,10 @@ object ModuleRegistry {
 
 	val modules = listOf(
 		autoSprint,
+		imicro.cryptic.feature.Zoom.module,
+		imicro.cryptic.feature.NoJumpDelay.module,
+		imicro.cryptic.feature.AutoClicker.module,
+		imicro.cryptic.feature.ExperimentSolver.module,
 		imicro.cryptic.feature.ClassColors.module,
 		imicro.cryptic.feature.DungeonMap.module,
 		imicro.cryptic.feature.DungeonScore.module,
@@ -444,6 +448,10 @@ object ModuleRegistry {
 		imicro.cryptic.feature.LeapMessage.module,
 		imicro.cryptic.feature.Etherwarp.module,
 		imicro.cryptic.feature.WitherOutline.module,
+		imicro.cryptic.feature.Highlight.module,
+		imicro.cryptic.feature.Secrets.module,
+		imicro.cryptic.feature.RenderOptimizer.module,
+		imicro.cryptic.feature.HidePlayers.module,
 		imicro.cryptic.feature.TerminalSolver.module,
 		imicro.cryptic.feature.TerminalSimulator.module,
 		imicro.cryptic.feature.Animations.module,

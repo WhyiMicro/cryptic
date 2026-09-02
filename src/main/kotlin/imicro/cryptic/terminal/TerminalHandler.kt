@@ -33,6 +33,19 @@ abstract class TerminalHandler(val type: TerminalType) {
 	var clicked = false
 
 	/**
+	 * True once anything has been clicked in this terminal at all.
+	 *
+	 * Separate from [clicked] because that one is cleared by any re-solve, and
+	 * the question this answers — has the player started playing? — must not
+	 * have a different answer depending on which packet arrived last. Deciding
+	 * to restart a terminal off [clicked] meant a slot update landing between a
+	 * click and the window answering it threw the whole terminal away, queue
+	 * included, which is one more way an already-clicked pane came back.
+	 */
+	var everClicked = false
+		private set
+
+	/**
 	 * How many times Hypixel has re-sent this terminal's window.
 	 *
 	 * Every click is answered with a fresh window rather than a slot update, so
@@ -46,28 +59,22 @@ abstract class TerminalHandler(val type: TerminalType) {
 	var serverTicksOpen = -1
 
 	/**
-	 * Whether a solve is worth running for a change to [changedSlot].
+	 * Re-reads the board and rebuilds the solution from it.
 	 *
-	 * Hypixel fills a window one slot at a time, so solving on every packet
-	 * would solve a dozen half-built grids. Waiting for the last slot means
-	 * solving once, on a window that is complete.
+	 * Called once a tick for whatever changed, rather than per packet: the
+	 * coalescing lives in [Terminals] so that a window arriving a slot at a time
+	 * and a single slot changing in place both end up here exactly once.
 	 */
-	open fun canSolve(items: List<ItemStack>, changedSlot: Int): Boolean =
-		changedSlot == type.windowSize - 1
-
-	/** True when the last update actually re-solved, so clicks can be released. */
-	fun slotUpdated(changedSlot: Int, items: List<ItemStack>): Boolean {
-		if (changedSlot !in 0 until type.windowSize) return false
+	fun resolve(items: List<ItemStack>): Boolean {
+		if (items.size < type.windowSize) return false
 		val window = items.subList(0, min(items.size, type.windowSize))
-		if (!canSolve(window, changedSlot)) return false
 
 		val solved = solve(window)
 		solution.clear()
 		solution.addAll(solved)
-		// The board that came back is the server's answer to whatever was
-		// clicked last, so the next click is free to go. Hypixel also opens a
-		// fresh window each time, which says the same thing — but not relying
-		// on that means one missing packet cannot wedge the queue shut.
+		// Nothing has been clicked in the board that just came back. What is
+		// still on the wire is not tracked here but in [TerminalClicks], which
+		// only lets go of a click when Hypixel opens the window again.
 		clicked = false
 		return true
 	}
@@ -99,6 +106,35 @@ abstract class TerminalHandler(val type: TerminalType) {
 
 	/** Whether clicking [slotIndex] with [button] would be a correct move. */
 	open fun canClick(slotIndex: Int, button: Int): Boolean = slotIndex in solution
+
+	/**
+	 * How many clicks the board still wants on [slotIndex].
+	 *
+	 * This is what says whether a click the player made has landed yet. Nobody
+	 * can have more clicks outstanding on a slot than the board still asks for,
+	 * so once the server's own count drops, the difference is what arrived.
+	 *
+	 * Rubix counts differently — its solution holds one entry per forward step,
+	 * and a pane four steps from the target is one click away, not four — so it
+	 * says so itself.
+	 */
+	open fun clicksNeededFor(slotIndex: Int): Int = solution.count { it == slotIndex }
+
+	/**
+	 * A queued click, re-aimed at the board that has just arrived, or null when
+	 * it is no longer worth sending.
+	 *
+	 * Queued clicks are made against a board a moment old, and the one that
+	 * comes back can have moved under them. For most of the six that means the
+	 * click is simply stale. Rubix is the exception again: the direction a pane
+	 * wants is worked out from how many steps it still needs, so a pane that was
+	 * quicker to reach backwards can become quicker forwards while a click for
+	 * it is still queued. Dropping that click — and, as the queue is dropped
+	 * whole, every click behind it — is what left panes un-clicked that the
+	 * player had already dealt with, so they had to go round again.
+	 */
+	open fun reaim(slotIndex: Int, button: Int): Int? =
+		if (canClick(slotIndex, button)) button else null
 
 	/**
 	 * The button a click on [slotIndex] should actually be sent with, given the
@@ -141,6 +177,7 @@ abstract class TerminalHandler(val type: TerminalType) {
 		val client = Minecraft.getInstance()
 		val screen = client.screen as? AbstractContainerScreen<*> ?: return
 		clicked = true
+		everClicked = true
 
 		if (screen is TermSimScreen) {
 			screen.clickIndex(slotIndex, button)

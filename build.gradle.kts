@@ -94,3 +94,15 @@ publishing {
 		// retrieving dependencies.
 	}
 }
+
+// The experiment solver's rules are pure arithmetic over `ExperimentCell`, with
+// no Minecraft in them, so they can be checked without launching the game —
+// which for rules read off another mod rather than off a live table is the only
+// verification available.
+dependencies {
+	testImplementation(kotlin("test"))
+}
+
+tasks.test {
+	useJUnitPlatform()
+}

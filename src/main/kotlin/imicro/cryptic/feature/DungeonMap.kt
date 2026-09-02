@@ -664,7 +664,11 @@ object DungeonMap {
 			) {
 				return null
 			}
-			return if (total == 0) "0" else "${room.foundSecrets}/$total"
+			// A room with no secrets has no count worth writing. Its name going
+			// from grey to green already says everything there is to say about
+			// it, and a mini boss room never had secrets to begin with.
+			if (total == 0 || room.type == DungeonRoom.Type.CHAMPION) return null
+			return "${room.foundSecrets}/$total"
 		}
 
 		/**

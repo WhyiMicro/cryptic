@@ -215,10 +215,18 @@ object DoorKeys {
 		ClientReceiveMessageEvents.GAME.register { message, _ -> onMessage(message.string) }
 	}
 
-	/** True while there is any reason to be looking for keys. */
+	/**
+	 * True while there is any reason to be looking for keys.
+	 *
+	 * The armour-stand override widens what *counts* as a key; it does not widen
+	 * where to look for one. Letting it do both is what put tracers on every
+	 * minion on the private island and on every damage number an ability threw
+	 * up — both are armour stands, and outside a dungeon there was nothing left
+	 * to rule them out. To try it somewhere there is no dungeon, pair it with
+	 * `/cryptic debug floor`, which is what that override is for.
+	 */
 	private val active: Boolean
-		get() = module.enabled &&
-			(DebugOverrides.highlightEveryArmorStand || (DungeonLocation.inDungeon && !DungeonRun.inBoss))
+		get() = module.enabled && DungeonLocation.inDungeon && !DungeonRun.inBoss
 
 	fun tick(client: Minecraft) {
 		if (!active) {

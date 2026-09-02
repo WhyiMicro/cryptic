@@ -319,11 +319,32 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 		if (type == Type.FAIRY) return if (fairyPassed) 0xFF55FF55.toInt() else 0xFFA0A0A0.toInt()
 		if (type == Type.PUZZLE) return if (state == State.GREEN) 0xFF55FF55.toInt() else 0xFFA0A0A0.toInt()
 
-		return when (state) {
-			State.GREEN -> 0xFF55FF55.toInt()
-			State.CLEARED -> 0xFFFFFFFF.toInt()
-			State.DISCOVERED -> 0xFFA0A0A0.toInt()
-			else -> 0xFFFFFFFF.toInt()
+		// A mini boss room holds no secrets, and neither do a handful of the
+		// ordinary ones. Clearing them *is* finishing them, so they skip the
+		// white the two-step rooms pass through and go straight to green.
+		if (type == Type.CHAMPION || (data?.secrets ?: 0) == 0) {
+			return if (state == State.CLEARED || state == State.GREEN) {
+				0xFF55FF55.toInt()
+			} else {
+				0xFFA0A0A0.toInt()
+			}
+		}
+
+		// A room is two jobs, and Hypixel's own colour only reports one of them:
+		// its map stays grey until the mobs are dead, however many secrets have
+		// been found. Counting the secrets as well is what lets a room that is
+		// half finished say so.
+		val clearDone = state == State.CLEARED || state == State.GREEN
+		val total = data?.secrets ?: 0
+		// A room whose name is not known yet reports no secrets, and "none found
+		// out of none" would otherwise read as finished.
+		val secretsDone = total > 0 && foundSecrets >= total
+
+		return when {
+			state == State.GREEN || (clearDone && secretsDone) -> 0xFF55FF55.toInt()
+			clearDone || secretsDone -> 0xFFFFFFFF.toInt()
+			state == State.DISCOVERED -> 0xFFA0A0A0.toInt()
+			else -> 0xFFA0A0A0.toInt()
 		}
 	}
 
