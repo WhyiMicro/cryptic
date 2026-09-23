@@ -1,6 +1,6 @@
 package imicro.cryptic.mixin;
 
-import imicro.cryptic.feature.Fullbright;
+import imicro.cryptic.feature.CameraTweaks;
 import net.minecraft.client.renderer.LightmapRenderStateExtractor;
 import net.minecraft.client.renderer.state.LightmapRenderState;
 import org.spongepowered.asm.mixin.Mixin;
@@ -13,10 +13,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class LightmapRenderStateExtractorMixin {
     @Inject(method = "extract", at = @At("TAIL"))
     private void cryptic$applyFullbright(LightmapRenderState state, float partialTick, CallbackInfo ci) {
-        if (!Fullbright.module.getEnabled()) {
-            if (Fullbright.lightmapApplied) {
+        if (!CameraTweaks.isFullbright()) {
+            if (CameraTweaks.lightmapApplied) {
                 // One last update hands the lightmap back to vanilla's values.
-                Fullbright.lightmapApplied = false;
+                CameraTweaks.lightmapApplied = false;
                 state.needsUpdate = true;
             }
             return;
@@ -25,8 +25,8 @@ public abstract class LightmapRenderStateExtractorMixin {
         // Cryptic's lightmap is constant, so it only has to be uploaded again
         // when the module turns on or when vanilla already wants an update.
         // Forcing it every frame rebuilt and re-uploaded the texture for nothing.
-        if (!Fullbright.lightmapApplied) {
-            Fullbright.lightmapApplied = true;
+        if (!CameraTweaks.lightmapApplied) {
+            CameraTweaks.lightmapApplied = true;
             state.needsUpdate = true;
         }
         state.brightness = 1.0f;

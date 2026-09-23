@@ -58,7 +58,7 @@ object BetterGlow {
 	val module = Module(
 		id = "better_glow",
 		name = "Better Glow",
-		description = "Cleans up the outline the game draws around glowing entities",
+		description = "Tidies up glow outlines",
 		category = ModuleCategory.VISUAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,

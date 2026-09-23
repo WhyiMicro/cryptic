@@ -1,6 +1,7 @@
 package imicro.cryptic.dungeon
 
 import imicro.cryptic.dungeon.map.DungeonFloor
+import imicro.cryptic.feature.DungeonScore
 import imicro.cryptic.dungeon.map.DungeonRoom
 import net.minecraft.client.Minecraft
 import net.minecraft.world.scores.DisplaySlot
@@ -48,6 +49,20 @@ object DungeonStats {
 		private set
 	var princeKilled = false
 		private set
+
+	/**
+	 * The mimic dying, as seen rather than as announced.
+	 *
+	 * The chat lines below only fire when somebody else's mod says so in party
+	 * chat, so a party where nobody runs one left this permanently false and the
+	 * score two points short all run. The death animation is the only signal
+	 * Hypixel gives for it, and it comes to everybody.
+	 */
+	fun onMimicKilled() {
+		if (mimicKilled || !DungeonLocation.inDungeon) return
+		mimicKilled = true
+		DungeonScore.onMimicKilled()
+	}
 
 	/** Who has killed a bat; Hypixel gives one bonus point each, up to five. */
 	private val bats = mutableSetOf<String>()
@@ -136,12 +151,16 @@ object DungeonStats {
 		if (!DungeonLocation.inDungeon) return
 
 		if (princePattern.matches(line)) {
+			val first = !princeKilled
 			princeKilled = true
+			if (first) DungeonScore.onPrinceKilled()
 			return
 		}
 
 		if (batPattern.matches(line)) {
 			bats.add(Minecraft.getInstance().player?.name?.string ?: return)
+			// Hypixel tells only the killer, so the party hears it from here.
+			DungeonScore.onBatKilled()
 			return
 		}
 

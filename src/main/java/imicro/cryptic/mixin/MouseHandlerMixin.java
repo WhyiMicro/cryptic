@@ -1,5 +1,6 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.feature.ScrollableTooltips;
 import imicro.cryptic.feature.Zoom;
 import net.minecraft.client.MouseHandler;
 import org.spongepowered.asm.mixin.Mixin;
@@ -18,6 +19,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MouseHandlerMixin {
     @Inject(method = "onScroll", at = @At("HEAD"), cancellable = true)
     private void cryptic$zoomScroll(long handle, double xoffset, double yoffset, CallbackInfo ci) {
-        if (Zoom.onScroll(yoffset)) ci.cancel();
+        if (Zoom.onScroll(yoffset)) {
+            ci.cancel();
+            return;
+        }
+        // A tooltip taller than the screen takes the wheel before the screen
+        // under it does, because moving it is what the turn meant.
+        if (ScrollableTooltips.onScroll(xoffset, yoffset)) ci.cancel();
     }
 }

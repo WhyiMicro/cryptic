@@ -2,7 +2,7 @@ package imicro.cryptic.render
 
 import com.mojang.blaze3d.pipeline.RenderPipeline
 import com.mojang.blaze3d.vertex.DefaultVertexFormat
-import com.mojang.blaze3d.vertex.VertexFormat
+import com.mojang.blaze3d.PrimitiveTopology
 import imicro.cryptic.Cryptic
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.renderer.rendertype.RenderSetup
@@ -21,14 +21,16 @@ object CrypticRenderPipelines {
 	val FILLED: RenderPipeline = RenderPipelines.register(
 		RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET).apply {
 			withLocation(Cryptic.id("pipeline/filled"))
-			withVertexFormat(DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.TRIANGLES)
+			withVertexBinding(0, DefaultVertexFormat.POSITION_COLOR)
+			withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
 		}.build(),
 	)
 
 	val FILLED_THROUGH_WALLS: RenderPipeline = RenderPipelines.register(
 		RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET).apply {
 			withLocation(Cryptic.id("pipeline/filled_through_walls"))
-			withVertexFormat(DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.TRIANGLES)
+			withVertexBinding(0, DefaultVertexFormat.POSITION_COLOR)
+			withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
 			withDepthStencilState(Optional.empty())
 		}.build(),
 	)

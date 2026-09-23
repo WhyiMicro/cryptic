@@ -37,7 +37,7 @@ object LeapMessage {
 	val module = Module(
 		id = "leap_message",
 		name = "Leap Message",
-		description = "Sends a party message when you leap to a teammate",
+		description = "Says who you leaped to",
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
@@ -96,7 +96,7 @@ object LeapMessage {
 	}
 
 	private fun preview(command: String) {
-		Minecraft.getInstance().gui.chat.addClientSystemMessage(
+		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
 			Component.literal("Leap Message would send: /$command"),
 		)
 	}

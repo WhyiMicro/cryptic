@@ -79,8 +79,7 @@ object DoorHighlight {
 		id = "show_fairy",
 		label = "Fairy room",
 		defaultValue = true,
-		description = "Marks the way in to the fairy room, and from the room next to it " +
-			"shows its wither door too, so you can see whether the key is already in hand.",
+		description = "Marks the fairy room, and its wither door from next door.",
 	)
 
 	private val colorsSection = SectionModuleSetting("colors_section", "Colours")
@@ -180,7 +179,7 @@ object DoorHighlight {
 	@JvmField
 	val fillThroughWalls = ToggleModuleSetting(
 		id = "fill_through_walls",
-		label = "Fill through walls",
+		label = "Fill phase",
 		defaultValue = false,
 		description = "The outline always shows through walls; this decides whether the fill does too.",
 	)
@@ -218,7 +217,7 @@ object DoorHighlight {
 	val module = Module(
 		id = "door_highlight",
 		name = "Door Highlight",
-		description = "Boxes the doors worth going through, and the ones you can open",
+		description = "Boxes the doors worth going through",
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
@@ -251,7 +250,7 @@ object DoorHighlight {
 		initialized = true
 
 		CrypticRenderPipelines.touch()
-		LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(::render)
+		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientReceiveMessageEvents.GAME.register { message, overlay ->
 			if (!overlay) onMessage(message.string)
 		}
@@ -399,7 +398,7 @@ object DoorHighlight {
 		if (outline.alpha > 0) {
 			WorldRender.drawBox(
 				poseStack = context.poseStack(),
-				consumers = context.bufferSource(),
+				collector = context.submitNodeCollector(),
 				minX = minX,
 				minY = DOOR_BOTTOM,
 				minZ = minZ,
@@ -418,7 +417,7 @@ object DoorHighlight {
 		if (fill.alpha > 0) {
 			WorldRender.drawBox(
 				poseStack = context.poseStack(),
-				consumers = context.bufferSource(),
+				collector = context.submitNodeCollector(),
 				minX = minX,
 				minY = DOOR_BOTTOM,
 				minZ = minZ,

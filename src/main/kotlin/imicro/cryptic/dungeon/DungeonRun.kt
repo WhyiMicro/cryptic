@@ -40,6 +40,20 @@ object DungeonRun {
 	var ended = false
 		private set
 
+	/**
+	 * Whether a baby zombie dying right now could be the mimic.
+	 *
+	 * Odin's three conditions, and Cryptic had none of them: only floors 6 and
+	 * 7 hold a mimic, only the clearing half of the run does, and only once.
+	 * Without them any baby zombie dying anywhere counted — which is how a
+	 * Berserk's ability ending in the boss room announced a mimic kill, since
+	 * Hypixel builds that effect out of a real entity that dies when it stops.
+	 */
+	fun mimicCouldDieNow(): Boolean =
+		DungeonLocation.inDungeon &&
+			!inBoss &&
+			(DungeonLocation.floor == 6 || DungeonLocation.floor == 7)
+
 	private var initialized = false
 
 	fun initialize() {

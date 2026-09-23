@@ -21,14 +21,19 @@ object ClassNames {
 	/** Blade Addons draws the class letter yellow whatever the class color is. */
 	private const val LETTER_COLOR = 0xFFFF55
 
+	/** The index of "Left" in [ClassColors.letterSide]. */
+	private const val LETTER_LEFT = 1
+
 	private var initialized = false
 
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		// Drawn after entity features rather than after terrain, so a label is
-		// never hidden by the teammate it belongs to.
-		LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES.register(::renderNames)
+		// Submitted with everything else the frame draws; "through walls" is
+		// what keeps a label from being hidden by the teammate it belongs to,
+		// and that is the text's own display mode rather than a question of
+		// when it is handed over.
+		LevelRenderEvents.COLLECT_SUBMITS.register(::renderNames)
 	}
 
 	/** True while this module owns a given player's name tag. */
@@ -55,19 +60,23 @@ object ClassNames {
 			if (player === self) continue
 			val dungeonClass = DungeonTeam.classOf(player.name.string) ?: continue
 
-			val label = Component.literal(player.name.string)
+			val name = Component.literal(player.name.string)
 				.withColor(ClassColors.getClassColor(dungeonClass))
-			val text = if (ClassColors.showLetter.value) {
-				label.append(Component.literal(" [${dungeonClass.initial}]").withColor(LETTER_COLOR))
-			} else {
-				label
+			val text = when {
+				!ClassColors.showLetter.value -> name
+				// Built from whichever piece comes first, because a component
+				// is appended to rather than prepended to.
+				ClassColors.letterSide.selectedIndex == LETTER_LEFT ->
+					Component.literal("[${dungeonClass.initial}] ").withColor(LETTER_COLOR).append(name)
+				else ->
+					name.append(Component.literal(" [${dungeonClass.initial}]").withColor(LETTER_COLOR))
 			}
 
 			// The entity's own interpolated position, so the label does not lag
 			// behind a moving teammate by a frame.
 			WorldRender.drawText(
 				poseStack = context.poseStack(),
-				consumers = context.bufferSource(),
+				collector = context.submitNodeCollector(),
 				orientation = orientation,
 				text = text,
 				x = Mth.lerp(partialTick, player.xo, player.x),

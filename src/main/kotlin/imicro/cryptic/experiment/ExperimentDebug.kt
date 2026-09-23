@@ -52,7 +52,7 @@ object ExperimentDebug {
 		if (!enabled || text == lastNote) return
 		lastNote = text
 		Cryptic.LOGGER.info("[experiments] $text")
-		Minecraft.getInstance().gui.chat.addClientSystemMessage(
+		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
 			Component.literal("§8[Cryptic] §7$text"),
 		)
 	}

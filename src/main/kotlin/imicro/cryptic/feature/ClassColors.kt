@@ -2,6 +2,7 @@ package imicro.cryptic.feature
 
 import imicro.cryptic.dungeon.DungeonTeam
 import imicro.cryptic.dungeon.DungeonTeam.DungeonClass
+import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.Module
@@ -73,9 +74,19 @@ object ClassColors {
 	)
 
 	@JvmField
+	val letterSide = DropdownModuleSetting(
+		id = "letter_side",
+		label = "Letter side",
+		options = listOf("Right", "Left"),
+		defaultIndex = 0,
+		description = "Which side of the name the class letter sits on.",
+		visibleIf = { showNames.value && showLetter.value },
+	)
+
+	@JvmField
 	val namesThroughWalls = ToggleModuleSetting(
 		id = "through_walls",
-		label = "Through walls",
+		label = "Phase",
 		defaultValue = true,
 		visibleIf = { showNames.value },
 	)
@@ -112,6 +123,7 @@ object ClassColors {
 		unknownColor,
 		showNames,
 		showLetter,
+		letterSide,
 		namesThroughWalls,
 		nameScale,
 		nameHeight,
@@ -123,6 +135,7 @@ object ClassColors {
 				is ToggleModuleSetting -> it.reset()
 				is SliderModuleSetting -> it.reset()
 				is ColorModuleSetting -> it.reset()
+				is DropdownModuleSetting -> it.reset()
 				else -> Unit
 			}
 		}
@@ -132,7 +145,7 @@ object ClassColors {
 	val module = Module(
 		id = "class_colors",
 		name = "Class Colors",
-		description = "Colors dungeon teammates and labels them with their class",
+		description = "Colours teammates by class",
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,

@@ -6,20 +6,28 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 
-/** Lets Cryptic restyle every name tag the game draws over an entity. */
+/**
+ * Lets Cryptic restyle every name tag the game draws over an entity.
+ *
+ * Since 26.2 a name tag is laid out once in {@code prepareText} and drawn from
+ * the result, rather than drawn directly — so the shadow and the background are
+ * decided where the text is prepared. That method is static, which is why these
+ * handlers are too.
+ */
 @Mixin(NameTagFeatureRenderer.class)
 public abstract class NameTagFeatureRendererMixin {
-    private static final String DRAW_IN_BATCH =
-        "Lnet/minecraft/client/gui/Font;drawInBatch(Lnet/minecraft/network/chat/Component;FFIZLorg/joml/Matrix4fc;"
-            + "Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/gui/Font$DisplayMode;II)V";
+    private static final String FONT_PREPARE_TEXT =
+        "Lnet/minecraft/client/gui/Font;prepareText(Lnet/minecraft/util/FormattedCharSequence;FFIZZI)"
+            + "Lnet/minecraft/client/gui/Font$PreparedText;";
 
-    @ModifyArg(method = "renderTranslucent", at = @At(value = "INVOKE", target = DRAW_IN_BATCH), index = 4)
-    private boolean cryptic$nameTagShadow(boolean dropShadow) {
+    /** text, x, y, colour, <b>drawShadow</b>, includeEmpty, background. */
+    @ModifyArg(method = "prepareText", at = @At(value = "INVOKE", target = FONT_PREPARE_TEXT), index = 4)
+    private static boolean cryptic$nameTagShadow(boolean dropShadow) {
         return CustomNametags.dropShadow(dropShadow);
     }
 
-    @ModifyArg(method = "renderTranslucent", at = @At(value = "INVOKE", target = DRAW_IN_BATCH), index = 8)
-    private int cryptic$nameTagBackground(int backgroundColor) {
+    @ModifyArg(method = "prepareText", at = @At(value = "INVOKE", target = FONT_PREPARE_TEXT), index = 6)
+    private static int cryptic$nameTagBackground(int backgroundColor) {
         return CustomNametags.backgroundColor(backgroundColor);
     }
 }

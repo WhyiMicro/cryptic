@@ -28,6 +28,18 @@ enum class TerminalType(
 	SELECT("Select all the ? items!", Regex("^Select all the ([\\w ]+) items!$"), 54, 4, 7, 1, 1),
 	MELODY("Click the button on time!", Regex("^Click the button on time!$"), 54, 5, 7, 0, 1);
 
+	/**
+	 * Every slot the puzzle itself occupies, which is the block the custom GUI
+	 * draws and the only part of the chest a click can reach.
+	 */
+	val slots: Set<Int> = buildSet {
+		for (row in 0 until rows) {
+			for (column in 0 until columns) {
+				add((firstRow + row) * 9 + (firstColumn + column))
+			}
+		}
+	}
+
 	companion object {
 		/**
 		 * A solver for the chest called [title], or null when it is not a

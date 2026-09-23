@@ -1,10 +1,13 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.duck.EntityRenderStateHolder;
 import imicro.cryptic.feature.BetterGlow;
 import imicro.cryptic.feature.ClassNames;
 import imicro.cryptic.feature.CustomNametags;
+import imicro.cryptic.feature.CustomScale;
 import imicro.cryptic.feature.HiddenMobs;
 import imicro.cryptic.feature.HidePlayers;
+import imicro.cryptic.feature.CarryManager;
 import imicro.cryptic.feature.Highlight;
 import imicro.cryptic.feature.RenderOptimizer;
 import imicro.cryptic.feature.WitherOutline;
@@ -38,10 +41,18 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
         }
     }
 
-    /** Un-hides the dungeon mobs Hypixel spawns invisible, as they are drawn. */
+    /**
+     * Un-hides the dungeon mobs Hypixel spawns invisible, as they are drawn,
+     * and notes which entity this state was built from.
+     *
+     * The note is what lets a feature posing a model know whose model it is: a
+     * render state is a flat copy with no way back to its entity, and the
+     * model-setup call it ends up in is given nothing else.
+     */
     @Inject(method = "extractRenderState", at = @At("HEAD"))
     private void cryptic$revealHiddenMobs(T entity, S state, float partialTick, CallbackInfo info) {
         HiddenMobs.reveal(entity);
+        ((EntityRenderStateHolder) state).cryptic$setEntity(entity);
     }
 
     /** Drops the vanilla name tag for players whose label Cryptic draws itself. */
@@ -72,6 +83,28 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
     }
 
     /**
+     * Moves the two things pinned to a resized model with it.
+     *
+     * The name tag hangs at a height worked out from the real model and the
+     * shadow is cast at the real model's width, so neither follows a scale
+     * applied to the model alone — a shrunk player wears their name a body
+     * length above their head until this runs. Both are opt-in, because a name
+     * that keeps its own size is often the point of shrinking somebody.
+     */
+    @Inject(method = "extractRenderState", at = @At("TAIL"))
+    private void cryptic$scaleAttachments(T entity, S state, float partialTick, CallbackInfo info) {
+        if (!CustomScale.appliesTo(entity)) return;
+
+        float scale = CustomScale.factor();
+        if (CustomScale.scalesNametags() && state.nameTagAttachment != null) {
+            state.nameTagAttachment = state.nameTagAttachment.scale(scale);
+        }
+        if (CustomScale.scalesShadow()) {
+            state.shadowRadius *= scale;
+        }
+    }
+
+    /**
      * Outlines the entities Cryptic wants outlined.
      *
      * Vanilla has just filled this in from the entity's team color, and only
@@ -87,6 +120,9 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
         int outlineColor = WitherOutline.outlineColorFor(entity);
         if (outlineColor == EntityRenderState.NO_OUTLINE) {
             outlineColor = Highlight.outlineColorFor(entity);
+        }
+        if (outlineColor == EntityRenderState.NO_OUTLINE) {
+            outlineColor = CarryManager.outlineColorFor(entity);
         }
         if (outlineColor != EntityRenderState.NO_OUTLINE) {
             state.outlineColor = outlineColor;

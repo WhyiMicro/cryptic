@@ -35,116 +35,30 @@ object RoomAlerts {
 
 	/** What Hypixel says for the two bonus kills that announce themselves. */
 	private val princePattern = Regex("""^A Prince falls\. \+1 Bonus Score$""")
-	private val batPattern = Regex("""^A Bat has been slain\. \+1 Bonus Score$""")
 
-	/** All five bats is the point at which there are no more to find. */
-	private const val BATS_PER_RUN = 5
+	/**
+	 * The three titles that report on the room you are standing in.
+	 *
+	 * One heading rather than three, because they are three answers to the same
+	 * question — is there anything left to do here — and reading them together is
+	 * how you pick which of them you want.
+	 */
+	private val titlesSection = SectionModuleSetting("room_titles_section", "Titles")
 
-	private val clearedSection = SectionModuleSetting("cleared_section", "Cleared")
+	private val announcementsSection = SectionModuleSetting("messages_section", "Announcements")
 
 	@JvmField
 	val alertCleared = ToggleModuleSetting(
 		id = "alert_cleared",
-		label = "Announce cleared",
+		label = "Cleared title",
 		defaultValue = true,
 	)
-
-	@JvmField
-	val clearedTitle = TextModuleSetting(
-		id = "cleared_title",
-		label = "Title",
-		defaultValue = "Cleared",
-		maxLength = 64,
-		visibleIf = { alertCleared.value },
-	)
-
-	private val secretsSection = SectionModuleSetting("secrets_section", "Secrets")
 
 	@JvmField
 	val alertSecrets = ToggleModuleSetting(
 		id = "alert_secrets",
-		label = "Announce secrets done",
+		label = "Secrets done title",
 		defaultValue = true,
-	)
-
-	@JvmField
-	val secretsTitle = TextModuleSetting(
-		id = "secrets_title",
-		label = "Title",
-		defaultValue = "Secrets Done!",
-		maxLength = 64,
-		visibleIf = { alertSecrets.value },
-	)
-
-	private val completeSection = SectionModuleSetting("complete_section", "Room complete")
-
-	@JvmField
-	val roomComplete = ToggleModuleSetting(
-		id = "room_complete",
-		label = "Announce room complete",
-		description = "Says the room is done instead of naming the secrets, when the checkmark turns green.",
-	)
-
-	@JvmField
-	val completeTitle = TextModuleSetting(
-		id = "complete_title",
-		label = "Title",
-		defaultValue = "Room Complete!",
-		maxLength = 64,
-		visibleIf = { roomComplete.value },
-	)
-
-	private val killsSection = SectionModuleSetting("kills_section", "Kills")
-
-	@JvmField
-	val alertPrince = ToggleModuleSetting(
-		id = "alert_prince",
-		label = "Announce prince",
-		defaultValue = true,
-		description = "A prince is a bonus point, and the only sign of one dying is a line of chat.",
-	)
-
-	@JvmField
-	val princeTitle = TextModuleSetting(
-		id = "prince_title",
-		label = "Message",
-		defaultValue = "Prince Killed!",
-		maxLength = 64,
-		visibleIf = { alertPrince.value },
-	)
-
-	@JvmField
-	val alertMimic = ToggleModuleSetting(
-		id = "alert_mimic",
-		label = "Announce mimic",
-		defaultValue = true,
-		description = "The mimic says nothing at all when it dies, so this is the only announcement there is.",
-	)
-
-	@JvmField
-	val mimicTitle = TextModuleSetting(
-		id = "mimic_title",
-		label = "Message",
-		defaultValue = "Mimic Killed!",
-		maxLength = 64,
-		visibleIf = { alertMimic.value },
-	)
-
-	@JvmField
-	val alertBats = ToggleModuleSetting(
-		id = "alert_bats",
-		label = "Announce bats done",
-		defaultValue = true,
-		description = "Fires on the fifth bat, which is all of them and the last bonus point from them.",
-	)
-
-	@JvmField
-	val batsTitle = TextModuleSetting(
-		id = "bats_title",
-		label = "Message",
-		defaultValue = "Bats Done!",
-		maxLength = 64,
-		visibleIf = { alertBats.value },
 	)
 
 	private val soundSection = SectionModuleSetting("sound_section", "Sound")
@@ -154,6 +68,7 @@ object RoomAlerts {
 		id = "play_sound",
 		label = "Play a pling",
 		defaultValue = true,
+		description = "A pling with every title above.",
 	)
 
 	@JvmField
@@ -169,17 +84,7 @@ object RoomAlerts {
 
 	private val configurableSettings = listOf(
 		alertCleared,
-		clearedTitle,
 		alertSecrets,
-		secretsTitle,
-		roomComplete,
-		completeTitle,
-		alertPrince,
-		princeTitle,
-		alertMimic,
-		mimicTitle,
-		alertBats,
-		batsTitle,
 		playSound,
 		volume,
 	)
@@ -193,31 +98,28 @@ object RoomAlerts {
 				else -> Unit
 			}
 		}
+		// The score's announcements sit on this card now.
+		DungeonScore.resetSettings()
 	})
 
 	@JvmField
 	val module = Module(
 		id = "room_alerts",
 		name = "Alerts",
-		description = "Titles the moment a room finishes, or a bonus-point mob dies",
+		description = "Titles and party messages for a run",
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(clearedSection, alertCleared, clearedTitle) +
-			listOf(secretsSection, alertSecrets, secretsTitle) +
-			listOf(completeSection, roomComplete, completeTitle) +
-			listOf(killsSection, alertPrince, princeTitle, alertMimic, mimicTitle, alertBats, batsTitle) +
+		settings = listOf(titlesSection, alertCleared, alertSecrets) +
+			DungeonScore.titleSettings +
+			listOf(announcementsSection) + DungeonScore.announcementSettings +
+			DungeonScore.customSettings +
 			listOf(soundSection, playSound, volume, reset),
 	)
 
 	private var initialized = false
 
-	/** The room being watched, and the state it was last seen in. */
-	private var watched: DungeonRoom? = null
-	private var watchedState: DungeonRoom.State? = null
-
 	/** Bonus-point kills, which reset with the run rather than with the room. */
-	private var batsSlain = 0
 	private var mimicAnnounced = false
 
 	fun initialize() {
@@ -230,39 +132,27 @@ object RoomAlerts {
 	}
 
 	private fun forget() {
-		watched = null
-		watchedState = null
-		batsSlain = 0
 		mimicAnnounced = false
 	}
 
 	/**
-	 * Bonus-point kills, which the room state knows nothing about.
+	 * A prince dying, which Hypixel says in chat but only to you.
 	 *
-	 * The prince and the bats say so in chat and are simply read back. The
-	 * mimic says nothing at all, so it is caught the way Odin catches it: the
-	 * server sends the death animation as an entity event, and on a dungeon
-	 * floor that can hold a mimic the only baby zombie dying is the mimic.
+	 * The kills are announcements now rather than titles — a party message says
+	 * the thing the party cannot otherwise know, and a title over your own screen
+	 * for a mob you just killed says what you already saw. The wording for all
+	 * three lives with the score, which is what counts them.
 	 */
 	fun onMessage(message: String) {
 		if (!module.enabled || !DungeonLocation.inDungeon) return
-		val client = Minecraft.getInstance()
-
-		if (princePattern.matches(message)) {
-			if (alertPrince.value) announce(client, princeTitle.value, true)
-			return
-		}
-
-		if (!batPattern.matches(message)) return
-		batsSlain++
-		if (alertBats.value && batsSlain >= BATS_PER_RUN) announce(client, batsTitle.value, true)
+		if (princePattern.matches(message)) DungeonScore.onPrinceKilled()
 	}
 
 	@JvmStatic
 	fun onMimicKilled() {
 		if (!module.enabled || !DungeonLocation.inDungeon || mimicAnnounced) return
 		mimicAnnounced = true
-		if (alertMimic.value) announce(Minecraft.getInstance(), mimicTitle.value, true)
+		DungeonScore.onMimicKilled()
 	}
 
 	/**
@@ -279,35 +169,18 @@ object RoomAlerts {
 	 * secrets finish before the mobs do. Hypixel's map has no colour for that,
 	 * so it had to be inferred, and inferring it is what made this unreliable.
 	 */
-	fun tick(client: Minecraft) {
-		if (!module.enabled || !DungeonLocation.inDungeon || DungeonRun.inBoss) {
-			forget()
-			return
-		}
+	@JvmStatic
+	fun onCheckmarkChanged(room: DungeonRoom) {
+		if (!module.enabled || !DungeonLocation.inDungeon || DungeonRun.inBoss) return
+		// The room you are standing in, and no other. A checkmark appearing
+		// across the floor is somebody else's news.
+		if (room !== DungeonMap.currentRoom()) return
+		if (!announces(room)) return
 
-		val room = DungeonMap.currentRoom()
-		if (room !== watched) {
-			// Walking into a room is not news about it, so whatever it already
-			// says is taken as the baseline.
-			watched = room
-			watchedState = room?.state
-			return
-		}
-
-		if (room == null || !announces(room)) return
-		val state = room.state
-		if (state == watchedState) return
-		watchedState = state
-
-		when (state) {
-			DungeonRoom.State.CLEARED -> if (alertCleared.value) {
-				announce(client, clearedTitle.value, false)
-			}
-			DungeonRoom.State.GREEN -> {
-				val finished = roomComplete.value
-				if (finished) announce(client, completeTitle.value, true)
-				else if (alertSecrets.value) announce(client, secretsTitle.value, true)
-			}
+		val client = Minecraft.getInstance()
+		when (room.state) {
+			DungeonRoom.State.CLEARED -> if (alertCleared.value) announce(client, "Cleared", false)
+			DungeonRoom.State.GREEN -> if (alertSecrets.value) announce(client, "Secrets Done!", true)
 			else -> Unit
 		}
 	}
@@ -315,31 +188,35 @@ object RoomAlerts {
 	/**
 	 * Whether this kind of room is worth announcing.
 	 *
-	 * The entrance and blood rooms clear themselves as you pass through, and a
-	 * puzzle's state says nothing about whether you solved it — except Blaze,
-	 * which is cleared exactly when it is beaten.
+	 * Odin's rule, which is everything except the two rooms that clear
+	 * themselves: the entrance, which is green the moment the run starts, and
+	 * the fairy room, which has nothing in it to clear.
+	 *
+	 * Cryptic used to allow only normal, rare and trap rooms, plus Blaze — and
+	 * that is what made this look unreliable, because a miniboss room or a
+	 * solved puzzle turning green said nothing at all.
 	 */
-	private fun announces(room: DungeonRoom): Boolean {
-		if (room.type == DungeonRoom.Type.PUZZLE) return room.data?.name == "Blaze"
-		return room.type == DungeonRoom.Type.NORMAL ||
-			room.type == DungeonRoom.Type.RARE ||
-			room.type == DungeonRoom.Type.TRAP
-	}
+	private fun announces(room: DungeonRoom): Boolean =
+		room.type != DungeonRoom.Type.ENTRANCE && room.type != DungeonRoom.Type.FAIRY
 
 	private fun announce(client: Minecraft, text: String, done: Boolean) {
 		val message = text.trim()
 		if (message.isEmpty()) return
 
-		client.gui.setTimes(FADE_IN_TICKS, STAY_TICKS, FADE_OUT_TICKS)
-		client.gui.setTitle(Component.literal(if (done) "§a$message" else message))
+		client.gui.hud.setTimes(FADE_IN_TICKS, STAY_TICKS, FADE_OUT_TICKS)
+		client.gui.hud.setTitle(Component.literal(if (done) "§a$message" else message))
 
-		if (playSound.value) {
-			client.player?.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), volume.value.toFloat(), 1f)
-		}
+		playAlertSound(client)
 	}
 
-	/** Shows both titles in turn, for `/cryptic debug roomalerts`. */
+	/** The pling that goes with every title this module puts on screen. */
+	fun playAlertSound(client: Minecraft) {
+		if (!module.enabled || !playSound.value) return
+		client.player?.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), volume.value.toFloat(), 1f)
+	}
+
+	/** Shows the cleared title, for `/cryptic debug roomalerts`. */
 	fun preview(client: Minecraft) {
-		announce(client, clearedTitle.value, false)
+		announce(client, "Cleared", false)
 	}
 }

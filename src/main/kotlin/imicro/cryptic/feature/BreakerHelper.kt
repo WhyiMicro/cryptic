@@ -71,8 +71,7 @@ object BreakerHelper {
 		id = "zero_ping",
 		label = "Zero ping",
 		defaultValue = false,
-		description = "Clears a mined block on your screen at once instead of waiting " +
-			"for the server to confirm it, which at high ping is most of a second per block.",
+		description = "Breaks blocks on screen without waiting for the server.",
 	)
 
 	private val configurableSettings = listOf(protectSecrets, zeroPing)
@@ -85,7 +84,7 @@ object BreakerHelper {
 	val module = Module(
 		id = "breaker_helper",
 		name = "Breaker Helper",
-		description = "Keeps the Dungeon Breaker off the blocks you meant to click",
+		description = "Stops the Breaker eating your clicks",
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,

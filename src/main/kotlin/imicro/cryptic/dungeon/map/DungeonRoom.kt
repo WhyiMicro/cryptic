@@ -139,7 +139,7 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 				if (type == Type.ENTRANCE) return false
 				// A room walked into ahead of the map item must not be pushed
 				// back to undiscovered by the update that has not caught up.
-				if (DungeonMap.instantRoomUpdate.value && state != State.UNDISCOVERED) return false
+				if (state != State.UNDISCOVERED) return false
 				State.UNDISCOVERED
 			}
 			34 -> State.CLEARED
@@ -152,7 +152,7 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 			85, 119 -> {
 				entryTile = tile
 				specialTile = tile.x == RoomPrediction.column
-				if (DungeonMap.instantRoomUpdate.value && state != State.UNDISCOVERED) return false
+				if (state != State.UNDISCOVERED) return false
 				State.UNOPENED
 			}
 			else -> State.DISCOVERED

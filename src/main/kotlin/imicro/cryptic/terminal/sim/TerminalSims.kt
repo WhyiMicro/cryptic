@@ -1,15 +1,19 @@
 package imicro.cryptic.terminal.sim
 
+import imicro.cryptic.terminal.TerminalRecords
 import imicro.cryptic.terminal.TerminalType
 import net.minecraft.core.component.DataComponents
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
+import net.minecraft.network.chat.Component
 import net.minecraft.world.inventory.Slot
 import net.minecraft.world.item.BlockItem
 import net.minecraft.world.item.DyeColor
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
+import net.minecraft.world.item.component.ItemLore
+import java.util.Locale
 import net.minecraft.world.level.block.StainedGlassPaneBlock
 
 /**
@@ -36,7 +40,7 @@ private fun Slot.column() = index % 9
 class PanesSim : TermSimScreen(TerminalType.PANES.termName, TerminalType.PANES.windowSize) {
 	override fun create() = rebuild { slot ->
 		if (slot.row() in 1..3 && slot.column() in 2..6) {
-			if (Math.random() > 0.75) pane(Items.LIME_STAINED_GLASS_PANE) else pane(Items.RED_STAINED_GLASS_PANE)
+			if (Math.random() > 0.75) pane(Items.STAINED_GLASS_PANE.lime()) else pane(Items.STAINED_GLASS_PANE.red())
 		} else {
 			fillerPane
 		}
@@ -46,14 +50,14 @@ class PanesSim : TermSimScreen(TerminalType.PANES.termName, TerminalType.PANES.w
 		rebuild { other ->
 			if (other !== slot) {
 				other.item
-			} else if (slot.item.item == Items.RED_STAINED_GLASS_PANE) {
-				pane(Items.LIME_STAINED_GLASS_PANE)
+			} else if (slot.item.item == Items.STAINED_GLASS_PANE.red()) {
+				pane(Items.STAINED_GLASS_PANE.lime())
 			} else {
-				pane(Items.RED_STAINED_GLASS_PANE)
+				pane(Items.STAINED_GLASS_PANE.red())
 			}
 		}
 
-		if (gridSlots.none { it.item.item == Items.RED_STAINED_GLASS_PANE }) return completed()
+		if (gridSlots.none { it.item.item == Items.STAINED_GLASS_PANE.red() }) return completed()
 		super.slotClick(slot, button)
 	}
 }
@@ -78,11 +82,11 @@ class RubixSim : TermSimScreen(TerminalType.RUBIX.termName, TerminalType.RUBIX.w
 	private companion object {
 		val ORDER = listOf(DyeColor.ORANGE, DyeColor.YELLOW, DyeColor.GREEN, DyeColor.BLUE, DyeColor.RED)
 		val PANES = listOf(
-			Items.ORANGE_STAINED_GLASS_PANE,
-			Items.YELLOW_STAINED_GLASS_PANE,
-			Items.GREEN_STAINED_GLASS_PANE,
-			Items.BLUE_STAINED_GLASS_PANE,
-			Items.RED_STAINED_GLASS_PANE,
+			Items.STAINED_GLASS_PANE.orange(),
+			Items.STAINED_GLASS_PANE.yellow(),
+			Items.STAINED_GLASS_PANE.green(),
+			Items.STAINED_GLASS_PANE.blue(),
+			Items.STAINED_GLASS_PANE.red(),
 		)
 		val GRID = listOf(12, 13, 14, 21, 22, 23, 30, 31, 32)
 	}
@@ -95,7 +99,7 @@ class NumbersSim : TermSimScreen(TerminalType.NUMBERS.termName, TerminalType.NUM
 		rebuild { slot ->
 			if (slot.row() in 1..2 && slot.column() in 1..7) {
 				val number = numbers.next()
-				named(ItemStack(Items.RED_STAINED_GLASS_PANE, number), "§a$number")
+				named(ItemStack(Items.STAINED_GLASS_PANE.red(), number), "§a$number")
 			} else {
 				fillerPane
 			}
@@ -106,15 +110,15 @@ class NumbersSim : TermSimScreen(TerminalType.NUMBERS.termName, TerminalType.NUM
 		// Out of order does nothing at all, which is what makes the real one
 		// worth practising.
 		val next = gridSlots.minByOrNull {
-			if (it.item.item == Items.RED_STAINED_GLASS_PANE) it.item.count else Int.MAX_VALUE
+			if (it.item.item == Items.STAINED_GLASS_PANE.red()) it.item.count else Int.MAX_VALUE
 		}
 		if (next !== slot) return
 
 		rebuild { other ->
-			if (other === slot) named(ItemStack(Items.LIME_STAINED_GLASS_PANE, slot.item.count), "") else other.item
+			if (other === slot) named(ItemStack(Items.STAINED_GLASS_PANE.lime(), slot.item.count), "") else other.item
 		}
 
-		if (gridSlots.none { it.item.item == Items.RED_STAINED_GLASS_PANE }) return completed()
+		if (gridSlots.none { it.item.item == Items.STAINED_GLASS_PANE.red() }) return completed()
 		super.slotClick(slot, button)
 	}
 }
@@ -270,12 +274,12 @@ class MelodySim : TermSimScreen(TerminalType.MELODY.termName, TerminalType.MELOD
 		val row = row()
 		val column = column()
 		return when {
-			column == markedColumn && row !in 1..4 -> pane(Items.MAGENTA_STAINED_GLASS_PANE)
-			column == noteColumn && row == currentRow -> pane(Items.LIME_STAINED_GLASS_PANE)
-			column in 1..5 && row == currentRow -> pane(Items.RED_STAINED_GLASS_PANE)
-			column == BUTTON_COLUMN && row == currentRow -> named(ItemStack(Items.LIME_TERRACOTTA), "")
-			column == BUTTON_COLUMN && row in 1..4 -> named(ItemStack(Items.RED_TERRACOTTA), "")
-			column in 1..5 && row in 1..4 -> pane(Items.WHITE_STAINED_GLASS_PANE)
+			column == markedColumn && row !in 1..4 -> pane(Items.STAINED_GLASS_PANE.magenta())
+			column == noteColumn && row == currentRow -> pane(Items.STAINED_GLASS_PANE.lime())
+			column in 1..5 && row == currentRow -> pane(Items.STAINED_GLASS_PANE.red())
+			column == BUTTON_COLUMN && row == currentRow -> named(ItemStack(Items.DYED_TERRACOTTA.lime()), "")
+			column == BUTTON_COLUMN && row in 1..4 -> named(ItemStack(Items.DYED_TERRACOTTA.red()), "")
+			column in 1..5 && row in 1..4 -> pane(Items.STAINED_GLASS_PANE.white())
 			else -> fillerPane
 		}
 	}
@@ -296,10 +300,17 @@ class MelodySim : TermSimScreen(TerminalType.MELODY.termName, TerminalType.MELOD
 class StartSim : TermSimScreen("Terminal Simulator", 27) {
 	override val delaysClicks: Boolean get() = false
 
+	/** Cleared by a second press, so a mis-click cannot wipe your times. */
+	private var resetArmed = false
+
 	override fun create() {
 		rebuild { slot ->
 			when (slot.index) {
-				RANDOM_SLOT -> named(ItemStack(Items.WHITE_DYE), "§7Random")
+				RESET_SLOT -> named(
+					ItemStack(Items.DYE.black()),
+					if (resetArmed) "§cClick again to wipe your PBs" else "§cReset PBs",
+				)
+				RANDOM_SLOT -> named(ItemStack(Items.DYE.white()), "§7Random")
 				in FIRST_ROW -> button(TerminalType.entries[slot.index - FIRST_ROW.first])
 				in SECOND_ROW -> button(TerminalType.entries[slot.index - SECOND_ROW.first + 3])
 				else -> fillerPane
@@ -308,6 +319,19 @@ class StartSim : TermSimScreen("Terminal Simulator", 27) {
 	}
 
 	override fun slotClick(slot: Slot, button: Int) {
+		if (slot.index == RESET_SLOT) {
+			if (!resetArmed) {
+				resetArmed = true
+				create()
+				return
+			}
+			TerminalRecords.reset(simulated = true)
+			resetArmed = false
+			create()
+			message("Practice bests cleared.")
+			return
+		}
+
 		val type = when (slot.index) {
 			RANDOM_SLOT -> TerminalType.entries.filter { it != TerminalType.MELODY }.random()
 			in FIRST_ROW -> TerminalType.entries[slot.index - FIRST_ROW.first]
@@ -317,21 +341,41 @@ class StartSim : TermSimScreen("Terminal Simulator", 27) {
 		openSim(type, ping)
 	}
 
-	private fun button(type: TerminalType) =
-		named(ItemStack(DYES[type.ordinal]), "${COLORS[type.ordinal]}${TerminalType.displayName(type)}")
+	/**
+	 * One terminal to start, with what you have done it in before.
+	 *
+	 * The time is on the item rather than in chat because this menu is where
+	 * you decide which to practise, and the number you are trying to beat is
+	 * the thing that decides it. Odin's simulator does the same.
+	 */
+	private fun button(type: TerminalType): ItemStack {
+		val stack = named(
+			ItemStack(DYES[type.ordinal]),
+			"${COLORS[type.ordinal]}${TerminalType.displayName(type)}",
+		)
+		val best = TerminalRecords.best(type.termName, simulated = true)
+		val line = if (best == null) {
+			"§8No time yet"
+		} else {
+			"§7Personal best: §d${String.format(Locale.ROOT, "%.2f", best)}s"
+		}
+		stack.set(DataComponents.LORE, ItemLore(listOf(Component.literal(line))))
+		return stack
+	}
 
 	private companion object {
 		val FIRST_ROW = 10..12
 		const val RANDOM_SLOT = 13
+		const val RESET_SLOT = 4
 		val SECOND_ROW = 14..16
 
 		val DYES = listOf(
-			Items.LIME_DYE,
-			Items.RED_DYE,
-			Items.CYAN_DYE,
-			Items.PINK_DYE,
-			Items.BROWN_DYE,
-			Items.PURPLE_DYE,
+			Items.DYE.lime(),
+			Items.DYE.red(),
+			Items.DYE.cyan(),
+			Items.DYE.pink(),
+			Items.DYE.brown(),
+			Items.DYE.purple(),
 		)
 		val COLORS = listOf("§a", "§6", "§3", "§5", "§b", "§d")
 	}

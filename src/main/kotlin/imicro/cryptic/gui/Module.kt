@@ -8,8 +8,11 @@ import kotlin.math.roundToInt
 enum class ModuleCategory(val title: String) {
 	GENERAL("General"),
 	DUNGEON("Dungeon"),
-	FLOOR_7("Floor 7"),
-	VISUAL("Visual"),
+	// Named for the fight rather than the floor: what is in here started as
+	// Floor 7's terminals and towers, and the other floors' bosses belong
+	// beside them rather than in a tab of their own.
+	FLOOR_7("Boss"),
+	VISUAL("Render"),
 	MISC("Settings"),
 	DEVELOPER("Profiles"),
 }
@@ -396,6 +399,52 @@ class DropdownModuleSetting(
 	fun reset() { selectedIndex = defaultIndex }
 }
 
+/**
+ * A set of slot-to-slot bindings, one set per named profile.
+ *
+ * The only setting here the menu does not draw. What it holds is made in the
+ * inventory rather than in the settings screen — a pair of slots picked by
+ * pointing at them — and a list of numbers in a config panel would be neither
+ * editable nor readable. It is a [ModuleSetting] so that it travels with the
+ * profile like everything else; it simply has no row.
+ *
+ * Stored as one string rather than as structured JSON, so [ConfigManager] can
+ * treat it exactly as it treats a text setting.
+ */
+class SlotMapModuleSetting(
+	id: String,
+	label: String,
+): ModuleSetting(id, label, visibleIf = { false }) {
+	/** Profile name to the binds made under it, each a slot pointing at a slot. */
+	private val profiles = LinkedHashMap<String, LinkedHashMap<Int, Int>>()
+
+	fun binds(profile: String): MutableMap<Int, Int> = profiles.getOrPut(profile) { LinkedHashMap() }
+
+	fun reset() = profiles.clear()
+
+	/** `main=5>36,6>37;alt=9>44`, which is short enough to sit in a config file. */
+	fun encode(): String = profiles.entries
+		.filter { it.value.isNotEmpty() }
+		.joinToString(";") { (profile, binds) ->
+			"$profile=" + binds.entries.joinToString(",") { "${it.key}>${it.value}" }
+		}
+
+	fun decode(text: String) {
+		profiles.clear()
+		if (text.isBlank()) return
+
+		for (group in text.split(';')) {
+			val name = group.substringBefore('=', "").takeIf { it.isNotEmpty() } ?: continue
+			val target = binds(name)
+			for (pair in group.substringAfter('=').split(',')) {
+				val from = pair.substringBefore('>').trim().toIntOrNull() ?: continue
+				val to = pair.substringAfter('>', "").trim().toIntOrNull() ?: continue
+				target[from] = to
+			}
+		}
+	}
+}
+
 class ButtonModuleSetting(
 	id: String,
 	label: String,
@@ -438,7 +487,6 @@ object ModuleRegistry {
 		imicro.cryptic.feature.ExperimentSolver.module,
 		imicro.cryptic.feature.ClassColors.module,
 		imicro.cryptic.feature.DungeonMap.module,
-		imicro.cryptic.feature.DungeonScore.module,
 		imicro.cryptic.feature.DoorKeys.module,
 		imicro.cryptic.feature.DoorHighlight.module,
 		imicro.cryptic.feature.BreakerHelper.module,
@@ -453,12 +501,36 @@ object ModuleRegistry {
 		imicro.cryptic.feature.RenderOptimizer.module,
 		imicro.cryptic.feature.HidePlayers.module,
 		imicro.cryptic.feature.TerminalSolver.module,
+		imicro.cryptic.feature.TerminalTimes.module,
+		imicro.cryptic.feature.Tooltips.module,
 		imicro.cryptic.feature.TerminalSimulator.module,
+		imicro.cryptic.feature.TerminalEsp.module,
+		imicro.cryptic.feature.TerminalOrder.module,
+		imicro.cryptic.feature.DeviceSolver.module,
 		imicro.cryptic.feature.Animations.module,
-		imicro.cryptic.feature.Fullbright.module,
 		imicro.cryptic.feature.BetterGlow.module,
 		imicro.cryptic.feature.CustomNametags.module,
 		imicro.cryptic.feature.WitherCloakEffect.module,
+		imicro.cryptic.feature.ArrowHitboxes.module,
+		imicro.cryptic.feature.CustomScale.module,
+		imicro.cryptic.feature.LagDetector.module,
+		imicro.cryptic.feature.CookieReminder.module,
+		imicro.cryptic.feature.SmartTickTimer.module,
+		imicro.cryptic.feature.ArrowFix.module,
+		imicro.cryptic.feature.ArrowHitSound.module,
+		imicro.cryptic.feature.BlockOverlay.module,
+		imicro.cryptic.feature.CameraTweaks.module,
+		imicro.cryptic.feature.NoItemPlace.module,
+		imicro.cryptic.feature.SbKick.module,
+		imicro.cryptic.feature.TimeChanger.module,
+		imicro.cryptic.feature.LavaToWater.module,
+		imicro.cryptic.feature.DoorFix.module,
+		imicro.cryptic.feature.CarryManager.module,
+		imicro.cryptic.feature.ScrollableTooltips.module,
+		imicro.cryptic.feature.CrosshairEditor.module,
+		imicro.cryptic.feature.SlotBinds.module,
+		imicro.cryptic.feature.NucleusQol.module,
+		imicro.cryptic.feature.Toasts.module,
 		imicro.cryptic.feature.ClickGui.module,
 	)
 

@@ -239,7 +239,7 @@ object DungeonWorldScan {
 
 		return when (level.getBlockState(BlockPos(world.x, 69, world.z)).block) {
 			Blocks.COAL_BLOCK -> DungeonDoor.Type.WITHER
-			Blocks.RED_TERRACOTTA -> DungeonDoor.Type.BLOOD
+			Blocks.DYED_TERRACOTTA.red() -> DungeonDoor.Type.BLOOD
 			else -> DungeonDoor.Type.NORMAL
 		}
 	}

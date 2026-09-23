@@ -1,6 +1,7 @@
 package imicro.cryptic.dungeon
 
 import imicro.cryptic.debug.DebugOverrides
+import imicro.cryptic.mixin.PlayerTabOverlayAccessor
 import net.minecraft.client.Minecraft
 
 /**
@@ -88,7 +89,13 @@ object DungeonTeam {
 		var fallen: MutableSet<String>? = null
 		var foundCatacombs = false
 
-		for (playerInfo in connection.onlinePlayers) {
+		// In the order the rows are drawn in, which is not the order the
+		// connection keeps its players in — that one is however they happened
+		// to be hashed. The difference matters because the party's order in the
+		// tab list is also the order Hypixel puts their markers on the dungeon
+		// map, and the map has nothing else to say who is who by. Sorted the
+		// wrong way, every head on the map belongs to somebody else.
+		for (playerInfo in connection.listedOnlinePlayers.sortedWith(PlayerTabOverlayAccessor.`cryptic$ordering`())) {
 			val line = playerInfo.tabListDisplayName?.string ?: continue
 
 			// Odin identifies the Catacombs from Hypixel's Area/Dungeon tab entry.
@@ -120,6 +127,47 @@ object DungeonTeam {
 		inDungeons = foundCatacombs
 		classes = if (foundCatacombs) updated ?: emptyMap() else emptyMap()
 		dead = if (foundCatacombs) fallen ?: emptySet() else emptySet()
+	}
+
+	/**
+	 * The party in tab-list order, against the markers the map has for them.
+	 *
+	 * The dungeon map says where five people are and nothing at all about who
+	 * they are: the first marker belongs to the first living teammate in the
+	 * tab list, the second to the second, and so on. That is the whole of the
+	 * pairing, and when it is wrong every head on the map is somebody else — so
+	 * this prints both halves of it, in order, to be read against the map.
+	 */
+	fun describePairing(): List<String> {
+		val self = Minecraft.getInstance().player?.name?.string
+		if (!inDungeons) return listOf("§7Not in a dungeon, so there is no party to pair.")
+
+		val living = classes.keys.filter { it != self && it !in dead }
+		val markers = imicro.cryptic.dungeon.map.DungeonMapReader.markers
+
+		val lines = mutableListOf(
+			"§7Party in tab order (§f${classes.size}§7), markers on the map (§f${markers.size}§7):",
+		)
+		classes.keys.forEachIndexed { index, name ->
+			val note = when {
+				name == self -> "§8you, drawn from the world"
+				name in dead -> "§8dead, no marker"
+				else -> {
+					val slot = living.indexOf(name)
+					val marker = markers.getOrNull(slot)
+					if (marker == null) {
+						"§cno marker §8(slot $slot)"
+					} else {
+						"§7marker §f$slot §8at ${marker.mapX}, ${marker.mapZ}"
+					}
+				}
+			}
+			lines += "§8${index + 1}. §f$name §8— ${classes[name]?.name?.lowercase()} §8— $note"
+		}
+		if (markers.size > living.size) {
+			lines += "§cMore markers than living teammates: the pairing will be wrong."
+		}
+		return lines
 	}
 
 	private fun parseClass(name: String): DungeonClass = when {

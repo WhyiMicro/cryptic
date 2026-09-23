@@ -35,6 +35,17 @@ object ExperimentTracker {
 	var menuItems: List<ItemStack> = emptyList()
 		private set
 
+	/**
+	 * Bumped every time the menu becomes anything different.
+	 *
+	 * What [ExperimentRunner] needs is "has the menu answered me yet", and the
+	 * answer can arrive either as a new window or as the same window's contents
+	 * changing under it. One counter covers both, and a click that has not
+	 * moved it is a click the menu ignored.
+	 */
+	var revision: Int = 0
+		private set
+
 	var cells: List<ExperimentCell> = emptyList()
 		private set
 
@@ -82,6 +93,7 @@ object ExperimentTracker {
 
 	fun windowOpened(rawTitle: String) {
 		val title = ExperimentRules.stripFormatting(rawTitle)
+		revision++
 		menuTitle = title
 		menuItems = emptyList()
 		cells = emptyList()
@@ -99,6 +111,7 @@ object ExperimentTracker {
 			currentGame = null
 			status = "menu: $title"
 			ExperimentDebug.note("menu: $title")
+			ExperimentRunner.onMenuOpened(title)
 			return
 		}
 
@@ -112,6 +125,7 @@ object ExperimentTracker {
 				ExperimentRules.Game.SUPERPAIRS -> SuperpairsHandler()
 			}
 		}
+		ExperimentRunner.onMenuOpened(title)
 		status = "${current?.name} open"
 		ExperimentDebug.note("opened: $title")
 	}
@@ -134,6 +148,7 @@ object ExperimentTracker {
 	 * tick, and only if there is something to read it for.
 	 */
 	fun slotUpdated(items: List<ItemStack>) {
+		revision++
 		menuItems = items
 		if (!ExperimentSolver.module.enabled) return
 		dirty = true
@@ -171,7 +186,13 @@ object ExperimentTracker {
 
 	/** Notices the player leaving any way that does not send a close packet. */
 	fun tick(client: Minecraft) {
-		if (menuTitle.isNotEmpty() && client.screen !is AbstractContainerScreen<*>) closed()
+		if (menuTitle.isNotEmpty() && client.gui.screen() !is AbstractContainerScreen<*>) {
+			// The screen going away is the only place a player pressing escape
+			// and the runner closing the menu itself look the same, so the runner
+			// is asked which it was before the state is thrown away.
+			ExperimentRunner.onMenuClosed()
+			closed()
+		}
 		refresh()
 	}
 

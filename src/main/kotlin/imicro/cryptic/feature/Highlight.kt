@@ -11,6 +11,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.render.BoxColors
 import imicro.cryptic.render.WorldRender
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
@@ -20,6 +21,7 @@ import net.minecraft.client.renderer.entity.state.EntityRenderState
 import net.minecraft.core.BlockPos
 import net.minecraft.util.ARGB
 import net.minecraft.world.entity.Entity
+import net.minecraft.core.component.DataComponents
 import net.minecraft.world.entity.EquipmentSlot
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.ambient.Bat
@@ -81,10 +83,10 @@ object Highlight {
 		"Shadow Assassin", "Diamond Guy", "King Midas",
 	)
 
-	private const val FILLED = 0
-	private const val OUTLINE = 1
+	private const val OUTLINE = 0
+	private const val FILL = 1
 
-	private val styles = listOf("Filled", "Outline", "Filled outline")
+	private val styles = listOf("Outline", "Fill", "Fill + Outline")
 
 	/** Whether anything in the special-mob group is switched on at all. */
 	private fun marksAnySpecial(): Boolean =
@@ -120,7 +122,7 @@ object Highlight {
 	val starGlow = ToggleModuleSetting(
 		id = "star_glow",
 		label = "Use glow instead",
-		description = "Uses the game's own outline pass rather than a drawn box. It always shows through walls.",
+		description = "The game's own glow instead of a box, always through walls.",
 		visibleIf = { highlightStarred.value },
 	)
 
@@ -144,11 +146,20 @@ object Highlight {
 	@JvmField
 	val starColor = ColorModuleSetting(
 		id = "star_color",
-		label = "Starred",
+		label = "Starred fill",
 		defaultRgb = 0xFFFF55,
 		supportsAlpha = true,
 		defaultAlpha = 0x80,
-		visibleIf = { highlightStarred.value },
+		visibleIf = { highlightStarred.value  && starStyle.selectedIndex != OUTLINE },
+	)
+
+	@JvmField
+	val starOutlineColor = ColorModuleSetting(
+		id = "star_outline_color",
+		label = "Starred outline",
+		defaultRgb = 0xFFFF55,
+		supportsAlpha = true,
+		visibleIf = { highlightStarred.value && !starGlow.value && starStyle.selectedIndex != FILL },
 	)
 
 	// ---- Special mobs ----------------------------------------------------
@@ -175,7 +186,7 @@ object Highlight {
 	val highlightMimicChest = ToggleModuleSetting(
 		id = "highlight_mimic_chest",
 		label = "Highlight mimic chest",
-		description = "Boxes the chest the mimic is in before it is opened: the one trapped chest on the floor.",
+		description = "Boxes the floor's one trapped chest.",
 	)
 
 	@JvmField
@@ -200,7 +211,7 @@ object Highlight {
 	val specialGlow = ToggleModuleSetting(
 		id = "special_glow",
 		label = "Use glow instead",
-		description = "Uses the game's own outline pass rather than a drawn box. It always shows through walls.",
+		description = "The game's own glow instead of a box, always through walls.",
 		visibleIf = { marksAnySpecial() },
 	)
 
@@ -225,11 +236,20 @@ object Highlight {
 	@JvmField
 	val specialColor = ColorModuleSetting(
 		id = "special_color",
-		label = "Special",
+		label = "Special fill",
 		defaultRgb = 0x55FF55,
 		supportsAlpha = true,
 		defaultAlpha = 0x80,
-		visibleIf = { marksAnySpecial() },
+		visibleIf = { marksAnySpecial()  && specialStyle.selectedIndex != OUTLINE },
+	)
+
+	@JvmField
+	val specialOutlineColor = ColorModuleSetting(
+		id = "special_outline_color",
+		label = "Special outline",
+		defaultRgb = 0x55FF55,
+		supportsAlpha = true,
+		visibleIf = { marksAnySpecial() && !specialGlow.value && specialStyle.selectedIndex != FILL },
 	)
 
 	@JvmField
@@ -295,7 +315,7 @@ object Highlight {
 	val module = Module(
 		id = "highlight",
 		name = "Highlight",
-		description = "Marks starred mobs, bats, the mimic and the prince",
+		description = "Marks starred and bonus mobs",
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
@@ -306,6 +326,7 @@ object Highlight {
 			starStyle,
 			starPhase,
 			starColor,
+			starOutlineColor,
 			specialSection,
 			highlightBats,
 			highlightMimic,
@@ -316,6 +337,7 @@ object Highlight {
 			specialStyle,
 			specialPhase,
 			specialColor,
+			specialOutlineColor,
 			specialTracers,
 			lineWidth,
 			portalSection,
@@ -340,6 +362,10 @@ object Highlight {
 	private val starred: MutableSet<Entity> = ConcurrentHashMap.newKeySet()
 
 	/** The mobs found under a prince's nametag, kept the same way. */
+	/** The two halves of each box, paired so a style that draws both can. */
+	private val starColors = BoxColors(starColor, starOutlineColor)
+	private val specialColors = BoxColors(specialColor, specialOutlineColor)
+
 	private val princes: MutableSet<Entity> = ConcurrentHashMap.newKeySet()
 
 	/**
@@ -383,7 +409,7 @@ object Highlight {
 		get() = module.enabled && DungeonLocation.inDungeon
 
 	fun initialize() {
-		LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(::render)
+		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		// What was found in one dungeon means nothing in the next.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> onWorldChange() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> onWorldChange() }
@@ -572,17 +598,19 @@ object Highlight {
 
 		if (highlightStarred.value && !starGlow.value) {
 			starred.forEach {
-				drawEntity(context, it, partialTick, starColor, starStyle.selectedIndex, starPhase.value)
+				drawEntity(context, it, partialTick, starColors, starStyle.selectedIndex, starPhase.value)
 			}
 		}
 
 		if (!specialGlow.value || specialTracers.value) {
 			Minecraft.getInstance().level?.entitiesForRendering()?.forEach { entity ->
-				val color = specialColorFor(entity) ?: return@forEach
+				val colors = specialColorFor(entity) ?: return@forEach
 				if (!specialGlow.value) {
-					drawEntity(context, entity, partialTick, color, specialStyle.selectedIndex, specialPhase.value)
+					drawEntity(context, entity, partialTick, colors, specialStyle.selectedIndex, specialPhase.value)
 				}
-				if (specialTracers.value) drawTracer(context, entity, partialTick, color)
+				// A tracer is a line rather than a box, so it follows the
+				// outline — the half of a highlight meant to carry across a room.
+				if (specialTracers.value) drawTracer(context, entity, partialTick, colors.outline)
 			}
 		}
 
@@ -600,7 +628,7 @@ object Highlight {
 		context: LevelRenderContext,
 		entity: Entity,
 		partialTick: Float,
-		color: ColorModuleSetting,
+		colors: BoxColors,
 		style: Int,
 		phase: Boolean,
 	) {
@@ -608,16 +636,16 @@ object Highlight {
 		val halfWidth = entity.bbWidth / 2.0
 		WorldRender.drawBox(
 			poseStack = context.poseStack(),
-			consumers = context.bufferSource(),
+			collector = context.submitNodeCollector(),
 			minX = at.x - halfWidth,
 			minY = at.y,
 			minZ = at.z - halfWidth,
 			maxX = at.x + halfWidth,
 			maxY = at.y + entity.bbHeight,
 			maxZ = at.z + halfWidth,
-			outlineArgb = if (style == FILLED) 0 else ARGB.opaque(color.rgb),
-			fillArgb = if (style == OUTLINE) 0 else color.argb,
-			outline = style != FILLED,
+			outlineArgb = colors.outlineArgb(style != FILL),
+			fillArgb = colors.fillArgb(style != OUTLINE),
+			outline = style != FILL,
 			fill = style != OUTLINE,
 			phase = phase,
 			lineWidth = lineWidth.value.toFloat(),
@@ -634,7 +662,7 @@ object Highlight {
 		val at = entity.getPosition(partialTick)
 		WorldRender.drawTracer(
 			poseStack = context.poseStack(),
-			consumers = context.bufferSource(),
+			collector = context.submitNodeCollector(),
 			x = at.x,
 			y = at.y + entity.bbHeight / 2.0,
 			z = at.z,
@@ -657,7 +685,7 @@ object Highlight {
 		positions.forEach { pos ->
 			WorldRender.drawBlock(
 				poseStack = context.poseStack(),
-				consumers = context.bufferSource(),
+				collector = context.submitNodeCollector(),
 				pos = pos,
 				outlineArgb = ARGB.opaque(argb),
 				fillArgb = argb,
@@ -676,7 +704,7 @@ object Highlight {
 	 * The colour a special mob should be marked in, or null when it is not one.
 	 * Fels have their own because a Fel is a different kind of news from a bat.
 	 */
-	private fun specialColorFor(entity: Entity): ColorModuleSetting? {
+	private fun specialColorFor(entity: Entity): BoxColors? {
 		if (!entity.isAlive) return null
 
 		// None of this group exists in the boss fight — there are no secrets to
@@ -687,20 +715,20 @@ object Highlight {
 
 		return when {
 			entity is Bat ->
-				if (highlightBats.value && !entity.isInvisible && !entity.isPassenger) specialColor else null
+				if (highlightBats.value && !entity.isInvisible && !entity.isPassenger) specialColors else null
 			// Both of these belong to Hidden Mobs, which is where revealing them
 			// is configured; only the drawing is here.
 			entity is EnderMan ->
 				if (HiddenMobs.highlightFels.value && entity.customName?.string == FEL_NAME) {
-					HiddenMobs.felColor
+					HiddenMobs.felColors
 				} else {
 					null
 				}
 			entity is Player && isShadowAssassin(entity) ->
-				if (HiddenMobs.highlightShadowAssassins.value) HiddenMobs.shadowAssassinColor else null
+				if (HiddenMobs.highlightShadowAssassins.value) HiddenMobs.shadowAssassinColors else null
 			entity is Zombie && entity.isBaby ->
-				if (highlightMimic.value && isMimic(entity)) specialColor else null
-			else -> if (highlightPrince.value && entity in princes) specialColor else null
+				if (highlightMimic.value && isMimic(entity)) specialColors else null
+			else -> if (highlightPrince.value && entity in princes) specialColors else null
 		}
 	}
 
@@ -722,8 +750,102 @@ object Highlight {
 	 */
 	private fun isMimic(entity: Zombie): Boolean {
 		if (DungeonLocation.floor < 6) return false
-		return EquipmentSlot.entries.all { entity.getItemBySlot(it).isEmpty }
+		if (HAND_SLOTS.any { !entity.getItemBySlot(it).isEmpty }) return false
+		return isYellowLeather(entity)
 	}
+
+	private val HAND_SLOTS = listOf(EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND)
+
+	/**
+	 * Whether this baby zombie's leather is the mimic's.
+	 *
+	 * This is the only thing that separates the two. The mimic and the baby
+	 * zombies a Berserk ability throws up are the same mob, wearing the same four
+	 * pieces of leather and the same player head, holding nothing, on the same
+	 * floor, and even at similar health — every earlier attempt at telling them
+	 * apart failed because there genuinely is no difference in any of that. The
+	 * difference is the dye, and only the dye.
+	 *
+	 * Matched against the exact shade rather than against "is it coloured at
+	 * all". Both are known now — the mimic's [MIMIC_LEATHER] and the summons'
+	 * grey — and an exact match cannot be fooled by some third dyed baby zombie
+	 * Hypixel adds later, which a saturation test would have marked as a mimic.
+	 * If Hypixel ever retints it this stops matching rather than matching the
+	 * wrong thing, and `/cryptic debug mimic` prints the shade it found.
+	 */
+	private fun isYellowLeather(entity: Zombie): Boolean {
+		val dyed = LEATHER_SLOTS.firstNotNullOfOrNull {
+			entity.getItemBySlot(it).get(DataComponents.DYED_COLOR)
+		} ?: return false
+		return (dyed.rgb and 0xFFFFFF) == MIMIC_LEATHER
+	}
+
+	private val LEATHER_SLOTS =
+		listOf(EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET)
+
+	/**
+	 * The pale yellow Hypixel dyes the mimic's leather.
+	 *
+	 * Read off a real mimic on Floor 7. The Berserk summons wear `#9d9d9d`, and
+	 * the mobs around them wear no dye at all.
+	 */
+	private const val MIMIC_LEATHER = 0xEDDF85
+
+	/**
+	 * Every baby zombie in reach and what this makes of it, for
+	 * `/cryptic debug mimic`.
+	 *
+	 * Which mob Hypixel spawns and what it is carrying is the one thing about
+	 * this that cannot be worked out from anywhere but inside a run.
+	 */
+	fun describeMimics(): List<String> {
+		val client = Minecraft.getInstance()
+		val player = client.player ?: return listOf("No player.")
+		val level = client.level ?: return listOf("No world.")
+
+		val zombies = level.getEntitiesOfClass(Zombie::class.java, player.boundingBox.inflate(MIMIC_DEBUG_RADIUS))
+		val lines = mutableListOf(
+			"Floor ${DungeonLocation.floor}, ${zombies.size} zombies within ${MIMIC_DEBUG_RADIUS.toInt()} blocks:",
+		)
+
+		zombies.forEach { zombie ->
+			val held = EquipmentSlot.entries
+				.filter { !zombie.getItemBySlot(it).isEmpty }
+				.joinToString { "$it=${zombie.getItemBySlot(it).hoverName.string}" }
+			lines += "  ${zombie.type.description.string} baby=${zombie.isBaby} " +
+				"name=${zombie.customName?.string ?: "-"} mimic=${zombie.isBaby && isMimic(zombie)} " +
+				"hp=${zombie.health.toInt()} " +
+				"leather=${leatherFingerprint(zombie)} " +
+				"carrying=${held.ifEmpty { "nothing" }}"
+		}
+		return lines
+	}
+
+	/**
+	 * The leather dye a baby zombie is wearing, which is what tells the mimic
+	 * from a Berserk summon.
+	 *
+	 * Everything else about the two is identical — same mob, same four pieces of
+	 * leather, same player head, nothing in either hand — so this is the only
+	 * thing worth printing about them. The saturation is shown alongside because
+	 * that is what the check actually reads: grey scores nought, yellow scores
+	 * most of a hundred.
+	 */
+	private fun leatherFingerprint(entity: Zombie): String {
+		val dyed = LEATHER_SLOTS.firstNotNullOfOrNull {
+			entity.getItemBySlot(it).get(DataComponents.DYED_COLOR)
+		} ?: return "undyed"
+
+		val rgb = dyed.rgb
+		val red = (rgb shr 16) and 0xFF
+		val green = (rgb shr 8) and 0xFF
+		val blue = rgb and 0xFF
+		val brightest = maxOf(red, green, blue)
+		val saturation = if (brightest == 0) 0 else (brightest - minOf(red, green, blue)) * 100 / brightest
+		return "#%06x(sat $saturation%%)".format(rgb and 0xFFFFFF)
+	}
+
+	private const val MIMIC_DEBUG_RADIUS = 24.0
 
 	/**
 	 * Whether this entity should be left undrawn.
@@ -774,7 +896,9 @@ object Highlight {
 		if (highlightStarred.value && starGlow.value && entity in starred) {
 			return ARGB.opaque(starColor.rgb)
 		}
-		if (specialGlow.value) specialColorFor(entity)?.let { return ARGB.opaque(it.rgb) }
+		// A glow is one colour by nature, and the fill is the one that reads
+		// as the mob's colour.
+		if (specialGlow.value) specialColorFor(entity)?.let { return ARGB.opaque(it.fill.rgb) }
 		return EntityRenderState.NO_OUTLINE
 	}
 }

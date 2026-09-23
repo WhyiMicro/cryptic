@@ -83,7 +83,7 @@ object CustomNametags {
 	val module = Module(
 		id = "custom_nametags",
 		name = "Custom Nametags",
-		description = "Restyles name tags and gives you a name only you can see",
+		description = "Restyles name tags",
 		category = ModuleCategory.VISUAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,

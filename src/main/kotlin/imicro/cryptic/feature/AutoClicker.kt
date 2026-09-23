@@ -7,13 +7,16 @@ import imicro.cryptic.gui.KeybindSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.RangeModuleSetting
+import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.mixin.KeyMappingAccessor
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
+import net.minecraft.world.phys.HitResult
 import org.lwjgl.glfw.GLFW
 
 /**
- * Clicks attack for you, at a rate drawn from a range rather than a metronome.
+ * Clicks attack — or use — for you, at a rate drawn from a range rather than a
+ * metronome.
  *
  * It clicks the way the mouse does. A physical press sets the mapping down and
  * queues a click onto it; Minecraft reads that queue back on the next tick to
@@ -92,8 +95,23 @@ object AutoClicker {
 		id = "mode",
 		label = "Mode",
 		options = listOf("Hold", "Toggle", "While holding attack/use"),
-		description = "Hold and Toggle run off the key bound above. " +
-			"While holding attack/use needs no bind at all: it repeats whichever of the two you are already holding.",
+		description = "Hold and Toggle run off the key bound above.",
+	)
+
+	@JvmField
+	val rightClick = ToggleModuleSetting(
+		id = "right_click",
+		label = "Right click",
+		defaultValue = false,
+		description = "Repeats use rather than attack, the way holding right click does.",
+	)
+
+	@JvmField
+	val allowBreaking = ToggleModuleSetting(
+		id = "allow_breaking",
+		label = "Allow breaking blocks",
+		defaultValue = false,
+		description = "Lets you mine while the clicker runs.",
 	)
 
 	/**
@@ -122,12 +140,12 @@ object AutoClicker {
 	val module = Module(
 		id = "auto_clicker",
 		name = "Auto Clicker",
-		description = "Repeats a click for you, at a rate that is not a metronome",
+		description = "Clicks for you at a human rate",
 		category = ModuleCategory.GENERAL,
 		hasDemoSettings = false,
 		supportsKeybind = true,
 		keybind = clickKeybind,
-		settings = listOf(cps, pattern, mode),
+		settings = listOf(cps, pattern, mode, rightClick, allowBreaking),
 	)
 
 	/** True while Toggle mode is switched on. The other modes never read it. */
@@ -176,9 +194,15 @@ object AutoClicker {
 			return
 		}
 
-		// Drawing a bow, eating, drinking: the button is meant to be held for
-		// those, and chopping the hold into clicks would cancel them outright.
-		val ready = canClick(client) && !player.isUsingItem()
+		// Mining is the player's own hold, and the clicker gets out of the way of
+		// it completely — button included.
+		if (breakingBlock(client)) {
+			stop()
+			handBack(client, attackKey(client))
+			return
+		}
+
+		val usable = canClick(client)
 
 		val target: InputConstants.Key? = when (mode.selectedIndex) {
 			MODE_BUTTONS -> {
@@ -189,17 +213,24 @@ object AutoClicker {
 			MODE_TOGGLE -> {
 				val trigger = bindDown(client)
 				// A press behind an open screen is the menu's, not the clicker's.
-				if (trigger && !wasTriggerDown && ready) toggled = !toggled
+				if (trigger && !wasTriggerDown && usable) toggled = !toggled
 				wasTriggerDown = trigger
-				if (toggled) attackKey(client) else null
+				if (toggled) repeatedKey(client) else null
 			}
 			else -> {
 				val trigger = bindDown(client)
 				wasTriggerDown = trigger
 				toggled = false
-				if (trigger) attackKey(client) else null
+				if (trigger) repeatedKey(client) else null
 			}
 		}
+
+		// Drawing a bow, eating, drinking: the button is meant to be held for
+		// those, and chopping the hold into clicks would cancel them outright.
+		// Asking for right click is the one case where that is the whole point,
+		// so the guard steps aside for it and for nothing else.
+		val spammingUse = rightClick.value && target != null && target == useKey(client)
+		val ready = usable && (spammingUse || !player.isUsingItem())
 
 		// A screen going up pauses rather than stops: having to re-arm after
 		// every message typed is not what a toggle is.
@@ -232,6 +263,33 @@ object AutoClicker {
 	}
 
 	/**
+	 * The button the two bound modes repeat, which is attack unless asked.
+	 *
+	 * Attack and use are read off their mappings rather than assumed to be the
+	 * two mouse buttons, so this follows a rebound right click as well.
+	 */
+	private fun repeatedKey(client: Minecraft): InputConstants.Key? =
+		if (rightClick.value) useKey(client) else attackKey(client)
+
+	/**
+	 * Whether the player is mining, and the clicker should keep out of it.
+	 *
+	 * Two conditions together, and both are needed. The attack button has to be
+	 * **physically** down — asked of the device, so the clicker's own presses on
+	 * that same mapping do not answer yes and stand it down against itself — and
+	 * the crosshair has to be on a block, so swinging at a mob in front of a
+	 * wall is still swinging at the mob.
+	 *
+	 * What it buys is the block actually breaking: mining is one unbroken hold,
+	 * and the clicker's releases reset the progress every time.
+	 */
+	private fun breakingBlock(client: Minecraft): Boolean {
+		if (!allowBreaking.value) return false
+		if (!physicallyDown(client, attackKey(client))) return false
+		return client.hitResult?.type == HitResult.Type.BLOCK
+	}
+
+	/**
 	 * Whichever of attack and use is being held, or null for neither.
 	 *
 	 * Attack wins when both are down, which is what block-hitting looks like:
@@ -239,12 +297,33 @@ object AutoClicker {
 	 */
 	private fun buttonUnderFinger(client: Minecraft): InputConstants.Key? {
 		val attack = attackKey(client)
+
+		// Use is repeated only when it has been asked for, and it wins over
+		// attack when it has — the point of asking is that use is the button you
+		// want repeated. Without the toggle, right click is left entirely alone:
+		// holding it is how a sword's ability is fired, and repeating that empties
+		// your mana in seconds.
+		if (rightClick.value) {
+			val use = useKey(client)
+			if (physicallyDown(client, use)) return use
+		}
+
 		if (physicallyDown(client, attack)) return attack
-
-		val use = useKey(client)
-		if (physicallyDown(client, use)) return use
-
 		return null
+	}
+
+	/**
+	 * Hands the button back to the finger that is really on it.
+	 *
+	 * [letGo] puts the mapping up, which is right between two clicks and wrong
+	 * here. While somebody is holding the button themselves, a mapping that says
+	 * "up" is a lie — and it is that lie that stopped blocks breaking: mining is
+	 * driven off the mapping, so vanilla saw the button as released and would
+	 * not start until it was physically let go and pressed again.
+	 */
+	private fun handBack(client: Minecraft, key: InputConstants.Key?) {
+		if (key == null) return
+		KeyMapping.set(key, physicallyDown(client, key))
 	}
 
 	/** Whether the module's own bind is down, for the two modes that use one. */
@@ -283,7 +362,7 @@ object AutoClicker {
 	 * fire the lot the moment the inventory closed.
 	 */
 	private fun canClick(client: Minecraft): Boolean =
-		client.screen == null && client.overlay == null && client.mouseHandler.isMouseGrabbed
+		client.gui.screen() == null && client.gui.overlay() == null && client.mouseHandler.isMouseGrabbed
 
 	private fun press(key: InputConstants.Key) {
 		KeyMapping.set(key, true)

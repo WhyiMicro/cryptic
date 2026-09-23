@@ -1,6 +1,7 @@
 package imicro.cryptic
 
 import com.mojang.blaze3d.platform.InputConstants
+import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.loader.api.FabricLoader
@@ -14,12 +15,32 @@ import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.network.chat.Component
 import java.util.Locale
 import org.lwjgl.glfw.GLFW
+import imicro.cryptic.gui.CarryScreen
+import imicro.cryptic.gui.CrosshairScreen
 import imicro.cryptic.gui.CrypticScreen
+import imicro.cryptic.gui.ImGuiRuntime
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.config.ConfigManager
 import imicro.cryptic.debug.DebugOverrides
+import imicro.cryptic.feature.ArrowHitboxes
+import imicro.cryptic.feature.BlockOverlay
+import imicro.cryptic.feature.CameraTweaks
+import imicro.cryptic.feature.CarryManager
+import imicro.cryptic.feature.CrosshairEditor
+import imicro.cryptic.feature.DoorFix
+import imicro.cryptic.feature.LavaToWater
+import imicro.cryptic.feature.NoItemPlace
+import imicro.cryptic.feature.SbKick
+import imicro.cryptic.feature.ScrollableTooltips
+import imicro.cryptic.feature.TimeChanger
 import imicro.cryptic.feature.AutoSprint
+import imicro.cryptic.feature.CookieReminder
+import imicro.cryptic.feature.LagDetector
+import imicro.cryptic.feature.NucleusQol
+import imicro.cryptic.feature.SmartTickTimer
 import imicro.cryptic.dungeon.DungeonBoss
+import imicro.cryptic.dungeon.Floor7
+import imicro.cryptic.dungeon.Floor7Progress
 import imicro.cryptic.dungeon.map.DungeonFloor
 import imicro.cryptic.dungeon.map.DungeonMapReader
 import imicro.cryptic.dungeon.DungeonLocation
@@ -31,6 +52,7 @@ import imicro.cryptic.feature.BreakerHelper
 import imicro.cryptic.feature.ClassColors
 import imicro.cryptic.feature.ClassNames
 import imicro.cryptic.feature.CustomNametags
+import imicro.cryptic.feature.DeviceSolver
 import imicro.cryptic.feature.DoorHighlight
 import imicro.cryptic.feature.DoorKeys
 import imicro.cryptic.feature.DungeonMap
@@ -40,12 +62,19 @@ import imicro.cryptic.feature.HidePlayers
 import imicro.cryptic.feature.Highlight
 import imicro.cryptic.feature.RenderOptimizer
 import imicro.cryptic.feature.Secrets
+import imicro.cryptic.feature.SlotBinds
 import imicro.cryptic.feature.LeapMessage
 import imicro.cryptic.feature.NoDebuff
 import imicro.cryptic.feature.RoomAlerts
+import imicro.cryptic.feature.TerminalEsp
+import imicro.cryptic.feature.TerminalOrder
 import imicro.cryptic.feature.TerminalSimulator
+import imicro.cryptic.feature.TerminalSolver
+import imicro.cryptic.feature.TerminalTimes
+import imicro.cryptic.feature.Toasts
 import imicro.cryptic.feature.Etherwarp
 import imicro.cryptic.feature.ExperimentSolver
+import imicro.cryptic.experiment.EquippedPet
 import imicro.cryptic.experiment.ExperimentDebug
 import imicro.cryptic.experiment.ExperimentRunner
 import imicro.cryptic.experiment.ExperimentTracker
@@ -53,11 +82,17 @@ import imicro.cryptic.feature.WitherCloakEffect
 import imicro.cryptic.feature.WitherOutline
 import imicro.cryptic.feature.Zoom
 import imicro.cryptic.terminal.TerminalDebug
+import imicro.cryptic.skyblock.BoosterCookie
+import imicro.cryptic.skyblock.SkyblockLocation
+import imicro.cryptic.slayer.VoidgloomBosses
 import imicro.cryptic.terminal.Terminals
 
 /** Client-only setup: key mappings and screens belong here, not in [Cryptic]. */
 object CrypticClient : ClientModInitializer {
 	private val keyCategory = KeyMapping.Category.register(Cryptic.id("cryptic"))
+	/** How many finished carries `/cryptic carry history` shows without asking. */
+	private const val CARRY_HISTORY_LINES = 10
+
 	private var openGuiRequested = false
 	private var hudEditorRequested = false
 	private var termSimRequested = false
@@ -111,16 +146,77 @@ object CrypticClient : ClientModInitializer {
 		),
 	)
 
+	/**
+	 * Unbound out of the box, like the other two.
+	 *
+	 * It is pressed over a slot in the inventory rather than in the world, so it
+	 * can safely share a key with something that only acts in the world — but
+	 * choosing which is not Cryptic's to decide.
+	 */
+	val slotBindKey = KeyMappingHelper.registerKeyMapping(
+		KeyMapping(
+			"key.${Cryptic.MOD_ID}.slot_bind",
+			InputConstants.Type.KEYSYM,
+			InputConstants.UNKNOWN.value,
+			keyCategory,
+		),
+	)
+
+	/**
+	 * Unbound out of the box, like the others.
+	 *
+	 * It sends a command, so a key that is also used for something else would
+	 * warp somebody away mid-task — which one to give up is theirs to decide.
+	 */
+	val nucleusWarpKey = KeyMappingHelper.registerKeyMapping(
+		KeyMapping(
+			"key.${Cryptic.MOD_ID}.nucleus_warp",
+			InputConstants.Type.KEYSYM,
+			InputConstants.UNKNOWN.value,
+			keyCategory,
+		),
+	)
+
+	/**
+	 * Unbound out of the box, like the others.
+	 *
+	 * It opens a window, so it wants a key that is free while both hands are on
+	 * the keyboard — and which one that is depends on the rest of the binds.
+	 */
+	val carryManagerKey = KeyMappingHelper.registerKeyMapping(
+		KeyMapping(
+			"key.${Cryptic.MOD_ID}.carry_manager",
+			InputConstants.Type.KEYSYM,
+			InputConstants.UNKNOWN.value,
+			keyCategory,
+		),
+	)
+
+	/** Unbound out of the box, for the same reason as the Carry Manager's. */
+	val crosshairEditorKey = KeyMappingHelper.registerKeyMapping(
+		KeyMapping(
+			"key.${Cryptic.MOD_ID}.crosshair_editor",
+			InputConstants.Type.KEYSYM,
+			InputConstants.UNKNOWN.value,
+			keyCategory,
+		),
+	)
+
 	override fun onInitializeClient() {
 		Hud.initialize()
-		// Elements register before the profile is read, or the placements in it
-		// would be applied to a list that is still empty.
+		// Every module that owns a HUD element registers *before* the profile is
+		// read, or the placement saved in it is applied to a list that does not
+		// contain the element yet and is silently dropped — which is what made
+		// the lag display go back to the middle of the screen every session.
 		DungeonMap.initialize()
 		DungeonScore.initialize()
 		DoorKeys.initialize()
 		DoorHighlight.initialize()
 		BreakerHelper.initialize()
 		RoomAlerts.initialize()
+		LagDetector.initialize()
+		SmartTickTimer.initialize()
+		SbKick.initialize()
 		ConfigManager.initialize()
 		DungeonRun.initialize()
 		ClassNames.initialize()
@@ -130,6 +226,14 @@ object CrypticClient : ClientModInitializer {
 		CustomNametags.initialize()
 		Highlight.initialize()
 		Secrets.initialize()
+		ArrowHitboxes.initialize()
+		DeviceSolver.initialize()
+		TerminalEsp.initialize()
+		TerminalOrder.initialize()
+		TerminalTimes.initialize()
+		NucleusQol.initialize()
+		BlockOverlay.initialize()
+		CarryManager.initialize()
 
 		ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
 			dispatcher.register(
@@ -363,10 +467,84 @@ object CrypticClient : ClientModInitializer {
 								)
 								1
 							})
+							.then(ClientCommands.literal("pet").executes { context ->
+								// What Hypixel calls the pet following you, which
+								// is what the guardian reminder reads.
+								EquippedPet.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("carry").executes { context ->
+								// Which armour stands sit on a slayer boss, and in
+								// what order, is the one thing the carry tracker
+								// depends on that cannot be checked from outside a
+								// lobby with a boss in it.
+								VoidgloomBosses.describe(Minecraft.getInstance()).forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("location").executes { context ->
+								// Whether SkyBlock and the island are being read,
+								// which everything gated on them depends on.
+								SkyblockLocation.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("timers").executes { context ->
+								// A timer that is not moving looks the same
+								// whether its chat line never came, the server's
+								// ping is not reaching the counter, or the run is
+								// not being read as a run.
+								SmartTickTimer.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("cookie").executes { context ->
+								// The tab list's footer is the only place the
+								// cookie's remaining time is written down, and
+								// what Hypixel puts on which line of it can only
+								// be seen from inside SkyBlock.
+								BoosterCookie.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("mimic").executes { context ->
+								// Which mob Hypixel spawns for the mimic, and what
+								// it carries, is only knowable from inside a run.
+								Highlight.describeMimics().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("devices").executes { context ->
+								// The names and positions Hypixel gives the
+								// stands behind every terminal, device and lever
+								// are the one thing about Goldor's tower that
+								// cannot be worked out from outside it.
+								Floor7Progress.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
 							.then(ClientCommands.literal("scan").executes { context ->
 								// The world scan is invisible when it works and
 								// invisible when it does not, so it can say so.
 								DungeonFloor.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("team").executes { context ->
+								// Who the map thinks each head is. The pairing is
+								// by position — the first marker belongs to the
+								// first teammate in the tab list — so the only way
+								// to check it is to see both lists side by side.
+								DungeonTeam.describePairing().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
@@ -451,6 +629,106 @@ object CrypticClient : ClientModInitializer {
 						},
 					)
 					.then(
+						ClientCommands.literal("carry")
+							.executes {
+								// Same deferral again: the window cannot open
+								// while the chat screen is still closing.
+								CarryScreen.request()
+								1
+							}
+							.then(ClientCommands.literal("list").executes { context ->
+								CarryManager.describeCarries().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(
+								ClientCommands.literal("history")
+									.executes { context ->
+										CarryManager.describeHistory(CARRY_HISTORY_LINES).forEach {
+											context.source.sendFeedback(Component.literal(it))
+										}
+										1
+									}
+									.then(
+										ClientCommands.argument("count", IntegerArgumentType.integer(1, 100))
+											.executes { context ->
+												val count = IntegerArgumentType.getInteger(context, "count")
+												CarryManager.describeHistory(count).forEach {
+													context.source.sendFeedback(Component.literal(it))
+												}
+												1
+											},
+									),
+							)
+							.then(
+								ClientCommands.literal("add")
+									.then(
+										ClientCommands.argument("player", StringArgumentType.word())
+											.suggests { _, builder ->
+												// Whoever is in the lobby, which is
+												// usually who is asking.
+												SharedSuggestionProvider.suggest(
+													Minecraft.getInstance().connection
+														?.onlinePlayers
+														?.map { it.profile.name }
+														.orEmpty(),
+													builder,
+												)
+											}
+											.then(
+												ClientCommands.argument("tier", IntegerArgumentType.integer(1, 4))
+													.then(
+														ClientCommands.argument("amount", IntegerArgumentType.integer(1, 999))
+															.executes { context ->
+																val player = StringArgumentType.getString(context, "player")
+																val tier = IntegerArgumentType.getInteger(context, "tier")
+																val amount = IntegerArgumentType.getInteger(context, "amount")
+
+																if (!CarryManager.add(player, tier, amount)) {
+																	context.source.sendError(
+																		Component.literal("Could not add that carry."),
+																	)
+																	return@executes 0
+																}
+
+																context.source.sendFeedback(
+																	Component.literal(
+																		"§dTracking §b$player §7for §f${amount}× §7Tier §f$tier§7.",
+																	),
+																)
+																1
+															},
+													),
+											),
+									),
+							)
+							.then(
+								ClientCommands.literal("remove")
+									.then(
+										ClientCommands.argument("player", StringArgumentType.word())
+											.suggests { _, builder ->
+												SharedSuggestionProvider.suggest(CarryManager.trackedNames(), builder)
+											}
+											.executes { context ->
+												val player = StringArgumentType.getString(context, "player")
+												val removed = CarryManager.removeByName(player)
+												if (removed == 0) {
+													context.source.sendError(
+														Component.literal("$player is not on the list."),
+													)
+													return@executes 0
+												}
+
+												context.source.sendFeedback(
+													Component.literal("§7Removed §b$player §7from the list."),
+												)
+												1
+											},
+									),
+							),
+					)
+					.then(
 						ClientCommands.literal("termsim").executes {
 							// Same deferral again, for the same reason.
 							termSimRequested = true
@@ -493,37 +771,87 @@ object CrypticClient : ClientModInitializer {
 
 		ClientTickEvents.END_CLIENT_TICK.register { client ->
 			AutoSprint.tick(client)
+			// Which island, and whether it is SkyBlock at all, for the modules that
+			// must not act anywhere else.
+			SkyblockLocation.tick(
+				client,
+				SlotBinds.module.enabled || NucleusQol.module.enabled || CarryManager.module.enabled,
+			)
 			Zoom.tick(client)
 			// One tab-list scan feeds every module that needs to know the party.
 			DungeonTeam.tick(
 				client,
-				ClassColors.module.enabled || DungeonMap.module.enabled,
+				ClassColors.module.enabled || DungeonMap.module.enabled ||
+					TerminalOrder.needsTeamTracking,
 			)
 			// Which floor the player is on only matters to modules limited to one.
 			DungeonLocation.tick(
 				client,
 				WitherOutline.module.enabled || DungeonMap.module.enabled ||
-					DungeonScore.module.enabled || DoorHighlight.module.enabled ||
+					DoorHighlight.module.enabled ||
 					RoomAlerts.module.enabled || BreakerHelper.module.enabled ||
 					HiddenMobs.module.enabled || Highlight.module.enabled ||
 					Secrets.module.enabled || RenderOptimizer.module.enabled ||
-					HidePlayers.module.enabled,
+					HidePlayers.module.enabled || TerminalEsp.module.enabled ||
+					TerminalOrder.module.enabled || DeviceSolver.needsPhaseTracking ||
+					SmartTickTimer.module.enabled || Etherwarp.needsFloorTracking ||
+					(SlotBinds.module.enabled && SlotBinds.dungeonsOnly.value),
 			)
+			// Which part of Goldor's tower the player is in, for the modules
+			// whose devices and terminals repeat in every quarter of it.
+			Floor7.tick(
+				client,
+				TerminalEsp.module.enabled || TerminalOrder.module.enabled ||
+					DeviceSolver.needsPhaseTracking || DoorFix.needsPhaseTracking ||
+					NoItemPlace.module.enabled,
+			)
+			// What the section has already had done to it, which only matters
+			// to whoever is drawing labels over the things still to do.
+			Floor7Progress.tick(client, TerminalOrder.needsProgressTracking)
 			// The score's ingredients are read once and shared, map included.
-			DungeonStats.tick(client, DungeonMap.module.enabled || DungeonScore.module.enabled)
+			DungeonStats.tick(
+				client,
+				DungeonMap.module.enabled || RoomAlerts.module.enabled || SmartTickTimer.module.enabled,
+			)
 			DungeonMap.tick(client)
 			DungeonScore.tick(client)
 			DoorKeys.tick(client)
 			NoDebuff.tick(client)
-			RoomAlerts.tick(client)
 			// Which of the four withers is up only matters while they are colored apart.
 			DungeonBoss.tick(client, WitherOutline.needsBossTracking)
 			// Escape closes a terminal without the server saying so.
 			Terminals.tick(client)
+			// The chest-based render types ask the game for a GUI scale of their
+			// own while a terminal is open, and give it back when one closes.
+			TerminalSolver.tick(client)
 			ExperimentSolver.tick(client)
+			DeviceSolver.tick(client)
+			TerminalEsp.tick(client)
 			Highlight.tick(client)
 			Secrets.tick()
+			SlotBinds.tick(client)
+			CookieReminder.tick(client)
+			TimeChanger.tick(client)
+			LavaToWater.tick(client)
+			DoorFix.tick(client)
+			CarryManager.tick(client)
+			CarryScreen.openIfRequested(client)
+			CrosshairScreen.openIfRequested(client)
+			// Last, so it sees whether anything drew a tooltip this frame.
+			ScrollableTooltips.endFrame()
 			WitherCloakEffect.tick(client)
+
+			while (nucleusWarpKey.consumeClick()) {
+				NucleusQol.onWarpKey(client)
+			}
+
+			while (carryManagerKey.consumeClick()) {
+				if (CarryManager.module.enabled) CarryScreen.request()
+			}
+
+			while (crosshairEditorKey.consumeClick()) {
+				if (CrosshairEditor.module.enabled) CrosshairScreen.request()
+			}
 
 			while (openGuiKey.consumeClick()) {
 				openGuiRequested = true
@@ -547,6 +875,6 @@ object CrypticClient : ClientModInitializer {
 	}
 
 	private fun openGui(client: Minecraft) {
-		client.setScreen(CrypticScreen())
+		ImGuiRuntime.open(client) { CrypticScreen() }
 	}
 }

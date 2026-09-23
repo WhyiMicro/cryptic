@@ -1,5 +1,6 @@
 package imicro.cryptic.terminal.sim
 
+import imicro.cryptic.feature.TerminalTimes
 import imicro.cryptic.terminal.Terminals
 import net.minecraft.client.Minecraft
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
@@ -40,12 +41,15 @@ abstract class TermSimScreen(
 	Component.literal(simName),
 ) {
 	/** The filler that surrounds every terminal, and is never clickable. */
-	protected val fillerPane: ItemStack = named(ItemStack(Items.BLACK_STAINED_GLASS_PANE), "")
+	protected val fillerPane: ItemStack = named(ItemStack(Items.STAINED_GLASS_PANE.black()), "")
 
 	protected val gridSlots: List<Slot> get() = menu.slots.subList(0, size)
 
 	protected var ping = 0L
 		private set
+
+	/** Stands in for the container id a real chest arrives with. */
+	private val windowId = nextWindowId++
 
 	/** The start menu answers straight away; a terminal answers after [ping]. */
 	protected open val delaysClicks: Boolean get() = true
@@ -64,16 +68,20 @@ abstract class TermSimScreen(
 
 	fun open(pingMillis: Long) {
 		ping = pingMillis
-		Minecraft.getInstance().setScreen(this)
+		Minecraft.getInstance().gui.setScreen(this)
+		// Announced before the chest is filled, exactly as the server does it:
+		// the window first, then the slots that go in it. The id is the
+		// simulator's own, so two runs of the same terminal are told apart and
+		// the second gets a click-protection clock of its own.
+		Terminals.windowOpened(simName, windowId)
 		create()
 	}
 
 	/**
-	 * Announces a fresh window and fills it, which is how Hypixel answers every
-	 * click: not with a slot update, but with the whole chest again.
+	 * Fills the chest in, slot by slot, which is how Hypixel answers a click:
+	 * the window stays open and only what changed is sent.
 	 */
 	protected fun rebuild(block: (Slot) -> ItemStack) {
-		Terminals.windowOpened(simName)
 		gridSlots.forEach { it.setSlot(block(it)) }
 	}
 
@@ -112,7 +120,7 @@ abstract class TermSimScreen(
 	 */
 	private fun queueClick(slot: Slot, button: Int) {
 		if (slot.container !== container) return
-		if (slot.item.item == Items.BLACK_STAINED_GLASS_PANE) return
+		if (slot.item.item == Items.STAINED_GLASS_PANE.black()) return
 		if (pendingSlot != null) return
 
 		val ticks = if (delaysClicks) (ping / TICK_MILLIS).toInt() else 0
@@ -135,6 +143,10 @@ abstract class TermSimScreen(
 	 */
 	protected fun completed() {
 		playClickSound()
+		// A simulated terminal has no chat line to be timed by, so it says so
+		// itself — before the tracker is cleared, while the clock it started is
+		// still the one being read.
+		TerminalTimes.onSolved()
 		Terminals.closed()
 		Minecraft.getInstance().execute { StartSim().open(ping) }
 	}
@@ -146,11 +158,14 @@ abstract class TermSimScreen(
 	}
 
 	protected fun message(text: String) {
-		Minecraft.getInstance().gui.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §f$text"))
+		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §f$text"))
 	}
 
 	private companion object {
 		const val TICK_MILLIS = 50L
+
+		/** Counted down from the top of the integers a real chest never reaches. */
+		var nextWindowId = Int.MAX_VALUE / 2
 	}
 }
 

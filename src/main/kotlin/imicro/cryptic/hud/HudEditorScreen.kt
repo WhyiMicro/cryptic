@@ -22,6 +22,10 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	private var grabX = 0.0
 	private var grabY = 0.0
 
+	/** Which arms of the centre cross are currently holding the dragged element. */
+	private var snappedX = false
+	private var snappedY = false
+
 	/**
 	 * Escape goes back where you came from.
 	 *
@@ -30,7 +34,7 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	 * Reached from `/cryptic hud` there is nothing behind it, so it closes.
 	 */
 	override fun onClose() {
-		if (parent != null) minecraft?.setScreen(parent) else super.onClose()
+		if (parent != null) minecraft?.gui?.setScreen(parent) else super.onClose()
 	}
 
 	override fun isPauseScreen(): Boolean = false
@@ -38,7 +42,10 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	override fun extractRenderState(context: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
 		context.fill(0, 0, width, height, BACKDROP)
 
+		if (dragged != null) drawCentreCross(context)
+
 		for (element in Hud.elements) {
+			if (!element.showInEditor()) continue
 			val bounds = boundsOf(element)
 			val hovered = element === dragged || bounds.contains(mouseX.toDouble(), mouseY.toDouble())
 
@@ -78,13 +85,68 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		val element = dragged ?: return super.mouseDragged(event, dragX, dragY)
 		element.x = (event.x() - grabX) / width
 		element.y = (event.y() - grabY) / height
+		snapToCentre(element)
 		element.clampTo(width, height)
 		return true
+	}
+
+	/**
+	 * Pulls a dragged element onto the middle of the screen.
+	 *
+	 * Each axis snaps on its own, so an element can be centred across the
+	 * screen while sitting wherever you like down it — which is what you want
+	 * nine times out of ten, and is impossible to hit by hand at this scale.
+	 * [snappedX] and [snappedY] say which arms of the cross to light up, so the
+	 * snap is something you can see happen rather than something you discover
+	 * afterwards.
+	 */
+	private fun snapToCentre(element: HudElement) {
+		snappedX = false
+		snappedY = false
+		if (width <= 0 || height <= 0) return
+
+		val elementWidth = element.width * element.scale
+		val elementHeight = element.height * element.scale
+
+		val centredX = (width - elementWidth) / 2.0 / width
+		val centredY = (height - elementHeight) / 2.0 / height
+
+		if (kotlin.math.abs(element.x - centredX) * width <= SNAP_DISTANCE) {
+			element.x = centredX
+			snappedX = true
+		}
+		if (kotlin.math.abs(element.y - centredY) * height <= SNAP_DISTANCE) {
+			element.y = centredY
+			snappedY = true
+		}
+	}
+
+	/**
+	 * The cross in the middle of the screen, drawn only while something is
+	 * being dragged — it is a guide, and a guide with nothing to guide is just
+	 * a mark on the screen.
+	 */
+	private fun drawCentreCross(context: GuiGraphicsExtractor) {
+		val midX = width / 2
+		val midY = height / 2
+
+		val horizontal = if (snappedY) CROSS_SNAPPED else CROSS
+		val vertical = if (snappedX) CROSS_SNAPPED else CROSS
+
+		// Each arm is drawn its full length when it is holding the element, so
+		// a snap reads as a line through the screen rather than a longer tick.
+		val armX = if (snappedX) height else CROSS_ARM
+		val armY = if (snappedY) width else CROSS_ARM
+
+		context.fill(midX - armY / 2, midY, midX + armY / 2, midY + 1, horizontal)
+		context.fill(midX, midY - armX / 2, midX + 1, midY + armX / 2, vertical)
 	}
 
 	override fun mouseReleased(event: MouseButtonEvent): Boolean {
 		if (dragged != null && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
 			dragged = null
+			snappedX = false
+			snappedY = false
 			return true
 		}
 		return super.mouseReleased(event)
@@ -126,7 +188,7 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 
 	/** The last element drawn is the one on top, so it is hit first. */
 	private fun topmostAt(mouseX: Double, mouseY: Double): HudElement? =
-		Hud.elements.lastOrNull { boundsOf(it).contains(mouseX, mouseY) }
+		Hud.elements.lastOrNull { it.showInEditor() && boundsOf(it).contains(mouseX, mouseY) }
 
 	private fun boundsOf(element: HudElement): Bounds {
 		val left = (element.x * width).toInt()
@@ -146,6 +208,15 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	private companion object {
 		const val HINT = "Drag to move  •  Scroll to resize  •  Right-click to reset one  •  R resets all"
 		const val BACKDROP = 0xA0101010.toInt()
+
+		/** How near the middle an element has to be dragged before it is taken. */
+		const val SNAP_DISTANCE = 6
+
+		/** The cross's reach when it is only offering, in GUI pixels. */
+		const val CROSS_ARM = 34
+
+		const val CROSS = 0x50FFFFFF
+		const val CROSS_SNAPPED = 0xFF55FF55.toInt()
 		const val FRAME = 0x60FFFFFF
 		const val FRAME_HOVERED = 0xFFFFFFFF.toInt()
 		const val LABEL = 0xFFE4E4E4.toInt()

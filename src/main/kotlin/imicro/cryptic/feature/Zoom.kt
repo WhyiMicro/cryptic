@@ -130,7 +130,7 @@ object Zoom {
 	private fun held(): Boolean {
 		if (!module.enabled) return false
 		val client = Minecraft.getInstance()
-		if (client.player == null || client.screen != null) return false
+		if (client.player == null || client.gui.screen() != null) return false
 		return CrypticClient.zoomKey.isDown
 	}
 

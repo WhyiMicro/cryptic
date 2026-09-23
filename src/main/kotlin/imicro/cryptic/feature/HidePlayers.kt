@@ -30,7 +30,7 @@ object HidePlayers {
 		id = "only_in_dungeons",
 		label = "Only in dungeons",
 		defaultValue = true,
-		description = "Leaves everyone visible outside a dungeon, where a hub full of nobody is disorienting.",
+		description = "Only hides players inside a dungeon.",
 	)
 
 	@JvmField

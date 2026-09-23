@@ -2,5 +2,9 @@
   "key.cryptic.open_gui": "Open Cryptic GUI",
   "key.cryptic.zoom": "Zoom",
   "key.cryptic.auto_clicker": "Auto Clicker",
+  "key.cryptic.slot_bind": "Set Slot Bind",
+  "key.cryptic.nucleus_warp": "Warp to Nucleus",
+  "key.cryptic.carry_manager": "Open Carry Manager",
+  "key.cryptic.crosshair_editor": "Open Crosshair Editor",
   "key.category.cryptic.cryptic": "Cryptic"
 }

@@ -5,6 +5,7 @@ import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.dungeon.DungeonStats
 import imicro.cryptic.dungeon.DungeonTeam
+import imicro.cryptic.dungeon.map.BossScan
 import imicro.cryptic.dungeon.map.DungeonFloor
 import imicro.cryptic.dungeon.map.DungeonMapColors
 import imicro.cryptic.dungeon.map.DungeonMapReader
@@ -31,6 +32,7 @@ import net.minecraft.client.gui.components.PlayerFaceExtractor
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.core.BlockPos
 import net.minecraft.core.component.DataComponents
+import net.minecraft.util.Mth
 import net.minecraft.resources.Identifier
 import net.minecraft.world.item.component.CustomData
 import net.minecraft.world.level.block.Blocks
@@ -55,6 +57,17 @@ object DungeonMap {
 	private val QUESTION = Cryptic.id("map/question.png")
 	private val SELF_MARKER = Cryptic.id("map/self_marker.png")
 	private val PRINCE_CROWN = Cryptic.id("map/prince_crown.png")
+
+	/**
+	 * How long a head takes to catch up with the map, roughly.
+	 *
+	 * Short enough that nobody is drawn anywhere they were not just now, long
+	 * enough that the jump between two map updates reads as movement.
+	 */
+	private const val EASE_SECONDS = 0.09
+
+	/** Past this, a head has been leaped rather than walked, and is not eased. */
+	private const val EASE_SNAP_DISTANCE = 24f
 
 	@JvmField
 	val background = ColorModuleSetting(
@@ -98,51 +111,58 @@ object DungeonMap {
 	)
 
 	@JvmField
-	val instantRoomUpdate = ToggleModuleSetting(
-		id = "instant_room_update",
-		label = "Instant room update",
-		defaultValue = true,
-		description = "Marks a room entered as you walk in, without waiting for Hypixel.",
+	val customizeRooms = ToggleModuleSetting(
+		id = "customize_rooms",
+		label = "Customize rooms",
+		description = "Shows the colour of every room type.",
+	)
+
+	@JvmField
+	val customizeDoors = ToggleModuleSetting(
+		id = "customize_doors",
+		label = "Customize doors",
+		description = "Shows the door colours and how thick they are drawn.",
 	)
 
 	@JvmField
 	val doorThickness = SliderModuleSetting(
 		id = "door_thickness",
 		label = "Door thickness",
-		defaultValue = 9.0,
+		defaultValue = 8.0,
 		min = 3.0,
 		max = 16.0,
 		step = 1.0,
+		visibleIf = { customizeDoors.value },
 	)
 
 	private val roomsSection = SectionModuleSetting("rooms_section", "Rooms")
 
 	@JvmField
-	val normalColor = ColorModuleSetting("normal_color", "Normal", DungeonMapColors.NORMAL)
+	val normalColor = ColorModuleSetting("normal_color", "Normal", DungeonMapColors.NORMAL, visibleIf = { customizeRooms.value })
 
 	@JvmField
-	val bloodColor = ColorModuleSetting("blood_color", "Blood", DungeonMapColors.BLOOD)
+	val bloodColor = ColorModuleSetting("blood_color", "Blood", DungeonMapColors.BLOOD, visibleIf = { customizeRooms.value })
 
 	@JvmField
-	val entranceColor = ColorModuleSetting("entrance_color", "Entrance", DungeonMapColors.ENTRANCE)
+	val entranceColor = ColorModuleSetting("entrance_color", "Entrance", DungeonMapColors.ENTRANCE, visibleIf = { customizeRooms.value })
 
 	@JvmField
-	val puzzleColor = ColorModuleSetting("puzzle_color", "Puzzle", DungeonMapColors.PUZZLE)
+	val puzzleColor = ColorModuleSetting("puzzle_color", "Puzzle", DungeonMapColors.PUZZLE, visibleIf = { customizeRooms.value })
 
 	@JvmField
-	val trapColor = ColorModuleSetting("trap_color", "Trap", DungeonMapColors.TRAP)
+	val trapColor = ColorModuleSetting("trap_color", "Trap", DungeonMapColors.TRAP, visibleIf = { customizeRooms.value })
 
 	@JvmField
-	val championColor = ColorModuleSetting("champion_color", "Miniboss", DungeonMapColors.CHAMPION)
+	val championColor = ColorModuleSetting("champion_color", "Miniboss", DungeonMapColors.CHAMPION, visibleIf = { customizeRooms.value })
 
 	@JvmField
-	val fairyColor = ColorModuleSetting("fairy_color", "Fairy", DungeonMapColors.FAIRY)
+	val fairyColor = ColorModuleSetting("fairy_color", "Fairy", DungeonMapColors.FAIRY, visibleIf = { customizeRooms.value })
 
 	@JvmField
-	val rareColor = ColorModuleSetting("rare_color", "Rare", DungeonMapColors.RARE)
+	val rareColor = ColorModuleSetting("rare_color", "Rare", DungeonMapColors.RARE, visibleIf = { customizeRooms.value })
 
 	@JvmField
-	val unexploredColor = ColorModuleSetting("unexplored_color", "Unexplored", DungeonMapColors.UNOPENED)
+	val unexploredColor = ColorModuleSetting("unexplored_color", "Unexplored", DungeonMapColors.UNOPENED, visibleIf = { customizeRooms.value })
 
 	@JvmField
 	val darkenUnexplored = SliderModuleSetting(
@@ -153,21 +173,22 @@ object DungeonMap {
 		max = 100.0,
 		step = 5.0,
 		description = "How much colour a room keeps before anyone has been in it.",
+		visibleIf = { customizeRooms.value },
 	)
 
 	private val doorsSection = SectionModuleSetting("doors_section", "Doors")
 
 	@JvmField
-	val normalDoorColor = ColorModuleSetting("normal_door_color", "Normal", DungeonMapColors.NORMAL)
+	val normalDoorColor = ColorModuleSetting("normal_door_color", "Normal", DungeonMapColors.NORMAL, visibleIf = { customizeDoors.value })
 
 	@JvmField
-	val witherDoorColor = ColorModuleSetting("wither_door_color", "Wither", DungeonMapColors.WITHER_DOOR)
+	val witherDoorColor = ColorModuleSetting("wither_door_color", "Wither", DungeonMapColors.WITHER_DOOR, visibleIf = { customizeDoors.value })
 
 	@JvmField
-	val bloodDoorColor = ColorModuleSetting("blood_door_color", "Blood", DungeonMapColors.BLOOD)
+	val bloodDoorColor = ColorModuleSetting("blood_door_color", "Blood", DungeonMapColors.BLOOD, visibleIf = { customizeDoors.value })
 
 	@JvmField
-	val entranceDoorColor = ColorModuleSetting("entrance_door_color", "Entrance", DungeonMapColors.ENTRANCE)
+	val entranceDoorColor = ColorModuleSetting("entrance_door_color", "Entrance", DungeonMapColors.ENTRANCE, visibleIf = { customizeDoors.value })
 
 	private val marksSection = SectionModuleSetting("marks_section", "Marks")
 
@@ -177,8 +198,7 @@ object DungeonMap {
 		label = "Room style",
 		options = listOf("Checkmarks", "Secrets", "Room name", "Name + secrets"),
 		defaultIndex = 2,
-		description = "What each room says about itself: how far it is cleared, " +
-			"how many of its secrets are found, or what it is called.",
+		description = "What each room shows: its mark, its secrets or its name.",
 	)
 
 	/** True for the two styles that write the room's name across it. */
@@ -290,6 +310,17 @@ object DungeonMap {
 	)
 
 	@JvmField
+	val bossViewScale = SliderModuleSetting(
+		id = "boss_view_scale",
+		label = "Boss view scale",
+		defaultValue = 1.5,
+		min = 0.5,
+		max = 4.0,
+		step = 0.1,
+		description = "How far the boss room view is zoomed in.",
+	)
+
+	@JvmField
 	val leapNameScale = SliderModuleSetting(
 		id = "leap_name_scale",
 		label = "Name size",
@@ -306,7 +337,8 @@ object DungeonMap {
 		padding,
 		reveal,
 		predictRooms,
-		instantRoomUpdate,
+		customizeRooms,
+		customizeDoors,
 		normalColor,
 		bloodColor,
 		entranceColor,
@@ -335,6 +367,7 @@ object DungeonMap {
 		facingArrow,
 		leapNames,
 		leapNameScale,
+		bossViewScale,
 	)
 
 	private val reset = ButtonModuleSetting("reset", "Reset", action = {
@@ -347,6 +380,8 @@ object DungeonMap {
 				else -> Unit
 			}
 		}
+		// The score rides on this card now, so its Reset covers both.
+		DungeonScore.resetSettings()
 	})
 
 	@JvmField
@@ -363,8 +398,8 @@ object DungeonMap {
 			padding,
 			reveal,
 			predictRooms,
-			instantRoomUpdate,
 			roomsSection,
+			customizeRooms,
 			normalColor,
 			bloodColor,
 			entranceColor,
@@ -376,6 +411,7 @@ object DungeonMap {
 			unexploredColor,
 			darkenUnexplored,
 			doorsSection,
+			customizeDoors,
 			doorThickness,
 			normalDoorColor,
 			witherDoorColor,
@@ -395,8 +431,8 @@ object DungeonMap {
 			facingArrow,
 			leapNames,
 			leapNameScale,
-			reset,
-		),
+			bossViewScale,
+		) + DungeonScore.scoreSettings + listOf(reset),
 	)
 
 	private var initialized = false
@@ -408,7 +444,19 @@ object DungeonMap {
 	 * [DoorHighlight] reads both, so they run for either module rather than
 	 * leaving one of them quietly broken when the map is switched off.
 	 */
-	private val needed: Boolean get() = module.enabled || DoorHighlight.module.enabled
+	/**
+	 * Whoever needs the floor kept up to date, which is not only the map.
+	 *
+	 * The room the player is standing in is worked out here and nowhere else,
+	 * so every module that asks [currentRoom] has to be on this list. Room
+	 * Alerts was not, and that is why its titles came and went with whether the
+	 * map happened to be switched on.
+	 */
+	private val needed: Boolean
+		get() = module.enabled ||
+			DoorHighlight.module.enabled ||
+			RoomAlerts.module.enabled ||
+			BreakerHelper.module.enabled
 
 	/** The tile the player was last seen in, so a room is only entered once. */
 	private var lastTile: Vec2i? = null
@@ -540,7 +588,8 @@ object DungeonMap {
 		if (tile == lastTile) return
 		lastTile = tile
 
-		if (!instantRoomUpdate.value) return
+		// A room is marked entered as you walk in rather than when Hypixel
+		// catches up, which is always what you want and never worth a switch.
 		val room = DungeonFloor.roomAt(tile) ?: return
 		if (room.enterNow()) RoomPrediction.update()
 	}
@@ -560,6 +609,40 @@ object DungeonMap {
 		private val floorDrawn: Boolean
 			get() = module.enabled && DungeonFloor.loaded && !DungeonRun.inBoss
 
+		/** True while the score screen from a finished run is worth drawing. */
+		private val artDrawn: Boolean
+			get() = module.enabled && DungeonScore.showAtEnd.value &&
+				DungeonRun.ended && DungeonMapReader.endArt.isNotEmpty()
+
+		/**
+		 * Draws Hypixel's own end-of-run score screen, scaled to the map's box.
+		 *
+		 * The map item stops being a floor when the run ends and becomes the
+		 * picture everybody stops to read: four categories, a grade and a
+		 * number. Rather than rebuild that out of the numbers Cryptic already
+		 * has, the picture itself is drawn — it is the one on the item in your
+		 * hand, and it is the one people screenshot.
+		 */
+		private fun renderEndArt(context: GuiGraphicsExtractor, width: Int, height: Int) {
+			val size = DungeonMapReader.ART_SIZE
+			val scale = minOf(width, height) / size.toFloat()
+			val originX = (width - size * scale) / 2f
+			val originY = (height - size * scale) / 2f
+
+			val pose = context.pose()
+			pose.pushMatrix()
+			pose.translate(originX, originY)
+			pose.scale(scale, scale)
+			DungeonMapReader.endArt.forEach { run ->
+				context.fill(run.left, run.top, run.right, run.top + 1, run.argb)
+			}
+			pose.popMatrix()
+		}
+
+		/** The boss room from above, which takes the floor map's place. */
+		private val bossDrawn: Boolean
+			get() = module.enabled && DungeonLocation.inDungeon && DungeonScore.showsBossView
+
 		// The map is square until a floor says otherwise, which is what the
 		// editor measures when there is no dungeon to read. The size does not
 		// shrink in the boss room even though the floor stops being drawn: the
@@ -570,15 +653,36 @@ object DungeonMap {
 		// Having a floor at all is the whole condition: it can only happen
 		// inside a dungeon, and asking the scoreboard as well only adds a
 		// second way for the map to come up empty.
-		override fun isVisible(): Boolean = floorDrawn || DungeonScore.attachedVisible()
+		override fun isVisible(): Boolean =
+			floorDrawn || bossDrawn || artDrawn || DungeonScore.attachedVisible()
+
+		/** A card that is switched off has nothing on the HUD to arrange. */
+		override fun showInEditor(): Boolean = module.enabled
 
 		override fun render(context: GuiGraphicsExtractor) {
 			val size = DungeonFloor.sizeInPixels()
 			val edge = edge()
 
+			if (artDrawn) {
+				context.fill(0, 0, size.x + edge * 2, size.z + edge * 2, background.argb)
+				renderEndArt(context, size.x + edge * 2, size.z + edge * 2)
+				DungeonScore.renderAttached(context, size.x + edge * 2, size.z + edge * 2)
+				return
+			}
+
 			if (!floorDrawn) {
-				// Only the score is left, drawn against the outline the map
-				// would have filled, so it does not move when the boss starts.
+				// The floor is behind us. Either the boss room is drawn in its
+				// place, or only the score is left — and either way it is drawn
+				// against the outline the map filled, so nothing moves when the
+				// boss starts.
+				if (bossDrawn) {
+					context.fill(0, 0, size.x + edge * 2, size.z + edge * 2, background.argb)
+					val bossPose = context.pose()
+					bossPose.pushMatrix()
+					bossPose.translate(edge.toFloat(), edge.toFloat())
+					renderBossView(context, size.x, size.z)
+					bossPose.popMatrix()
+				}
 				DungeonScore.renderAttached(context, size.x + edge * 2, size.z + edge * 2)
 				return
 			}
@@ -620,6 +724,78 @@ object DungeonMap {
 			)
 			DungeonScore.renderAttachedExample(context, size.x + edge * 2, size.z + edge * 2)
 		}
+
+		/**
+		 * The boss room from above, when the floor's map has nothing left to
+		 * show.
+		 *
+		 * Hypixel stops drawing its map item the moment the boss starts, which
+		 * is the moment a party most wants to know where everybody is: Goldor's
+		 * four sections are four corners of a tower and the terminals are done
+		 * in pairs. There is no map to read for it, so this is drawn from the
+		 * world — every teammate the client can see, plotted against you in the
+		 * middle, at a scale you can set.
+		 *
+		 * Nothing here is room-shaped, because a boss room has no published
+		 * shape: it is a view of the ground around you rather than a plan of
+		 * the room, and it travels with you as you cross it.
+		 */
+		/**
+		 * The boss room from above: the room itself, then everybody on it.
+		 *
+		 * The plan is a square of blocks around you rather than a picture of
+		 * the room, so it is right wherever you are — including partway down
+		 * Goldor's tower, where the floor you are on is not the floor anybody
+		 * drew a picture of.
+		 */
+		private fun renderBossView(context: GuiGraphicsExtractor, width: Int, height: Int) {
+			val client = Minecraft.getInstance()
+			val player = client.player ?: return
+			val level = client.level ?: return
+			BossScan.update(level, player)
+
+			val blocks = BossScan.SIZE
+			val scale = minOf(width, height) / blocks.toFloat() * bossViewScale.value.toFloat()
+			val centerX = width / 2f
+			val centerZ = height / 2f
+
+			// Where the plan's top-left corner falls on screen, given that the
+			// player is drawn in the middle of the box.
+			val offsetX = centerX - ((player.x - BossScan.originX) * scale).toFloat()
+			val offsetZ = centerZ - ((player.z - BossScan.originZ) * scale).toFloat()
+
+			val pose = context.pose()
+			pose.pushMatrix()
+			// Clipped to the box, or a plan wider than the map paints the HUD.
+			context.enableScissor(0, 0, width, height)
+			pose.translate(offsetX, offsetZ)
+			pose.scale(scale, scale)
+			BossScan.runs.forEach { run ->
+				context.fill(run.left, run.top, run.right, run.top + 1, run.argb)
+			}
+			pose.popMatrix()
+			context.disableScissor()
+
+			val self = player.name.string
+			val names = leapNames.value && namesWanted(client)
+			val headPose = context.pose()
+
+			DungeonTeam.classes.keys.forEach { name ->
+				if (name == self || name in DungeonTeam.dead) return@forEach
+				val teammate = level.players().firstOrNull { it.name.string == name } ?: return@forEach
+
+				val x = centerX + ((teammate.x - player.x) * scale).toFloat()
+				val z = centerZ + ((teammate.z - player.z) * scale).toFloat()
+				if (x < 0f || z < 0f || x > width || z > height) return@forEach
+				drawMarker(context, headPose, x, z, teammate.yRot, name, false, names)
+			}
+
+			// Yours last and in its own layer, for the same reason as on the
+			// floor map: it is the one that must never end up underneath.
+			context.nextStratum()
+			drawMarker(context, headPose, centerX, centerZ, player.yRot, self, true, names)
+		}
+
 
 		/**
 		 * A room says one thing about itself, chosen by [roomStyle].
@@ -713,6 +889,69 @@ object DungeonMap {
 			}
 		}
 
+		/** Where a teammate's head is being drawn, as against where it has got to. */
+		private class EasedMarker(var x: Float, var z: Float, var yaw: Float)
+
+		private val easedMarkers = HashMap<String, EasedMarker>()
+		private var lastEaseAt = 0L
+
+		/**
+		 * How far to move each head toward its real position this frame.
+		 *
+		 * Hypixel sends the map item a few times a second, so a head drawn
+		 * straight from it lurches: it stands still for several frames and then
+		 * jumps. There is no way to ask for the data more often — it arrives when
+		 * Hypixel sends it — so the fix has to be on this side, and easing toward
+		 * the last known position costs nothing per frame where asking again
+		 * would cost a packet.
+		 *
+		 * Worked out from real time rather than from ticks so the smoothing looks
+		 * the same at any frame rate, and capped so a frame lost to something
+		 * else does not make every head teleport.
+		 */
+		private fun easeAmount(): Float {
+			val now = System.nanoTime()
+			val elapsed = if (lastEaseAt == 0L) 0L else now - lastEaseAt
+			lastEaseAt = now
+
+			val seconds = (elapsed / 1_000_000_000.0).coerceIn(0.0, 0.25)
+			return (1.0 - kotlin.math.exp(-seconds / EASE_SECONDS)).toFloat()
+		}
+
+		/**
+		 * Moves [name]'s head part of the way to where the map says it is.
+		 *
+		 * A leap puts somebody across the floor between one update and the next,
+		 * and easing that would send the head gliding through every wall on the
+		 * way — so anything past [EASE_SNAP_DISTANCE] is simply taken as read.
+		 */
+		private fun ease(name: String, x: Float, z: Float, yaw: Float, amount: Float): EasedMarker {
+			val marker = easedMarkers.getOrPut(name) { EasedMarker(x, z, yaw) }
+
+			val dx = x - marker.x
+			val dz = z - marker.z
+			if (dx * dx + dz * dz > EASE_SNAP_DISTANCE * EASE_SNAP_DISTANCE) {
+				marker.x = x
+				marker.z = z
+				marker.yaw = yaw
+				return marker
+			}
+
+			marker.x += dx * amount
+			marker.z += dz * amount
+			// Angles wrap, so the short way round has to be worked out rather
+			// than interpolated between the raw numbers — otherwise a head
+			// turning past south spins the long way back.
+			marker.yaw = Mth.rotLerp(amount, marker.yaw, yaw)
+			return marker
+		}
+
+		/** Drops anyone who is no longer on the map, so the names cannot pile up. */
+		private fun forgetMarkersExcept(names: List<String>) {
+			if (easedMarkers.size <= names.size) return
+			easedMarkers.keys.retainAll(names.toSet())
+		}
+
 		private fun renderPlayers(context: GuiGraphicsExtractor) {
 			val client = Minecraft.getInstance()
 			val player = client.player ?: return
@@ -724,10 +963,31 @@ object DungeonMap {
 			// pairing has to skip them or every head after the dead one belongs
 			// to the wrong person.
 			val teammates = DungeonTeam.classes.keys.filter { it != self && it !in DungeonTeam.dead }
-			DungeonMapReader.markers.take(teammates.size).forEachIndexed { index, marker ->
-				val (x, z) = DungeonMapReader.markerPosition(marker)
-				drawMarker(context, pose, x, z, marker.yaw, teammates[index], false, names)
+			val ease = easeAmount()
+			teammates.forEachIndexed { index, name ->
+				// A teammate close enough to be loaded is drawn from the world
+				// instead of from the map: that position is exact and moves
+				// every frame, where the map item's is a rounded-off pixel that
+				// arrives a few times a second. It is also the same head either
+				// way — who this is comes from the tab list, not from which of
+				// the two said where they are standing.
+				val seen = client.level?.players()?.firstOrNull { it.name.string == name }
+				val (x, z) = if (seen != null) {
+					DungeonMapReader.worldPosition(seen.x, seen.z)
+				} else {
+					DungeonMapReader.markerPosition(DungeonMapReader.markers.getOrNull(index) ?: return@forEachIndexed)
+				}
+				val yaw = seen?.yRot ?: DungeonMapReader.markers[index].yaw
+				val at = ease(name, x, z, yaw, ease)
+				drawMarker(context, pose, at.x, at.z, at.yaw, name, false, names)
 			}
+			forgetMarkersExcept(teammates)
+
+			// Your own head goes in a later layer than everybody else's, so it is
+			// on top of anyone standing where you are. Drawing it last is not
+			// enough on its own: the GUI batches by what it is drawing, so a
+			// teammate's face can still land over yours.
+			context.nextStratum()
 
 			// The player's own position comes from the world, which is exact and
 			// updates every frame; everyone else comes from the map item, which
@@ -744,7 +1004,7 @@ object DungeonMap {
 		 * its menu is open and stay out of the way otherwise.
 		 */
 		private fun namesWanted(client: Minecraft): Boolean {
-			val title = client.screen?.title?.string
+			val title = client.gui.screen()?.title?.string
 			if (title == "Spirit Leap" || title == "Teleport to Player") return true
 			return holdingLeap
 		}

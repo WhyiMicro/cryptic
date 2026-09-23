@@ -53,9 +53,9 @@ import java.util.concurrent.ConcurrentHashMap
  * changes; the server still decides whether an interaction lands.
  */
 object Secrets {
-	private const val FILLED = 0
-	private const val OUTLINE = 1
-	private const val FILLED_OUTLINE = 2
+	private const val OUTLINE = 0
+	private const val FILL = 1
+	private const val FILL_OUTLINE = 2
 
 	/**
 	 * The skull owners Hypixel puts secrets behind: wither essence and the
@@ -118,7 +118,7 @@ object Secrets {
 	val autoCloseChest = ToggleModuleSetting(
 		id = "auto_close_chest",
 		label = "Auto close chest",
-		description = "Shuts a secret chest again as soon as it opens, without the screen getting in the way.",
+		description = "Shuts a secret chest as it opens.",
 	)
 
 	// ---- Chest extraction ------------------------------------------------
@@ -129,8 +129,7 @@ object Secrets {
 	val extractItems = ToggleModuleSetting(
 		id = "extract_items",
 		label = "Take items out",
-		description = "Pulls the chosen items into your inventory before the chest closes. " +
-			"A full inventory just closes it, the same as leaving them.",
+		description = "Pulls the chosen items into your inventory before the chest closes.",
 	)
 
 	/**
@@ -169,15 +168,14 @@ object Secrets {
 	val buttonHitbox = ToggleModuleSetting(
 		id = "button_hitbox",
 		label = "Button",
-		description = "Stretches a button across the face it is stuck to, keeping its depth so it stays clickable " +
-			"only from the front.",
+		description = "Stretches a button across the face it is on.",
 	)
 
 	@JvmField
 	val skullHitbox = ToggleModuleSetting(
 		id = "skull_hitbox",
 		label = "Skulls",
-		description = "Gives wither essence and redstone keys a full block hitbox. Other skulls are left alone.",
+		description = "Full hitboxes for essence and key skulls.",
 	)
 
 	@JvmField
@@ -215,8 +213,8 @@ object Secrets {
 	val clickedStyle = DropdownModuleSetting(
 		id = "clicked_style",
 		label = "Render style",
-		options = listOf("Filled", "Outline", "Filled outline"),
-		defaultIndex = FILLED_OUTLINE,
+		options = listOf("Outline", "Fill", "Fill + Outline"),
+		defaultIndex = FILL_OUTLINE,
 		visibleIf = { highlightClicked.value },
 	)
 
@@ -240,20 +238,29 @@ object Secrets {
 	)
 
 	@JvmField
-	val lockedColor = ColorModuleSetting(
-		id = "locked_color",
-		label = "Locked",
+	val lockedFillColor = ColorModuleSetting(
+		id = "locked_fill_color",
+		label = "Locked fill",
 		defaultRgb = 0xFF5555,
 		supportsAlpha = true,
-		defaultAlpha = 0x66,
-		description = "The colour a chest is marked in once Hypixel says it is locked.",
+		defaultAlpha = 0x50,
+		description = "What a chest is marked in once Hypixel says it is locked.",
+		visibleIf = { highlightClicked.value },
+	)
+
+	@JvmField
+	val lockedOutlineColor = ColorModuleSetting(
+		id = "locked_outline_color",
+		label = "Locked outline",
+		defaultRgb = 0xFF5555,
+		supportsAlpha = true,
 		visibleIf = { highlightClicked.value },
 	)
 
 	@JvmField
 	val clickedPhase = ToggleModuleSetting(
 		id = "clicked_phase",
-		label = "See through walls",
+		label = "Phase",
 		defaultValue = true,
 		description = "Draws the mark through the room, so it can be seen from where you have moved on to.",
 		visibleIf = { highlightClicked.value },
@@ -267,7 +274,7 @@ object Secrets {
 	val secretSound = ToggleModuleSetting(
 		id = "secret_sound",
 		label = "Secret sound",
-		description = "Plays a sound of your own when a secret is taken, which the room's noise cannot bury.",
+		description = "Plays your own sound when a secret is taken.",
 	)
 
 	@JvmField
@@ -329,7 +336,8 @@ object Secrets {
 			clickedStyle,
 			clickedFillColor,
 			clickedOutlineColor,
-			lockedColor,
+			lockedFillColor,
+			lockedOutlineColor,
 			clickedPhase,
 			soundSection,
 			secretSound,
@@ -367,7 +375,7 @@ object Secrets {
 	private const val LOCKED_MESSAGE = "That chest is locked!"
 
 	fun initialize() {
-		LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(::render)
+		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> onWorldChange() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> onWorldChange() }
 		ClientReceiveMessageEvents.GAME.register { message, overlay ->
@@ -486,7 +494,7 @@ object Secrets {
 		val client = Minecraft.getInstance()
 		client.execute {
 			client.player?.connection?.send(ServerboundContainerClosePacket(containerId))
-			client.setScreen(null)
+			client.gui.setScreen(null)
 		}
 	}
 
@@ -602,15 +610,15 @@ object Secrets {
 		val style = clickedStyle.selectedIndex
 
 		taken.forEach { (pos, secret) ->
-			val fill = if (secret.locked) lockedColor.argb else clickedFillColor.argb
-			val outline = if (secret.locked) ARGB.opaque(lockedColor.rgb) else ARGB.opaque(clickedOutlineColor.rgb)
+			val fill = if (secret.locked) lockedFillColor.argb else clickedFillColor.argb
+			val outline = if (secret.locked) lockedOutlineColor.argb else clickedOutlineColor.argb
 			WorldRender.drawBlock(
 				poseStack = context.poseStack(),
-				consumers = context.bufferSource(),
+				collector = context.submitNodeCollector(),
 				pos = pos,
-				outlineArgb = if (style == FILLED) 0 else outline,
+				outlineArgb = if (style == FILL) 0 else outline,
 				fillArgb = if (style == OUTLINE) 0 else fill,
-				outline = style != FILLED,
+				outline = style != FILL,
 				fill = style != OUTLINE,
 				phase = clickedPhase.value,
 				lineWidth = 2f,

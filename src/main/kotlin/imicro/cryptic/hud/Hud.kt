@@ -47,13 +47,13 @@ object Hud {
 	 */
 	fun openEditor(parent: net.minecraft.client.gui.screens.Screen? = null) {
 		val client = Minecraft.getInstance()
-		client.setScreen(HudEditorScreen(parent))
+		client.gui.setScreen(HudEditorScreen(parent))
 	}
 
 	private fun renderAll(context: GuiGraphicsExtractor) {
 		val client = Minecraft.getInstance()
 		// The editor draws the elements itself, with handles around them.
-		if (client.screen is HudEditorScreen) return
+		if (client.gui.screen() is HudEditorScreen) return
 
 		for (element in registered) {
 			if (!element.isVisible()) continue

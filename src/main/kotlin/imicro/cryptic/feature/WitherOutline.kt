@@ -85,7 +85,7 @@ object WitherOutline {
 	val module = Module(
 		id = "wither_outline",
 		name = "Wither Outline",
-		description = "Outlines the withers in Floor 7 and Master Mode 7",
+		description = "Outlines the F7 withers",
 		category = ModuleCategory.FLOOR_7,
 		hasDemoSettings = false,
 		supportsKeybind = false,

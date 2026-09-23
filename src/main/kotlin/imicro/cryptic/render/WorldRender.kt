@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack
 import com.mojang.blaze3d.vertex.VertexConsumer
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.Font
-import net.minecraft.client.renderer.MultiBufferSource
+import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.network.chat.Component
@@ -18,6 +18,24 @@ import org.joml.Vector3f
  * Everything here is submitted during a level-render event, where the pose
  * stack is still camera-relative, so each call translates by the negated
  * camera position before emitting absolute world coordinates.
+ *
+ * Since 26.2 nothing is written into a buffer here. The level hands out a
+ * [SubmitNodeCollector] instead, and geometry is queued on it with a snapshot
+ * of the pose, to be drawn later in the frame. The vertex-building code is
+ * unchanged — it simply runs when the queue is drained rather than now — so
+ * everything captured by it must be a value, never state that could move on
+ * in the meantime.
+ *
+ * Which means the *when* matters. The queue is drained once, at the top of
+ * `LevelRenderer.render`, before a single pass of the frame is drawn, so
+ * anything submitted from an event that fires while the frame is being drawn —
+ * `AFTER_TRANSLUCENT_TERRAIN` and the rest — waits in the queue until the next
+ * frame and is then drawn against that frame's camera. A box submitted that
+ * way sits one frame of movement away from where it belongs, which is
+ * invisible standing still and grows with speed. Callers register on
+ * `LevelRenderEvents.COLLECT_SUBMITS`, which fires while the level is still
+ * collecting, and the camera read below is then the one the frame's matrices
+ * are built from.
  */
 object WorldRender {
 	/** Lifts faces off the block they trace, so the two do not z-fight. */
@@ -37,7 +55,7 @@ object WorldRender {
 	 */
 	fun drawBlock(
 		poseStack: PoseStack,
-		consumers: MultiBufferSource,
+		collector: SubmitNodeCollector,
 		pos: BlockPos,
 		outlineArgb: Int,
 		fillArgb: Int,
@@ -62,7 +80,7 @@ object WorldRender {
 		val maxZ = pos.z + shape.max(Direction.Axis.Z)
 
 		drawBox(
-			poseStack, consumers,
+			poseStack, collector,
 			minX, minY, minZ, maxX, maxY, maxZ,
 			outlineArgb, fillArgb, outline, fill, phase, lineWidth,
 		)
@@ -75,7 +93,7 @@ object WorldRender {
 	 */
 	fun drawBox(
 		poseStack: PoseStack,
-		consumers: MultiBufferSource,
+		collector: SubmitNodeCollector,
 		minX: Double,
 		minY: Double,
 		minZ: Double,
@@ -91,19 +109,21 @@ object WorldRender {
 	) {
 		if (!outline && !fill) return
 
-		val camera = Minecraft.getInstance().gameRenderer.mainCamera.position()
+		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
 		poseStack.pushPose()
 		poseStack.translate(-camera.x, -camera.y, -camera.z)
-		val pose = poseStack.last()
-
 		if (fill) {
 			val layer = if (phase) CrypticRenderLayers.FILLED_THROUGH_WALLS else CrypticRenderLayers.FILLED
-			consumers.getBuffer(layer).addFilledBox(pose, minX, minY, minZ, maxX, maxY, maxZ, fillArgb)
+			collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
+				consumer.addFilledBox(pose, minX, minY, minZ, maxX, maxY, maxZ, fillArgb)
+			}
 		}
 
 		if (outline) {
 			val layer = if (phase) CrypticRenderLayers.LINES_THROUGH_WALLS else CrypticRenderLayers.LINES
-			consumers.getBuffer(layer).addBoxOutline(pose, minX, minY, minZ, maxX, maxY, maxZ, outlineArgb, lineWidth)
+			collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
+				consumer.addBoxOutline(pose, minX, minY, minZ, maxX, maxY, maxZ, outlineArgb, lineWidth)
+			}
 		}
 
 		poseStack.popPose()
@@ -117,7 +137,7 @@ object WorldRender {
 	 */
 	fun drawTracer(
 		poseStack: PoseStack,
-		consumers: MultiBufferSource,
+		collector: SubmitNodeCollector,
 		x: Double,
 		y: Double,
 		z: Double,
@@ -127,7 +147,7 @@ object WorldRender {
 	) {
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return
-		val camera = client.gameRenderer.mainCamera.position()
+		val camera = client.gameRenderer.mainCamera().position()
 		val look = player.lookAngle
 
 		val start = camera.add(look.scale(0.5))
@@ -136,13 +156,12 @@ object WorldRender {
 		poseStack.translate(-camera.x, -camera.y, -camera.z)
 
 		val layer = if (phase) CrypticRenderLayers.LINES_THROUGH_WALLS else CrypticRenderLayers.LINES
-		consumers.getBuffer(layer).addLine(
-			poseStack.last(),
-			start.x.toFloat(), start.y.toFloat(), start.z.toFloat(),
-			x.toFloat(), y.toFloat(), z.toFloat(),
-			argb,
-			lineWidth,
-		)
+		val fromX = start.x.toFloat()
+		val fromY = start.y.toFloat()
+		val fromZ = start.z.toFloat()
+		collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
+			consumer.addLine(pose, fromX, fromY, fromZ, x.toFloat(), y.toFloat(), z.toFloat(), argb, lineWidth)
+		}
 
 		poseStack.popPose()
 	}
@@ -153,10 +172,17 @@ object WorldRender {
 	 * The camera's own orientation is applied so the label stays readable from
 	 * any angle, and the Y scale is negated because text is laid out downwards
 	 * while world space grows upwards.
+	 *
+	 * [argb] is the colour a part of [text] that carries none of its own is
+	 * drawn in — and, whatever the parts carry, its **alpha** is the alpha they
+	 * are all drawn at. Minecraft combines the two that way round
+	 * (`ARGB.color(alpha(base), style.color)`), which is what makes fading a
+	 * label of several colours a matter of one number rather than of rebuilding
+	 * every part of it.
 	 */
 	fun drawText(
 		poseStack: PoseStack,
-		consumers: MultiBufferSource,
+		collector: SubmitNodeCollector,
 		orientation: Quaternionf,
 		text: Component,
 		x: Double,
@@ -166,9 +192,10 @@ object WorldRender {
 		seeThrough: Boolean,
 		dropShadow: Boolean = true,
 		backgroundArgb: Int = 0,
+		argb: Int = 0xFFFFFFFF.toInt(),
 	) {
 		val font = Minecraft.getInstance().font
-		val camera = Minecraft.getInstance().gameRenderer.mainCamera.position()
+		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
 
 		poseStack.pushPose()
 		poseStack.translate(x - camera.x, y - camera.y, z - camera.z)
@@ -176,17 +203,17 @@ object WorldRender {
 		poseStack.scale(TEXT_SCALE * scale, -TEXT_SCALE * scale, TEXT_SCALE * scale)
 
 		val halfWidth = font.width(text) / 2f
-		font.drawInBatch(
-			text,
+		collector.submitText(
+			poseStack,
 			-halfWidth,
 			0f,
-			0xFFFFFFFF.toInt(),
+			text.visualOrderText,
 			dropShadow,
-			poseStack.last().pose(),
-			consumers,
 			if (seeThrough) Font.DisplayMode.SEE_THROUGH else Font.DisplayMode.NORMAL,
-			backgroundArgb,
 			FULL_BRIGHT_LIGHT,
+			argb,
+			backgroundArgb,
+			0,
 		)
 		poseStack.popPose()
 	}

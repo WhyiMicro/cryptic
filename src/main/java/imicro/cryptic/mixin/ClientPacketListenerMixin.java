@@ -1,15 +1,22 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.dungeon.DungeonRun;
+import imicro.cryptic.dungeon.DungeonStats;
 import imicro.cryptic.dungeon.map.DungeonMapReader;
 import com.mojang.datafixers.util.Pair;
+import imicro.cryptic.feature.CameraTweaks;
+import imicro.cryptic.feature.CarryManager;
 import imicro.cryptic.feature.Etherwarp;
+import imicro.cryptic.feature.EtherwarpZeroPing;
 import imicro.cryptic.feature.RenderOptimizer;
 import imicro.cryptic.feature.RoomAlerts;
 import imicro.cryptic.experiment.ExperimentTracker;
 import imicro.cryptic.feature.Secrets;
+import imicro.cryptic.feature.TimeChanger;
 import imicro.cryptic.terminal.Terminals;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
@@ -20,12 +27,15 @@ import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
 import net.minecraft.network.protocol.game.ClientboundMapItemDataPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTimePacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.zombie.Zombie;
@@ -52,6 +62,24 @@ public abstract class ClientPacketListenerMixin {
     }
 
     /**
+     * A teleport landing, which is the answer to a click Etherwarp predicted.
+     *
+     * The rotation is read before the packet is applied and put back after,
+     * rather than the packet being rewritten: by then the client has already
+     * accepted the teleport with the angles the server asked for, so the
+     * server is told what it expects and only the view is kept.
+     */
+    @Inject(method = "handleMovePlayer", at = @At("HEAD"))
+    private void cryptic$beforeTeleport(ClientboundPlayerPositionPacket packet, CallbackInfo info) {
+        EtherwarpZeroPing.beforeServerTeleport();
+    }
+
+    @Inject(method = "handleMovePlayer", at = @At("RETURN"))
+    private void cryptic$afterTeleport(ClientboundPlayerPositionPacket packet, CallbackInfo info) {
+        EtherwarpZeroPing.afterServerTeleport();
+    }
+
+    /**
      * An item secret, which is picked up rather than clicked. The item entity
      * has to be read before the packet removes it from the world.
      */
@@ -69,12 +97,22 @@ public abstract class ClientPacketListenerMixin {
      * The mimic says nothing when it dies, so the death animation is what
      * announces it. On a floor that can hold one, the only baby zombie dying is
      * the mimic — the same test Odin makes.
+     *
+     * A slayer boss somebody is being carried through says nothing either, and
+     * for the same reason is counted from the same signal.
      */
     @Inject(method = "handleEntityEvent", at = @At("TAIL"))
     private void cryptic$noteMimicDeath(ClientboundEntityEventPacket packet, CallbackInfo info) {
         Minecraft client = Minecraft.getInstance();
         if (client.level == null || packet.getEventId() != 3) return;
-        if (packet.getEntity(client.level) instanceof Zombie zombie && zombie.isBaby()) {
+
+        Entity dying = packet.getEntity(client.level);
+        if (dying != null) CarryManager.onEntityDied(dying.getId());
+
+        if (dying instanceof Zombie zombie && zombie.isBaby() && DungeonRun.INSTANCE.mimicCouldDieNow()) {
+            // Both halves: the title, and the two bonus points the score has
+            // been missing all run because nothing else told it.
+            DungeonStats.INSTANCE.onMimicKilled();
             RoomAlerts.onMimicKilled();
         }
     }
@@ -92,7 +130,7 @@ public abstract class ClientPacketListenerMixin {
      */
     @Inject(method = "handleOpenScreen", at = @At("TAIL"))
     private void cryptic$terminalOpened(ClientboundOpenScreenPacket packet, CallbackInfo info) {
-        Terminals.INSTANCE.windowOpened(packet.getTitle().getString());
+        Terminals.INSTANCE.windowOpened(packet.getTitle().getString(), packet.getContainerId());
         ExperimentTracker.INSTANCE.windowOpened(packet.getTitle().getString());
         Secrets.closesChest(packet.getContainerId(), packet.getType(), packet.getTitle().getString());
     }
@@ -129,6 +167,42 @@ public abstract class ClientPacketListenerMixin {
     }
 
     /**
+     * Holds the sky at the time the player chose, for Time Changer.
+     *
+     * The server announces the time regularly, and that announcement is exactly
+     * what would otherwise put the world's own clock back.
+     */
+    @Inject(
+        method = "handleSetTime",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/network/PacketProcessor;)V",
+            shift = At.Shift.AFTER
+        ),
+        cancellable = true
+    )
+    private void cryptic$holdTheClock(ClientboundSetTimePacket packet, CallbackInfo info) {
+        if (!TimeChanger.overridesServerTime()) return;
+        TimeChanger.apply();
+        info.cancel();
+    }
+
+    /**
+     * Drops the server's opinion of whether you are crouching, for Camera.
+     *
+     * Index six of the shared entity data is the pose flags. Hypixel resends
+     * them at times the client has already moved on from, which is what leaves
+     * a sneak needing a second press to take.
+     */
+    @Inject(method = "handleSetEntityData", at = @At("HEAD"))
+    private void cryptic$dropServerSneak(ClientboundSetEntityDataPacket packet, CallbackInfo info) {
+        if (!CameraTweaks.fixesDoubleSneak()) return;
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null || player.getId() != packet.id()) return;
+        packet.packedItems().removeIf(value -> value.id() == 6);
+    }
+
+    /**
      * Reads an entity's nametag and the item it holds, which between them
      * identify a corpse still standing and the archer passive's bone meal.
      */
@@ -158,7 +232,7 @@ public abstract class ClientPacketListenerMixin {
      */
     @Inject(method = "handleContainerSetSlot", at = @At("TAIL"))
     private void cryptic$terminalSlotChanged(ClientboundContainerSetSlotPacket packet, CallbackInfo info) {
-        if (Minecraft.getInstance().screen instanceof AbstractContainerScreen<?> screen
+        if (Minecraft.getInstance().gui.screen() instanceof AbstractContainerScreen<?> screen
                 && packet.getContainerId() == screen.getMenu().containerId) {
             Terminals.INSTANCE.slotUpdated(packet.getSlot(), screen.getMenu().getItems());
             ExperimentTracker.INSTANCE.slotUpdated(screen.getMenu().getItems());
@@ -172,7 +246,7 @@ public abstract class ClientPacketListenerMixin {
      */
     @Inject(method = "handleContainerContent", at = @At("TAIL"))
     private void cryptic$terminalContentChanged(ClientboundContainerSetContentPacket packet, CallbackInfo info) {
-        if (Minecraft.getInstance().screen instanceof AbstractContainerScreen<?> screen
+        if (Minecraft.getInstance().gui.screen() instanceof AbstractContainerScreen<?> screen
                 && packet.containerId() == screen.getMenu().containerId) {
             Terminals.INSTANCE.windowFilled(screen.getMenu().getItems());
             ExperimentTracker.INSTANCE.slotUpdated(screen.getMenu().getItems());

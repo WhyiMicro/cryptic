@@ -1,5 +1,7 @@
 package imicro.cryptic.terminal
 
+import imicro.cryptic.terminal.sim.TermSimScreen
+import imicro.cryptic.feature.TerminalSolver
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.world.item.ItemStack
@@ -7,117 +9,152 @@ import net.minecraft.world.item.ItemStack
 /**
  * Which terminal is open, if any.
  *
- * Kept apart from the module that draws it, in the same way [imicro.cryptic.dungeon.DungeonTeam]
- * is kept apart from the modules that read the party, so the tracking runs in
- * one place and the feature only asks it questions. Ported from Odin's
- * `TerminalUtils` (BSD 3-Clause, Copyright (c) 2025 odtheking).
+ * Kept apart from the module that draws it, in the same way
+ * [imicro.cryptic.dungeon.DungeonTeam] is kept apart from the modules that read
+ * the party, so the tracking runs in one place and the feature only asks it
+ * questions. Ported from Odin's `TerminalUtils` (BSD 3-Clause, Copyright (c)
+ * 2025 odtheking).
+ *
+ * Hypixel used to answer every click by opening the whole chest again. It does
+ * not any more — the chest stays open and only the slots that changed are sent
+ * — so a terminal is one handler from the window opening to the window closing,
+ * and each slot that arrives is solved for as it comes.
  */
 object Terminals {
 	var current: TerminalHandler? = null
 		private set
 
+	/**
+	 * The terminal most recently opened, kept after it closes.
+	 *
+	 * Hypixel says a terminal was solved in chat a moment *after* the window
+	 * has gone, so whoever wants to time one has to look at what was open
+	 * rather than what is.
+	 */
+	var lastOpened: TerminalHandler? = null
+		private set
+
 	private var currentTitle: String? = null
+	private var currentContainerId = Int.MIN_VALUE
 
 	/**
 	 * Called for every chest the server opens, and by the simulator for its own.
 	 *
-	 * Hypixel answers each click with a whole new window rather than a slot
-	 * update, so the same terminal opens over and over; the handler is kept
-	 * across those so the state it has built up survives, which is what lets
-	 * rubix keep aiming at one colour and the letter terminal remember what it
-	 * has already taken.
+	 * [containerId] is what tells a terminal being re-sent from the next
+	 * terminal of the same kind: two panes terminals in a row have the same
+	 * title and nothing else to tell them apart, and carrying the first one's
+	 * handler into the second would carry its click-protection clock with it —
+	 * which is the clock saying how long the player has had to look at a board
+	 * they have not seen yet.
 	 */
-	fun windowOpened(title: String) {
-		// Hypixel sends the opening window more than once, and the player can
-		// only have seen the last of them, so the handler — and with it the
-		// clock the click protection runs on — starts again until the first
-		// click says the terminal is really being played.
-		current?.let { if (!it.everClicked && it.windowCount <= 2) closed() }
+	fun windowOpened(title: String, containerId: Int) {
+		val type = TerminalType.of(title)
+		TerminalDebug.windowOpened(title, type)
 
-		TerminalDebug.windowOpened(title, TerminalType.of(title))
-		if (TerminalType.of(title) == null) {
+		if (type == null) {
 			// Some other menu, which means the terminal is behind us — and the
 			// solver must not end up painted over an auction house.
 			closed()
 			return
 		}
 
-		if (title != currentTitle) {
-			current = TerminalType.handlerFor(title) ?: return
-			currentTitle = title
-			TerminalClicks.reset()
+		if (title == currentTitle && containerId == currentContainerId && current != null) {
+			// The same window announced again, which Hypixel does. The board it
+			// holds is kept — a repeat announcement does not always resend the
+			// slots — but the protection clock starts over, because the player
+			// has only ever seen the last of them.
+			current?.restartProtection()
+			return
 		}
 
-		current?.windowOpened()
-		// Hypixel answers a click by opening the terminal again, so this — and
-		// not a slot update inside the window already open — is the click being
-		// answered. Told after the handler, so the window has been counted.
-		TerminalClicks.onWindowOpened()
+		current = TerminalType.handlerFor(title) ?: return
+		currentTitle = title
+		currentContainerId = containerId
+		lastOpened = current
 	}
 
-	/** Set by a slot update, cleared by the tick that solves for it. */
-	private var dirty = false
-	private var dirtyItems: List<ItemStack> = emptyList()
-	private var dirtySlot = 0
-
 	/**
-	 * A slot of the open terminal changed.
-	 *
-	 * Nothing is solved here, only noted. Hypixel used to answer a click by
-	 * opening the whole chest again, so waiting for the last slot of a window
-	 * was a reliable "the board is complete, solve it". It does not do that any
-	 * more — the chest stays open and the slots that changed are sent on their
-	 * own — and waiting for a last slot that never arrives meant never solving
-	 * at all.
-	 *
-	 * So every change counts, and the tick decides when to act on it. That still
-	 * collapses the opening fill, which is fifty-odd packets in a row, into one
-	 * solve.
+	 * One slot of the open terminal changed. Solved for straight away: the
+	 * board is only ever as good as the last packet, and a terminal that waits
+	 * a tick to answer is a terminal that feels slow.
 	 */
 	fun slotUpdated(slot: Int, items: List<ItemStack>) {
 		val handler = current ?: return
-		if (slot !in 0 until handler.type.windowSize) return
-		dirty = true
-		dirtySlot = slot
-		dirtyItems = items
-	}
-
-	/** Solves for whatever changed since the last tick, once. */
-	private fun solvePending() {
-		if (!dirty) return
-		dirty = false
-
-		val handler = current ?: return
-		val solved = handler.resolve(dirtyItems)
-		TerminalDebug.solved(handler, dirtySlot, dirtyItems, solved)
-		if (solved) TerminalClicks.onSolved(handler)
+		handler.updateSlot(slot, items)
+		TerminalDebug.solved(handler, slot)
 	}
 
 	/**
-	 * A whole window arriving at once, rather than a slot at a time.
+	 * A whole window arriving at once rather than a slot at a time.
 	 *
-	 * Reported as the last slot changing, because that is what the solvers
-	 * treat as "the window is complete, solve it now".
+	 * Fed through slot by slot rather than as one update, because the solvers
+	 * are told which slot moved and two of them use it — rubix settles on the
+	 * colour it is aiming for when the last pane of the grid lands.
 	 */
 	fun windowFilled(items: List<ItemStack>) {
-		slotUpdated((current ?: return).type.windowSize - 1, items)
+		val handler = current ?: return
+		for (slot in 0 until handler.puzzleSize) handler.updateSlot(slot, items)
+		TerminalDebug.solved(handler, handler.puzzleSize - 1)
 	}
 
 	fun closed() {
 		current = null
 		currentTitle = null
-		dirty = false
-		dirtyItems = emptyList()
-		TerminalClicks.reset()
+		currentContainerId = Int.MIN_VALUE
+	}
+
+	/**
+	 * Whether [screen] is the window the tracked terminal belongs to.
+	 *
+	 * Everything the solver does — hiding items, swallowing clicks, taking the
+	 * screen over — has to be asked this first. Without it, a terminal left
+	 * tracked after its chest has gone reaches whatever menu is opened next:
+	 * the container id and the title are what tie the two together, and the
+	 * player's own inventory numbers its slots from zero exactly as a terminal
+	 * does, so a stale terminal meant an inventory whose clicks all vanished.
+	 *
+	 * The simulator's chests are the client's own and share the inventory's
+	 * container id, so those are told apart by title alone — which is enough,
+	 * because nothing else on the client is called "Correct all the panes!".
+	 */
+	fun screenIsCurrent(screen: AbstractContainerScreen<*>): Boolean {
+		if (current == null) return false
+		if (screen.title.string != currentTitle) return false
+		return screen is TermSimScreen || screen.menu.containerId == currentContainerId
+	}
+
+	/** The server's own clock, which the lag half of click protection counts. */
+	fun onServerTick() {
+		current?.let { it.serverTicksOpen++ }
 	}
 
 	/**
 	 * Notices the player leaving a terminal any way that does not send a close
-	 * packet, which pressing escape is.
+	 * packet, which pressing escape is, and drops clicks the server never
+	 * answered.
+	 *
+	 * A predicted click that is never confirmed would otherwise sit on the
+	 * board forever, hiding a slot that still needs clicking. After the resolve
+	 * timeout the guesses are thrown away and the board is solved again from
+	 * what is really in the chest.
 	 */
 	fun tick(client: Minecraft) {
-		if (current != null && client.screen !is AbstractContainerScreen<*>) closed()
-		solvePending()
-		TerminalClicks.tick()
+		val screen = client.gui.screen() as? AbstractContainerScreen<*>
+		// Any other window being open means this terminal is behind us, however
+		// it went away — escape, a menu opened in its place, or a close packet
+		// that never came.
+		if (current != null && (screen == null || !screenIsCurrent(screen))) {
+			closed()
+			return
+		}
+
+		val handler = current ?: return
+		if (handler.clickedSlots.isEmpty()) return
+		if (System.currentTimeMillis() - handler.lastClickTime < TerminalSolver.resolveTimeout.value) return
+
+		handler.forgetSentClicks()
+		val items = screen?.menu?.items ?: return
+		for (slot in 0 until handler.puzzleSize) handler.updateSlot(slot, items)
+		TerminalDebug.timedOut(handler)
 	}
 }

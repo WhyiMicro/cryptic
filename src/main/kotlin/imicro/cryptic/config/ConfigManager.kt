@@ -10,6 +10,7 @@ import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.RangeModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.SlotMapModuleSetting
 import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import net.fabricmc.loader.api.FabricLoader
@@ -318,6 +319,7 @@ object ConfigManager {
                     is ColorModuleSetting -> hash.mix(setting.argb.toLong())
                     is DropdownModuleSetting -> hash.mix(setting.selectedIndex.toLong())
                     is TextModuleSetting -> hash.mix(setting.value.hashCode().toLong())
+                    is SlotMapModuleSetting -> hash.mix(setting.encode().hashCode().toLong())
                     else -> hash
                 }
             }
@@ -422,6 +424,7 @@ object ConfigManager {
                         is ColorModuleSetting -> settings.addProperty(setting.id, setting.hex)
                         is DropdownModuleSetting -> settings.addProperty(setting.id, setting.selected)
                         is TextModuleSetting -> settings.addProperty(setting.id, setting.value)
+                        is SlotMapModuleSetting -> settings.addProperty(setting.id, setting.encode())
                         else -> Unit
                     }
                 }
@@ -477,6 +480,7 @@ object ConfigManager {
                         is ColorModuleSetting -> settings.string(setting.id)?.let(setting::setHex)
                         is DropdownModuleSetting -> settings.string(setting.id)?.let(setting::select)
                         is TextModuleSetting -> settings.string(setting.id)?.let { setting.value = it }
+                        is SlotMapModuleSetting -> settings.string(setting.id)?.let(setting::decode)
                         else -> Unit
                     }
                 }

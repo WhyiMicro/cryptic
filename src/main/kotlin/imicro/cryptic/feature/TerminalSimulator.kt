@@ -27,7 +27,7 @@ object TerminalSimulator {
 		min = 0.0,
 		max = 500.0,
 		step = 50.0,
-		description = "Delays every click by a round trip, so the terminals answer as slowly as the server would.",
+		description = "Answers clicks this slowly, as a server would.",
 	)
 
 	@JvmField
@@ -35,7 +35,7 @@ object TerminalSimulator {
 		id = "skip_click_protection",
 		label = "Skip click protection",
 		defaultValue = false,
-		description = "Ignores the solver's first click protection while practising. It still applies in a real dungeon.",
+		description = "Skips click protection here. A real terminal still has it.",
 	)
 
 	@JvmField
@@ -67,7 +67,7 @@ object TerminalSimulator {
 	fun open() {
 		val client = Minecraft.getInstance()
 		if (client.player == null) {
-			client.gui.chat.addClientSystemMessage(
+			client.gui.hud.chat.addClientSystemMessage(
 				Component.literal("§8[Cryptic] §fJoin a world before opening the terminal simulator."),
 			)
 			return

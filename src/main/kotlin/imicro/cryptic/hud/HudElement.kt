@@ -28,6 +28,17 @@ abstract class HudElement(
 	/** True while the element has something to say and its module is on. */
 	abstract fun isVisible(): Boolean
 
+	/**
+	 * Whether the editor should offer this element at all.
+	 *
+	 * Separate from [isVisible] because they answer different questions: an
+	 * element with nothing to say right now is still worth placing, but one that
+	 * has been configured to be drawn by something else — a score set to follow
+	 * the map — has no placement of its own to arrange, and a frame in the
+	 * editor for it is a control that does nothing.
+	 */
+	open fun showInEditor(): Boolean = true
+
 	abstract fun render(context: GuiGraphicsExtractor)
 
 	/**

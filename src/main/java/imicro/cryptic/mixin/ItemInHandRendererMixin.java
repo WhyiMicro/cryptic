@@ -49,7 +49,7 @@ public abstract class ItemInHandRendererMixin {
     );
 
     @Inject(
-        method = "renderArmWithItem",
+        method = "submitArmWithItem",
         at = @At(
             value = "INVOKE",
             target = "Lcom/mojang/blaze3d/vertex/PoseStack;pushPose()V",
@@ -85,7 +85,7 @@ public abstract class ItemInHandRendererMixin {
      * arm and item without mirroring their textures or reversing their models.
      */
     @Redirect(
-        method = "renderArmWithItem",
+        method = "submitArmWithItem",
         at = @At(
             value = "INVOKE",
             target = "Lnet/minecraft/client/player/AbstractClientPlayer;getMainArm()Lnet/minecraft/world/entity/HumanoidArm;"
@@ -99,7 +99,7 @@ public abstract class ItemInHandRendererMixin {
         return mainArm;
     }
 
-    @ModifyVariable(method = "renderArmWithItem", at = @At("HEAD"), ordinal = 2, argsOnly = true)
+    @ModifyVariable(method = "submitArmWithItem", at = @At("HEAD"), ordinal = 2, argsOnly = true)
     private float cryptic$modifySwingProgress(float swingProgress) {
         if (!Animations.module.getEnabled() || !Animations.disableSwingAnimation.getValue()) {
             return swingProgress;
@@ -115,7 +115,7 @@ public abstract class ItemInHandRendererMixin {
      * Keep the normal swing transform but discard that equip offset. Real item
      * swaps still use the ordinary equip animation when its toggle is disabled.
      */
-    @ModifyVariable(method = "renderArmWithItem", at = @At("HEAD"), ordinal = 3, argsOnly = true)
+    @ModifyVariable(method = "submitArmWithItem", at = @At("HEAD"), ordinal = 3, argsOnly = true)
     private float cryptic$keepSwingEquipped(float equipProgress) {
         if (!Animations.module.getEnabled()) return equipProgress;
 
@@ -125,7 +125,7 @@ public abstract class ItemInHandRendererMixin {
     }
 
     @Inject(
-        method = "renderArmWithItem",
+        method = "submitArmWithItem",
         at = @At(
             value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/ItemInHandRenderer;renderItem(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;I)V"
@@ -187,14 +187,14 @@ public abstract class ItemInHandRendererMixin {
     }
 
     /**
-     * Port of BringBlockingBack's block-hit swing path for 26.1.2. Vanilla
+     * Port of BringBlockingBack's block-hit swing path, first written for 26.1.2 and unchanged since. Vanilla
      * already applied the arm/equip transform before this call in this version,
      * so the blocking path only needs the attack rotation. In particular it
      * skips swingArm's large XYZ translation, which caused the sword to jump
      * around when combined with Cryptic's item-position and scale settings.
      */
     @Redirect(
-        method = "renderArmWithItem",
+        method = "submitArmWithItem",
         at = @At(
             value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/ItemInHandRenderer;swingArm(FLcom/mojang/blaze3d/vertex/PoseStack;ILnet/minecraft/world/entity/HumanoidArm;)V"
@@ -254,7 +254,7 @@ public abstract class ItemInHandRendererMixin {
     }
 
     @Redirect(
-        method = "renderHandsWithItems",
+        method = "submitHandsWithItems",
         at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/PoseStack;mulPose(Lorg/joml/Quaternionfc;)V")
     )
     private void cryptic$disableHandMovement(PoseStack poseStack, Quaternionfc rotation) {

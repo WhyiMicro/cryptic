@@ -13,6 +13,7 @@ import imgui.type.ImString
 import imicro.cryptic.config.ConfigManager
 import imicro.cryptic.config.ProfileEntry
 import imicro.cryptic.feature.ClickGui
+import imicro.cryptic.feature.Tooltips
 import imicro.cryptic.hud.Hud
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -36,7 +37,7 @@ import java.time.Duration
  * keyboard capture. [ImGuiRuntime] renders the controls at the end of the game
  * frame, after Minecraft has finished drawing that background.
  */
-class CrypticScreen : Screen(Component.literal("Cryptic")) {
+class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
     private var selectedCategory = SESSION_SELECTED_CATEGORY
     private val expandedModules = SESSION_EXPANDED_MODULES
     private var awaitingKeybind: Module? = null
@@ -55,6 +56,9 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
     private var tabAnimationStartX = Float.NaN
     private var tabContentProgress = 1f
     private var tabContentDirection = 0f
+    /** What the cursor is resting on this frame, drawn once the rest is done. */
+    private var tooltipText: String? = null
+
     private var openingProgress = 0f
     private var guiAlpha = 1f
     private var contentAlpha = 1f
@@ -101,7 +105,6 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
     private var colorHexFocusRequested: ColorModuleSetting? = null
     private val textBuffers = mutableMapOf<TextModuleSetting, ImString>()
     private var editingTextId: String? = null
-    private var toast: Toast? = null
 
     // Cached view state. Rebuilding these per frame is what the menu used to do.
     private var cachedModules: List<Module> = emptyList()
@@ -233,8 +236,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
         super.removed()
     }
 
-    /** Called by the render-tail mixin while this is Minecraft's active screen. */
-    fun drawImGui() {
+    override fun drawImGui() {
         val io = ImGui.getIO()
         val displayWidth = io.displaySizeX
         val displayHeight = io.displaySizeY
@@ -259,11 +261,13 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
             ImGuiWindowFlags.NoBringToFrontOnFocus or
             ImGuiWindowFlags.NoNavFocus
 
+        tooltipText = null
         ImGui.begin("##cryptic_root", flags)
         val draw = ImGui.getWindowDrawList()
         drawNavigation(draw, displayWidth, scale, dt, openingOffsetY, interactive)
         drawModules(draw, displayWidth, displayHeight, scale, dt, openingOffsetY, interactive)
-        drawToast(draw, displayWidth, displayHeight, scale)
+        // Last, so it lies over every card and popup drawn before it.
+        if (interactive) drawTooltip(draw, displayWidth, displayHeight, scale)
         ImGui.end()
         ConfigManager.autosave()
         guiAlpha = 1f
@@ -920,61 +924,18 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
         renameFieldBounds = null
     }
 
+    /**
+     * Raises a notification about something the menu just did.
+     *
+     * Handed to [imicro.cryptic.feature.Toasts], which draws on Dear ImGui's
+     * foreground list rather than inside this screen — so a profile loaded on
+     * the way out is still confirmed after the menu has gone, which is exactly
+     * when you would be looking for the confirmation.
+     */
     private fun showToast(message: String, error: Boolean = false) {
-        toast = Toast(message, error, System.nanoTime())
+        imicro.cryptic.feature.Toasts.show("Profiles", message, error)
     }
 
-    private fun drawToast(draw: ImDrawList, displayWidth: Float, displayHeight: Float, scale: Float) {
-        val current = toast ?: return
-        val elapsed = (System.nanoTime() - current.startedAt) / 1_000_000_000f
-        if (elapsed >= TOAST_SECONDS) {
-            toast = null
-            return
-        }
-
-        val fadeIn = (elapsed / TOAST_FADE_IN_SECONDS).coerceIn(0f, 1f)
-        val fadeOut = ((TOAST_SECONDS - elapsed) / TOAST_FADE_OUT_SECONDS).coerceIn(0f, 1f)
-        val opacity = easeOutCubic(minOf(fadeIn, fadeOut)) * guiAlpha
-        val margin = dp(14f, scale)
-        val textSize = dp(8f, scale)
-        val desiredWidth = textWidth(current.message, textSize) + dp(24f, scale)
-        val maxWidth = (displayWidth - margin * 2f).coerceAtLeast(dp(90f, scale))
-        val maximumToastWidth = minOf(dp(210f, scale), maxWidth)
-        val minimumToastWidth = minOf(dp(115f, scale), maximumToastWidth)
-        val width = desiredWidth.coerceIn(minimumToastWidth, maximumToastWidth)
-        val height = dp(30f, scale)
-        val slide = dp(14f, scale) * (1f - easeOutCubic(fadeIn))
-        val x = displayWidth - margin - width + slide
-        val y = displayHeight - margin - height
-        val remaining = (1f - elapsed / TOAST_SECONDS).coerceIn(0f, 1f)
-        val progressInset = dp(8f, scale)
-        val progressWidth = (width - progressInset * 2f) * remaining
-        val progressHeight = dp(1.5f, scale)
-        val progressY = y + height - dp(3f, scale)
-
-        draw.addRectFilled(x, y, x + width, y + height, fadeColor(SURFACE, opacity), dp(9f, scale))
-        if (progressWidth > 0f) {
-            draw.addRectFilled(
-                x + progressInset,
-                progressY,
-                x + progressInset + progressWidth,
-                progressY + progressHeight,
-                fadeColor(ACCENT, opacity),
-                progressHeight / 2f,
-            )
-        }
-        draw.pushClipRect(x + dp(10f, scale), y, x + width - dp(10f, scale), y + height, true)
-        val textHeight = ImGuiRuntime.textHeight(current.message, textSize)
-        draw.addText(
-            ImGuiRuntime.font,
-            textSize.roundToInt().coerceAtLeast(1),
-            x + dp(10f, scale),
-            y + (height - textHeight - dp(2f, scale)) / 2f,
-            fadeColor(TEXT, opacity),
-            current.message,
-        )
-        draw.popClipRect()
-    }
 
     private fun drawModule(
         draw: ImDrawList,
@@ -1152,6 +1113,8 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
                 is ColorModuleSetting -> CUSTOM_COLOR_ROW_HEIGHT
                 is DropdownModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
                 is TextModuleSetting -> CUSTOM_TEXT_ROW_HEIGHT
+                // Made by pointing at slots in the inventory, so it has no row.
+                is SlotMapModuleSetting -> 0f
                 // The first heading takes the place of the implicit one, so it
                 // is the later ones that add height.
                 is SectionModuleSetting -> if (isFirst) 0f else CUSTOM_SECTION_GAP + CUSTOM_SECTION_HEIGHT
@@ -1190,6 +1153,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
             val setting = settings[index]
             if (!setting.isVisible()) continue
 
+            val rowTop = rowY
             when (setting) {
                 is SliderModuleSetting -> {
                     drawCustomSlider(draw, setting, cardX, rowY, cardWidth, scale, interactive)
@@ -1252,6 +1216,8 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
                     drawTextSetting(draw, setting, cardX, rowY, cardWidth, scale, interactive)
                     rowY += dp(CUSTOM_TEXT_ROW_HEIGHT, scale)
                 }
+                // Nothing to draw: the binds are made in the inventory.
+                is SlotMapModuleSetting -> Unit
                 is SectionModuleSetting -> {
                     // The leading heading was already drawn above the rows.
                     if (setting !== leadingSection) {
@@ -1261,6 +1227,10 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
                     }
                 }
             }
+
+            // Whatever the row turned out to be, the cursor resting anywhere
+            // on it asks for the sentence the setting carries.
+            noteTooltip(setting, cardX, rowTop, cardWidth, rowY - rowTop)
         }
         return overlay
     }
@@ -2101,6 +2071,82 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
         return if (end <= 0) ELLIPSIS else text.take(end).trimEnd() + ELLIPSIS
     }
 
+    /**
+     * The sentence a setting carries, if any.
+     *
+     * Declared per setting type rather than on the base class, which is where
+     * the descriptions were written; this is the one place that has to know
+     * about all of them.
+     */
+    private fun tipFor(setting: ModuleSetting): String = when (setting) {
+        is ToggleModuleSetting -> setting.description
+        is SliderModuleSetting -> setting.description
+        is RangeModuleSetting -> setting.description
+        is ColorModuleSetting -> setting.description
+        is TextModuleSetting -> setting.description
+        is DropdownModuleSetting -> setting.description
+        else -> ""
+    }
+
+    /** Remembers the row under the cursor, to be explained at the end of the frame. */
+    private fun noteTooltip(setting: ModuleSetting, x: Float, y: Float, width: Float, height: Float) {
+        if (!Tooltips.showing || height <= 0f) return
+        val tip = tipFor(setting)
+        if (tip.isEmpty()) return
+
+        val mouseX = ImGui.getMousePosX()
+        val mouseY = ImGui.getMousePosY()
+        if (mouseX < x || mouseX > x + width || mouseY < y || mouseY > y + height) return
+        tooltipText = tip
+    }
+
+    /**
+     * Draws the explanation beside the cursor.
+     *
+     * Kept inside the screen rather than handed to Dear ImGui's own tooltip,
+     * which would arrive in its default styling in the middle of a menu that
+     * is drawn by hand. It is nudged back on screen at the edges, because the
+     * settings column reaches the right-hand side.
+     */
+    private fun drawTooltip(draw: ImDrawList, displayWidth: Float, displayHeight: Float, scale: Float) {
+        val text = tooltipText ?: return
+        val size = dp(9f, scale)
+        val padding = dp(7f, scale)
+        val lineHeight = size + dp(2f, scale)
+        val lines = wrapText(text, dp(190f, scale), size)
+
+        val width = (lines.maxOfOrNull { textWidth(it, size) } ?: 0f) + padding * 2f
+        val height = lines.size * lineHeight + padding * 2f - dp(2f, scale)
+
+        val x = (ImGui.getMousePosX() + dp(12f, scale)).coerceAtMost(displayWidth - width - dp(6f, scale))
+        val y = (ImGui.getMousePosY() + dp(14f, scale)).coerceAtMost(displayHeight - height - dp(6f, scale))
+
+        draw.addRectFilled(x, y, x + width, y + height, contentColor(RENAME_FIELD), dp(5f, scale))
+        draw.addRect(x, y, x + width, y + height, contentColor(DISABLED_BORDER), dp(5f, scale), 0, dp(1f, scale))
+        lines.forEachIndexed { index, line ->
+            drawText(draw, line, x + padding, y + padding + index * lineHeight, TEXT, size)
+        }
+    }
+
+    /** Breaks a sentence into lines no wider than [maxWidth], on word boundaries. */
+    private fun wrapText(text: String, maxWidth: Float, size: Float): List<String> {
+        val words = text.split(' ')
+        val lines = mutableListOf<String>()
+        var line = StringBuilder()
+
+        words.forEach { word ->
+            val candidate = if (line.isEmpty()) word else "$line $word"
+            if (textWidth(candidate, size) <= maxWidth || line.isEmpty()) {
+                line = StringBuilder(candidate)
+            } else {
+                lines += line.toString()
+                line = StringBuilder(word)
+            }
+        }
+        if (line.isNotEmpty()) lines += line.toString()
+        return lines
+    }
+
     private fun drawText(draw: ImDrawList, text: String, x: Float, y: Float, color: Int, size: Float) {
         draw.addText(ImGuiRuntime.font, size.roundToInt().coerceAtLeast(1), x, y, contentColor(color), text)
     }
@@ -2156,12 +2202,6 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
         val buttonHovered: Boolean,
     )
 
-    private data class Toast(
-        val message: String,
-        val error: Boolean,
-        val startedAt: Long,
-    )
-
     private companion object {
         /** Three dots rather than the single glyph, which the bundled font may lack. */
         private const val ELLIPSIS = "..."
@@ -2214,9 +2254,6 @@ class CrypticScreen : Screen(Component.literal("Cryptic")) {
         const val SEARCH_NAV_WIDTH = 30f
         const val HUD_NAV_WIDTH = 30f
         const val SEARCH_ANIMATION_SPEED = 18f
-        const val TOAST_SECONDS = 3.2f
-        const val TOAST_FADE_IN_SECONDS = 0.18f
-        const val TOAST_FADE_OUT_SECONDS = 0.25f
         const val PROFILE_DESCRIPTION_REFRESH_MS = 1_000L
 
         // ImGui colors are packed as ABGR rather than Minecraft's ARGB.

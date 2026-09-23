@@ -5,6 +5,7 @@ import imicro.cryptic.mixin.KeyMappingAccessor
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+import net.minecraft.network.chat.Component
 import net.minecraft.world.inventory.ContainerInput
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.TooltipFlag
@@ -110,6 +111,8 @@ object ExperimentRunner {
 		boughtBottle = false
 		finished = false
 		reopenStage = ReopenStage.NONE
+		closingSelf = false
+		forgetLastClick()
 		status = "idle"
 	}
 
@@ -140,6 +143,89 @@ object ExperimentRunner {
 
 	private var wasRunning = false
 
+	/**
+	 * The settings a decision to stop could have depended on.
+	 *
+	 * Every reason this gives up on is a reason that one of these could make
+	 * untrue — "Renews is set to 0" stops being a reason the moment it is set to
+	 * one. Toggling the whole module off and on to be asked again is not an
+	 * answer, so changing any of them is taken as being asked again.
+	 */
+	private fun settingsFingerprint(): String =
+		"${ExperimentSolver.renews.value}|${ExperimentSolver.buyExperience.value}|" +
+			"${ExperimentSolver.focus.selectedIndex}|${ExperimentSolver.serums.value}|" +
+			"${ExperimentSolver.guardianReminder.value}"
+
+	private var lastSettings = ""
+
+	/**
+	 * The last click sent, and the state of the menu when it went.
+	 *
+	 * Together these answer "has this click been tried against this exact menu
+	 * already", which is the question that stops the runner clicking a menu that
+	 * is not listening.
+	 */
+	private var lastClickSlot = -1
+	private var lastClickRevision = -1
+	private var lastClickAt = 0L
+
+	/** How long a menu may ignore a click before the table is reopened. */
+	private const val STUCK_MILLIS = 1_500L
+
+	private fun forgetLastClick() {
+		lastClickSlot = -1
+		lastClickRevision = -1
+		lastClickAt = 0L
+	}
+
+	/**
+	 * True while the runner is the one closing the menu.
+	 *
+	 * Everything else that closes it is the player, and a player who shuts the
+	 * table has stopped wanting it worked — so the two have to be told apart.
+	 */
+	private var closingSelf = false
+
+	/** The pet whose bonus these games are worth running with. */
+	private const val GUARDIAN = "Guardian"
+
+	/** Vanilla title timing, so the reminder looks like any other. */
+	private const val TITLE_FADE_TICKS = 5
+	private const val TITLE_STAY_TICKS = 50
+
+	/**
+	 * A menu opening, from [ExperimentTracker].
+	 *
+	 * Two things hang off it: a new menu is a click that worked, so the stuck
+	 * counter goes back to zero; and the table being opened by hand is the
+	 * player asking for another go, which is worth honouring for the same reason
+	 * a changed setting is.
+	 */
+	/**
+	 * The menu going away with nobody here having asked for it.
+	 *
+	 * Which is to say: the player shut it. Pressing escape on something working
+	 * on your behalf means stop, so it stops — and it says why, rather than
+	 * looking like it crashed.
+	 */
+	fun onMenuClosed() {
+		if (closingSelf) {
+			closingSelf = false
+			return
+		}
+		if (finished || reopenStage != ReopenStage.NONE) return
+		if (!ExperimentSolver.module.enabled || !ExperimentSolver.runTable.value) return
+		stop("you closed the table")
+	}
+
+	fun onMenuOpened(title: String) {
+		closingSelf = false
+		if (!finished || reopenStage != ReopenStage.NONE) return
+		if (title != "Experimentation Table") return
+		finished = false
+		status = "table reopened, trying again"
+	}
+
 	fun tick(client: Minecraft) {
 		val running = ExperimentSolver.module.enabled && ExperimentSolver.runTable.value
 
@@ -147,6 +233,15 @@ object ExperimentRunner {
 		// so the renew count and the "finished" flag go with it.
 		if (running && !wasRunning) reset()
 		wasRunning = running
+
+		val fingerprint = settingsFingerprint()
+		if (fingerprint != lastSettings) {
+			lastSettings = fingerprint
+			if (finished) {
+				finished = false
+				status = "settings changed, trying again"
+			}
+		}
 
 		if (!running || finished) return
 
@@ -186,6 +281,8 @@ object ExperimentRunner {
 	 * that is not finished.
 	 */
 	private fun decide(client: Minecraft, title: String, items: List<ItemStack>) {
+		if (remindAboutGuardian(client)) return
+
 		val renewAt = renewSlot(items)
 		if (renewAt != null) {
 			val asked = ExperimentSolver.renews.value.toInt()
@@ -194,7 +291,11 @@ object ExperimentRunner {
 			// here does not. Whichever of the two allows less is the one to obey,
 			// so the slider can only ever ask for fewer than the game permits.
 			val today = renewsToday(items.getOrNull(renewAt))
-			val allowed = if (today != null) minOf(asked, today.second - today.first) else asked - renewsUsed
+			// What the slider still allows, not what it allows in total: leaving
+			// the renews already spent out of this let a run set to one renew keep
+			// renewing for as long as the day's charges lasted.
+			val left = asked - renewsUsed
+			val allowed = if (today != null) minOf(left, today.second - today.first) else left
 
 			if (allowed <= 0) {
 				stop(
@@ -249,6 +350,30 @@ object ExperimentRunner {
 
 		status = "starting Superpairs"
 		click(client, SLOT_SUPERPAIRS)
+	}
+
+	/**
+	 * Shuts the table if the Guardian is not the pet that is out.
+	 *
+	 * The Guardian's experience bonus applies to what these games pay, so a
+	 * session run on the wrong pet is a session's worth of it thrown away — and
+	 * it is the kind of mistake that is only noticed afterwards.
+	 *
+	 * Only ever fires on a pet that was *seen* and was something else. A pet
+	 * that cannot be found is a pet whose tag was out of range or not sent yet,
+	 * and closing somebody's table over that would be worse than never closing
+	 * it. Returns true when it acted.
+	 */
+	private fun remindAboutGuardian(client: Minecraft): Boolean {
+		if (!ExperimentSolver.guardianReminder.value) return false
+		if (!EquippedPet.isDefinitelyNot(GUARDIAN)) return false
+
+		client.player?.closeContainer()
+		ExperimentTracker.closed()
+		client.gui.hud.setTimes(TITLE_FADE_TICKS, TITLE_STAY_TICKS, TITLE_FADE_TICKS)
+		client.gui.hud.setTitle(Component.literal("§cGuardian pet missing"))
+		stop("the Guardian pet is not out (${EquippedPet.name() ?: "unknown"} is)")
+		return true
 	}
 
 	private fun pickStake(client: Minecraft, items: List<ItemStack>, slots: List<Int>) {
@@ -438,6 +563,7 @@ object ExperimentRunner {
 	private fun reopen(client: Minecraft) {
 		when (reopenStage) {
 			ReopenStage.CLOSING -> {
+				closingSelf = true
 				client.player?.closeContainer()
 				ExperimentTracker.closed()
 				reopenStage = ReopenStage.OPENING
@@ -460,12 +586,34 @@ object ExperimentRunner {
 	}
 
 	private fun click(client: Minecraft, slot: Int, button: Int = GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
-		val screen = client.screen as? AbstractContainerScreen<*> ?: return
+		val screen = client.gui.screen() as? AbstractContainerScreen<*> ?: return
 		val player = client.player ?: return
 		if (slot !in screen.menu.slots.indices) {
 			stop("slot $slot is not in this menu")
 			return
 		}
+
+		// One click per state of the menu, and no more.
+		//
+		// A click that lands changes something — a new window, or the contents of
+		// this one. Until that happens the menu has not answered, and sending the
+		// same click again is what makes Hypixel start refusing them out loud.
+		// Counting the repeats was not enough: four of them is still four clicks
+		// and four refusals. So a click on the same slot is simply not sent again
+		// while the menu is exactly as it was, and if it stays that way for long
+		// enough the table is closed and reopened, which is what a person does.
+		if (slot == lastClickSlot && ExperimentTracker.revision == lastClickRevision) {
+			if (System.currentTimeMillis() - lastClickAt > STUCK_MILLIS) {
+				status = "menu ignored the click on slot $slot, reopening the table"
+				forgetLastClick()
+				startReopen()
+			}
+			return
+		}
+
+		lastClickSlot = slot
+		lastClickRevision = ExperimentTracker.revision
+		lastClickAt = System.currentTimeMillis()
 
 		val input = if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) ContainerInput.CLONE else ContainerInput.PICKUP
 		client.gameMode?.handleContainerInput(screen.menu.containerId, slot, button, input, player)

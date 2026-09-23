@@ -9,8 +9,13 @@ import imgui.flag.ImGuiConfigFlags
 import imgui.flag.ImGuiKey
 import imgui.gl3.ImGuiImplGl3
 import imgui.internal.ImGuiContext
+import com.mojang.blaze3d.systems.RenderSystem
+import imicro.cryptic.feature.Toasts
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.screens.Screen
+import net.minecraft.network.chat.Component
 import org.lwjgl.glfw.GLFW
+import org.lwjgl.opengl.GL30
 import org.slf4j.LoggerFactory
 
 /** Owns the single Dear ImGui context shared by every Cryptic screen instance. */
@@ -71,11 +76,64 @@ object ImGuiRuntime {
         return entry
     }
 
-    /** Invoked after Minecraft has presented its off-screen target to the window. */
+    /**
+     * Whether the game is running on a backend Dear ImGui's renderer can draw
+     * with, worked out once the graphics device exists.
+     *
+     * 26.2 can run on Vulkan as well as OpenGL, and Cryptic's renderer is
+     * imgui-java's OpenGL one. On Vulkan there is no OpenGL context at all, and
+     * an OpenGL call made without one is not an exception to catch — it is a
+     * native crash. So this is asked before anything is drawn, and the answer
+     * is kept: the backend is chosen at startup and cannot change without one.
+     */
+    private var backendSupported: Boolean? = null
+
+    val available: Boolean
+        get() {
+            if (broken) return false
+            backendSupported?.let { return it }
+            val name = runCatching { RenderSystem.getDevice().deviceInfo.backendName() }.getOrNull() ?: return false
+            val supported = name.contains("OpenGL", ignoreCase = true)
+            if (!supported) logger.warn("Cryptic's menus need OpenGL, but the game is running on {}", name)
+            backendSupported = supported
+            return supported
+        }
+
+    /** What to tell somebody who tried to open a Cryptic window on Vulkan. */
+    const val UNAVAILABLE_MESSAGE =
+        "Cryptic's menus need the OpenGL graphics API. Set Options → Video Settings → Graphics API to " +
+            "OpenGL and restart the game."
+
+    /**
+     * Opens one of Cryptic's windows, or says why it cannot.
+     *
+     * Every window is drawn entirely by Dear ImGui, so on a backend it cannot
+     * draw with, opening one would leave a blurred, empty screen with nothing on
+     * it to explain itself. Saying so in chat instead is the difference between
+     * a broken-looking mod and a setting to change.
+     */
+    fun open(client: Minecraft, screen: () -> Screen) {
+        if (available) {
+            client.gui.setScreen(screen())
+            return
+        }
+        client.gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §c$UNAVAILABLE_MESSAGE"))
+    }
+
+    /**
+     * Invoked once the frame is in the window and just before it is shown.
+     *
+     * A frame is run for the menu, and also for a notification with no menu
+     * behind it. That second case is why this is not simply gated on the screen:
+     * a toast raised by a click in the settings screen has to survive the screen
+     * being shut, and the only thing that draws a smooth rounded pill here is
+     * Dear ImGui.
+     */
     fun renderIfOpen() {
+        if (!available) return
         val minecraft = Minecraft.getInstance()
-        val screen = minecraft.screen as? CrypticScreen ?: return
-        if (broken) return
+        val screen = minecraft.gui.screen() as? ImGuiScreen
+        if (screen == null && !Toasts.wantsDrawing()) return
 
         // Dear ImGui's current context is process-global. Other mods may bundle
         // imgui-java too, so never leave Cryptic's context selected after its
@@ -94,15 +152,26 @@ object ImGuiRuntime {
             gl3.newFrame()
             ImGui.newFrame()
             frameStarted = true
-            screen.drawImGui()
+            screen?.drawImGui()
+            // After the menu, on the foreground list, so a notification is over
+            // whatever raised it rather than under it.
+            Toasts.drawImGui()
             ImGui.render()
             frameStarted = false
+            // Onto the window itself. The frame was copied into the default
+            // framebuffer just before this, but 26.2's renderer does not promise to
+            // leave that one bound, and drawing into whatever it left bound would put
+            // the menu somewhere nobody sees.
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0)
             gl3.renderDrawData(ImGui.getDrawData())
         } catch (error: Throwable) {
             if (frameStarted) {
                 runCatching { ImGui.endFrame() }
             }
             broken = true
+            // Nothing will draw them now, and a queue that cannot be drained
+            // would keep asking for a frame that always fails.
+            Toasts.clear()
             logger.error("Dear ImGui rendering failed; disabling Cryptic's GUI for this session", error)
         } finally {
             restoreContext(previousContext)

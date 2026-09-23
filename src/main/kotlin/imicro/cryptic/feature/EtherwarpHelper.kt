@@ -49,6 +49,9 @@ object EtherwarpHelper {
 	/** A ray that leaves the loaded world stops rather than running forever. */
 	private const val MAX_STEPS = 1000
 
+	/** Hypixel sets the feet a hair above what they land on, rather than in it. */
+	private const val LANDING_GAP = 0.05
+
 	/** [pos] is the block the ray stopped on, valid only when it can be warped to. */
 	data class EtherwarpTarget(val valid: Boolean, val pos: BlockPos?) {
 		companion object {
@@ -64,6 +67,17 @@ object EtherwarpHelper {
 		if (data.getByteOr("ethermerge", 0) != 1.toByte()) return null
 		return BASE_RANGE + data.getByteOr("tuned_transmission", 0).toInt()
 	}
+
+	/**
+	 * Where the player's feet end up after warping onto [pos].
+	 *
+	 * The same height [isValidTarget] checks the headroom from, which is what
+	 * makes the two agree: a fence is stood on from the block above it, and
+	 * everything else from the block it occupies. The last fraction is the gap
+	 * Hypixel leaves between the feet and what they are standing on.
+	 */
+	fun landing(pos: BlockPos): Vec3 =
+		Vec3(pos.x + 0.5, feetHeight(pos) + LANDING_GAP, pos.z + 0.5)
 
 	fun target(position: Vec3, lookAngle: Vec3, range: Double): EtherwarpTarget {
 		val player = Minecraft.getInstance().player ?: return EtherwarpTarget.NONE
@@ -151,17 +165,26 @@ object EtherwarpHelper {
 		val level = Minecraft.getInstance().level ?: return false
 		if (isPassable(pos, chunk)) return false
 
-		// Landing happens on top of the block's collision box, so a slab puts the
-		// player one block lower than a full block in the same position does.
-		val state = chunk.getBlockState(pos)
-		val collisionTop = state.getCollisionShape(level, pos, CollisionContext.empty()).max(Direction.Axis.Y)
-		val feetY = pos.y + max(1, ceil(collisionTop).toInt())
-
+		val feetY = feetHeight(pos)
 		val feet = BlockPos(pos.x, feetY, pos.z)
 		if (!isPassable(feet, chunk) || blocksFeet(feet, chunk)) return false
 
 		val head = BlockPos(pos.x, feetY + 1, pos.z)
 		return isPassable(head, chunk) && !blocksFeet(head, chunk)
+	}
+
+	/**
+	 * The Y a player stands at after landing on [pos].
+	 *
+	 * Rounded up off the block's collision box, so a fence — which is a block
+	 * and a half tall — is stood on from the block above it rather than inside
+	 * itself, and everything shorter is stood on from the block it occupies.
+	 */
+	private fun feetHeight(pos: BlockPos): Int {
+		val level = Minecraft.getInstance().level ?: return pos.y + 1
+		val shape = level.getBlockState(pos).getCollisionShape(level, pos, CollisionContext.empty())
+		val collisionTop = if (shape.isEmpty) 0.0 else shape.max(Direction.Axis.Y)
+		return pos.y + max(1, ceil(collisionTop).toInt())
 	}
 
 	/** Blocks a player can walk through, but Hypixel refuses to land you inside. */

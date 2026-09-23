@@ -1,10 +1,12 @@
 package imicro.cryptic.dungeon.map
 
+import imicro.cryptic.feature.RoomAlerts
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.dungeon.DungeonStats
 import net.minecraft.client.Minecraft
 import net.minecraft.network.protocol.game.ClientboundMapItemDataPacket
+import net.minecraft.world.level.material.MapColor
 import net.minecraft.world.level.saveddata.maps.MapDecorationTypes
 import net.minecraft.world.level.saveddata.maps.MapId
 import kotlin.jvm.optionals.getOrNull
@@ -53,8 +55,10 @@ object DungeonMapReader {
 		startCoords = null
 		mapCenter = null
 		markers = emptyList()
+		endArt = emptyList()
 		DungeonFloor.reset()
 		DungeonWorldScan.reset()
+		BossScan.reset()
 		RoomPrediction.reset()
 		DungeonStats.reset()
 	}
@@ -69,9 +73,61 @@ object DungeonMapReader {
 	 * nothing at all — one unrelated map early in a session and every real
 	 * update afterwards was dropped as the wrong id.
 	 */
+	/**
+	 * The picture Hypixel puts on the map when a run is over.
+	 *
+	 * The end of a run replaces the floor on the map item with the score
+	 * screen: the four categories, the grade and the number. It is a picture
+	 * rather than a floor, so there is nothing to read out of it — it is kept
+	 * as it arrives and drawn as it is.
+	 *
+	 * Stored as runs of one colour rather than as pixels, because a score
+	 * screen is mostly flat areas and sixteen thousand rectangles a frame is
+	 * not a thing to ask of a HUD.
+	 */
+	class ArtRun(val top: Int, val left: Int, val right: Int, val argb: Int)
+
+	var endArt: List<ArtRun> = emptyList()
+		private set
+
+	/** One side of the map item, which is square. */
+	const val ART_SIZE = 128
+
+	private fun captureEndArt(packet: ClientboundMapItemDataPacket) {
+		val level = Minecraft.getInstance().level ?: return
+		val colors = level.getMapData(packet.mapId)?.colors ?: return
+		if (colors.size < ART_SIZE * ART_SIZE) return
+
+		val runs = mutableListOf<ArtRun>()
+		for (row in 0 until ART_SIZE) {
+			var start = 0
+			while (start < ART_SIZE) {
+				val packed = colors[row * ART_SIZE + start].toInt() and 0xFF
+				var end = start + 1
+				while (end < ART_SIZE && (colors[row * ART_SIZE + end].toInt() and 0xFF) == packed) end++
+				// Nothing painted is nothing to draw, and the map item is
+				// mostly nothing around its edges.
+				if (packed != 0) {
+					runs += ArtRun(row, start, end, MapColor.getColorFromPackedId(packed))
+				}
+				start = end
+			}
+		}
+
+		endArt = runs
+		status = "score art, ${runs.size} runs"
+	}
+
 	fun accept(packet: ClientboundMapItemDataPacket) {
 		val level = Minecraft.getInstance().level ?: return
-		if (DungeonRun.ended) return
+		// A finished run has a score screen on its map rather than a floor,
+		// and it arrives as a map of its own rather than as an update to the
+		// one being read — so the id is not checked, because by now there is
+		// only one map left worth listening to.
+		if (DungeonRun.ended) {
+			captureEndArt(packet)
+			return
+		}
 
 		val claimed = mapId
 		if (claimed != null && claimed.id() != packet.mapId.id()) return
@@ -288,7 +344,13 @@ object DungeonMapReader {
 				if (index >= colors.size) return@firstNotNullOfOrNull null
 				colors[index].toInt().takeIf { it != 0 }?.let { tile to it }
 			}
-			room.updateState(painted?.first ?: fallback, painted?.second ?: 0)
+			// The checkmark moving is the only honest word on a room being
+			// finished — what clears one is not one thing, and Hypixel already
+			// knows the answer — so whoever cares is told here rather than
+			// left to notice by watching.
+			if (room.updateState(painted?.first ?: fallback, painted?.second ?: 0)) {
+				RoomAlerts.onCheckmarkChanged(room)
+			}
 		}
 	}
 

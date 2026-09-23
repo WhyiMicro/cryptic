@@ -66,7 +66,7 @@ object Etherwarp {
 	val mode = DropdownModuleSetting(
 		id = "mode",
 		label = "Mode",
-		options = listOf("Outline", "Fill", "Filled outline"),
+		options = listOf("Outline", "Fill", "Fill + Outline"),
 		defaultIndex = MODE_OUTLINE,
 		visibleIf = { overlay.value },
 	)
@@ -82,7 +82,7 @@ object Etherwarp {
 	@JvmField
 	val phase = ToggleModuleSetting(
 		id = "phase",
-		label = "Through walls",
+		label = "Phase",
 		defaultValue = false,
 		visibleIf = { overlay.value },
 	)
@@ -140,6 +140,34 @@ object Etherwarp {
 		supportsAlpha = true,
 		defaultAlpha = DEFAULT_FILL_ALPHA,
 		visibleIf = { overlay.value && showFail.value && mode.selectedIndex != MODE_OUTLINE },
+	)
+
+	@JvmField
+	val fakeZpew = ToggleModuleSetting(
+		id = "fake_zpew",
+		label = "Fake zpew",
+		defaultValue = false,
+		description = "Puts your view at the landing spot as you click.",
+	)
+
+	@JvmField
+	val noRotate = ToggleModuleSetting(
+		id = "no_rotate",
+		label = "No rotate",
+		defaultValue = false,
+		description = "Keeps your head where you have turned it.",
+	)
+
+	@JvmField
+	val resyncTimeout = SliderModuleSetting(
+		id = "resync_timeout",
+		label = "Resync timeout",
+		defaultValue = 500.0,
+		min = 300.0,
+		max = 1000.0,
+		step = 50.0,
+		description = "How long a prediction is believed.",
+		visibleIf = { fakeZpew.value || noRotate.value },
 	)
 
 	@JvmField
@@ -212,6 +240,10 @@ object Etherwarp {
 			fillColor,
 			invalidOutlineColor,
 			invalidFillColor,
+			SectionModuleSetting("zero_ping_section", "Zero ping"),
+			fakeZpew,
+			noRotate,
+			resyncTimeout,
 			SectionModuleSetting("sound_section", "Sound"),
 			customSound,
 			sound,
@@ -230,8 +262,13 @@ object Etherwarp {
 		// Pipelines are gathered while the game starts, so they are registered
 		// now rather than on the first frame that draws the overlay.
 		CrypticRenderPipelines.touch()
-		LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(::renderOverlay)
+		LevelRenderEvents.COLLECT_SUBMITS.register(::renderOverlay)
+		EtherwarpZeroPing.initialize()
 	}
+
+	/** True while the zero-ping halves need to know which dungeon floor this is. */
+	val needsFloorTracking: Boolean
+		get() = EtherwarpZeroPing.needsFloorTracking
 
 	/**
 	 * Called by the client packet mixin. Returns true when Hypixel's teleport
@@ -265,7 +302,7 @@ object Etherwarp {
 
 		WorldRender.drawBlock(
 			poseStack = context.poseStack(),
-			consumers = context.bufferSource(),
+			collector = context.submitNodeCollector(),
 			pos = pos,
 			outlineArgb = if (target.valid) outlineColor.argb else invalidOutlineColor.argb,
 			fillArgb = if (target.valid) fillColor.argb else invalidFillColor.argb,
@@ -275,6 +312,21 @@ object Etherwarp {
 			lineWidth = lineWidth.value.toFloat(),
 			fullBlock = fullBlock.value,
 		)
+	}
+
+	/**
+	 * Whether the player is lining up an etherwarp right now.
+	 *
+	 * Crouching with an item that can warp, which is the whole of what makes
+	 * the overlay appear. [BlockOverlay] asks so it can get out of the way:
+	 * two boxes on two different blocks, one under the crosshair and one where
+	 * you would land, is a confusing thing to aim with.
+	 */
+	fun isAiming(): Boolean {
+		val client = Minecraft.getInstance()
+		if (!client.options.keyShift.isDown) return false
+		val held = client.player?.mainHandItem?.takeUnless { it.isEmpty } ?: return false
+		return EtherwarpHelper.etherwarpRange(held) != null
 	}
 
 	/** Command-friendly names for [soundOptions], e.g. "experience_orb". */

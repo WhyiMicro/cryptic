@@ -91,8 +91,7 @@ object ExperimentSolver {
 	val runTable = ToggleModuleSetting(
 		id = "run_table",
 		label = "Work the table",
-		description = "Starts the games itself when the table is opened: takes a stake, plays, renews, " +
-			"claims Superpairs and opens the table again.",
+		description = "Plays the table itself, start to finish.",
 	)
 
 	@JvmField
@@ -100,9 +99,7 @@ object ExperimentSolver {
 		id = "focus",
 		label = "Play for",
 		options = listOf("Most XP", "Rare items"),
-		description = "Most XP plays each game as deep as it goes, where the experience is. " +
-			"Rare items plays only the chain the add-ons ask for and spends the rest on Superpairs, " +
-			"which is the one that pays in enchanted books.",
+		description = "Most XP plays each game as deep as it goes, where the experience is.",
 		visibleIf = { runTable.value },
 	)
 
@@ -114,7 +111,7 @@ object ExperimentSolver {
 		min = 0.0,
 		max = 3.0,
 		step = 1.0,
-		description = "How many times to pay to renew before stopping. Three is the daily limit; zero never renews.",
+		description = "Renews to pay for. Three is the daily limit.",
 		visibleIf = { runTable.value },
 	)
 
@@ -122,8 +119,7 @@ object ExperimentSolver {
 	val superpairsByHand = ToggleModuleSetting(
 		id = "superpairs_by_hand",
 		label = "Play Superpairs by hand",
-		description = "Leaves Superpairs to you — it still remembers the board and paints the pairs. " +
-			"The other two are still played for you.",
+		description = "Leaves Superpairs to you — it still remembers the board and paints the pairs.",
 		visibleIf = { runTable.value || autoClick.value },
 	)
 
@@ -131,8 +127,7 @@ object ExperimentSolver {
 	val buyExperience = ToggleModuleSetting(
 		id = "buy_experience",
 		label = "Buy experience",
-		description = "Lets it buy exactly the experience a stake or a renew asks for, from the bazaar, with " +
-			"coins. Off means it stops and says what it needed instead.",
+		description = "Buys the experience it needs from the bazaar.",
 		visibleIf = { runTable.value },
 	)
 
@@ -144,9 +139,16 @@ object ExperimentSolver {
 		min = 0.0,
 		max = 3.0,
 		step = 1.0,
-		description = "Metaphysical Serums you have consumed. Each takes a round off the chain the add-ons " +
-			"ask for, which shortens the Rare items target by one apiece. Most XP plays past that chain " +
-			"either way, so it changes nothing there.",
+		description = "Metaphysical Serums you have consumed.",
+		visibleIf = { runTable.value },
+	)
+
+	@JvmField
+	val guardianReminder = ToggleModuleSetting(
+		id = "guardian_reminder",
+		label = "Guardian reminder",
+		defaultValue = false,
+		description = "Closes the table and says so if the Guardian pet is not out.",
 		visibleIf = { runTable.value },
 	)
 
@@ -160,7 +162,7 @@ object ExperimentSolver {
 		supportsKeybind = false,
 		settings = listOf(nextColor, laterColor, showOrder) +
 			listOf(autoSection, autoClick, clickDelay) +
-			listOf(runSection, runTable, focus, renews, serums, superpairsByHand, buyExperience),
+			listOf(runSection, runTable, focus, renews, serums, superpairsByHand, buyExperience, guardianReminder),
 	)
 
 	/** True while the table should be played for books rather than for levels. */
@@ -232,7 +234,7 @@ object ExperimentSolver {
 		val now = System.currentTimeMillis()
 		if (now < nextClickAt) return
 
-		val screen = client.screen as? AbstractContainerScreen<*> ?: return
+		val screen = client.gui.screen() as? AbstractContainerScreen<*> ?: return
 		val player = client.player ?: return
 		val slot = handler.clickOrder().firstOrNull() ?: return
 		if (slot !in screen.menu.slots.indices) return

@@ -97,7 +97,7 @@ object Animations {
 	@JvmField val module = Module(
 		id = "animations",
 		name = "Animations",
-		description = "Allows you to modify your hand view-model",
+		description = "Moves and resizes your held item",
 		category = ModuleCategory.VISUAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,

@@ -43,7 +43,7 @@ object ClickGui {
 		// hands over to the editor rather than opening it on top of itself. The
 		// menu goes along as the way back, so escape returns to it.
 		action = {
-			val parent = Minecraft.getInstance().screen
+			val parent = Minecraft.getInstance().gui.screen()
 			Minecraft.getInstance().execute { Hud.openEditor(parent) }
 		},
 	)

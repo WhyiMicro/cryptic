@@ -12,6 +12,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.render.BoxColors
 import imicro.cryptic.render.CrypticRenderPipelines
 import imicro.cryptic.render.WorldRender
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
@@ -68,13 +69,17 @@ object DoorKeys {
 		visibleIf = { pickupSound.value },
 	)
 
+	/** Indices into [mode], which every module here numbers the same way. */
+	private const val OUTLINE = 0
+	private const val FILL = 1
+
 	private val highlightSection = SectionModuleSetting("highlight_section", "Highlight")
 
 	@JvmField
 	val mode = DropdownModuleSetting(
 		id = "mode",
 		label = "Style",
-		options = listOf("Outline", "Fill", "Both"),
+		options = listOf("Outline", "Fill", "Fill + Outline"),
 		defaultIndex = 2,
 		description = "The outline is drawn solid; the colour's alpha sets how heavy the fill is.",
 	)
@@ -89,11 +94,20 @@ object DoorKeys {
 	@JvmField
 	val witherColor = ColorModuleSetting(
 		id = "wither_color",
-		label = "Wither key",
+		label = "Wither fill",
 		defaultRgb = 0x202020,
 		supportsAlpha = true,
 		defaultAlpha = 110,
-		visibleIf = { witherKey.value },
+		visibleIf = { witherKey.value && mode.selectedIndex != OUTLINE },
+	)
+
+	@JvmField
+	val witherOutlineColor = ColorModuleSetting(
+		id = "wither_outline_color",
+		label = "Wither outline",
+		defaultRgb = 0x202020,
+		supportsAlpha = true,
+		visibleIf = { witherKey.value && mode.selectedIndex != FILL },
 	)
 
 	@JvmField
@@ -106,11 +120,20 @@ object DoorKeys {
 	@JvmField
 	val bloodColor = ColorModuleSetting(
 		id = "blood_color",
-		label = "Blood key",
+		label = "Blood fill",
 		defaultRgb = 0xFF0000,
 		supportsAlpha = true,
 		defaultAlpha = 110,
-		visibleIf = { bloodKey.value },
+		visibleIf = { bloodKey.value && mode.selectedIndex != OUTLINE },
+	)
+
+	@JvmField
+	val bloodOutlineColor = ColorModuleSetting(
+		id = "blood_outline_color",
+		label = "Blood outline",
+		defaultRgb = 0xFF0000,
+		supportsAlpha = true,
+		visibleIf = { bloodKey.value && mode.selectedIndex != FILL },
 	)
 
 	@JvmField
@@ -121,13 +144,13 @@ object DoorKeys {
 		min = 1.0,
 		max = 6.0,
 		step = 0.5,
-		visibleIf = { mode.selectedIndex != 1 },
+		visibleIf = { mode.selectedIndex != FILL },
 	)
 
 	@JvmField
 	val throughWalls = ToggleModuleSetting(
 		id = "through_walls",
-		label = "Through walls",
+		label = "Phase",
 		defaultValue = true,
 		description = "A key behind a pillar is the one you were going to miss.",
 	)
@@ -159,8 +182,10 @@ object DoorKeys {
 		mode,
 		witherKey,
 		witherColor,
+		witherOutlineColor,
 		bloodKey,
 		bloodColor,
+		bloodOutlineColor,
 		lineWidth,
 		throughWalls,
 		tracers,
@@ -183,12 +208,13 @@ object DoorKeys {
 	val module = Module(
 		id = "door_keys",
 		name = "Door Keys",
-		description = "Highlights dungeon keys with customizations",
+		description = "Highlights wither and blood keys",
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(soundSection, pickupSound, volume) +
-			listOf(highlightSection, mode, witherKey, witherColor, bloodKey, bloodColor, lineWidth, throughWalls) +
+			listOf(highlightSection, mode, witherKey, witherColor, witherOutlineColor,
+				bloodKey, bloodColor, bloodOutlineColor, lineWidth, throughWalls) +
 			listOf(tracersSection, tracers, tracerWidth, reset),
 	)
 
@@ -201,8 +227,10 @@ object DoorKeys {
 	private var initialized = false
 	private var ticksUntilRescan = 0
 
-	/** The keys on the floor right now, and which colour each is drawn in. */
-	private var found: List<Pair<Entity, ColorModuleSetting>> = emptyList()
+	private val witherColors = BoxColors(witherColor, witherOutlineColor)
+	private val bloodColors = BoxColors(bloodColor, bloodOutlineColor)
+
+	private var found: List<Pair<Entity, BoxColors>> = emptyList()
 
 	fun initialize() {
 		if (initialized) return
@@ -211,7 +239,7 @@ object DoorKeys {
 		// Pipelines are gathered while the game starts, so they are registered
 		// now rather than on the first frame that draws a highlight.
 		CrypticRenderPipelines.touch()
-		LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(::render)
+		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientReceiveMessageEvents.GAME.register { message, _ -> onMessage(message.string) }
 	}
 
@@ -243,11 +271,11 @@ object DoorKeys {
 		}
 		ticksUntilRescan = RESCAN_INTERVAL_TICKS
 
-		var keys: MutableList<Pair<Entity, ColorModuleSetting>>? = null
+		var keys: MutableList<Pair<Entity, BoxColors>>? = null
 		for (entity in level.entitiesForRendering()) {
 			if (entity !is ArmorStand) continue
 			val color = colorFor(entity) ?: continue
-			(keys ?: mutableListOf<Pair<Entity, ColorModuleSetting>>().also { keys = it }).add(entity to color)
+			(keys ?: mutableListOf<Pair<Entity, BoxColors>>().also { keys = it }).add(entity to color)
 		}
 
 		found = keys ?: emptyList()
@@ -257,12 +285,12 @@ object DoorKeys {
 	 * Which of the two keys this stand is carrying, or null when it is carrying
 	 * neither or the player asked not to be shown that one.
 	 */
-	private fun colorFor(stand: ArmorStand): ColorModuleSetting? {
-		if (DebugOverrides.highlightEveryArmorStand) return witherColor
+	private fun colorFor(stand: ArmorStand): BoxColors? {
+		if (DebugOverrides.highlightEveryArmorStand) return witherColors
 
 		return when (stand.customName?.string) {
-			WITHER_KEY -> witherColor.takeIf { witherKey.value }
-			BLOOD_KEY -> bloodColor.takeIf { bloodKey.value }
+			WITHER_KEY -> witherColors.takeIf { witherKey.value }
+			BLOOD_KEY -> bloodColors.takeIf { bloodKey.value }
 			else -> null
 		}
 	}
@@ -270,8 +298,8 @@ object DoorKeys {
 	private fun render(context: LevelRenderContext) {
 		if (!active || found.isEmpty()) return
 
-		val outline = mode.selectedIndex != 1
-		val fill = mode.selectedIndex != 0
+		val outline = mode.selectedIndex != FILL
+		val fill = mode.selectedIndex != OUTLINE
 		val phase = throughWalls.value
 
 		found.forEach { (entity, color) ->
@@ -279,17 +307,15 @@ object DoorKeys {
 
 			WorldRender.drawBox(
 				poseStack = context.poseStack(),
-				consumers = context.bufferSource(),
+				collector = context.submitNodeCollector(),
 				minX = entity.x - KEY_HALF_WIDTH,
 				minY = entity.y + KEY_BOTTOM,
 				minZ = entity.z - KEY_HALF_WIDTH,
 				maxX = entity.x + KEY_HALF_WIDTH,
 				maxY = entity.y + KEY_TOP,
 				maxZ = entity.z + KEY_HALF_WIDTH,
-				// One colour drives both halves: the outline wants to be seen,
-				// so it ignores the alpha the fill is tuned with.
-				outlineArgb = color.rgb or 0xFF000000.toInt(),
-				fillArgb = color.argb,
+				outlineArgb = color.outline.argb,
+				fillArgb = color.fill.argb,
 				outline = outline,
 				fill = fill,
 				phase = phase,
@@ -299,11 +325,13 @@ object DoorKeys {
 			if (tracers.value) {
 				WorldRender.drawTracer(
 					poseStack = context.poseStack(),
-					consumers = context.bufferSource(),
+					collector = context.submitNodeCollector(),
 					x = entity.x,
 					y = entity.y + (KEY_BOTTOM + KEY_TOP) / 2,
 					z = entity.z,
-					argb = color.rgb or 0xFF000000.toInt(),
+					// The tracer follows the outline, which is the half of the
+					// highlight meant to be seen from across a room.
+					argb = color.outline.rgb or 0xFF000000.toInt(),
 					lineWidth = tracerWidth.value.toFloat(),
 					phase = phase,
 				)

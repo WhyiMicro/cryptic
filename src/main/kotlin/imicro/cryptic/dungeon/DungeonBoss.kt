@@ -41,7 +41,7 @@ object DungeonBoss {
 		if (ticksUntilRefresh-- > 0) return
 		ticksUntilRefresh = REFRESH_INTERVAL_TICKS
 
-		val overlay = client.gui.bossOverlay as? BossHealthOverlayAccessor
+		val overlay = client.gui.hud.bossOverlay as? BossHealthOverlayAccessor
 		if (overlay == null) {
 			clear()
 			return

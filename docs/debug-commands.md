@@ -62,6 +62,106 @@ room simply has no name. This is how you tell the difference between "the scan
 has not reached that room yet" and "that room is not in `rooms.json`". It is also
 the fastest way to check a door is where you think it is.
 
+```
+/cryptic debug team
+```
+
+Prints the party in tab-list order against the markers the map has for them.
+
+The dungeon map says where five people are and nothing at all about who they
+are: the first marker belongs to the first living teammate in the tab list, the
+second to the second, and so on. That pairing is the only thing naming the heads
+on the map, so when a head is drawn as the wrong person this is where it shows —
+read the list against the tab list and against where people actually are.
+
+```
+/cryptic debug pet
+```
+
+Prints every row of the tab list that has anything on it, and what the Guardian
+reminder reads as your pet.
+
+A pet is only knowable from the `[Lvl 100] Guardian` row in the tab list — not
+from the thing following you, because plenty of people hide theirs. This says
+whether that row is being found and what it says.
+
+```
+/cryptic debug carry
+```
+
+Prints every named armour stand nearby and what the Carry Manager reads as a
+slayer boss — its owner and its tier.
+
+A boss carries its owner and tier on invisible stands whose entity ids are the
+boss's plus one and plus three. Those offsets are the fragile part of carry
+tracking, and this is what says whether they still hold.
+
+```
+/cryptic debug location
+```
+
+Prints the sidebar's objective name and what Cryptic reads as SkyBlock and the
+current island.
+
+Slot Binds and Nucleus QoL both refuse to act off SkyBlock, and Nucleus QoL
+outside the Crystal Hollows, so when one of them does nothing this says whether
+the place was misread. The scan only runs while one of those two modules is on,
+so with both off it reports nothing.
+
+```
+/cryptic debug timers
+```
+
+Prints every Smart Tick Timer's raw value, how many server ticks have been
+counted, and how the run is being read.
+
+A timer that is not moving looks identical whichever of three things went wrong:
+its chat line never arrived, the server's per-tick ping is not reaching the
+counter, or the run is not being recognised as a run. The tick count answers the
+second, the dungeon line answers the third, and a timer sitting at -1 answers the
+first.
+
+```
+/cryptic debug cookie
+```
+
+Prints every tab row in display order, every line of the footer under it, and
+what the Booster Cookie Reminder reads from each.
+
+The cookie's remaining time is written as a `Cookie Buff` row with the value on
+the row below, and nowhere else a client can reach. This says whether the heading
+is found in either place, and whether the line under it parsed as a duration, as "no cookie",
+or as neither — which is the difference between the reminder staying quiet
+because there is nothing to say and staying quiet because it cannot read.
+
+```
+/cryptic debug mimic
+```
+
+Prints every zombie within twenty-four blocks: what it is, whether it is a baby,
+what it is called, what it is carrying, and whether Highlight reads it as the
+mimic.
+
+Telling the mimic from the baby zombies a weapon throws up is a heuristic, and
+the only place to check it is a floor that has one. This is what says whether a
+mimic went unmarked because it was carrying something unexpected or because it
+is not the mob the check is looking for at all.
+
+```
+/cryptic debug devices
+```
+
+Stand anywhere in a Goldor section and this prints every named armour stand
+within reach — its name and where it is — followed by what each terminal, device
+and lever in the section made of them: done, pending, or unknown because nothing
+matched.
+
+Those stands are how Terminal Order knows a thing has been finished, and their
+names and positions are the one part of the tower that cannot be worked out from
+anywhere else. When a label refuses to disappear, this says whether the stand is
+out of range, sitting further from its recorded position than expected, or
+carrying a name nothing here recognises.
+
 ---
 
 ## The score
@@ -209,7 +309,7 @@ anywhere inside it.
 
 The terminal simulator is the way to see the Terminal Solver without a Floor 7
 run: it opens the same six terminals client-side, and the solver draws over them
-exactly as it would in the boss room. Its own module card, in the Floor 7 tab,
+exactly as it would in the boss room. Its own module card, in the Boss tab,
 has the same button plus a **Ping** slider — set that to your real ping and the
 terminals answer as slowly as Hypixel would, which is the point of practising at
 all. The solver's first click protection applies there too, so a click in the

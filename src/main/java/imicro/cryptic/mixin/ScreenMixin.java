@@ -1,6 +1,7 @@
 package imicro.cryptic.mixin;
 
 import imicro.cryptic.feature.ExperimentSolver;
+import imicro.cryptic.feature.SlotBinds;
 import imicro.cryptic.feature.TerminalSolver;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -34,5 +35,6 @@ public abstract class ScreenMixin {
     @Inject(method = "extractRenderStateWithTooltipAndSubtitles", at = @At("TAIL"))
     private void cryptic$drawExperiment(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo info) {
         ExperimentSolver.render((Screen) (Object) this, graphics);
+        SlotBinds.render((Screen) (Object) this, graphics, mouseX, mouseY);
     }
 }

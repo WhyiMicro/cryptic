@@ -12,6 +12,7 @@ import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.EntityType
+import net.minecraft.world.entity.EntityTypes
 import net.minecraft.world.entity.EquipmentSlot
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.decoration.ArmorStand
@@ -59,7 +60,7 @@ object RenderOptimizer {
 	val hideFallingBlocks = ToggleModuleSetting(
 		id = "hide_falling_blocks",
 		label = "Hide falling blocks",
-		description = "Drops falling blocks before they are added to the world, so they cost nothing to draw.",
+		description = "Drops falling blocks before they are drawn.",
 	)
 
 	@JvmField
@@ -163,7 +164,7 @@ object RenderOptimizer {
 	val module = Module(
 		id = "render_optimizer",
 		name = "Render Optimizer",
-		description = "Stops drawing the things a run does not need to see",
+		description = "Stops drawing what a run does not need",
 		category = ModuleCategory.VISUAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
@@ -192,9 +193,9 @@ object RenderOptimizer {
 	fun blocksSpawn(type: EntityType<*>): Boolean {
 		if (!module.enabled) return false
 		return when (type) {
-			EntityType.FALLING_BLOCK -> hideFallingBlocks.value
-			EntityType.EXPERIENCE_ORB -> hideExperienceOrbs.value
-			EntityType.LIGHTNING_BOLT -> hideLightning.value
+			EntityTypes.FALLING_BLOCK -> hideFallingBlocks.value
+			EntityTypes.EXPERIENCE_ORB -> hideExperienceOrbs.value
+			EntityTypes.LIGHTNING_BOLT -> hideLightning.value
 			else -> false
 		}
 	}

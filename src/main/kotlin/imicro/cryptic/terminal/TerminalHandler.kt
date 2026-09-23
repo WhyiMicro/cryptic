@@ -7,9 +7,9 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.world.inventory.ContainerInput
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.Items
 import org.lwjgl.glfw.GLFW
 import java.util.concurrent.CopyOnWriteArrayList
-import kotlin.math.min
 
 /** What the solver paints over one slot: a colour, and a label when it has one. */
 data class SlotOverlay(val argb: Int, val text: String? = null)
@@ -17,9 +17,18 @@ data class SlotOverlay(val argb: Int, val text: String? = null)
 /**
  * One terminal the player has open, and the solution as it currently stands.
  *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking): the solving
- * rules for all six terminals are its work, as is the shape of this class — a
- * handler per open window, re-solving whenever the chest's contents change.
+ * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking). The shape is
+ * theirs: a handler per open terminal, re-solved from the board every time a
+ * slot of it changes, with the clicks that have gone out but not yet come back
+ * replayed on top.
+ *
+ * That replay — [clickedSlots] — is what makes the solver feel instant on a
+ * high ping. A click is shown as taken the moment it is sent, so the next one
+ * can be aimed straight away; when the server answers, the slot that comes back
+ * retires that click and everything sent before it, and the board it sent is
+ * the truth. Nothing here is ever left guessing for long: a click that goes
+ * unanswered is dropped by [Terminals] after the resolve timeout, and the
+ * board is solved again from what is really on screen.
  *
  * The solution list is copy-on-write because the render pass reads it on the
  * render thread while packets rewrite it on the client thread.
@@ -27,76 +36,86 @@ data class SlotOverlay(val argb: Int, val text: String? = null)
 abstract class TerminalHandler(val type: TerminalType) {
 	val solution: CopyOnWriteArrayList<Int> = CopyOnWriteArrayList()
 
-	val openedAt: Long = System.currentTimeMillis()
+	/** Clicks sent and not yet confirmed, each with the button it went out with. */
+	val clickedSlots: MutableList<Pair<Int, Int>> = CopyOnWriteArrayList()
 
-	/** True once anything has been clicked in the current window. */
-	var clicked = false
-
-	/**
-	 * True once anything has been clicked in this terminal at all.
-	 *
-	 * Separate from [clicked] because that one is cleared by any re-solve, and
-	 * the question this answers — has the player started playing? — must not
-	 * have a different answer depending on which packet arrived last. Deciding
-	 * to restart a terminal off [clicked] meant a slot update landing between a
-	 * click and the window answering it threw the whole terminal away, queue
-	 * included, which is one more way an already-clicked pane came back.
-	 */
-	var everClicked = false
+	var openedAt: Long = System.currentTimeMillis()
 		private set
 
 	/**
-	 * How many times Hypixel has re-sent this terminal's window.
+	 * Starts the click-protection clock again, for a window the player has not
+	 * touched yet.
 	 *
-	 * Every click is answered with a fresh window rather than a slot update, so
-	 * this counts progress through the puzzle, not how many terminals were
-	 * opened.
+	 * Hypixel announces the opening window more than once, and the player can
+	 * only have seen the last of them — so a clock running from the first says
+	 * they have had longer to read the board than they really have. Only ever
+	 * called before the first click, where there is nothing to lose by it, and
+	 * it can only ever make the protection longer.
 	 */
-	var windowCount = 0
-		private set
-
-	/** Server ticks since the window opened, or -1 before the first one. */
-	var serverTicksOpen = -1
-
-	/**
-	 * Re-reads the board and rebuilds the solution from it.
-	 *
-	 * Called once a tick for whatever changed, rather than per packet: the
-	 * coalescing lives in [Terminals] so that a window arriving a slot at a time
-	 * and a single slot changing in place both end up here exactly once.
-	 */
-	fun resolve(items: List<ItemStack>): Boolean {
-		if (items.size < type.windowSize) return false
-		val window = items.subList(0, min(items.size, type.windowSize))
-
-		val solved = solve(window)
-		solution.clear()
-		solution.addAll(solved)
-		// Nothing has been clicked in the board that just came back. What is
-		// still on the wire is not tracked here but in [TerminalClicks], which
-		// only lets go of a click when Hypixel opens the window again.
-		clicked = false
-		return true
+	fun restartProtection() {
+		if (everClicked) return
+		openedAt = System.currentTimeMillis()
+		serverTicksOpen = -1
 	}
 
+	var lastClickTime: Long = 0L
+		private set
+
+	/** Server ticks since the terminal opened, or -1 before the first one. */
+	var serverTicksOpen: Int = -1
+
+	/** True once anything has been clicked in this terminal at all. */
+	var everClicked: Boolean = false
+		private set
+
 	/**
-	 * Neither clock is restarted here, on purpose: the ban risk is clicking
-	 * before the terminal could have been read, and by the second window the
-	 * player has been looking at it for a while already.
+	 * The slots the puzzle itself occupies.
+	 *
+	 * Always the window without its bottom row: every terminal keeps that row
+	 * for filler, and a change to it is never a move in the puzzle.
 	 */
-	fun windowOpened() {
-		clicked = false
-		windowCount++
+	val puzzleSize: Int get() = type.windowSize - 9
+
+	/**
+	 * Re-reads the board after one slot of it changed, and rebuilds from it.
+	 *
+	 * The index that changed is passed on to [solve] because two of the six
+	 * care which slot moved rather than only what the board now looks like.
+	 */
+	open fun updateSlot(slotIndex: Int, items: List<ItemStack>) {
+		if (items.isEmpty() || slotIndex !in 0 until puzzleSize) return
+		// Filler moving is not the puzzle moving, and treating it as such
+		// re-solved the board off changes that mean nothing.
+		if (items.getOrNull(slotIndex)?.item == Items.STAINED_GLASS_PANE.black()) return
+
+		// The slot we clicked has come back from the server, so that click has
+		// landed — and so has everything sent before it, because the server
+		// answers in order.
+		val landed = clickedSlots.indexOfFirst { it.first == slotIndex }
+		if (landed >= 0) clickedSlots.subList(0, landed + 1).clear()
+
+		val board = items.subList(0, minOf(items.size, puzzleSize))
+		solution.clear()
+		solution.addAll(solve(board, slotIndex))
+
+		if (TerminalSolver.clickPrediction.value) {
+			clickedSlots.forEach { (slot, button) -> simulateClick(slot, button) }
+		}
+	}
+
+	/** Throws away clicks the server never answered, without touching the board. */
+	fun forgetSentClicks() {
+		clickedSlots.clear()
 	}
 
 	/** The slots to click, in the order they should be clicked. */
-	abstract fun solve(items: List<ItemStack>): List<Int>
+	abstract fun solve(items: List<ItemStack>, updatedIndex: Int): List<Int>
 
 	/** How a slot that is part of the solution should be painted. */
 	protected abstract fun highlight(slotIndex: Int): SlotOverlay?
 
 	/**
-	 * What to draw over [slotIndex], or null to leave it empty.
+	 * What to draw over [slotIndex], or null to leave it alone.
 	 *
 	 * Only the solution is painted for five of the six; melody overrides this
 	 * because its grid needs a resting colour under the notes as well.
@@ -108,99 +127,74 @@ abstract class TerminalHandler(val type: TerminalType) {
 	open fun canClick(slotIndex: Int, button: Int): Boolean = slotIndex in solution
 
 	/**
-	 * How many clicks the board still wants on [slotIndex].
+	 * The button the click actually goes out with, given the one pressed.
 	 *
-	 * This is what says whether a click the player made has landed yet. Nobody
-	 * can have more clicks outstanding on a slot than the board still asks for,
-	 * so once the server's own count drops, the difference is what arrived.
-	 *
-	 * Rubix counts differently — its solution holds one entry per forward step,
-	 * and a pane four steps from the target is one click away, not four — so it
-	 * says so itself.
+	 * A left click is sent as a middle click, which is what Hypixel's terminals
+	 * want and what Odin sends as well. Rubix is the one that reads the button,
+	 * so it says more about this than anyone else.
 	 */
-	open fun clicksNeededFor(slotIndex: Int): Int = solution.count { it == slotIndex }
+	open fun buttonFor(slotIndex: Int, requested: Int): Int =
+		if (requested == GLFW.GLFW_MOUSE_BUTTON_RIGHT && type == TerminalType.RUBIX) {
+			GLFW.GLFW_MOUSE_BUTTON_RIGHT
+		} else {
+			GLFW.GLFW_MOUSE_BUTTON_MIDDLE
+		}
 
 	/**
-	 * A queued click, re-aimed at the board that has just arrived, or null when
-	 * it is no longer worth sending.
+	 * Applies a click to the solution before the server has confirmed it.
 	 *
-	 * Queued clicks are made against a board a moment old, and the one that
-	 * comes back can have moved under them. For most of the six that means the
-	 * click is simply stale. Rubix is the exception again: the direction a pane
-	 * wants is worked out from how many steps it still needs, so a pane that was
-	 * quicker to reach backwards can become quicker forwards while a click for
-	 * it is still queued. Dropping that click — and, as the queue is dropped
-	 * whole, every click behind it — is what left panes un-clicked that the
-	 * player had already dealt with, so they had to go round again.
+	 * Wrong guesses cost nothing: the next board from the server replaces the
+	 * solution outright, and the clicks still in flight are replayed onto it.
 	 */
-	open fun reaim(slotIndex: Int, button: Int): Int? =
-		if (canClick(slotIndex, button)) button else null
-
-	/**
-	 * The button a click on [slotIndex] should actually be sent with, given the
-	 * one the player pressed.
-	 *
-	 * Only rubix has anything to say here, and only when it has been told to
-	 * accept a left click where the answer needs a right one.
-	 */
-	open fun buttonFor(slotIndex: Int, requested: Int): Int = requested
-
-	/**
-	 * The button this slot has to be clicked with, whatever anyone pressed.
-	 * What the mod uses when it is clicking on the player's behalf.
-	 */
-	open fun preferredButton(slotIndex: Int): Int = GLFW.GLFW_MOUSE_BUTTON_MIDDLE
-
-	/**
-	 * Applies a click to the solution here and now, before the server has
-	 * confirmed it.
-	 *
-	 * Queued and automatic clicking both need to know what the terminal will
-	 * look like after the clicks already in flight, or the second click would
-	 * be worked out against a board that is one move out of date. Every
-	 * prediction is thrown away and rebuilt the moment the server sends the
-	 * real window, so a wrong guess costs nothing.
-	 */
-	open fun predict(slotIndex: Int, button: Int) {
+	open fun simulateClick(slotIndex: Int, button: Int) {
 		val at = solution.indexOf(slotIndex)
 		if (at >= 0) solution.removeAt(at)
 	}
 
 	/**
-	 * Sends the click.
+	 * Sends a click, or drops it.
 	 *
 	 * A left click goes out as a middle click, which is what Hypixel's
-	 * terminals want and what Odin sends as well; a right click is passed
-	 * through as itself, because two of the six read the button.
+	 * terminals want and what Odin sends as well; rubix is the one that reads
+	 * the button, so its right clicks stay right clicks.
 	 */
 	open fun click(slotIndex: Int, button: Int) {
-		val client = Minecraft.getInstance()
-		val screen = client.screen as? AbstractContainerScreen<*> ?: return
-		clicked = true
-		everClicked = true
+		if (!canClick(slotIndex, button) || blocksClicks()) {
+			TerminalDebug.clicked(this, slotIndex, button, sent = false)
+			return
+		}
 
+		val sent = buttonFor(slotIndex, button)
+		clickedSlots.add(slotIndex to sent)
+		lastClickTime = System.currentTimeMillis()
+		everClicked = true
+		if (TerminalSolver.clickPrediction.value) simulateClick(slotIndex, sent)
+		TerminalDebug.clicked(this, slotIndex, sent, sent = true)
+
+		val client = Minecraft.getInstance()
+		val screen = client.gui.screen() as? AbstractContainerScreen<*> ?: return
 		if (screen is TermSimScreen) {
-			screen.clickIndex(slotIndex, button)
+			screen.clickIndex(slotIndex, sent)
 			return
 		}
 
 		val player = client.player ?: return
-		val input = if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) ContainerInput.CLONE else ContainerInput.PICKUP
-		client.gameMode?.handleContainerInput(screen.menu.containerId, slotIndex, button, input, player)
+		val input = if (sent == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) ContainerInput.CLONE else ContainerInput.PICKUP
+		client.gameMode?.handleContainerInput(screen.menu.containerId, slotIndex, sent, input, player)
 	}
 
 	/**
-	 * True while a click would land too soon after the window opened.
+	 * True while a click would land too soon after the terminal opened.
 	 *
 	 * Hypixel bans for clicking a terminal faster than a human could have seen
-	 * it, and the solver makes that trivially easy to do by accident, so clicks
+	 * it, and a solver makes that trivially easy to do by accident, so clicks
 	 * inside the window are dropped rather than sent. The clock alone is not
 	 * enough when the server is behind — it opened the window late, so the
 	 * player's own screen has been up for less time than the timer thinks —
 	 * which is what the tick half is for.
 	 */
 	fun blocksClicks(): Boolean {
-		if (TerminalSimulator.skipClickProtection.value && Minecraft.getInstance().screen is TermSimScreen) {
+		if (TerminalSimulator.skipClickProtection.value && Minecraft.getInstance().gui.screen() is TermSimScreen) {
 			return false
 		}
 		if (System.currentTimeMillis() - openedAt < TerminalSolver.firstClickProtection.value) return true

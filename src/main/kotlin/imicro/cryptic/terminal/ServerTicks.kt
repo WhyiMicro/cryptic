@@ -23,6 +23,25 @@ object ServerTicks {
 	/** True while ticks are actually arriving and can be counted on. */
 	val available: Boolean get() = System.currentTimeMillis() - lastPingAt < STALE_AFTER_MILLIS
 
+	/**
+	 * How long the server has been silent, or null before it has ticked at all.
+	 *
+	 * The same observation the click protection uses, read the other way round:
+	 * there it is "has enough time passed", here it is "how much".
+	 */
+	val sinceLastTick: Long?
+		get() = if (lastPingAt == 0L) null else System.currentTimeMillis() - lastPingAt
+
+	/**
+	 * Forgets the last tick, for a connection that has just changed.
+	 *
+	 * Without this the silence measured across a server hop is the length of
+	 * the hop, which is not lag and would be reported as several seconds of it.
+	 */
+	fun forget() {
+		lastPingAt = 0L
+	}
+
 	@JvmStatic
 	fun onServerTick() {
 		lastPingAt = System.currentTimeMillis()
