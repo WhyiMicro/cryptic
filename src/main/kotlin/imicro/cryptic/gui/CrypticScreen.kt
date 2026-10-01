@@ -23,10 +23,13 @@ import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.network.chat.Component
 import org.lwjgl.glfw.GLFW
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.round
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import java.nio.file.Path
 import java.time.Duration
 
@@ -40,7 +43,23 @@ import java.time.Duration
 class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
     private var selectedCategory = SESSION_SELECTED_CATEGORY
     private val expandedModules = SESSION_EXPANDED_MODULES
+    private val collapsedSections = SESSION_COLLAPSED_SECTIONS
+
+    /**
+     * How far open each group is, from nought to one.
+     *
+     * Folding is animated rather than instant, and the card's own height is
+     * worked out from these numbers, so the card grows and shrinks with the
+     * group inside it instead of snapping to a new size around it.
+     */
+    private val sectionOpen = mutableMapOf<String, Float>()
+
+    /** Groups whose "start folded" has already been applied once. */
+    private val seededSections = SESSION_SEEDED_SECTIONS
     private var awaitingKeybind: Module? = null
+
+    /** A setting's bind waiting for its key, the way [awaitingKeybind] is for a module's. */
+    private var awaitingSettingKey: KeybindModuleSetting? = null
 
     /** Descriptions trimmed to the card, remade only when the card resizes. */
     private val fitted = HashMap<String, String>()
@@ -110,6 +129,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
     private var cachedModules: List<Module> = emptyList()
     private var cachedModuleCategory: ModuleCategory? = null
     private var cachedModuleQuery: String? = null
+    private var cachedModuleSorting = -1
     private val profileDescriptions = mutableMapOf<Path, String>()
     private var profileDescriptionsAt = 0L
 
@@ -134,6 +154,19 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
 
         if (renamingProfile != null && event.key() == InputConstants.KEY_ESCAPE) {
             cancelProfileRename()
+            return true
+        }
+
+        // A setting's bind takes the next key, with Escape or Backspace clearing
+        // it — the same keys that clear a module's own bind.
+        val settingKey = awaitingSettingKey
+        if (settingKey != null) {
+            settingKey.keyCode = if (event.key() == InputConstants.KEY_ESCAPE || event.key() == InputConstants.KEY_BACKSPACE) {
+                KeybindModuleSetting.UNBOUND
+            } else {
+                event.key()
+            }
+            awaitingSettingKey = null
             return true
         }
 
@@ -194,6 +227,14 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         if (module != null) {
             module.keybind.setKey(InputConstants.Type.MOUSE.getOrCreate(event.button()))
             awaitingKeybind = null
+            return true
+        }
+
+        // A setting's bind is keyboard only, so a click while one is waiting
+        // just stops it waiting — and is not passed on, the way a click that
+        // sets a module's bind is not.
+        if (awaitingSettingKey != null) {
+            awaitingSettingKey = null
             return true
         }
 
@@ -393,7 +434,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         val hudHovered = interactive && ImGui.isItemHovered()
         drawCenteredText(
             draw,
-            FontAwesomeIcons.MOVE,
+            FontAwesomeIcons.EDIT,
             hudX,
             panelY,
             hudWidth,
@@ -458,6 +499,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         searchBuffer.clear()
         searchFocusRequested = true
         awaitingKeybind = null
+        awaitingSettingKey = null
         openDropdown = null
         editingNumericId = null
         numericBuffer.clear()
@@ -523,8 +565,12 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         val visibleModules = visibleModules(searchMode)
 
         // Cards are clipped to the list, so a scrolled one slides under the
-        // navbar instead of drawing over it.
-        draw.pushClipRect(panelX - columnGap, contentTop + offsetY, panelX + panelWidth + columnGap, contentBottom, true)
+        // navbar instead of drawing over it. ImGui's clip rather than the draw
+        // list's, because only ImGui's is seen by click detection: clipping just
+        // the drawing left a scrolled card's buttons alive under the navbar, and
+        // every button here is made to allow overlap, which hands a contested
+        // click to whichever was made last — the hidden card, not the tab.
+        ImGui.pushClipRect(panelX - columnGap, contentTop + offsetY, panelX + panelWidth + columnGap, contentBottom, true)
 
         if (searchMode && visibleModules.isEmpty()) {
             drawText(
@@ -537,16 +583,24 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             )
         }
 
+        advanceSectionAnimations(visibleModules, dt)
+
         visibleModules.forEachIndexed { index, module ->
             val column = index % 2
+            val expandedHeight = expandedModuleHeight(module)
+            // Long cards open and shut more slowly, because the animation moves
+            // a height rather than a fraction: at one speed for everything, a
+            // card with seventy settings in it covers eleven hundred pixels in
+            // the time a short one covers two hundred, and reads as a snap.
+            val speed = (EXPAND_SPEED * EXPAND_REFERENCE_HEIGHT / expandedHeight)
+                .coerceIn(EXPAND_SPEED_MIN, EXPAND_SPEED)
             val progress = animate(
                 expansion.getOrPut(module) { if (module in expandedModules) 1f else 0f },
                 if (module in expandedModules) 1f else 0f,
-                18f,
+                speed,
                 dt,
             )
             expansion[module] = progress
-            val expandedHeight = expandedModuleHeight(module)
             val cardHeight = dp(COLLAPSED_HEIGHT + (expandedHeight - COLLAPSED_HEIGHT) * ease(progress), scale)
             val x = panelX + column * (cardWidth + columnGap) + entranceOffset
             val y = columnY[column]
@@ -555,7 +609,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             }
             columnY[column] += cardHeight + cardGap
         }
-        draw.popClipRect()
+        ImGui.popClipRect()
 
         // Measured after laying out, because a card's height depends on whether
         // it is open and on how far its opening animation has got.
@@ -599,20 +653,33 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
     private fun visibleModules(searchMode: Boolean): List<Module> {
         val query = if (searchMode) searchBuffer.get().trim() else null
         val category = if (searchMode) null else selectedCategory
-        if (category == cachedModuleCategory && query == cachedModuleQuery) return cachedModules
+        val sorting = ClickGui.sorting.selectedIndex
+        if (category == cachedModuleCategory && query == cachedModuleQuery && sorting == cachedModuleSorting) {
+            return cachedModules
+        }
 
         cachedModuleCategory = category
         cachedModuleQuery = query
-        cachedModules = MODULES
-            .filter { module ->
-                when {
-                    query == null -> module.category == category
-                    query.isEmpty() -> true
-                    else -> module.name.contains(query, ignoreCase = true) ||
-                        module.description.contains(query, ignoreCase = true)
-                }
+        cachedModuleSorting = sorting
+        val matching = MODULES.filter { module ->
+            when {
+                query == null -> module.category == category
+                query.isEmpty() -> true
+                else -> module.name.contains(query, ignoreCase = true) ||
+                    module.description.contains(query, ignoreCase = true)
             }
-            .sortedBy(Module::sortKey)
+        }
+        cachedModules = when (sorting) {
+            ClickGui.SORT_Z_TO_A -> matching.sortedByDescending(Module::sortKey)
+            // The longest name first, the way a client's module list is usually
+            // stacked, measured as it is drawn rather than by counting letters:
+            // an "i" and a "W" are not the same width. Names that tie fall back
+            // to the alphabet, so the order is the same every time.
+            ClickGui.SORT_WIDTH -> matching.sortedWith(
+                compareByDescending<Module> { textWidth(it.name, SORT_MEASURE_SIZE) }.thenBy(Module::sortKey),
+            )
+            else -> matching.sortedBy(Module::sortKey)
+        }
         return cachedModules
     }
 
@@ -739,26 +806,11 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         if (profile.active && !isRenaming) {
             val badgeText = "ACTIVE"
             val badgeX = titleX + textWidth(profile.name, titleSize) + dp(5f, scale)
-            val badgeWidth = textWidth(badgeText, dp(7f, scale)) + dp(10f, scale)
+            val badgeWidth = textWidth(badgeText, dp(8f, scale)) + dp(10f, scale)
             val badgeHeight = dp(13f, scale)
-            draw.addRectFilled(
-                badgeX,
-                y + dp(9f, scale),
-                badgeX + badgeWidth,
-                y + dp(9f, scale) + badgeHeight,
-                contentColor(ACCENT_DARK),
-                dp(4f, scale),
-            )
-            drawCenteredText(
-                draw,
-                badgeText,
-                badgeX,
-                y + dp(9f, scale),
-                badgeWidth,
-                badgeHeight,
-                ACCENT,
-                dp(7f, scale),
-            )
+            // Drawn as a lit keybind badge, so the two tags the menu has look
+            // like one family rather than two generations of it.
+            drawKeyBadge(draw, badgeText, badgeX, y + dp(9f, scale), badgeWidth, badgeHeight, lit = true, scale = scale)
         }
 
         drawText(
@@ -952,6 +1004,14 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         draw.addRectFilled(x, y, x + width, y + height, contentColor(SURFACE), dp(12f, scale))
         draw.pushClipRect(x, y, x + width, y + height, true)
 
+        // Submitted before the controls that sit on top of it, so the switch,
+        // the bind and the plus all take a click of their own first and only a
+        // click on the empty part of the row lands here.
+        val rowClicked = interactive &&
+            module.supportsToggle &&
+            ClickGui.leftClickToggles.value &&
+            hit(module.widgetIds.card, x, y, width, dp(COLLAPSED_HEIGHT, scale))
+
         val titleSize = dp(11f, scale)
         val smallSize = dp(8f, scale)
         val titleX = x + dp(14f, scale)
@@ -966,32 +1026,39 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             val badgeWidth = maxOf(dp(KEYBIND_MIN_WIDTH, scale), textWidth(badgeText, smallSize) + dp(12f, scale))
             val badgeY = y + dp(8f, scale)
             val badgeHeight = dp(14f, scale)
-            draw.addRectFilled(
-                badgeX,
-                badgeY,
-                badgeX + badgeWidth,
-                badgeY + badgeHeight,
-                contentColor(if (awaitingKeybind == module || hasKeybind) ACCENT_DARK else SURFACE_RAISED),
-                dp(4f, scale),
-            )
             if (interactive && hit(module.widgetIds.keybind, badgeX, badgeY, badgeWidth, badgeHeight)) {
                 awaitingKeybind = module
             }
-            drawCenteredText(
+            drawKeyBadge(
                 draw,
                 badgeText,
                 badgeX,
                 badgeY,
                 badgeWidth,
                 badgeHeight,
-                if (awaitingKeybind == module || hasKeybind) ACCENT else MUTED_TEXT,
-                smallSize,
+                awaitingKeybind == module || hasKeybind,
+                scale,
             )
         }
 
         if (module.supportsToggle) {
             drawToggle(draw, module, x + width - dp(45f, scale), y + dp(9f, scale), scale, dt, interactive)
         }
+
+        // A right-click anywhere on the card's own row does what the plus does,
+        // which is quicker than aiming at a fifteen-pixel square.
+        if (
+            interactive &&
+            module.hasSettings &&
+            ClickGui.rightClickExpands.value &&
+            ImGui.isMouseClicked(ImGuiMouseButton.Right) &&
+            ImGui.isMouseHoveringRect(x, y, x + width, y + dp(COLLAPSED_HEIGHT, scale))
+        ) {
+            if (!expandedModules.add(module)) expandedModules.remove(module)
+            if (module !in expandedModules && module.owns(openDropdown)) openDropdown = null
+        }
+
+        if (rowClicked) module.enabled = !module.enabled
 
         val descriptionX = if (module.hasSettings) x + dp(37f, scale) else titleX
         if (module.hasSettings) {
@@ -1094,18 +1161,75 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         }
     }
 
+    /**
+     * Moves every group's fold animation on by one frame.
+     *
+     * Done in one pass before the cards are laid out, because the height of a
+     * card is worked out from these and the layout has to agree with what is
+     * then drawn.
+     */
+    private fun advanceSectionAnimations(modules: List<Module>, dt: Float) {
+        modules.forEach { module ->
+            module.settings.forEach { setting ->
+                if (setting !is SectionModuleSetting) return@forEach
+                val key = sectionKey(module, setting)
+
+                // A group that asked to start folded is folded the first time
+                // the menu lays its card out, and is a normal group from then
+                // on — including staying open if you open it.
+                if (setting.startsCollapsed && seededSections.add(key)) collapsedSections.add(key)
+
+                val target = if (key in collapsedSections) 0f else 1f
+                sectionOpen[key] = animate(sectionOpen[key] ?: target, target, SECTION_SPEED, dt)
+            }
+        }
+    }
+
+    /** How far open a group is right now, eased for the height it takes. */
+    private fun openness(module: Module, section: SectionModuleSetting): Float =
+        sectionOpen[sectionKey(module, section)] ?: if (isCollapsed(module, section)) 0f else 1f
+
+    /** A group is identified by the card it is in and its own id. */
+    private fun sectionKey(module: Module, section: SectionModuleSetting): String =
+        "${module.id}/${section.id}"
+
+    private fun isCollapsed(module: Module, section: SectionModuleSetting): Boolean =
+        sectionKey(module, section) in collapsedSections
+
+    private fun toggleSection(module: Module, section: SectionModuleSetting) {
+        val key = sectionKey(module, section)
+        if (!collapsedSections.add(key)) collapsedSections.remove(key)
+        // A dropdown belonging to a group that has just been folded away would
+        // otherwise be left open over the rows that took its place.
+        if (module.owns(openDropdown)) openDropdown = null
+    }
+
     private fun expandedModuleHeight(module: Module): Float {
         val settings = module.settings
         if (settings.isEmpty()) return EXPANDED_HEIGHT
 
         var rows = 0f
         var firstVisible = true
+
+        // Rows are added up per group so that a group halfway through folding
+        // contributes half of its height, which is what makes the card animate
+        // rather than jump.
+        var group: SectionModuleSetting? = null
+        var groupRows = 0f
+
         for (index in settings.indices) {
             val setting = settings[index]
             if (!setting.isVisible()) continue
+
+            if (setting is SectionModuleSetting) {
+                rows += groupRows * group.let { if (it == null) 1f else ease(openness(module, it)) }
+                groupRows = 0f
+                group = setting
+            }
+
             val isFirst = firstVisible
             firstVisible = false
-            rows += when (setting) {
+            val height = when (setting) {
                 is SliderModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
                 is RangeModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
                 is ToggleModuleSetting -> CUSTOM_TOGGLE_ROW_HEIGHT
@@ -1113,13 +1237,20 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
                 is ColorModuleSetting -> CUSTOM_COLOR_ROW_HEIGHT
                 is DropdownModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
                 is TextModuleSetting -> CUSTOM_TEXT_ROW_HEIGHT
+                is KeybindModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
                 // Made by pointing at slots in the inventory, so it has no row.
                 is SlotMapModuleSetting -> 0f
                 // The first heading takes the place of the implicit one, so it
                 // is the later ones that add height.
                 is SectionModuleSetting -> if (isFirst) 0f else CUSTOM_SECTION_GAP + CUSTOM_SECTION_HEIGHT
             }
+
+            // A heading is part of the card whatever its group is doing; the
+            // rows under it are the part that folds away.
+            if (setting is SectionModuleSetting) rows += height else groupRows += height
         }
+
+        rows += groupRows * group.let { if (it == null) 1f else ease(openness(module, it)) }
         return CUSTOM_SETTINGS_Y + CUSTOM_SECTION_HEIGHT + rows + CUSTOM_BOTTOM_PADDING
     }
 
@@ -1139,8 +1270,45 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         // A module that names its own first group gets that name instead of the
         // implicit one, rather than both.
         val leadingSection = firstSetting as? SectionModuleSetting
-        drawSectionHeading(draw, leadingSection?.label ?: "Main", cardX, settingsY, cardWidth, scale)
+        drawSectionHeading(
+            draw,
+            leadingSection?.label ?: "Main",
+            cardX,
+            settingsY,
+            cardWidth,
+            scale,
+            module,
+            leadingSection,
+            interactive,
+        )
         var rowY = cardY + dp(CUSTOM_SETTINGS_Y + CUSTOM_SECTION_HEIGHT, scale)
+
+        // A group's rows are drawn inside a window that grows and shrinks with
+        // it: the rows keep their own positions and the window cuts them off,
+        // which is what makes a fold look like a fold rather than a redraw.
+        var group: SectionModuleSetting? = leadingSection
+        var groupOpen = if (leadingSection == null) 1f else ease(openness(module, leadingSection))
+        var groupTop = rowY
+        var groupHeight = dp(groupHeightOf(module, leadingSection), scale)
+        var clipped = false
+
+        fun openGroup() {
+            if (groupOpen >= 0.999f || groupHeight <= 0f) return
+            draw.pushClipRect(cardX, groupTop, cardX + cardWidth, groupTop + groupHeight * groupOpen, true)
+            clipped = true
+        }
+
+        fun closeGroup() {
+            if (clipped) {
+                draw.popClipRect()
+                clipped = false
+            }
+            // Whatever the rows did, the next group starts after the space this
+            // one is currently taking.
+            rowY = groupTop + groupHeight * groupOpen
+        }
+
+        openGroup()
 
         // Only one dropdown can be open at a time, so a card never has more than
         // one popup to hand back.
@@ -1152,6 +1320,15 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         for (index in settings.indices) {
             val setting = settings[index]
             if (!setting.isVisible()) continue
+
+            if (setting is SectionModuleSetting && setting !== leadingSection) {
+                closeGroup()
+                group = setting
+                groupOpen = ease(openness(module, setting))
+            }
+
+            // Nothing to draw and nothing to click while a group is shut.
+            if (setting !is SectionModuleSetting && groupOpen <= 0.01f) continue
 
             val rowTop = rowY
             when (setting) {
@@ -1216,14 +1393,47 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
                     drawTextSetting(draw, setting, cardX, rowY, cardWidth, scale, interactive)
                     rowY += dp(CUSTOM_TEXT_ROW_HEIGHT, scale)
                 }
+                is KeybindModuleSetting -> {
+                    // The same badge a module's own bind is drawn as, on the
+                    // right of the row: lit while bound or waiting for a key.
+                    drawText(draw, setting.label, cardX + dp(14f, scale), rowY + dp(5f, scale), TEXT, dp(9.5f, scale))
+                    val smallSize = dp(8f, scale)
+                    val capturing = awaitingSettingKey === setting
+                    val lit = capturing || setting.bound
+                    val badgeText = if (capturing) "..." else setting.keyName
+                    val badgeWidth = maxOf(dp(KEYBIND_MIN_WIDTH, scale), textWidth(badgeText, smallSize) + dp(12f, scale))
+                    val badgeHeight = dp(14f, scale)
+                    val badgeX = cardX + cardWidth - dp(14f, scale) - badgeWidth
+                    val badgeY = rowY + dp(4f, scale)
+                    if (interactive && hit(setting.widgetIds.control, badgeX, badgeY, badgeWidth, badgeHeight)) {
+                        awaitingSettingKey = setting
+                        awaitingKeybind = null
+                    }
+                    drawKeyBadge(draw, badgeText, badgeX, badgeY, badgeWidth, badgeHeight, lit, scale)
+                    rowY += dp(CUSTOM_DROPDOWN_ROW_HEIGHT, scale)
+                }
                 // Nothing to draw: the binds are made in the inventory.
                 is SlotMapModuleSetting -> Unit
                 is SectionModuleSetting -> {
                     // The leading heading was already drawn above the rows.
                     if (setting !== leadingSection) {
                         rowY += dp(CUSTOM_SECTION_GAP, scale)
-                        drawSectionHeading(draw, setting.label, cardX, rowY, cardWidth, scale)
+                        drawSectionHeading(
+                            draw,
+                            setting.label,
+                            cardX,
+                            rowY,
+                            cardWidth,
+                            scale,
+                            module,
+                            setting,
+                            interactive,
+                        )
                         rowY += dp(CUSTOM_SECTION_HEIGHT, scale)
+
+                        groupTop = rowY
+                        groupHeight = dp(groupHeightOf(module, setting), scale)
+                        openGroup()
                     }
                 }
             }
@@ -1232,7 +1442,44 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             // on it asks for the sentence the setting carries.
             noteTooltip(setting, cardX, rowTop, cardWidth, rowY - rowTop)
         }
+        closeGroup()
         return overlay
+    }
+
+    /**
+     * How tall the rows under one heading are, before any folding.
+     *
+     * [section] is null for a card whose first setting is not a heading, which
+     * is the implicit "Main" group everything before the first real heading
+     * belongs to.
+     */
+    private fun groupHeightOf(module: Module, section: SectionModuleSetting?): Float {
+        var total = 0f
+        var inGroup = section == null
+        for (setting in module.settings) {
+            if (!setting.isVisible()) continue
+            if (setting is SectionModuleSetting) {
+                if (setting === section) {
+                    inGroup = true
+                    continue
+                }
+                if (inGroup) break
+                continue
+            }
+            if (!inGroup) continue
+            total += when (setting) {
+                is SliderModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
+                is RangeModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
+                is ToggleModuleSetting -> CUSTOM_TOGGLE_ROW_HEIGHT
+                is ButtonModuleSetting -> CUSTOM_BUTTON_ROW_HEIGHT
+                is ColorModuleSetting -> CUSTOM_COLOR_ROW_HEIGHT
+                is DropdownModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
+                is TextModuleSetting -> CUSTOM_TEXT_ROW_HEIGHT
+                is KeybindModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
+                else -> 0f
+            }
+        }
+        return total
     }
 
     /**
@@ -1246,20 +1493,99 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         rowY: Float,
         cardWidth: Float,
         scale: Float,
+        module: Module? = null,
+        section: SectionModuleSetting? = null,
+        interactive: Boolean = false,
     ) {
         val textX = cardX + dp(14f, scale)
         val fontSize = dp(9f, scale)
-        drawText(draw, label, textX, rowY, MUTED_TEXT, fontSize)
+        val rightX = cardX + cardWidth - dp(14f, scale)
+
+        // A group that can be folded is a control, so the whole heading is the
+        // target rather than the caret alone: the caret says what will happen,
+        // and a five-pixel arrow is a poor thing to have to hit.
+        val foldable = module != null && section != null
+        val collapsed = foldable && isCollapsed(module, section)
+        val hovered = foldable && interactive && ImGui.isMouseHoveringRect(
+            cardX,
+            rowY - dp(2f, scale),
+            cardX + cardWidth,
+            rowY + fontSize + dp(4f, scale),
+        )
+
+        if (foldable && interactive && hit(
+                "##section_${module.id}_${section.id}",
+                cardX,
+                rowY - dp(2f, scale),
+                cardWidth,
+                fontSize + dp(6f, scale),
+            )
+        ) {
+            toggleSection(module, section)
+        }
+
+        drawText(draw, label, textX, rowY, if (hovered) TEXT else MUTED_TEXT, fontSize)
+
+        if (foldable) {
+            // Font Awesome's caret, drawn rather than written: the icon font
+            // is merged into the atlas as a glyph, and a glyph can be placed
+            // but not turned. Pointing left while the group is folded away and
+            // down while it is open, and swinging between the two as it folds.
+            drawCaret(
+                draw,
+                rightX - dp(CARET_SIZE, scale) / 2f,
+                rowY + fontSize / 2f,
+                dp(CARET_SIZE, scale),
+                openness(module, section),
+                if (hovered) TEXT else MUTED_TEXT,
+            )
+        }
 
         val lineY = rowY + fontSize + dp(4f, scale)
         val thickness = dp(1f, scale)
         draw.addRectFilled(
             textX,
             lineY,
-            cardX + cardWidth - dp(14f, scale),
+            rightX,
             lineY + thickness,
             contentColor(DIVIDER),
         )
+    }
+
+    /**
+     * A caret, turned as far as the group it belongs to has opened.
+     *
+     * An equilateral triangle with its corners rounded off, drawn as three
+     * arcs rather than as three straight lines: a seven-pixel triangle with
+     * sharp corners reads as a splinter, and the corner that happens to face
+     * the text looks longer than the other two even when it is not. Every side
+     * is the same length, and the tips are softened by a radius of their own.
+     *
+     * [open] is nought for shut, where it points back at the list, and one for
+     * open, where it points down at the rows it belongs to.
+     */
+    private fun drawCaret(draw: ImDrawList, centerX: Float, centerY: Float, size: Float, open: Float, color: Int) {
+        // A quarter turn as it opens: left at nought, down at one.
+        val angle = PI.toFloat() / 2f + (1f - ease(open)) * (PI.toFloat() / 2f)
+        val radius = size / 2f
+        val corner = (radius * CARET_ROUNDING).coerceAtLeast(0.5f)
+
+        // Each corner is an arc of a circle sitting inside the triangle, and
+        // the arc for an equilateral corner is two thirds of a turn wide.
+        val inset = radius - corner * 2f
+        draw.pathClear()
+        for (point in 0 until 3) {
+            val direction = angle + point * (2f * PI.toFloat() / 3f)
+            draw.pathArcTo(
+                centerX + cos(direction) * inset,
+                centerY + sin(direction) * inset,
+                corner,
+                direction - PI.toFloat() / 3f,
+                direction + PI.toFloat() / 3f,
+                CARET_ARC_SEGMENTS,
+            )
+        }
+        draw.pathFillConvex(contentColor(color))
     }
 
     /**
@@ -2084,6 +2410,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         is RangeModuleSetting -> setting.description
         is ColorModuleSetting -> setting.description
         is TextModuleSetting -> setting.description
+        is KeybindModuleSetting -> setting.description
         is DropdownModuleSetting -> setting.description
         else -> ""
     }
@@ -2151,6 +2478,47 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         draw.addText(ImGuiRuntime.font, size.roundToInt().coerceAtLeast(1), x, y, contentColor(color), text)
     }
 
+    /**
+     * A key's name in its little box, which is how every bind in the menu is
+     * drawn.
+     *
+     * A bound key is lit in the accent colour, and the box behind it is that
+     * same colour let down to a wash rather than a darker colour of its own: a
+     * solid dark orange behind bright orange text is two saturated things on top
+     * of each other, and reads as a glare. A wash takes its brightness from the
+     * card underneath, so the text is the only part that is actually bright.
+     *
+     * The text is drawn twice, a fraction of a pixel apart, which is the
+     * cheapest way to a slightly heavier weight from a font that ships one —
+     * at eight points the regular weight is thin enough to look faint in a
+     * colour.
+     */
+    private fun drawKeyBadge(
+        draw: ImDrawList,
+        text: String,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        lit: Boolean,
+        scale: Float,
+    ) {
+        draw.addRectFilled(
+            x,
+            y,
+            x + width,
+            y + height,
+            if (lit) contentColor(ACCENT, KEY_BADGE_WASH) else contentColor(SURFACE_RAISED),
+            dp(4f, scale),
+        )
+        val size = dp(8f, scale)
+        val color = if (lit) ACCENT else MUTED_TEXT
+        val textX = x + (width - ImGuiRuntime.textWidth(text, size)) / 2f
+        val textY = y + (height - ImGuiRuntime.textHeight(text, size)) / 2f
+        drawText(draw, text, textX, textY, color, size)
+        drawText(draw, text, textX + dp(KEY_BADGE_EMBOLDEN, scale), textY, color, size)
+    }
+
     private fun drawCenteredText(draw: ImDrawList, text: String, x: Float, y: Float, width: Float, height: Float, color: Int, size: Float) {
         val textWidth = ImGuiRuntime.textWidth(text, size)
         val textHeight = ImGuiRuntime.textHeight(text, size)
@@ -2202,13 +2570,56 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         val buttonHovered: Boolean,
     )
 
-    private companion object {
+    internal companion object {
+        /**
+         * Measures the menu's text at every size it is drawn at, so the glyphs
+         * are rasterized before the menu is first opened rather than during it.
+         *
+         * Dear ImGui 1.92 bakes a font size, and each glyph in it, the first time
+         * something asks how wide it is; a menu full of text at seven sizes asked
+         * all of that at once on its first frame. The scale is worked out the same
+         * way [drawImGui] works it out, so these are the sizes it will ask for.
+         * Called inside a frame, by [ImGuiRuntime].
+         */
+        fun warmUpText() {
+            val displayHeight = ImGui.getIO().displaySizeY
+            val scale = (displayHeight / REFERENCE_HEIGHT * REFERENCE_1080_SCALE).coerceAtLeast(0.75f)
+            WARM_UP_SIZES.forEach { ImGuiRuntime.textWidth(WARM_UP_TEXT, it * scale) }
+        }
+
+        /** Every size the menu writes text at, before its scale. */
+        /** The size module names are measured at for the width sort. Any one size gives the same order. */
+        private const val SORT_MEASURE_SIZE = 11f
+
+        /** How much of the accent colour a bound key's box is tinted with. */
+        private const val KEY_BADGE_WASH = 0.16f
+
+        /** How far apart the two passes of a key's name are drawn, in design pixels. */
+        private const val KEY_BADGE_EMBOLDEN = 0.35f
+
+        private val WARM_UP_SIZES = listOf(8f, 9f, 9.5f, 10f, 11f, 15f, 19f)
+
+        /** Every printable character in the bundled font's basic range. */
+        private val WARM_UP_TEXT = (32..126).map(Int::toChar).joinToString("")
+
         /** Three dots rather than the single glyph, which the bundled font may lack. */
         private const val ELLIPSIS = "..."
 
         // Kept in memory across CrypticScreen instances, but deliberately not
         // written to config: restarting the client returns every card to closed.
         val SESSION_EXPANDED_MODULES = mutableSetOf<Module>()
+
+        /**
+         * Which groups inside a card are folded away, by module and setting id.
+         *
+         * Kept for the session rather than in the profile: a fold is where you
+         * are in a card right now, not how you want the mod set up, and a
+         * profile that remembered them would carry one person's place in a menu
+         * onto somebody else's screen.
+         */
+        val SESSION_COLLAPSED_SECTIONS = mutableSetOf<String>()
+
+        val SESSION_SEEDED_SECTIONS = mutableSetOf<String>()
         var SESSION_SCROLL_OFFSET = 0f
         var SESSION_MAX_SCROLL = 0f
         var SESSION_SELECTED_CATEGORY = ModuleCategory.GENERAL
@@ -2227,6 +2638,21 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         const val COLUMN_GAP = 8f
         const val CARD_GAP = 8f
         const val COLLAPSED_HEIGHT = 49f
+
+        /** How quickly a group folds away, in the same units as the cards. */
+        const val SECTION_SPEED = 20f
+
+        /** How quickly a card of about this height opens and shuts. */
+        const val EXPAND_SPEED = 18f
+        const val EXPAND_SPEED_MIN = 6f
+        const val EXPAND_REFERENCE_HEIGHT = 320f
+
+        /** The caret's box, and how wide its base is inside it. */
+        const val CARET_SIZE = 8f
+
+        /** How much of the caret's radius goes into rounding its tips. */
+        const val CARET_ROUNDING = 0.28f
+        const val CARET_ARC_SEGMENTS = 6
         const val EXPANDED_HEIGHT = 142f
         const val CUSTOM_SETTINGS_Y = 53f
         const val CUSTOM_SECTION_HEIGHT = 18f

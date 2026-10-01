@@ -2,6 +2,7 @@ package imicro.cryptic.mixin;
 
 import imicro.cryptic.feature.CameraTweaks;
 import imicro.cryptic.feature.CrosshairEditor;
+import imicro.cryptic.feature.DarkMode;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.Hud;
@@ -43,5 +44,22 @@ public abstract class HudMixin {
     @Inject(method = "extractCrosshair", at = @At("HEAD"))
     private void cryptic$drawThirdPersonCrosshair(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker, CallbackInfo info) {
         CrosshairEditor.drawThirdPerson(graphics);
+    }
+    /**
+     * Dark Mode's sheet of black, under the HUD or over it.
+     *
+     * The two ends of the HUD's own pass are the two places it can go: drawn
+     * before anything else it darkens only the world behind, and drawn after
+     * everything it darkens the hotbar and the chat along with it. The same two
+     * points NoammAddons (CC0) uses.
+     */
+    @Inject(method = "extractRenderState", at = @At("HEAD"))
+    private void cryptic$darkenWorld(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker, CallbackInfo info) {
+        DarkMode.drawUnderHud(graphics);
+    }
+
+    @Inject(method = "extractRenderState", at = @At("TAIL"))
+    private void cryptic$darkenHud(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker, CallbackInfo info) {
+        DarkMode.drawOverHud(graphics);
     }
 }

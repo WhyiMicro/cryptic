@@ -1,6 +1,5 @@
 package imicro.cryptic.feature
 
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
@@ -54,11 +53,6 @@ object SbKick {
 		defaultRgb = 0xFFFFFF,
 	)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		announce.reset()
-		textColor.reset()
-	})
-
 	@JvmField
 	val module = Module(
 		id = "sb_kick",
@@ -67,7 +61,7 @@ object SbKick {
 		category = ModuleCategory.GENERAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(announce, textColor, reset),
+		settings = listOf(announce, textColor),
 	)
 
 	private var kickedAt = 0L

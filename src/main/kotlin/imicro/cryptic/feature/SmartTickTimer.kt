@@ -3,7 +3,6 @@ package imicro.cryptic.feature
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.dungeon.DungeonStats
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
@@ -41,6 +40,12 @@ object SmartTickTimer {
 
 	private const val WHITE = 0xFFFFFFFF.toInt()
 
+	/** How far into the Professor window the ability actually goes out. */
+	private const val FIRE_FREEZE_CAST = 100
+
+	private val fireFreezePattern =
+		Regex("""^\[BOSS] The Professor: Oh? You found my Guardians. one weakness\?$""")
+
 	private val necronPattern = Regex("""^\[BOSS] Necron: I'm afraid, your journey ends now\.$""")
 	private val goldorPattern = Regex("""^\[BOSS] Goldor: Who dares trespass into my domain\?$""")
 	private val corePattern = Regex("""^The Core entrance is opening!$""")
@@ -48,18 +53,6 @@ object SmartTickTimer {
 	private val stormStartPattern = Regex("""^\[BOSS] Storm: Pathetic Maxor, just like expected\.$""")
 	private val stormPyPattern =
 		Regex("""^\[BOSS] Storm: (?:ENERGY HEED MY CALL|THUNDER LET ME BE YOUR CATALYST)!$""")
-
-	/**
-	 * The lines that start a run, and with them the secret cycle.
-	 *
-	 * Odin matches either, and both are worth having: the first is missed by
-	 * anyone who loads in a moment late, and the second is said to everybody a
-	 * few seconds afterwards.
-	 */
-	private val mortPattern = Regex(
-		"""^\[NPC] Mort: (?:Here, I found this map when I first entered the dungeon\.|""" +
-			"""Right-click the Orb for spells, and Left-click \(or Drop\) to use your Ultimate!)$""",
-	)
 
 	private val displaySection = SectionModuleSetting("display_section", "Display")
 
@@ -92,8 +85,8 @@ object SmartTickTimer {
 	@JvmField
 	val secretsTimer = ToggleModuleSetting(
 		id = "secrets_timer",
-		label = "Secrets timer",
-		description = "Counts down to when a secret can register.",
+		label = "Secret spawn timer",
+		description = "Ticks until the next second, when a secret can register. Placed on its own.",
 	)
 
 	private val floor7Section = SectionModuleSetting("floor7_section", "F7/M7")
@@ -120,6 +113,20 @@ object SmartTickTimer {
 	)
 
 	@JvmField
+	val lightningTimer = ToggleModuleSetting(
+		id = "lightning_timer",
+		label = "Storm lightning timer",
+		description = "Counts down to Storm calling the lightning.",
+	)
+
+	@JvmField
+	val fireFreezeTimer = ToggleModuleSetting(
+		id = "fire_freeze_timer",
+		label = "Fire Freeze timer",
+		description = "Counts down to using Fire Freeze on the Professor.",
+	)
+
+	@JvmField
 	val stormPadTimer = ToggleModuleSetting(
 		id = "storm_pad_timer",
 		label = "Storm pad timer",
@@ -140,15 +147,6 @@ object SmartTickTimer {
 		description = "Counts up from the start of the Storm phase, for parties timing the crush off it.",
 	)
 
-	private val configurable = listOf(
-		inTicks, showUnit, showPrefix, secretsTimer, necronTimer, goldorStartTimer,
-		goldorCoreTimer, stormPadTimer, stormPyTimer, stormTickTimer,
-	)
-
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurable.forEach { it.reset() }
-	})
-
 	@JvmField
 	val module = Module(
 		id = "smart_tick_timer",
@@ -161,9 +159,8 @@ object SmartTickTimer {
 			listOf(generalSection, secretsTimer) +
 			listOf(
 				floor7Section, necronTimer, goldorStartTimer, goldorCoreTimer,
-				stormPadTimer, stormPyTimer, stormTickTimer,
-			) +
-			listOf(reset),
+				stormPadTimer, stormPyTimer, stormTickTimer, lightningTimer, fireFreezeTimer,
+			),
 	)
 
 	/**
@@ -179,12 +176,28 @@ object SmartTickTimer {
 	private var padTicks = -1
 	private var pyTicks = -1
 	private var stormTicks = -1
+	private var lightningTicks = -1
+	private var fireFreezeTicks = -1
 
 	/** Fired once per Storm phase: the call comes more than once, the window does not. */
 	private var pyTriggered = false
 
-	/** Server ticks since the run started, which the secret cycle is aligned to. */
-	private var secretCounter = 0
+	/**
+	 * Ticks left of the current second, for the secret spawn timer.
+	 *
+	 * Blade Addons' timer (CC0, BladeMasterGabe). Secrets register on Hypixel's
+	 * second, and the one place that second is visible is the sidebar's "Time
+	 * Elapsed" line, which is rewritten the moment it turns over — so that
+	 * rewrite starts the count at twenty and each server tick takes one off.
+	 * The version this replaces counted up from the start of the run instead,
+	 * which drifts the moment the server skips a tick.
+	 *
+	 * -1 until the first rewrite is seen. Both counted down and reset from the
+	 * network thread, in the order the packets arrive, which is what keeps the
+	 * count in step with Odin's.
+	 */
+	@Volatile
+	private var secretSpawnTicks = -1
 
 	private var initialized = false
 
@@ -193,6 +206,7 @@ object SmartTickTimer {
 		initialized = true
 
 		Hud.register(TimerElement())
+		Hud.register(SecretSpawnElement())
 		ClientReceiveMessageEvents.GAME.register { message, overlay -> if (!overlay) onMessage(message.string) }
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> forget() }
@@ -205,15 +219,16 @@ object SmartTickTimer {
 		padTicks = -1
 		pyTicks = -1
 		stormTicks = -1
+		lightningTicks = -1
+		fireFreezeTicks = -1
 		pyTriggered = false
-		secretCounter = 0
+		secretSpawnTicks = -1
 	}
 
 	private fun onMessage(line: String) {
 		if (!module.enabled) return
 
 		when {
-			mortPattern.matches(line) -> secretCounter = 0
 			necronPattern.matches(line) -> necronTicks = 60
 			goldorPattern.matches(line) -> goldorCoreTicks = 60
 			corePattern.matches(line) -> {
@@ -227,14 +242,40 @@ object SmartTickTimer {
 			}
 			stormStartPattern.matches(line) -> {
 				padTicks = 20
+				lightningTicks = 560
 				stormTicks = 0
 			}
+			fireFreezePattern.matches(line) -> fireFreezeTicks = 206
 			!pyTriggered && stormPyPattern.matches(line) -> {
 				pyTriggered = true
 				pyTicks = 95
 			}
 		}
 	}
+
+	/**
+	 * A line of the sidebar changing, which is how the secret second is found.
+	 *
+	 * Called from the network thread with the line's two halves. Everything else
+	 * the sidebar says is ignored.
+	 */
+	@JvmStatic
+	fun onScoreboardLine(prefix: String, suffix: String) {
+		if (!module.enabled || !secretsTimer.value || !DungeonLocation.inDungeon) return
+		val line = (prefix + suffix).replace(FORMATTING, "")
+		if (!line.contains("Time Elapsed:")) return
+		secretSpawnTicks = SECOND_TICKS
+	}
+
+	/**
+	 * Whether the secret spawn timer has anything to say.
+	 *
+	 * Only once a room has been opened, which is Odin's gate for a run having
+	 * started: before that there is nothing to open and the count is noise.
+	 */
+	private fun secretSpawnShown(): Boolean =
+		module.enabled && secretsTimer.value && secretSpawnTicks >= 0 &&
+			DungeonLocation.inDungeon && DungeonStats.openedRooms > 0 && !DungeonRun.inBoss
 
 	/**
 	 * One tick of Hypixel's clock, counted off its per-tick ping.
@@ -254,10 +295,7 @@ object SmartTickTimer {
 		if (!module.enabled) return
 		serverTicks++
 
-		// The secret cycle is the one thing here that is aligned to the run
-		// rather than started by a message, so it only counts inside one.
-		if (DungeonLocation.inDungeon) secretCounter++
-
+		if (secretSpawnTicks > 0) secretSpawnTicks--
 		if (goldorCoreTicks == 0 && goldorStartTicks <= 0) goldorCoreTicks = 60
 		if (goldorStartTicks >= 0) goldorStartTicks--
 		if (goldorCoreTicks >= 0) goldorCoreTicks--
@@ -265,6 +303,8 @@ object SmartTickTimer {
 		if (padTicks >= 0) padTicks--
 		if (pyTicks >= 0) pyTicks--
 		if (necronTicks >= 0) necronTicks--
+		if (lightningTicks >= 0) lightningTicks--
+		if (fireFreezeTicks >= 0) fireFreezeTicks--
 		if (stormTicks >= 0) stormTicks++
 	}
 
@@ -282,7 +322,7 @@ object SmartTickTimer {
 			"started ${DungeonRun.started}, opened rooms ${DungeonStats.openedRooms}, boss ${DungeonRun.inBoss}",
 		"Necron $necronTicks, Start $goldorStartTicks, Core $goldorCoreTicks",
 		"Pad $padTicks, PY $pyTicks (fired $pyTriggered), Storm $stormTicks",
-		"Secret counter $secretCounter, showing ${secretTicks()}",
+		"Secret spawn: $secretSpawnTicks, shown ${secretSpawnShown()}",
 		"Rows switched on: ${enabledRows().size}, running: ${liveRows().size}",
 	)
 
@@ -294,8 +334,6 @@ object SmartTickTimer {
 		val prefix: String,
 		val ticks: Int,
 		val max: Int,
-		/** Set where the fraction left is the wrong thing to colour by. */
-		val color: String? = null,
 	)
 
 	/**
@@ -313,47 +351,18 @@ object SmartTickTimer {
 		if (stormPadTimer.value) rows += Row("§bPad:", padTicks, 20)
 		if (stormPyTimer.value) rows += Row("§bPY:", pyTicks, 95)
 		if (stormTickTimer.value) rows += Row("§bStorm:", stormTicks, 620)
-		if (secretsTimer.value) rows += Row("§7Secret:", secretTicks(), 20, secretColor())
+		if (lightningTimer.value) rows += Row("§bLightning:", lightningTicks, 560)
+		// Counted from the cast rather than from the message: the ability is
+		// used a hundred ticks into the window, not at the start of it.
+		if (fireFreezeTimer.value) rows += Row("§bFire Freeze:", fireFreezeTicks - FIRE_FREEZE_CAST, 106)
 		return rows
 	}
 
 	/** The rows with something to say, in the same order. */
 	private fun liveRows(): List<Row> = enabledRows().filter { it.ticks >= 0 }
 
-	/**
-	 * Ticks until the next second boundary, or -1 outside a run.
-	 *
-	 * Not a countdown to anything the server announces: secrets register on the
-	 * second, so this is the wait between opening one and it counting.
-	 *
-	 * Shown once the tab list counts an opened room, which is Odin's gate and
-	 * the right one. Mort's greeting is missed by anyone still loading, and
-	 * merely being in the dungeon starts the timer during the countdown before
-	 * the doors open — when there is nothing to open. The first room opening is
-	 * the run starting, and the tab list says so for the whole of it.
-	 */
-	private fun secretTicks(): Int =
-		if (!DungeonLocation.inDungeon || DungeonStats.openedRooms == 0 || DungeonRun.inBoss) {
-			-1
-		} else {
-			20 - secretCounter % 20
-		}
-
-	/**
-	 * Green when the window is close rather than when it is far.
-	 *
-	 * The other timers count down to something worth waiting for, so more time
-	 * left is better; this one counts down to a thing about to happen, and the
-	 * fraction-left ramp would have it backwards.
-	 */
-	private fun secretColor(): String = when (secretTicks()) {
-		in 0..4 -> "§a"
-		in 5..9 -> "§6"
-		else -> "§c"
-	}
-
 	/** Odin's ramp: green for most of the window, orange, then red at the end. */
-	private fun colorFor(row: Row): String = row.color ?: when {
+	private fun colorFor(row: Row): String = when {
 		row.ticks >= row.max * 0.66f -> "§a"
 		row.ticks >= row.max * 0.33f -> "§6"
 		else -> "§c"
@@ -398,7 +407,7 @@ object SmartTickTimer {
 		 * outside a boss fight is one that cannot be arranged before the run.
 		 */
 		override fun renderExample(context: GuiGraphicsExtractor) =
-			draw(context, enabledRows().map { Row(it.prefix, it.max, it.max, it.color) })
+			draw(context, enabledRows().map { Row(it.prefix, it.max, it.max) })
 
 		private fun draw(context: GuiGraphicsExtractor, rows: List<Row>) {
 			if (rows.isEmpty()) return
@@ -420,4 +429,58 @@ object SmartTickTimer {
 			}
 		}
 	}
+
+	/**
+	 * Blade Addons' secret spawn timer, on its own.
+	 *
+	 * A number and nothing else, centred in a small box so it can sit under the
+	 * crosshair: green with most of the second left, gold past half, red at the
+	 * end. Separate from the other timers because it is read differently — the
+	 * others are glanced at, this one is watched while opening a secret.
+	 */
+	private class SecretSpawnElement: HudElement("secret_spawn_timer", "Secret Spawn Timer", 0.49, 0.53) {
+		private val font get() = Minecraft.getInstance().font
+
+		override val width: Int = BOX_WIDTH
+		override val height: Int = BOX_HEIGHT
+
+		override fun isVisible(): Boolean = secretSpawnShown()
+
+		override fun showInEditor(): Boolean = module.enabled && secretsTimer.value
+
+		override fun render(context: GuiGraphicsExtractor) = draw(context, secretSpawnTicks.coerceAtLeast(0))
+
+		override fun renderExample(context: GuiGraphicsExtractor) = draw(context, SECOND_TICKS)
+
+		private fun draw(context: GuiGraphicsExtractor, ticks: Int) {
+			val text = ticks.toString()
+			val color = when {
+				ticks > 10 -> BLADE_GREEN
+				ticks > 5 -> BLADE_GOLD
+				else -> BLADE_RED
+			}
+			context.text(
+				font,
+				text,
+				(BOX_WIDTH - font.width(text)) / 2,
+				(BOX_HEIGHT - font.lineHeight) / 2 + 1,
+				color,
+			)
+		}
+	}
+
+	/** One of Hypixel's seconds, in server ticks. */
+	private const val SECOND_TICKS = 20
+
+	/** Blade's box, which is what makes the number sit centred where it is placed. */
+	private const val BOX_WIDTH = 20
+	private const val BOX_HEIGHT = 10
+
+	/** Blade's three colours, which are Minecraft's own green, gold and red. */
+	private const val BLADE_GREEN = 0xFF55FF55.toInt()
+	private const val BLADE_GOLD = 0xFFFFAA00.toInt()
+	private const val BLADE_RED = 0xFFFF5555.toInt()
+
+	/** Hypixel's colour codes, which the sidebar is full of. */
+	private val FORMATTING = Regex("§.")
 }

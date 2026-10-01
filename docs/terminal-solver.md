@@ -6,36 +6,25 @@ Both this and **Terminal Times** live in the **Boss** tab.
 
 ---
 
-## Render types
+## How it is drawn
 
-The solver draws in one of three ways, and the choice changes what the terminal
-looks like rather than how it is solved.
+The solver throws the chest away entirely and draws the puzzle on its own — a
+grid of rounded squares in the middle of the screen, at its own size, over the
+dimming any in-game screen lays over the world. There is nothing on screen but
+the answer.
 
-**Odin** paints on the chest itself. Every item in the terminal is hidden, the
-slots the answer names are filled with colour, and the whole window is scaled up
-for as long as the terminal is open. This is the default and the fastest to
-read: there is nothing on screen but the answer.
-
-**Normal** also paints on the chest, but leaves the items where they are and
-only colours the answer, for anyone who would rather still see what they are
-clicking.
-
-**Custom GUI** throws the chest away entirely and draws the puzzle on its own —
-a grid of rounded squares in the middle of the screen, at its own size, over the
-dimming any in-game screen lays over the world.
+Odin, which this is ported from, has two other ways of drawing a terminal that
+paint over the chest's own slots instead. Cryptic had both and no longer does:
+they were never the ones in use here.
 
 ### Size
 
-The two chest-based types get bigger by asking the game to change its GUI scale
-while a terminal is open. **Term scale** is that number, 1 to 5, and **Auto**
-leaves your own scale alone. Nothing is written to your settings — the moment
-the terminal closes the game's own scale is back.
-
-The custom GUI scales itself instead, with **Term size** and **Slot gap**.
-**Slot roundness** and **Container roundness** are separate, so the box can be
-rounded while the slots stay square, or the other way about; the box takes on
-padding to match its own rounding, so a corner slot is never clipped by it.
-Melody gets its own **Melody size** because its grid is wider than the rest.
+**Term size** and **Slot gap** set how big the grid is and how far apart its
+squares sit. **Slot roundness** and **Container roundness** are separate, so
+the box can be rounded while the slots stay square, or the other way about; the
+box takes on padding to match its own rounding, so a corner slot is never
+clipped by it. Melody gets its own **Melody size** because its grid is wider
+than the rest.
 
 ---
 
@@ -124,6 +113,31 @@ accepted because the answer is choosing anyway.
 
 **Stop melody solver** leaves melody alone and plays it as the chest.
 
+**Hide numbers** takes the labels off the Numbers terminal and leaves its three
+colours to say the order: the next pane, the one after, and the one after that.
+Some people read the colour faster than the digit.
+
+**Melody HUD** is about other people's melody rather than yours. Every mod that
+plays melody says how far it has got in party chat — "Melody 50%", "I ❤ Melody
+2/4" — and this holds the latest from each teammate on screen for a few seconds
+as `ARCHER has melody! 1/4`, the class in its colour, so the answer to "do we
+wait for it?" does not scroll away. It is a HUD element and can be placed like
+any other.
+
+**Live through Odin's relay** (off to begin with) adds the terminal itself above
+that line: the marker's square on top, the five note squares under it with the
+note in green as it moves, and the row they are on beside both. That is Odin's
+Progress GUI, and it only works because every Odin user in the lobby joins the
+same room of Odin's server (`ws.odtheking.com`) during the Goldor phase and
+reports their board to it. Switched on, Cryptic joins that room too, shows what
+teammates report, and reports yours back — which means sending your name and
+the lobby's server id to Odin's server. When the relay cannot be reached,
+only the chat line is shown. `/cryptic debug melody` says whether it is
+connected.
+
+**Send melody progress** tells the party when you open melody and as each row
+is done — `Melody 0/4`, `1/4`, `2/4`, `3/4`.
+
 Every colour the solver paints with is a setting, including melody's column,
 pointer and resting slot.
 
@@ -178,7 +192,7 @@ server is behind.
 ## Where it came from
 
 All of it is Odin's (BSD 3-Clause, Copyright (c) 2025 odtheking): the solving
-rules for all six terminals, the three render types, the click prediction and
+rules for all six terminals, the custom terminal GUI, the click prediction and
 its resolve timeout, the first click protection, the simulator, and Terminal
 Times. The rounded corners are drawn out of vanilla's own filled rectangles
 rather than through Odin's shader and pipeline — smoothed the same way a shader

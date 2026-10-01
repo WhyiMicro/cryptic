@@ -1,6 +1,8 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.feature.InvincibilityTimer;
 import imicro.cryptic.feature.SlotBinds;
+import imicro.cryptic.feature.SpiritLeapOverlay;
 import imicro.cryptic.feature.TerminalSolver;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -15,32 +17,23 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Lets the terminal solver paint over a chest, and take its input.
+ * Hands a chest's input to whichever module has taken the chest over.
  *
- * Two of the solver's three render types leave the chest where it is and work
- * on its own slots — which is what these hooks are for. The third replaces the
- * screen outright, and that is {@link ScreenMixin}'s doing.
- *
- * The click hook is not a render type's business at all: every click in a
- * terminal goes through the solver whichever way it is drawn, because the
- * solver is what holds the first-click protection.
+ * The terminal solver draws its own screen in place of the chest, which is
+ * {@link ScreenMixin}'s doing; what is here is the other half. Every click in a
+ * terminal goes through the solver, because the solver is what holds the
+ * first-click protection.
  */
 @Mixin(AbstractContainerScreen.class)
 public abstract class AbstractContainerScreenMixin {
     /**
-     * Before any slot is drawn, which is after the chest's background texture
-     * — so the Odin render type's fill lands over the picture of an inventory
-     * rather than under it, and under the answer that is drawn next.
+     * One slot, for the mask timer, which wants the item drawn and something
+     * over it. A terminal's slots are never drawn at all: the solver replaces
+     * the whole screen, which is {@link ScreenMixin}'s doing.
      */
-    @Inject(method = "extractSlots", at = @At("HEAD"))
-    private void cryptic$fillTerminalBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, CallbackInfo info) {
-        TerminalSolver.drawChestBackground((AbstractContainerScreen<?>) (Object) this, graphics);
-    }
-
-    /** One slot: painted by the solver, and then not drawn by the game. */
     @Inject(method = "extractSlot", at = @At("HEAD"), cancellable = true)
-    private void cryptic$drawTerminalSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY, CallbackInfo info) {
-        if (TerminalSolver.drawChestSlot(graphics, slot)) info.cancel();
+    private void cryptic$drawSlotCooldown(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY, CallbackInfo info) {
+        if (InvincibilityTimer.drawSlotCooldown(graphics, slot)) info.cancel();
     }
 
     /** A tooltip is the chest talking about items the solver has hidden. */
@@ -60,6 +53,11 @@ public abstract class AbstractContainerScreenMixin {
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void cryptic$clickTerminal(MouseButtonEvent click, boolean doubleClick, CallbackInfoReturnable<Boolean> info) {
+        if (SpiritLeapOverlay.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y())) {
+            info.setReturnValue(true);
+            return;
+        }
+
         if (TerminalSolver.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y(), click.button())) {
             info.setReturnValue(true);
             return;
@@ -73,8 +71,20 @@ public abstract class AbstractContainerScreenMixin {
         }
     }
 
+    @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
+    private void cryptic$releaseLeap(MouseButtonEvent click, CallbackInfoReturnable<Boolean> info) {
+        if (SpiritLeapOverlay.handleMouseRelease((AbstractContainerScreen<?>) (Object) this, click.x(), click.y())) {
+            info.setReturnValue(true);
+        }
+    }
+
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void cryptic$keyTerminal(KeyEvent event, CallbackInfoReturnable<Boolean> info) {
+        if (SpiritLeapOverlay.handleKeyPress((AbstractContainerScreen<?>) (Object) this, event.key())) {
+            info.setReturnValue(true);
+            return;
+        }
+
         if (TerminalSolver.handleKeyPress((AbstractContainerScreen<?>) (Object) this, event)) {
             info.setReturnValue(true);
             return;

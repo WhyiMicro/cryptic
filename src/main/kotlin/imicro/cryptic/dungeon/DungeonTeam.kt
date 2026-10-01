@@ -3,6 +3,7 @@ package imicro.cryptic.dungeon
 import imicro.cryptic.debug.DebugOverrides
 import imicro.cryptic.mixin.PlayerTabOverlayAccessor
 import net.minecraft.client.Minecraft
+import net.minecraft.world.entity.player.PlayerSkin
 
 /**
  * Tracks who is in the dungeon party and what class each of them plays.
@@ -46,6 +47,17 @@ object DungeonTeam {
 	var dead: Set<String> = emptySet()
 		private set
 
+	/**
+	 * The skin on each teammate's own row of the tab list.
+	 *
+	 * Hypixel draws the row with the player's head, so the row carries their
+	 * skin even when their own player entry has not been sent — which is when
+	 * looking the name up came back empty, and the leap menu used to fall back
+	 * to your own face for them.
+	 */
+	var tabSkins: Map<String, PlayerSkin> = emptyMap()
+		private set
+
 	fun classOf(name: String): DungeonClass? = classes[name]
 
 	fun isTeammate(name: String): Boolean = classes.containsKey(name)
@@ -87,6 +99,7 @@ object DungeonTeam {
 		val previous = classes
 		var updated: MutableMap<String, DungeonClass>? = null
 		var fallen: MutableSet<String>? = null
+		var skins: MutableMap<String, PlayerSkin>? = null
 		var foundCatacombs = false
 
 		// In the order the rows are drawn in, which is not the order the
@@ -122,11 +135,13 @@ object DungeonTeam {
 
 			val target = updated ?: mutableMapOf<String, DungeonClass>().also { updated = it }
 			target[name] = dungeonClass
+			(skins ?: mutableMapOf<String, PlayerSkin>().also { skins = it })[name] = playerInfo.skin
 		}
 
 		inDungeons = foundCatacombs
 		classes = if (foundCatacombs) updated ?: emptyMap() else emptyMap()
 		dead = if (foundCatacombs) fallen ?: emptySet() else emptySet()
+		tabSkins = if (foundCatacombs) skins ?: emptyMap() else emptyMap()
 	}
 
 	/**
@@ -184,6 +199,7 @@ object DungeonTeam {
 		inDungeons = false
 		classes = emptyMap()
 		dead = emptySet()
+		tabSkins = emptyMap()
 		ticksUntilRefresh = 0
 	}
 }

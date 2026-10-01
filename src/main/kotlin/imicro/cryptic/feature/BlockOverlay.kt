@@ -1,6 +1,5 @@
 package imicro.cryptic.feature
 
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
@@ -93,18 +92,6 @@ object BlockOverlay {
 
 	private val configurable = listOf(mode, fillColor, outlineColor, lineWidth, fullBlock, phase, hideWithEtherwarp)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurable.forEach {
-			when (it) {
-				is DropdownModuleSetting -> it.reset()
-				is ColorModuleSetting -> it.reset()
-				is SliderModuleSetting -> it.reset()
-				is ToggleModuleSetting -> it.reset()
-				else -> Unit
-			}
-		}
-	})
-
 	@JvmField
 	val module = Module(
 		id = "block_overlay",
@@ -113,7 +100,7 @@ object BlockOverlay {
 		category = ModuleCategory.VISUAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = configurable + reset,
+		settings = configurable,
 	)
 
 	private var initialized = false
@@ -129,6 +116,9 @@ object BlockOverlay {
 			val client = Minecraft.getInstance()
 			if (!module.enabled || client.gui.hud.isHidden) return@register true
 			if (hideWithEtherwarp.value && Etherwarp.isAiming()) return@register false
+			// The Gyro Helper draws its own box on the same block, and owns the
+			// switch that decides whether one outline or two is wanted.
+			if (GyroHelper.hidesBlockOutline()) return@register false
 
 			WorldRender.drawBlock(
 				poseStack = context.poseStack(),

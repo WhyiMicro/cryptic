@@ -1,6 +1,5 @@
 package imicro.cryptic.feature
 
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
@@ -149,16 +148,6 @@ object CameraTweaks {
 		hideWaterOverlay, hidePortalOverlay, hideBlockOverlay, doubleSneakFix, ridingInputFix,
 	)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurable.forEach {
-			when (it) {
-				is ToggleModuleSetting -> it.reset()
-				is SliderModuleSetting -> it.reset()
-				else -> Unit
-			}
-		}
-	})
-
 	@JvmField
 	val module = Module(
 		id = "camera",
@@ -170,7 +159,7 @@ object CameraTweaks {
 		settings = listOf(viewSection, fullbright, noFrontCamera, noCameraClip, customDistance, distance) +
 			listOf(fovSection, customFov, fov) +
 			listOf(overlaysSection, hideWaterOverlay, hidePortalOverlay, hideBlockOverlay) +
-			listOf(fixesSection, doubleSneakFix, ridingInputFix, reset),
+			listOf(fixesSection, doubleSneakFix, ridingInputFix),
 	)
 
 	@JvmStatic

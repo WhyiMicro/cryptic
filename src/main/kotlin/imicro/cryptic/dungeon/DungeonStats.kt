@@ -27,6 +27,25 @@ object DungeonStats {
 
 	private var ticksUntilRefresh = 0
 
+	/**
+	 * Set when the tab list or the sidebar has just changed, so the next tick
+	 * reads it at once instead of waiting out the poll.
+	 *
+	 * The poll alone left every number up to half a second stale, and a score
+	 * is only as quick as its slowest number — Odin re-reads the moment the tab
+	 * list changes, which is why its 300 went out before this one did. Set from
+	 * the network thread as well as the game thread, so it is a single flag and
+	 * nothing more.
+	 */
+	@Volatile
+	private var changed = false
+
+	/** The tab list or the sidebar changed: read them on the next tick. */
+	@JvmStatic
+	fun markChanged() {
+		changed = true
+	}
+
 	var secretsFound = 0
 		private set
 	var secretsPercent = 0f
@@ -64,13 +83,30 @@ object DungeonStats {
 		DungeonScore.onMimicKilled()
 	}
 
-	/** Who has killed a bat; Hypixel gives one bonus point each, up to five. */
-	private val bats = mutableSetOf<String>()
+	/**
+	 * Whether a bat has been killed, which is worth one bonus point for the run.
+	 *
+	 * One, not one per bat: Hypixel's "A Bat has been slain. +1 Bonus Score" is
+	 * the run's single bat point, and Odin counts it once. This used to count a
+	 * point per bat up to five, which put the score up to four points too high
+	 * once a second bat died — enough to call 300 before the run was there.
+	 */
+	var batKilled = false
+		private set
 
 	/** Each puzzle the tab list has named, against its tick, cross or dot. */
 	private val puzzles = mutableMapOf<String, Char>()
 
-	val batCount: Int get() = bats.size.coerceAtMost(5)
+	/** Whoever the tab list blames for a puzzle that was failed, where it names anybody. */
+	private val puzzleFailers = mutableMapOf<String, String>()
+
+	/**
+	 * Every puzzle the tab list has named, in the order it named them: the name,
+	 * its mark, and who failed it (empty where nobody did). The ones still
+	 * written as ??? are not in here; [puzzleCount] says how many there are in all.
+	 */
+	val namedPuzzles: List<Triple<String, Char, String>>
+		get() = puzzles.map { Triple(it.key, it.value, puzzleFailers[it.key].orEmpty()) }
 
 	fun reset() {
 		secretsFound = 0
@@ -84,8 +120,9 @@ object DungeonStats {
 		puzzleCount = 0
 		mimicKilled = false
 		princeKilled = false
-		bats.clear()
+		batKilled = false
 		puzzles.clear()
+		puzzleFailers.clear()
 		ticksUntilRefresh = 0
 		MayorPaul.reset()
 	}
@@ -97,7 +134,8 @@ object DungeonStats {
 	 */
 	fun tick(client: Minecraft, active: Boolean) {
 		if (!active || client.level == null) return
-		if (ticksUntilRefresh-- > 0) return
+		if (!changed && ticksUntilRefresh-- > 0) return
+		changed = false
 		ticksUntilRefresh = REFRESH_INTERVAL_TICKS
 
 		readTabList(client)
@@ -125,7 +163,11 @@ object DungeonStats {
 
 			puzzlePattern.find(line)?.let { match ->
 				val name = match.groupValues[1]
-				if (name != "???") puzzles[name] = match.groupValues[2][0]
+				if (name != "???") {
+					puzzles[name] = match.groupValues[2][0]
+					val failer = match.groupValues[3]
+					if (failer.isEmpty()) puzzleFailers.remove(name) else puzzleFailers[name] = failer
+				}
 			}
 		}
 	}
@@ -158,23 +200,52 @@ object DungeonStats {
 		}
 
 		if (batPattern.matches(line)) {
-			bats.add(Minecraft.getInstance().player?.name?.string ?: return)
+			val first = !batKilled
+			batKilled = true
 			// Hypixel tells only the killer, so the party hears it from here.
-			DungeonScore.onBatKilled()
+			if (first) DungeonScore.onBatKilled()
+			return
+		}
+
+		// A mimic killed by a charm is announced by Hypixel itself, to whoever
+		// cast it — NoammAddons' catch, for a death nobody else may see.
+		if (line.contains(MIMIC_CHARMED, ignoreCase = true)) {
+			onMimicKilled()
 			return
 		}
 
 		// Teammates announce their own kills through the party's tracker mods,
-		// which is the only way to hear about a bat you did not kill yourself.
+		// which is the only way to hear about one out of sight. Each mod words
+		// it its own way — "Mimic Killed!" (Odin), "Mimic dead!" (Skyblocker),
+		// "Mimic Killed" (NoammAddons), a code for Skytils, and flavour text
+		// besides — and some put a tag in front, so the wording is looked for
+		// anywhere in the message rather than matched whole.
 		val match = partyMessagePattern.find(line) ?: return
-		val name = match.groupValues[2].lowercase()
-		when (match.groupValues[3].lowercase().trimEnd('!')) {
-			"mimic killed", "mimic slain", "mimic dead", "\$skytils-dungeon-score-mimic\$" -> mimicKilled = true
-			"prince killed", "prince slain", "prince dead", "prince regicided",
-			"\$skytils-dungeon-score-prince\$" -> princeKilled = true
-			"bat killed", "bat dead" -> bats.add(name)
+		val said = match.groupValues[3].lowercase()
+		when {
+			DungeonLocation.floor >= 6 && MIMIC_MESSAGES.any { it in said } -> mimicKilled = true
+			PRINCE_MESSAGES.any { it in said } -> princeKilled = true
+			BAT_MESSAGES.any { it in said } -> batKilled = true
+			// A teammate's score reaching 300 first, which is worth a title now.
+			"300 score" in said -> DungeonScore.onTeammateReached300()
 		}
 	}
+
+	/** Hypixel's line for a mimic dying to a charm, e.g. "...You charmed a Mimic and captured 2 shards from it." */
+	private const val MIMIC_CHARMED = "You charmed a Mimic"
+
+	/** Every wording the party's mods use, lower case, as NoammAddons collected them. */
+	private val MIMIC_MESSAGES = listOf(
+		"mimic dead", "mimic killed", "mimic slain", "\$skytils-dungeon-score-mimic\$",
+		"child destroyed", "mimic obliterated", "mimic exorcised", "mimic destroyed",
+		"mimic annhilated", "mimic annihilated", "breefing killed", "breefing dead",
+	)
+	private val PRINCE_MESSAGES = listOf(
+		"prince dead", "prince killed", "prince slain", "prince regicided", "\$skytils-dungeon-score-prince\$",
+	)
+	private val BAT_MESSAGES = listOf(
+		"bat dead", "bat killed", "bat slain", "\$skytils-dungeon-score-bat\$",
+	)
 
 	/** True once the blood room has been cleared, which the score counts as a room. */
 	private val bloodDone: Boolean
@@ -197,7 +268,7 @@ object DungeonStats {
 	/** The bonus points already banked, Paul aside. */
 	private val bonusWithoutPaul: Int
 		get() = (if (mimicKilled) 2 else 0) + (if (princeKilled) 1 else 0) +
-			batCount + crypts.coerceAtMost(5)
+			(if (batKilled) 1 else 0) + crypts.coerceAtMost(5)
 
 	/** Paul's mayoral perk is worth ten points on top of everything else. */
 	val paulScore: Int get() = if (MayorPaul.active) 10 else 0

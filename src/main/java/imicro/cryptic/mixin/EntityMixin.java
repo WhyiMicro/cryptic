@@ -22,7 +22,8 @@ public abstract class EntityMixin {
 
     @Inject(method = "isCurrentlyGlowing", at = @At("HEAD"), cancellable = true)
     private void cryptic$showLocalDungeonGlow(CallbackInfoReturnable<Boolean> cir) {
-        if (ClassColors.shouldForceSelfGlow((Entity) (Object) this)) cir.setReturnValue(true);
+        Boolean glow = ClassColors.glowOverride((Entity) (Object) this);
+        if (glow != null) cir.setReturnValue(glow);
     }
 
     @Shadow

@@ -1,16 +1,23 @@
 package imicro.cryptic.feature
 
-import imicro.cryptic.gui.ButtonModuleSetting
+import imicro.cryptic.Cryptic
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.ToggleModuleSetting
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
 import net.minecraft.client.color.block.BlockTintSources
 import net.minecraft.client.renderer.block.FluidModel
 import net.minecraft.client.renderer.block.FluidStateModelSet
+import net.minecraft.client.renderer.chunk.ChunkSectionLayer
+import net.minecraft.client.renderer.texture.TextureAtlas
+import net.minecraft.client.renderer.texture.TextureAtlasSprite
+import net.minecraft.client.resources.model.sprite.Material
+import net.minecraft.util.ARGB
 import net.minecraft.world.level.material.FluidState
 import net.minecraft.world.level.material.Fluids
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Draws lava with the water texture.
@@ -31,7 +38,7 @@ object LavaToWater {
 		id = "color_tint",
 		label = "Tint it",
 		defaultValue = false,
-		description = "Colours the water rather than leaving it the blue of the biome you are in.",
+		description = "Draws plain water in exactly the colour chosen, in place of the resource pack's water and the biome's blue.",
 	)
 
 	@JvmField
@@ -50,13 +57,6 @@ object LavaToWater {
 		description = "Takes away the orange fog inside lava, which is most of what stops you seeing.",
 	)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		colorTint.reset()
-		tintColor.reset()
-		hideFog.reset()
-		rebuild()
-	})
-
 	@JvmField
 	val module = Module(
 		id = "lava_to_water",
@@ -65,7 +65,7 @@ object LavaToWater {
 		category = ModuleCategory.VISUAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(colorTint, tintColor, hideFog, reset),
+		settings = listOf(colorTint, tintColor, hideFog),
 	)
 
 	/**
@@ -78,6 +78,13 @@ object LavaToWater {
 	 */
 	private var appliedEnabled = false
 	private var appliedTint = 0
+
+	/**
+	 * How many times lava's model has been swapped since the chunks were last
+	 * rebuilt, for the debug command. Counted from the chunk builders' threads.
+	 */
+	private val swaps = AtomicLong()
+	private var rebuilds = 0
 
 	@JvmStatic
 	fun hidesFog(): Boolean = module.enabled && hideFog.value
@@ -100,17 +107,71 @@ object LavaToWater {
 		if (!module.enabled) return null
 		if (state.type != Fluids.LAVA && state.type != Fluids.FLOWING_LAVA) return null
 
+		swaps.incrementAndGet()
 		val water = models.get(Fluids.WATER.defaultFluidState())
 		if (!colorTint.value) return water
 
-		val tint = tintColor.rgb
-		return FluidModel(
-			water.layer(),
-			water.stillMaterial(),
-			water.flowingMaterial(),
-			water.overlayMaterial(),
+		// Built on the client thread and only read here: this is a chunk
+		// builder's thread, which has no business looking a sprite up.
+		return tinted ?: water
+	}
+
+	/**
+	 * The model a tinted lava is drawn with, or null before it has been built.
+	 *
+	 * Cryptic's own water rather than the game's, and the reason is the tint. A
+	 * tint multiplies the texture, so the colour you pick only comes out as that
+	 * colour on a texture that is white — and whether the game's water is white
+	 * is up to the resource pack. Vanilla's is grey and relies on the biome to
+	 * colour it, but a pack that draws its water blue makes every tint a shade
+	 * of blue, white included. So a tinted lava uses a texture nobody else gets
+	 * to replace: near-white, with ripples of its own. Untinted, the pack's
+	 * water is exactly what was asked for and is left alone.
+	 */
+	@Volatile
+	private var tinted: FluidModel? = null
+
+	/** The sprites [tinted] was built from, which is how a resource reload is noticed. */
+	private var tintedStill: TextureAtlasSprite? = null
+
+	private val STILL = Cryptic.id("block/water_still")
+	private val FLOWING = Cryptic.id("block/water_flow")
+
+	/**
+	 * Builds [tinted] for the colour currently chosen. True if it changed.
+	 *
+	 * The sprites are looked up again every time, cheaply, because a resource
+	 * reload stitches a new atlas and the old sprites point into a texture that
+	 * is gone.
+	 */
+	private fun buildTinted(client: Minecraft): Boolean {
+		val atlas = client.textureManager.getTexture(TextureAtlas.LOCATION_BLOCKS) as? TextureAtlas ?: return false
+		// The atlas is only stitched once the first resource reload finishes, and
+		// a mod that closes the loading screen early lets ticks run before that.
+		// Not ready yet is tried again next tick.
+		val still = try {
+			atlas.getSprite(STILL)
+		} catch (_: IllegalStateException) {
+			return false
+		}
+		val tint = ARGB.opaque(tintColor.rgb)
+		if (still === tintedStill && tint == appliedTint && tinted != null) return false
+
+		val flowing = atlas.getSprite(FLOWING)
+		tintedStill = still
+		tinted = FluidModel(
+			// The texture is part see-through, like the water it stands in for.
+			ChunkSectionLayer.TRANSLUCENT,
+			Material.Baked(still, false),
+			Material.Baked(flowing, false),
+			// The face against glass, which the game draws with the flowing
+			// texture's layout.
+			Material.Baked(flowing, false),
+			// Opaque, because the renderer takes this as the whole colour of every
+			// vertex, alpha included.
 			BlockTintSources.constant(tint, tint),
 		)
+		return true
 	}
 
 	/**
@@ -121,9 +182,13 @@ object LavaToWater {
 	 * of the drag.
 	 */
 	fun tick(client: Minecraft) {
+		// No world, no chunks to rebuild: the title screen can wait for one.
+		if (client.level == null) return
 		val enabled = module.enabled
-		val tint = if (enabled && colorTint.value) tintColor.argb else 0
-		if (enabled == appliedEnabled && tint == appliedTint) return
+		val tint = if (enabled && colorTint.value) ARGB.opaque(tintColor.rgb) else 0
+		// Also true after a resource reload, when the sprites are new ones.
+		val rebuilt = tint != 0 && buildTinted(client)
+		if (enabled == appliedEnabled && tint == appliedTint && !rebuilt) return
 
 		appliedEnabled = enabled
 		appliedTint = tint
@@ -132,13 +197,50 @@ object LavaToWater {
 
 	/**
 	 * Throws away every compiled chunk, so the next frame rebuilds them with the
-	 * model swap applied. 26.2 renamed this from `allChanged` and made it ask
-	 * for what it used to fetch itself, which means there is nothing to rebuild
-	 * without a world.
+	 * model swap applied.
+	 *
+	 * Through the level extractor, which is the call the video settings and F3+A
+	 * make in 26.2: it clears the colour caches as well, and leaves the renderer
+	 * to throw its meshes away at the point in the frame it expects to.
 	 */
 	private fun rebuild() {
+		swaps.set(0)
+		rebuilds++
+		Minecraft.getInstance().levelExtractor.allChanged()
+	}
+
+	/**
+	 * What lava is actually being drawn as, for `/cryptic debug lava`.
+	 *
+	 * The model is asked for the way a chunk builder asks for it, so the answer
+	 * has been through every mod that has a say in it — this one, and any other
+	 * that swaps fluid models, of which SkyHanni is one. If what comes back here
+	 * is right and the world is still wrong, the chunks have not been rebuilt;
+	 * if what comes back is wrong, something after Cryptic changed it.
+	 */
+	fun describe(): List<String> {
 		val client = Minecraft.getInstance()
-		val level = client.level ?: return
-		client.levelRenderer.invalidateCompiledGeometry(level, client.options, client.gameRenderer.mainCamera(), client.blockColors)
+		val lines = mutableListOf<String>()
+		lines += "§8[Cryptic] §7Lava to Water: module ${if (module.enabled) "§aon" else "§coff"}§7, tint " +
+			(if (colorTint.value) "§aon §7(§f#${tintColor.hexDigits}§7)" else "§coff") +
+			"§7, swaps since the last rebuild §f${swaps.get()}§7, rebuilds §f$rebuilds"
+
+		val lava = Fluids.LAVA.defaultFluidState()
+		val model = client.modelManager.fluidStateModelSet.get(lava)
+		val level = client.level
+		val player = client.player
+		val tint = model.tintSource()
+		val color = when {
+			tint == null -> "none (drawn white)"
+			level == null || player == null -> "not in a world"
+			else -> "#%08X".format(tint.colorInWorld(lava.createLegacyBlock(), level, player.blockPosition()))
+		}
+		lines += "§8[Cryptic] §7Lava's model right now: texture §f${model.stillMaterial().sprite().contents().name()}§7, " +
+			"layer §f${model.layer()}§7, tint §f$color"
+
+		val loader = FabricLoader.getInstance()
+		val others = listOf("sodium", "skyhanni", "iris").filter(loader::isModLoaded)
+		lines += "§8[Cryptic] §7Mods with a say in fluids: §f${others.ifEmpty { listOf("none") }.joinToString(", ")}"
+		return lines
 	}
 }

@@ -1,6 +1,5 @@
 package imicro.cryptic.feature
 
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
@@ -63,13 +62,6 @@ object TimeChanger {
 		visibleIf = { !usePreset.value },
 	)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		usePreset.reset()
-		preset.reset()
-		ticks.reset()
-		apply()
-	})
-
 	@JvmField
 	val module = Module(
 		id = "time_changer",
@@ -78,7 +70,7 @@ object TimeChanger {
 		category = ModuleCategory.VISUAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(usePreset, preset, ticks, reset),
+		settings = listOf(usePreset, preset, ticks),
 	)
 
 	/**

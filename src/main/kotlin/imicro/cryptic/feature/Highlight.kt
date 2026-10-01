@@ -89,6 +89,17 @@ object Highlight {
 	private val styles = listOf("Outline", "Fill", "Fill + Outline")
 
 	/** Whether anything in the special-mob group is switched on at all. */
+	/**
+	 * Whether anything switched on is drawn as a line, which is all the width
+	 * slider changes: a box's outline, the mimic chest's, or a tracer. A glow and
+	 * a plain fill have no line to thicken.
+	 */
+	private fun drawsLines(): Boolean =
+		(highlightStarred.value && !starGlow.value && starStyle.selectedIndex != FILL) ||
+			(marksAnySpecial() && !specialGlow.value && specialStyle.selectedIndex != FILL) ||
+			(marksAnySpecial() && specialTracers.value) ||
+			highlightMimicChest.value
+
 	private fun marksAnySpecial(): Boolean =
 		highlightBats.value || highlightMimic.value || highlightPrince.value ||
 			HiddenMobs.highlightFels.value || HiddenMobs.highlightShadowAssassins.value
@@ -150,7 +161,7 @@ object Highlight {
 		defaultRgb = 0xFFFF55,
 		supportsAlpha = true,
 		defaultAlpha = 0x80,
-		visibleIf = { highlightStarred.value  && starStyle.selectedIndex != OUTLINE },
+		visibleIf = { highlightStarred.value && (starGlow.value || starStyle.selectedIndex != OUTLINE) },
 	)
 
 	@JvmField
@@ -240,7 +251,7 @@ object Highlight {
 		defaultRgb = 0x55FF55,
 		supportsAlpha = true,
 		defaultAlpha = 0x80,
-		visibleIf = { marksAnySpecial()  && specialStyle.selectedIndex != OUTLINE },
+		visibleIf = { marksAnySpecial() && (specialGlow.value || specialStyle.selectedIndex != OUTLINE) },
 	)
 
 	@JvmField
@@ -268,6 +279,8 @@ object Highlight {
 		min = 1.0,
 		max = 5.0,
 		step = 0.5,
+		description = "How thick the outlines and tracers are drawn.",
+		visibleIf = { drawsLines() },
 	)
 
 	// ---- Portal ----------------------------------------------------------
@@ -501,14 +514,41 @@ object Highlight {
 		return info
 	}
 
+	/**
+	 * The people Hypixel stands about in a dungeon who are not mobs.
+	 *
+	 * Mort is a player entity like every other NPC Hypixel builds, and a
+	 * player entity standing near a health tag is exactly what this module
+	 * looks for — which is how the man who hands out the map ended up boxed
+	 * as something to kill in the entrance room.
+	 */
+	private val dungeonNpcNames = setOf("Mort", "Boo", "Guild Master", "Fairy", "Mystic Skeleton")
+
+	/** Whether this is one of Hypixel's own people rather than a mob. */
+	private fun isDungeonNpc(entity: Entity): Boolean {
+		if (entity !is Player) return false
+		// A real account's uuid is version four; everything Hypixel builds is
+		// version two, so only an NPC can match the name list at all.
+		if (entity.uuid.version() == 4) return false
+		val name = entity.name.string.trim()
+		if (name in dungeonNpcNames) return true
+		return entity.displayName?.string?.let { display ->
+			dungeonNpcNames.any { display.contains(it) }
+		} == true
+	}
+
 	/** Whether an entity under a tag is the mob the tag is naming. */
 	private fun namesAMob(entity: Entity): Boolean = when (entity) {
 		is ArmorStand -> false
 		is WitherBoss -> false
 		is AbstractArrow -> false
 		// Hypixel's mob NPCs are player entities with a version-two uuid, which
-		// is what tells them apart from real players.
-		is Player -> entity.uuid.version() == 2 && entity != Minecraft.getInstance().player
+		// is what tells them apart from real players. The ones with names and
+		// nothing to fight are not mobs at all.
+		is Player ->
+			entity.uuid.version() == 2 &&
+				entity != Minecraft.getInstance().player &&
+				!isDungeonNpc(entity)
 		else -> !entity.isInvisible
 	}
 
@@ -614,7 +654,7 @@ object Highlight {
 			}
 		}
 
-		if (colorPortal.value && !DungeonRun.inBoss && !DungeonRun.ended) drawBlocks(context, portals, portalColorForScore())
+		if (colorPortal.value && !DungeonRun.inBoss && !DungeonRun.ended) drawBlocks(context, portals, portalColorForScore(), outline = false)
 		if (highlightMimicChest.value) drawBlocks(context, mimicChests, mimicChestColor.argb)
 	}
 
@@ -681,7 +721,12 @@ object Highlight {
 		}
 	}
 
-	private fun drawBlocks(context: LevelRenderContext, positions: List<BlockPos>, argb: Int) {
+	private fun drawBlocks(
+		context: LevelRenderContext,
+		positions: List<BlockPos>,
+		argb: Int,
+		outline: Boolean = true,
+	) {
 		positions.forEach { pos ->
 			WorldRender.drawBlock(
 				poseStack = context.poseStack(),
@@ -689,7 +734,7 @@ object Highlight {
 				pos = pos,
 				outlineArgb = ARGB.opaque(argb),
 				fillArgb = argb,
-				outline = true,
+				outline = outline,
 				fill = true,
 				phase = false,
 				lineWidth = lineWidth.value.toFloat(),
@@ -706,6 +751,7 @@ object Highlight {
 	 */
 	private fun specialColorFor(entity: Entity): BoxColors? {
 		if (!entity.isAlive) return null
+		if (isDungeonNpc(entity)) return null
 
 		// None of this group exists in the boss fight — there are no secrets to
 		// find, no mimic and no prince — so everything it marks in there is
@@ -818,6 +864,37 @@ object Highlight {
 				"leather=${leatherFingerprint(zombie)} " +
 				"carrying=${held.ifEmpty { "nothing" }}"
 		}
+		return lines
+	}
+
+	/**
+	 * What this module has decided about everything nearby.
+	 *
+	 * For `/cryptic debug highlight`. A box appearing on something that should
+	 * not have one is otherwise a guessing game: the entity, its tag and which
+	 * of the three lists it landed in are all here, so a wrong box can be read
+	 * off rather than reasoned about.
+	 */
+	fun describeHighlights(): List<String> {
+		val client = Minecraft.getInstance()
+		val player = client.player ?: return listOf("No player.")
+		val level = client.level ?: return listOf("No world.")
+
+		val lines = mutableListOf(
+			"Highlight: active=$active starred=${starred.size} princes=${princes.size}",
+		)
+
+		level.getEntities(player, player.boundingBox.inflate(MIMIC_DEBUG_RADIUS)) { true }.forEach { entity ->
+			val marked = entity in starred || entity in princes || specialColorFor(entity) != null
+			val outlined = outlineColorFor(entity) != EntityRenderState.NO_OUTLINE
+			if (!marked && !outlined) return@forEach
+			lines += "  ${entity.type.description.string} name=${entity.name.string} " +
+				"display=${entity.displayName?.string ?: "-"} " +
+				"npc=${isDungeonNpc(entity)} starred=${entity in starred} prince=${entity in princes} " +
+				"special=${specialColorFor(entity) != null} glow=$outlined"
+		}
+
+		if (lines.size == 1) lines += "  Nothing within ${MIMIC_DEBUG_RADIUS.toInt()} blocks is marked."
 		return lines
 	}
 

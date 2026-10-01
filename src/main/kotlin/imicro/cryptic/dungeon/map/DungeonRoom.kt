@@ -3,6 +3,10 @@ package imicro.cryptic.dungeon.map
 import imicro.cryptic.feature.DungeonMap
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.core.BlockPos
+import net.minecraft.world.level.Level
+import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.phys.Vec3
 
 /**
  * One room on the dungeon map, and the tiles of the grid it covers.
@@ -33,6 +37,130 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 
 	/** True once it is certain the room is a single tile, which the guess needs. */
 	var isKnown1x1 = false
+
+	/**
+	 * Which way this room's schematic is turned, once it has been worked out.
+	 *
+	 * Odin's method (BSD 3-Clause, Copyright (c) 2025 odtheking): Hypixel
+	 * leaves a block of blue terracotta buried at the corner of every room's
+	 * roof, on the corner the schematic's own origin landed on. Finding which
+	 * of the four corners it is on says how far the room was turned, and the
+	 * corner itself is then the point every schematic coordinate is measured
+	 * from.
+	 *
+	 * Only one-tile rooms are answered, which is every puzzle in the game.
+	 * Larger rooms have their corner somewhere out in the middle of the shape,
+	 * and nothing in Cryptic needs their coordinates.
+	 */
+	var rotation: RoomRotation? = null
+		private set
+
+	/** The corner the schematic is measured from, once [resolveRotation] has found it. */
+	var clayPos: BlockPos? = null
+		private set
+
+	/** True once the rotation has been looked for, found or not. */
+	private var rotationChecked = false
+
+	/**
+	 * Looks for the marker, at most once per room per floor.
+	 *
+	 * Cheap to ask repeatedly: a room whose chunks had not arrived the first
+	 * time is retried, and one that has been answered never touches the world
+	 * again.
+	 */
+	fun resolveRotation(level: Level): Boolean {
+		if (rotation != null) return true
+		if (rotationChecked) return false
+		if (tiles.size != 1) {
+			rotationChecked = true
+			return false
+		}
+
+		val tile = tiles.first()
+		val centerX = DungeonFloor.WORLD_TOP_LEFT + tile.x * DungeonFloor.BLOCKS_PER_TILE
+		val centerZ = DungeonFloor.WORLD_TOP_LEFT + tile.z * DungeonFloor.BLOCKS_PER_TILE
+
+		val top = roofHeight(level, centerX, centerZ) ?: return false
+
+		for (candidate in RoomRotation.entries) {
+			val probe = BlockPos(centerX + candidate.dx, top, centerZ + candidate.dz)
+			if (level.getBlockState(probe).block == Blocks.DYED_TERRACOTTA.blue()) {
+				rotation = candidate
+				clayPos = probe
+				rotationChecked = true
+				return true
+			}
+		}
+
+		// Not found: either the chunk is still arriving or this room does not
+		// carry one. Another pass will answer it, and giving up is what the
+		// solvers treat as "no coordinates for this room".
+		return false
+	}
+
+	/**
+	 * The top of the room's roof at its middle.
+	 *
+	 * Gold is skipped the way Odin skips it: a few rooms have gold sitting on
+	 * top of the roof, and measuring from that puts the marker a block out.
+	 */
+	private fun roofHeight(level: Level, x: Int, z: Int): Int? {
+		val cursor = BlockPos.MutableBlockPos()
+		for (y in ROOF_SEARCH_TOP downTo ROOF_SEARCH_BOTTOM) {
+			val state = level.getBlockState(cursor.set(x, y, z))
+			if (state.isAir || state.block == Blocks.GOLD_BLOCK) continue
+			return y
+		}
+		return null
+	}
+
+	/** Where a position written in the schematic actually is. */
+	fun getRealCoords(pos: BlockPos): BlockPos? {
+		val clay = clayPos ?: return null
+		val rot = rotation ?: return null
+		return pos.rotateAroundNorth(rot).offset(clay.x, 0, clay.z)
+	}
+
+	/** What a position in the world is called in the schematic. */
+	fun getRelativeCoords(pos: BlockPos): BlockPos? {
+		val clay = clayPos ?: return null
+		val rot = rotation ?: return null
+		return pos.subtract(clay.atY(0)).rotateToNorth(rot)
+	}
+
+	/** The middle of a block the schematic names, ready to draw at. */
+	fun realCenter(pos: BlockPos): Vec3? = getRealCoords(pos)?.let { Vec3.atCenterOf(it) }
+
+	/** True once the room has been looked at and has no turn to give. */
+	val rotationUnavailable: Boolean
+		get() = rotationChecked && rotation == null
+
+	/**
+	 * The same two conversions for a point rather than a block.
+	 *
+	 * A line of sight has to be turned into the room's directions before it can
+	 * be crossed with anything written in them, and a whole point is lost by
+	 * rounding it to a block first.
+	 */
+	fun getRelativePoint(point: Vec3): Vec3? {
+		val clay = clayPos ?: return null
+		val rot = rotation ?: return null
+		// Turned about the middle of a block rather than its corner. A block's
+		// position rotates as a lattice point, so a continuous point has to be
+		// shifted half a block, turned, and shifted back for the two to agree
+		// about where the middle of a block is.
+		return point
+			.subtract(clay.x + 0.5, 0.0, clay.z + 0.5)
+			.rotateToNorth(rot)
+			.add(0.5, 0.0, 0.5)
+	}
+
+	/** A direction turned into the room's own, which has no position to shift. */
+	fun getRelativeDirection(direction: Vec3): Vec3? {
+		val rot = rotation ?: return null
+		return direction.rotateToNorth(rot)
+	}
 
 	/** True while this room sits in the floor's column of one-tile rooms. */
 	var specialTile = false
@@ -200,8 +328,11 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 		val base = DungeonMapColors.room(type)
 
 		// A room nobody has been in yet is drawn dim, so the map reads as a
-		// route travelled rather than a flat picture of the floor.
-		return if (state == State.UNDISCOVERED || state == State.UNOPENED) {
+		// route travelled rather than a flat picture of the floor. Showing the
+		// whole floor is the one case where that is wrong: a trap room dimmed
+		// to half strength is the same brown as an ordinary one, and telling
+		// them apart before walking in is the entire point of revealing it.
+		return if (!revealAll && (state == State.UNDISCOVERED || state == State.UNOPENED)) {
 			intArrayOf(DungeonMapColors.darken(base))
 		} else {
 			intArrayOf(base)
@@ -278,6 +409,23 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 	 * The name is the whole point of the world scan: it is what turns a brown
 	 * square into "Water Board" while you are still deciding where to go.
 	 */
+	/**
+	 * What the map calls this room, which is not always what the room data
+	 * does.
+	 *
+	 * The blaze puzzle is built as two rooms, Higher Blaze and Lower Blaze, and
+	 * the solvers need to tell them apart because the order to shoot in is the
+	 * opposite in each. Nobody calls them that: in the tab list and in
+	 * conversation the puzzle is Higher Or Lower, so that is what goes on the
+	 * map, with the room data left alone underneath.
+	 */
+	fun displayName(): String? {
+		// The blood room is not in the room data, so it has no name to look up
+		// and one is given here instead.
+		if (type == Type.BLOOD) return "Blood Camp"
+		return data?.name?.let { mapNames[it] ?: it }
+	}
+
 	fun renderName(
 		context: GuiGraphicsExtractor,
 		scale: Float,
@@ -285,10 +433,12 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 		extraLine: String? = null,
 	): Boolean {
 		if (!isIdentified(revealAll)) return false
-		val name = data?.name ?: return false
-		// The entrance and the blood room are obvious from their colour, and a
-		// name over either says less than the mark it would replace.
-		if (type == Type.ENTRANCE || type == Type.BLOOD) return false
+		val name = displayName() ?: return false
+		// The entrance is obvious from its colour, and a name over it says less
+		// than the mark it would replace. The blood room keeps its name: it is
+		// the one room whose going green is worth reading at a glance, and the
+		// checkmark it used to wear said the same thing in less space.
+		if (type == Type.ENTRANCE) return false
 
 		// One word per line: room names are wide and tiles are not.
 		renderCentered(context, scale, name.split(" ") + listOfNotNull(extraLine))
@@ -318,6 +468,15 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 
 		if (type == Type.FAIRY) return if (fairyPassed) 0xFF55FF55.toInt() else 0xFFA0A0A0.toInt()
 		if (type == Type.PUZZLE) return if (state == State.GREEN) 0xFF55FF55.toInt() else 0xFFA0A0A0.toInt()
+		// The blood room is the same two states as a puzzle: the Watcher has
+		// let you through, or he has not.
+		if (type == Type.BLOOD) {
+			return if (state == State.GREEN || state == State.CLEARED) {
+				0xFF55FF55.toInt()
+			} else {
+				0xFFA0A0A0.toInt()
+			}
+		}
 
 		// A mini boss room holds no secrets, and neither do a handful of the
 		// ordinary ones. Clearing them *is* finishing them, so they skip the
@@ -423,3 +582,13 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 		return center()
 	}
 }
+
+/** Rooms whose data name is not the name anybody uses for them. */
+private val mapNames = mapOf(
+	"Higher Blaze" to "Higher Lower",
+	"Lower Blaze" to "Higher Lower",
+)
+
+/** How far down a room's roof is looked for, which is Odin's range. */
+private const val ROOF_SEARCH_TOP = 140
+private const val ROOF_SEARCH_BOTTOM = 12

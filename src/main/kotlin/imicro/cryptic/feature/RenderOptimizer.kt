@@ -1,8 +1,10 @@
 package imicro.cryptic.feature
 
 import imicro.cryptic.dungeon.DungeonLocation
+import imicro.cryptic.mixin.AbstractArrowAccessor
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import net.minecraft.client.Minecraft
@@ -16,6 +18,7 @@ import net.minecraft.world.entity.EntityTypes
 import net.minecraft.world.entity.EquipmentSlot
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.decoration.ArmorStand
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
 
@@ -55,6 +58,10 @@ object RenderOptimizer {
 		Regex("^§.\\[§.Lv\\d+§.] §.+ (?:§.)+0§f/.+§c❤$"),
 		Regex("^.+ (?:§.)+0§c❤$"),
 	)
+
+	private val entitiesSection = SectionModuleSetting("entities_section", "Entities")
+	private val abilitiesSection = SectionModuleSetting("abilities_section", "Abilities")
+	private val fireSection = SectionModuleSetting("fire_section", "Fire")
 
 	@JvmField
 	val hideFallingBlocks = ToggleModuleSetting(
@@ -135,6 +142,20 @@ object RenderOptimizer {
 	)
 
 	@JvmField
+	val hidePlayerArrows = ToggleModuleSetting(
+		id = "hide_player_arrows",
+		label = "Hide player stuck arrows",
+		description = "Drops the arrows left sticking out of a player.",
+	)
+
+	@JvmField
+	val hideGroundArrows = ToggleModuleSetting(
+		id = "hide_ground_arrows",
+		label = "Hide ground stuck arrows",
+		description = "Drops arrows once they have landed, which is most of an archer's room.",
+	)
+
+	@JvmField
 	val hideFireOnEntities = ToggleModuleSetting(
 		id = "hide_fire_on_entities",
 		label = "Hide fire on entities",
@@ -169,17 +190,22 @@ object RenderOptimizer {
 		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
+			entitiesSection,
 			hideFallingBlocks,
 			hideExperienceOrbs,
 			hideLightning,
 			hideDeathAnimation,
 			hideDyingArmorStands,
 			hideZeroHealth,
+			hidePlayerArrows,
+			hideGroundArrows,
+			abilitiesSection,
 			hideExplosionParticles,
 			hideArcherPassive,
 			hideHealerFairy,
 			hideSoulWeaver,
 			hideTentacleHead,
+			fireSection,
 			hideFireOnEntities,
 			hideFireOverlay,
 			fireOverlayOpacity,
@@ -272,7 +298,15 @@ object RenderOptimizer {
 	 */
 	@JvmStatic
 	fun hidesEntity(entity: Entity): Boolean {
-		if (!module.enabled || !hideDeathAnimation.value) return false
+		if (!module.enabled) return false
+
+		// An arrow that has landed is scenery, and a bow with any fire rate at
+		// all leaves a floor full of it.
+		if (hideGroundArrows.value && entity is AbstractArrow) {
+			if ((entity as AbstractArrowAccessor).`cryptic$isInGround`()) return true
+		}
+
+		if (!hideDeathAnimation.value) return false
 		if (entity is ArmorStand) return hideDyingArmorStands.value && standIsOverACorpse(entity)
 		return entity is LivingEntity && (!entity.isAlive || entity.health <= 0f)
 	}
@@ -287,6 +321,9 @@ object RenderOptimizer {
 			.getEntities(stand, below) { it is LivingEntity && it !is ArmorStand }
 			.any { !it.isAlive || (it as LivingEntity).health <= 0f }
 	}
+
+	@JvmStatic
+	fun hidesPlayerArrows(): Boolean = module.enabled && hidePlayerArrows.value
 
 	@JvmStatic
 	fun hidesEntityFire(): Boolean = module.enabled && hideFireOnEntities.value

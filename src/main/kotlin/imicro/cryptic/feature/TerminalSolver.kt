@@ -2,7 +2,6 @@ package imicro.cryptic.feature
 
 import imicro.cryptic.Cryptic
 import imicro.cryptic.gui.ColorModuleSetting
-import imicro.cryptic.mixin.ContainerScreenAccessor
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
@@ -23,35 +22,21 @@ import net.minecraft.client.input.KeyEvent
 import net.minecraft.network.chat.Component
 import net.minecraft.network.chat.FontDescription
 import net.minecraft.network.chat.Style
-import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.inventory.ContainerInput
-import net.minecraft.world.inventory.Slot
 import org.lwjgl.glfw.GLFW
 import kotlin.math.roundToInt
 
 /**
  * Draws the answer to the Floor 7 terminals, and takes their clicks.
  *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking). All three of
- * its render types are here:
- *
- * * **Odin** paints the chest's own slots over — every item in the terminal
- *   hidden, the answer in coloured squares, the whole thing scaled up.
- * * **Normal** leaves the items where they are and only colours the answer,
- *   for anyone who would rather still see what they are clicking.
- * * **Custom GUI** throws the chest away and draws the puzzle on its own, big
- *   and in the middle of the screen with rounded slots.
- *
- * The first two ask the game to change its GUI scale while a terminal is open,
- * which is how they get big; the third scales itself and leaves the game's
- * scale alone.
+ * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking), and of its
+ * three ways of drawing a terminal only one is left: the custom GUI, which
+ * throws the chest away and draws the puzzle on its own, big and in the middle
+ * of the screen with rounded slots. The two that painted over the chest's own
+ * slots were taken out — nobody here used them — and with them the business of
+ * asking the game for a different GUI scale while a terminal was open.
  */
 object TerminalSolver {
-	/** Render types, in the order the dropdown offers them. */
-	private const val RENDER_ODIN = 0
-	private const val RENDER_NORMAL = 1
-	private const val RENDER_CUSTOM = 2
-
 	/** A slot's size in the custom GUI before the size setting scales it. */
 	private const val BASE_SLOT_SIZE = 24
 
@@ -60,9 +45,6 @@ object TerminalSolver {
 
 	/** How deep a rounded corner cuts into the square it replaces, as a share of its radius. */
 	private const val CORNER_BITE = 0.3
-
-	/** A chest slot is sixteen pixels across, wherever it is drawn. */
-	private const val CHEST_SLOT_SIZE = 16
 
 	/** Minecraft's own chat colours, which Odin's defaults are built from. */
 	private const val MINECRAFT_GREEN = 0x55FF55
@@ -74,9 +56,6 @@ object TerminalSolver {
 	private const val GREEN_QUARTER = 0x154015
 	private const val DARK_RED_HALF = 0x550000
 
-	/** The entry of [normalTermScale] that means "leave my own GUI scale alone". */
-	private const val SCALE_AUTO = 5
-
 	/** The three rubix modes, in the order the dropdown offers them. */
 	private const val RUBIX_LEFT_ONLY = 1
 	private const val RUBIX_ONE_BUTTON = 2
@@ -86,25 +65,6 @@ object TerminalSolver {
 	private val renderSection = SectionModuleSetting(id = "render_section", label = "Rendering")
 
 	@JvmField
-	val renderType = DropdownModuleSetting(
-		id = "render_type",
-		label = "Render type",
-		options = listOf("Odin", "Normal", "Custom GUI"),
-		defaultIndex = RENDER_ODIN,
-		description = "Odin hides the chest's items and paints the answer over them.",
-	)
-
-	@JvmField
-	val normalTermScale = DropdownModuleSetting(
-		id = "normal_term_scale",
-		label = "Term scale",
-		options = listOf("1", "2", "3", "4", "5", "Auto"),
-		defaultIndex = 2,
-		description = "The GUI scale to use while a terminal is open.",
-		visibleIf = { renderType.selectedIndex != RENDER_CUSTOM },
-	)
-
-	@JvmField
 	val termSize = SliderModuleSetting(
 		id = "term_size",
 		label = "Term size",
@@ -112,8 +72,7 @@ object TerminalSolver {
 		min = 1.0,
 		max = 3.0,
 		step = 0.1,
-		description = "How large the custom terminal is drawn.",
-		visibleIf = { renderType.selectedIndex == RENDER_CUSTOM },
+		description = "How large the terminal is drawn.",
 	)
 
 	@JvmField
@@ -125,7 +84,6 @@ object TerminalSolver {
 		max = 15.0,
 		step = 0.5,
 		description = "How far the corners of the custom terminal's slots are rounded off.",
-		visibleIf = { renderType.selectedIndex == RENDER_CUSTOM },
 	)
 
 	@JvmField
@@ -137,7 +95,6 @@ object TerminalSolver {
 		max = 20.0,
 		step = 0.5,
 		description = "How far the corners of the box the slots sit in are rounded off.",
-		visibleIf = { renderType.selectedIndex == RENDER_CUSTOM },
 	)
 
 	@JvmField
@@ -149,7 +106,6 @@ object TerminalSolver {
 		max = 8.0,
 		step = 1.0,
 		description = "The space left between neighbouring slots in the custom terminal.",
-		visibleIf = { renderType.selectedIndex == RENDER_CUSTOM },
 	)
 
 	@JvmField
@@ -196,6 +152,14 @@ object TerminalSolver {
 	)
 
 	@JvmField
+	val hideNumbers = ToggleModuleSetting(
+		id = "hide_numbers",
+		label = "Hide numbers",
+		defaultValue = false,
+		description = "Leaves the Numbers terminal's panes unlabelled, for playing it off the three colours alone.",
+	)
+
+	@JvmField
 	val melodyTermSize = SliderModuleSetting(
 		id = "melody_term_size",
 		label = "Melody size",
@@ -204,7 +168,7 @@ object TerminalSolver {
 		max = 3.0,
 		step = 0.1,
 		description = "How large melody's own grid is drawn, which is wider than the rest.",
-		visibleIf = { !stopMelodySolver.value && renderType.selectedIndex == RENDER_CUSTOM },
+		visibleIf = { !stopMelodySolver.value },
 	)
 
 	@JvmField
@@ -391,8 +355,6 @@ object TerminalSolver {
 		supportsKeybind = false,
 		settings = listOf(
 			renderSection,
-			renderType,
-			normalTermScale,
 			termSize,
 			roundness,
 			containerRoundness,
@@ -404,6 +366,7 @@ object TerminalSolver {
 			resolveTimeout,
 			stopMelodySolver,
 			rubixMode,
+			hideNumbers,
 			protectionSection,
 			firstClickProtection,
 			accountForServerLag,
@@ -424,7 +387,7 @@ object TerminalSolver {
 			melodyColumnColor,
 			melodyPointerColor,
 			melodySlotColor,
-		),
+		) + MelodyHud.settings,
 	)
 
 	/** True when rubix should never ask for a right click at all. */
@@ -440,9 +403,6 @@ object TerminalSolver {
 	 * under the mouse" without working the layout out a second time.
 	 */
 	private var hoveredSlot: Int? = null
-
-	/** Whether the game's GUI scale is currently being held for a terminal. */
-	private var scaled = false
 
 	/**
 	 * Cryptic's own copy of Minecraft's font, so a resource pack that replaces
@@ -476,97 +436,9 @@ object TerminalSolver {
 
 	/** True while the custom GUI has taken the screen over. */
 	private fun ownsScreen(screen: Screen): Boolean =
-		renderType.selectedIndex == RENDER_CUSTOM &&
-			active() != null &&
+		active() != null &&
 			screen is AbstractContainerScreen<*> &&
 			Minecraft.getInstance().gui.screen() === screen
-
-	// ---- The chest's own screen ------------------------------------------
-
-	/**
-	 * The GUI scale the game should use, or null to leave the player's alone.
-	 *
-	 * Read by the mixin on the game's own resize, which is the only place the
-	 * scale can be changed without fighting whatever set it last.
-	 */
-	@JvmStatic
-	fun guiScaleOverride(): Int? {
-		if (renderType.selectedIndex == RENDER_CUSTOM || active() == null) return null
-		val chosen = normalTermScale.selectedIndex
-		return if (chosen == SCALE_AUTO) null else chosen + 1
-	}
-
-	/**
-	 * Asks the game to resize when a terminal opens or closes, so the scale
-	 * follows the terminal rather than waiting for the window to be dragged.
-	 */
-	fun tick(client: Minecraft) {
-		val wanted = guiScaleOverride() != null
-		if (wanted == scaled) return
-		scaled = wanted
-		client.resizeGui()
-	}
-
-	/**
-	 * Fills the chest's slot area, so the Odin render type has something to
-	 * paint the answer onto rather than a picture of an inventory.
-	 *
-	 * Drawn from inside the chest's own matrix — the game has already moved the
-	 * origin to the top left of the window by the time slots are drawn — and
-	 * after the background texture, which is what makes it visible at all.
-	 */
-	@JvmStatic
-	fun drawChestBackground(screen: AbstractContainerScreen<*>, context: GuiGraphicsExtractor) {
-		if (renderType.selectedIndex != RENDER_ODIN || active() == null) return
-		val accessor = screen as ContainerScreenAccessor
-		context.fill(
-			CHEST_EDGE,
-			CHEST_TOP,
-			accessor.`cryptic$imageWidth`() - CHEST_EDGE,
-			accessor.`cryptic$imageHeight`() - CHEST_INVENTORY_HEIGHT,
-			backgroundColor.argb,
-		)
-	}
-
-	/**
-	 * Paints one slot of the chest. Returns true when the game should not draw
-	 * the item that is in it.
-	 *
-	 * In the Odin render type every slot of the terminal is hidden, answer or
-	 * not; in Normal only the slots the answer names are, because the point of
-	 * that one is to still see what is being clicked.
-	 */
-	@JvmStatic
-	fun drawChestSlot(context: GuiGraphicsExtractor, slot: Slot): Boolean {
-		if (renderType.selectedIndex == RENDER_CUSTOM) return false
-		val handler = active() ?: return false
-		// A slot's index is its place in whatever container it belongs to, and
-		// the player's own inventory numbers its slots from zero as well — so
-		// the container is the half of the question that says this is the
-		// chest rather than the rows underneath it.
-		if (slot.container is Inventory) return false
-		if (slot.index >= handler.type.windowSize) return false
-
-		val overlay = handler.overlay(slot.index)
-		if (overlay != null) {
-			if (overlay.argb ushr 24 != 0) {
-				context.fill(slot.x, slot.y, slot.x + CHEST_SLOT_SIZE, slot.y + CHEST_SLOT_SIZE, overlay.argb)
-			}
-			overlay.text?.let { label ->
-				drawLabel(
-					context,
-					Minecraft.getInstance().font,
-					label,
-					textColor.argb,
-					slot.x + CHEST_SLOT_SIZE / 2,
-					slot.y + CHEST_SLOT_SIZE / 2,
-				)
-			}
-			return true
-		}
-
-		return renderType.selectedIndex == RENDER_ODIN
-	}
 
 	/** Tooltips are the chest talking about items nobody can see. */
 	@JvmStatic
@@ -794,9 +666,4 @@ object TerminalSolver {
 	/** Vanilla's own in-game screen dimming, so nothing about it looks new. */
 	private const val BACKDROP_TOP = 0xC0101010.toInt()
 	private const val BACKDROP_BOTTOM = 0xD0101010.toInt()
-
-	/** The chest texture's border, and the inventory it always draws below. */
-	private const val CHEST_EDGE = 7
-	private const val CHEST_TOP = 16
-	private const val CHEST_INVENTORY_HEIGHT = 96
 }

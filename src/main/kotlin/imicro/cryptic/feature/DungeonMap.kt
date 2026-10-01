@@ -5,13 +5,13 @@ import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.dungeon.DungeonStats
 import imicro.cryptic.dungeon.DungeonTeam
-import imicro.cryptic.dungeon.map.BossScan
 import imicro.cryptic.dungeon.map.DungeonFloor
 import imicro.cryptic.dungeon.map.DungeonMapColors
 import imicro.cryptic.dungeon.map.DungeonMapReader
 import imicro.cryptic.dungeon.map.DungeonRoom
 import imicro.cryptic.dungeon.map.DungeonWorldScan
 import imicro.cryptic.dungeon.map.RoomPrediction
+import imicro.cryptic.dungeon.map.ScoreArt
 import imicro.cryptic.dungeon.map.Vec2i
 import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
@@ -24,7 +24,6 @@ import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -111,20 +110,6 @@ object DungeonMap {
 	)
 
 	@JvmField
-	val customizeRooms = ToggleModuleSetting(
-		id = "customize_rooms",
-		label = "Customize rooms",
-		description = "Shows the colour of every room type.",
-	)
-
-	@JvmField
-	val customizeDoors = ToggleModuleSetting(
-		id = "customize_doors",
-		label = "Customize doors",
-		description = "Shows the door colours and how thick they are drawn.",
-	)
-
-	@JvmField
 	val doorThickness = SliderModuleSetting(
 		id = "door_thickness",
 		label = "Door thickness",
@@ -132,37 +117,37 @@ object DungeonMap {
 		min = 3.0,
 		max = 16.0,
 		step = 1.0,
-		visibleIf = { customizeDoors.value },
 	)
 
-	private val roomsSection = SectionModuleSetting("rooms_section", "Rooms")
+	private val roomsSection =
+		SectionModuleSetting("rooms_section", "Room customizations", startsCollapsed = true)
 
 	@JvmField
-	val normalColor = ColorModuleSetting("normal_color", "Normal", DungeonMapColors.NORMAL, visibleIf = { customizeRooms.value })
+	val normalColor = ColorModuleSetting("normal_color", "Normal", DungeonMapColors.NORMAL)
 
 	@JvmField
-	val bloodColor = ColorModuleSetting("blood_color", "Blood", DungeonMapColors.BLOOD, visibleIf = { customizeRooms.value })
+	val bloodColor = ColorModuleSetting("blood_color", "Blood", DungeonMapColors.BLOOD)
 
 	@JvmField
-	val entranceColor = ColorModuleSetting("entrance_color", "Entrance", DungeonMapColors.ENTRANCE, visibleIf = { customizeRooms.value })
+	val entranceColor = ColorModuleSetting("entrance_color", "Entrance", DungeonMapColors.ENTRANCE)
 
 	@JvmField
-	val puzzleColor = ColorModuleSetting("puzzle_color", "Puzzle", DungeonMapColors.PUZZLE, visibleIf = { customizeRooms.value })
+	val puzzleColor = ColorModuleSetting("puzzle_color", "Puzzle", DungeonMapColors.PUZZLE)
 
 	@JvmField
-	val trapColor = ColorModuleSetting("trap_color", "Trap", DungeonMapColors.TRAP, visibleIf = { customizeRooms.value })
+	val trapColor = ColorModuleSetting("trap_color", "Trap", DungeonMapColors.TRAP)
 
 	@JvmField
-	val championColor = ColorModuleSetting("champion_color", "Miniboss", DungeonMapColors.CHAMPION, visibleIf = { customizeRooms.value })
+	val championColor = ColorModuleSetting("champion_color", "Miniboss", DungeonMapColors.CHAMPION)
 
 	@JvmField
-	val fairyColor = ColorModuleSetting("fairy_color", "Fairy", DungeonMapColors.FAIRY, visibleIf = { customizeRooms.value })
+	val fairyColor = ColorModuleSetting("fairy_color", "Fairy", DungeonMapColors.FAIRY)
 
 	@JvmField
-	val rareColor = ColorModuleSetting("rare_color", "Rare", DungeonMapColors.RARE, visibleIf = { customizeRooms.value })
+	val rareColor = ColorModuleSetting("rare_color", "Rare", DungeonMapColors.RARE)
 
 	@JvmField
-	val unexploredColor = ColorModuleSetting("unexplored_color", "Unexplored", DungeonMapColors.UNOPENED, visibleIf = { customizeRooms.value })
+	val unexploredColor = ColorModuleSetting("unexplored_color", "Unexplored", DungeonMapColors.UNOPENED)
 
 	@JvmField
 	val darkenUnexplored = SliderModuleSetting(
@@ -173,22 +158,22 @@ object DungeonMap {
 		max = 100.0,
 		step = 5.0,
 		description = "How much colour a room keeps before anyone has been in it.",
-		visibleIf = { customizeRooms.value },
 	)
 
-	private val doorsSection = SectionModuleSetting("doors_section", "Doors")
+	private val doorsSection =
+		SectionModuleSetting("doors_section", "Door customizations", startsCollapsed = true)
 
 	@JvmField
-	val normalDoorColor = ColorModuleSetting("normal_door_color", "Normal", DungeonMapColors.NORMAL, visibleIf = { customizeDoors.value })
+	val normalDoorColor = ColorModuleSetting("normal_door_color", "Normal", DungeonMapColors.NORMAL)
 
 	@JvmField
-	val witherDoorColor = ColorModuleSetting("wither_door_color", "Wither", DungeonMapColors.WITHER_DOOR, visibleIf = { customizeDoors.value })
+	val witherDoorColor = ColorModuleSetting("wither_door_color", "Wither", DungeonMapColors.WITHER_DOOR)
 
 	@JvmField
-	val bloodDoorColor = ColorModuleSetting("blood_door_color", "Blood", DungeonMapColors.BLOOD, visibleIf = { customizeDoors.value })
+	val bloodDoorColor = ColorModuleSetting("blood_door_color", "Blood", DungeonMapColors.BLOOD)
 
 	@JvmField
-	val entranceDoorColor = ColorModuleSetting("entrance_door_color", "Entrance", DungeonMapColors.ENTRANCE, visibleIf = { customizeDoors.value })
+	val entranceDoorColor = ColorModuleSetting("entrance_door_color", "Entrance", DungeonMapColors.ENTRANCE)
 
 	private val marksSection = SectionModuleSetting("marks_section", "Marks")
 
@@ -310,17 +295,6 @@ object DungeonMap {
 	)
 
 	@JvmField
-	val bossViewScale = SliderModuleSetting(
-		id = "boss_view_scale",
-		label = "Boss view scale",
-		defaultValue = 1.5,
-		min = 0.5,
-		max = 4.0,
-		step = 0.1,
-		description = "How far the boss room view is zoomed in.",
-	)
-
-	@JvmField
 	val leapNameScale = SliderModuleSetting(
 		id = "leap_name_scale",
 		label = "Name size",
@@ -337,8 +311,6 @@ object DungeonMap {
 		padding,
 		reveal,
 		predictRooms,
-		customizeRooms,
-		customizeDoors,
 		normalColor,
 		bloodColor,
 		entranceColor,
@@ -367,7 +339,6 @@ object DungeonMap {
 		facingArrow,
 		leapNames,
 		leapNameScale,
-		bossViewScale,
 	)
 
 	private val reset = ButtonModuleSetting("reset", "Reset", action = {
@@ -399,7 +370,6 @@ object DungeonMap {
 			reveal,
 			predictRooms,
 			roomsSection,
-			customizeRooms,
 			normalColor,
 			bloodColor,
 			entranceColor,
@@ -411,7 +381,6 @@ object DungeonMap {
 			unexploredColor,
 			darkenUnexplored,
 			doorsSection,
-			customizeDoors,
 			doorThickness,
 			normalDoorColor,
 			witherDoorColor,
@@ -431,7 +400,6 @@ object DungeonMap {
 			facingArrow,
 			leapNames,
 			leapNameScale,
-			bossViewScale,
 		) + DungeonScore.scoreSettings + listOf(reset),
 	)
 
@@ -456,7 +424,11 @@ object DungeonMap {
 		get() = module.enabled ||
 			DoorHighlight.module.enabled ||
 			RoomAlerts.module.enabled ||
-			BreakerHelper.module.enabled
+			BreakerHelper.module.enabled ||
+			PuzzleSolver.module.enabled ||
+			Secrets.movesCounter ||
+			PuzzleHud.needsScan ||
+			ILoveGlass.needsDoors
 
 	/** The tile the player was last seen in, so a room is only entered once. */
 	private var lastTile: Vec2i? = null
@@ -485,12 +457,6 @@ object DungeonMap {
 		// rooms to name, so it is what asks for another pass.
 		ClientChunkEvents.CHUNK_LOAD.register { _, _ ->
 			if (needed) DungeonWorldScan.requestScan()
-		}
-
-		// The action bar arrives as a game message flagged as an overlay, which
-		// is where the room's own secret count lives.
-		ClientReceiveMessageEvents.GAME.register { message, overlay ->
-			if (overlay) readSecretCount(message.string)
 		}
 
 		// Hypixel moves you between servers for every floor, and the map from
@@ -541,22 +507,16 @@ object DungeonMap {
 	 *
 	 * Hypixel publishes "2/3 Secrets" only while you are inside the room it is
 	 * about, so this is the one moment the number can be attributed to anything.
+	 * Read by [imicro.cryptic.dungeon.RoomSecrets], which also takes the count
+	 * out of the action bar for the Secrets counter, and so has to read it first.
 	 * Ported from dtMap (BSD 3-Clause, Copyright (c) 2026 rice.who).
 	 */
-	private fun readSecretCount(text: String) {
-		if (!module.enabled || !DungeonLocation.inDungeon) return
-		// The colour code has to come off first: Hypixel writes the count as
-		// "§74/4 Secrets", and a digit pattern reading that raw takes the 7 out
-		// of the grey colour code as part of the number.
-		val plain = text.replace(formattingPattern, "")
-		val found = secretCountPattern.find(plain)?.groupValues?.get(1)?.toIntOrNull() ?: return
+	fun onRoomSecretCount(found: Int) {
+		// Whenever the rooms are being followed at all, not only with the map on:
+		// the Secrets counter reads this number too.
+		if (!needed || !DungeonLocation.inDungeon) return
 		currentRoom()?.foundSecrets = found
 	}
-
-	private val formattingPattern = Regex("§.")
-
-	/** Hypixel's action bar, e.g. "... 2/3 Secrets" once its colours are gone. */
-	private val secretCountPattern = Regex("""(\d+)/\d+ Secrets""")
 
 	/**
 	 * Keeps the floor up to date: reads any chunks that have arrived, and marks
@@ -611,8 +571,7 @@ object DungeonMap {
 
 		/** True while the score screen from a finished run is worth drawing. */
 		private val artDrawn: Boolean
-			get() = module.enabled && DungeonScore.showAtEnd.value &&
-				DungeonRun.ended && DungeonMapReader.endArt.isNotEmpty()
+			get() = module.enabled && DungeonScore.showAtEnd.value && DungeonRun.ended && ScoreArt.ready
 
 		/**
 		 * Draws Hypixel's own end-of-run score screen, scaled to the map's box.
@@ -624,24 +583,27 @@ object DungeonMap {
 		 * hand, and it is the one people screenshot.
 		 */
 		private fun renderEndArt(context: GuiGraphicsExtractor, width: Int, height: Int) {
-			val size = DungeonMapReader.ART_SIZE
-			val scale = minOf(width, height) / size.toFloat()
-			val originX = (width - size * scale) / 2f
-			val originY = (height - size * scale) / 2f
-
-			val pose = context.pose()
-			pose.pushMatrix()
-			pose.translate(originX, originY)
-			pose.scale(scale, scale)
-			DungeonMapReader.endArt.forEach { run ->
-				context.fill(run.left, run.top, run.right, run.top + 1, run.argb)
-			}
-			pose.popMatrix()
+			val size = ScoreArt.SIZE
+			val drawn = minOf(width, height)
+			// Scaled to the box rather than cropped to it: the overload that
+			// takes one pair of sizes uses it for both the source and the
+			// destination, which on a floor smaller than the picture cut the
+			// right-hand side of the score off instead of shrinking it.
+			context.blit(
+				RenderPipelines.GUI_TEXTURED,
+				ScoreArt.TEXTURE,
+				(width - drawn) / 2,
+				(height - drawn) / 2,
+				0f,
+				0f,
+				drawn,
+				drawn,
+				size,
+				size,
+				size,
+				size,
+			)
 		}
-
-		/** The boss room from above, which takes the floor map's place. */
-		private val bossDrawn: Boolean
-			get() = module.enabled && DungeonLocation.inDungeon && DungeonScore.showsBossView
 
 		// The map is square until a floor says otherwise, which is what the
 		// editor measures when there is no dungeon to read. The size does not
@@ -654,7 +616,7 @@ object DungeonMap {
 		// inside a dungeon, and asking the scoreboard as well only adds a
 		// second way for the map to come up empty.
 		override fun isVisible(): Boolean =
-			floorDrawn || bossDrawn || artDrawn || DungeonScore.attachedVisible()
+			floorDrawn || artDrawn || DungeonScore.attachedVisible()
 
 		/** A card that is switched off has nothing on the HUD to arrange. */
 		override fun showInEditor(): Boolean = module.enabled
@@ -671,18 +633,10 @@ object DungeonMap {
 			}
 
 			if (!floorDrawn) {
-				// The floor is behind us. Either the boss room is drawn in its
-				// place, or only the score is left — and either way it is drawn
-				// against the outline the map filled, so nothing moves when the
-				// boss starts.
-				if (bossDrawn) {
-					context.fill(0, 0, size.x + edge * 2, size.z + edge * 2, background.argb)
-					val bossPose = context.pose()
-					bossPose.pushMatrix()
-					bossPose.translate(edge.toFloat(), edge.toFloat())
-					renderBossView(context, size.x, size.z)
-					bossPose.popMatrix()
-				}
+				// The floor is behind us and nothing takes its place: Hypixel
+				// blanks its map in the boss room, and so does this. Only the
+				// score is left, drawn where it was under the map so that
+				// nothing moves when the boss starts.
 				DungeonScore.renderAttached(context, size.x + edge * 2, size.z + edge * 2)
 				return
 			}
@@ -724,78 +678,6 @@ object DungeonMap {
 			)
 			DungeonScore.renderAttachedExample(context, size.x + edge * 2, size.z + edge * 2)
 		}
-
-		/**
-		 * The boss room from above, when the floor's map has nothing left to
-		 * show.
-		 *
-		 * Hypixel stops drawing its map item the moment the boss starts, which
-		 * is the moment a party most wants to know where everybody is: Goldor's
-		 * four sections are four corners of a tower and the terminals are done
-		 * in pairs. There is no map to read for it, so this is drawn from the
-		 * world — every teammate the client can see, plotted against you in the
-		 * middle, at a scale you can set.
-		 *
-		 * Nothing here is room-shaped, because a boss room has no published
-		 * shape: it is a view of the ground around you rather than a plan of
-		 * the room, and it travels with you as you cross it.
-		 */
-		/**
-		 * The boss room from above: the room itself, then everybody on it.
-		 *
-		 * The plan is a square of blocks around you rather than a picture of
-		 * the room, so it is right wherever you are — including partway down
-		 * Goldor's tower, where the floor you are on is not the floor anybody
-		 * drew a picture of.
-		 */
-		private fun renderBossView(context: GuiGraphicsExtractor, width: Int, height: Int) {
-			val client = Minecraft.getInstance()
-			val player = client.player ?: return
-			val level = client.level ?: return
-			BossScan.update(level, player)
-
-			val blocks = BossScan.SIZE
-			val scale = minOf(width, height) / blocks.toFloat() * bossViewScale.value.toFloat()
-			val centerX = width / 2f
-			val centerZ = height / 2f
-
-			// Where the plan's top-left corner falls on screen, given that the
-			// player is drawn in the middle of the box.
-			val offsetX = centerX - ((player.x - BossScan.originX) * scale).toFloat()
-			val offsetZ = centerZ - ((player.z - BossScan.originZ) * scale).toFloat()
-
-			val pose = context.pose()
-			pose.pushMatrix()
-			// Clipped to the box, or a plan wider than the map paints the HUD.
-			context.enableScissor(0, 0, width, height)
-			pose.translate(offsetX, offsetZ)
-			pose.scale(scale, scale)
-			BossScan.runs.forEach { run ->
-				context.fill(run.left, run.top, run.right, run.top + 1, run.argb)
-			}
-			pose.popMatrix()
-			context.disableScissor()
-
-			val self = player.name.string
-			val names = leapNames.value && namesWanted(client)
-			val headPose = context.pose()
-
-			DungeonTeam.classes.keys.forEach { name ->
-				if (name == self || name in DungeonTeam.dead) return@forEach
-				val teammate = level.players().firstOrNull { it.name.string == name } ?: return@forEach
-
-				val x = centerX + ((teammate.x - player.x) * scale).toFloat()
-				val z = centerZ + ((teammate.z - player.z) * scale).toFloat()
-				if (x < 0f || z < 0f || x > width || z > height) return@forEach
-				drawMarker(context, headPose, x, z, teammate.yRot, name, false, names)
-			}
-
-			// Yours last and in its own layer, for the same reason as on the
-			// floor map: it is the one that must never end up underneath.
-			context.nextStratum()
-			drawMarker(context, headPose, centerX, centerZ, player.yRot, self, true, names)
-		}
-
 
 		/**
 		 * A room says one thing about itself, chosen by [roomStyle].

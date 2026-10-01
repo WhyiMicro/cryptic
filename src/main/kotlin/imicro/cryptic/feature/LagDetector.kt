@@ -1,9 +1,11 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.terminal.ServerTicks
@@ -46,6 +48,14 @@ object LagDetector {
 	)
 
 	@JvmField
+	val dungeonsOnly = ToggleModuleSetting(
+		id = "dungeons_only",
+		label = "Only in dungeons",
+		defaultValue = false,
+		description = "Keeps the display for the Catacombs, where a stall decides a run, and quiet everywhere else.",
+	)
+
+	@JvmField
 	val module = Module(
 		id = "lag_detector",
 		name = "Lag Detector",
@@ -53,7 +63,7 @@ object LagDetector {
 		category = ModuleCategory.GENERAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(threshold, textColor),
+		settings = listOf(threshold, textColor, dungeonsOnly),
 	)
 
 	private var initialized = false
@@ -67,6 +77,9 @@ object LagDetector {
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> ServerTicks.forget() }
 	}
 
+	/** True while the floor has to be read for this, for [imicro.cryptic.CrypticClient]. */
+	val needsDungeon: Boolean get() = module.enabled && dungeonsOnly.value
+
 	/**
 	 * Milliseconds since the last server tick, or null while that is not worth
 	 * saying — the server is keeping up, the module is off, or there is no
@@ -75,6 +88,7 @@ object LagDetector {
 	private fun silenceMillis(): Long? {
 		if (!module.enabled) return null
 		if (Minecraft.getInstance().player == null) return null
+		if (dungeonsOnly.value && !DungeonLocation.inDungeon) return null
 
 		val since = ServerTicks.sinceLastTick ?: return null
 		return since.takeIf { it > threshold.value }

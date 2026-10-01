@@ -42,18 +42,7 @@ object Etherwarp {
 	/** Fills are drawn faint, matching the alpha NoammAddons ships with. */
 	private const val DEFAULT_FILL_ALPHA = 50
 
-	private val soundOptions = listOf(
-		"Experience Orb" to SoundEvents.EXPERIENCE_ORB_PICKUP,
-		"Pling" to SoundEvents.NOTE_BLOCK_PLING.value(),
-		"Bell" to SoundEvents.NOTE_BLOCK_BELL.value(),
-		"Harp" to SoundEvents.NOTE_BLOCK_HARP.value(),
-		"Button Click" to SoundEvents.UI_BUTTON_CLICK.value(),
-		"Amethyst Chime" to SoundEvents.AMETHYST_BLOCK_CHIME,
-		"Enderman Teleport" to SoundEvents.ENDERMAN_TELEPORT,
-		"Arrow Hit" to SoundEvents.ARROW_HIT_PLAYER,
-		"Level Up" to SoundEvents.PLAYER_LEVELUP,
-		"Anvil Land" to SoundEvents.ANVIL_LAND,
-	)
+	private val soundOptions = SoundChoices.options
 
 	@JvmField
 	val overlay = ToggleModuleSetting(
@@ -142,21 +131,63 @@ object Etherwarp {
 		visibleIf = { overlay.value && showFail.value && mode.selectedIndex != MODE_OUTLINE },
 	)
 
+	// One switch per teleport for each half, the way NoammAddons lays them out:
+	// somebody who wants the camera to jump ahead on an etherwarp does not
+	// necessarily want it on every Hyperion click. The two etherwarp ones keep
+	// the ids they had when they were the only two.
+
 	@JvmField
 	val fakeZpew = ToggleModuleSetting(
 		id = "fake_zpew",
-		label = "Fake zpew",
+		label = "Etherwarp",
 		defaultValue = false,
-		description = "Puts your view at the landing spot as you click.",
+		description = "Puts your view at the landing spot as you click an etherwarp.",
+	)
+
+	@JvmField
+	val fakeZpewTransmission = ToggleModuleSetting(
+		id = "fake_zpew_transmission",
+		label = "Instant Transmission",
+		defaultValue = false,
+		description = "The same for the eight-block teleport on an Aspect of the End or Void.",
+	)
+
+	@JvmField
+	val fakeZpewImpact = ToggleModuleSetting(
+		id = "fake_zpew_impact",
+		label = "Wither Impact",
+		defaultValue = false,
+		description = "The same for the teleport on a Hyperion, Valkyrie, Astraea or Scylla.",
 	)
 
 	@JvmField
 	val noRotate = ToggleModuleSetting(
 		id = "no_rotate",
-		label = "No rotate",
+		label = "Etherwarp",
 		defaultValue = false,
-		description = "Keeps your head where you have turned it.",
+		description = "Keeps your head where you have turned it when an etherwarp lands.",
 	)
+
+	@JvmField
+	val noRotateTransmission = ToggleModuleSetting(
+		id = "no_rotate_transmission",
+		label = "Instant Transmission",
+		defaultValue = false,
+		description = "The same for the eight-block teleport on an Aspect of the End or Void.",
+	)
+
+	@JvmField
+	val noRotateImpact = ToggleModuleSetting(
+		id = "no_rotate_impact",
+		label = "Wither Impact",
+		defaultValue = false,
+		description = "The same for the teleport on a Hyperion, Valkyrie, Astraea or Scylla.",
+	)
+
+	/** True while any of the six is on, which is when the three timing settings mean anything. */
+	private fun predicts(): Boolean =
+		fakeZpew.value || fakeZpewTransmission.value || fakeZpewImpact.value ||
+			noRotate.value || noRotateTransmission.value || noRotateImpact.value
 
 	@JvmField
 	val resyncTimeout = SliderModuleSetting(
@@ -167,7 +198,28 @@ object Etherwarp {
 		max = 1000.0,
 		step = 50.0,
 		description = "How long a prediction is believed.",
-		visibleIf = { fakeZpew.value || noRotate.value },
+		visibleIf = { predicts() },
+	)
+
+	@JvmField
+	val waitOutLag = ToggleModuleSetting(
+		id = "wait_out_lag",
+		label = "Wait out lag",
+		defaultValue = true,
+		description = "Holds the prediction while the server is not ticking, instead of giving up mid-freeze.",
+		visibleIf = { predicts() },
+	)
+
+	@JvmField
+	val maxLagWait = SliderModuleSetting(
+		id = "max_lag_wait",
+		label = "Max lag wait",
+		defaultValue = 3000.0,
+		min = 500.0,
+		max = 8000.0,
+		step = 250.0,
+		description = "The longest a freeze may hold a prediction open before it is given up on anyway.",
+		visibleIf = { predicts() && waitOutLag.value },
 	)
 
 	@JvmField
@@ -221,7 +273,7 @@ object Etherwarp {
 		name = "Etherwarp Customization",
 		// Etherwarp lives on an item rather than in dungeons, so the module sits
 		// under General even though dungeons are where it is used most.
-		description = "Highlights where your etherwarp lands",
+		description = "Etherwarp overlay, fake zpew and no rotate",
 		category = ModuleCategory.GENERAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
@@ -240,10 +292,18 @@ object Etherwarp {
 			fillColor,
 			invalidOutlineColor,
 			invalidFillColor,
-			SectionModuleSetting("zero_ping_section", "Zero ping"),
+			SectionModuleSetting("zero_ping_section", "Fake zpew"),
 			fakeZpew,
+			fakeZpewTransmission,
+			fakeZpewImpact,
+			SectionModuleSetting("no_rotate_section", "No rotate"),
 			noRotate,
+			noRotateTransmission,
+			noRotateImpact,
+			SectionModuleSetting("prediction_section", "Prediction", visibleIf = { predicts() }),
 			resyncTimeout,
+			waitOutLag,
+			maxLagWait,
 			SectionModuleSetting("sound_section", "Sound"),
 			customSound,
 			sound,

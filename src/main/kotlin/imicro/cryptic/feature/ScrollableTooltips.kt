@@ -1,43 +1,41 @@
 package imicro.cryptic.feature
 
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SliderModuleSetting
-import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.mixin.ContainerScreenAccessor
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.Font
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
-import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent
-import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipPositioner
+import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
 
 /**
- * Lets the wheel move a tooltip that is taller than the screen.
+ * Lets the wheel move, and resize, the tooltip of the item under the cursor.
  *
- * SkyBlock writes essays on its items — a fully enchanted armour piece runs
- * well past the top and bottom of a 1080p window, and the lines that fall off
- * are the ones nobody can read. Vanilla has no answer to this because vanilla
- * has no items like it: `DefaultTooltipPositioner` only ever pushes a tooltip
- * *up* to fit, and once it is taller than the screen there is nowhere left to
- * push it.
+ * Ported from the scrollable tooltips in NoammAddons' Item Tooltip (CC0,
+ * Noamm9). SkyBlock writes essays on its items, and a fully enchanted piece of
+ * armour runs past the edge of the window at any GUI scale worth playing at.
  *
- * The idea is the one every mod called some variation of "scrollable tooltips"
- * has; none of their code is here. What is drawn is vanilla's own tooltip,
- * translated — nothing is re-laid-out, re-measured or re-wrapped, so an item
- * with a picture in it or a custom style still looks exactly as it did.
+ * The version this replaces only woke up for a tooltip it had measured as
+ * taller than the screen, and sat on its hands for every other one — so on a
+ * tooltip that was merely awkward, or sitting under the cursor, or cut off at
+ * the side, the wheel did nothing and the module read as broken. NoammAddons'
+ * rule is the simple one and the right one: while the cursor is on an item, the
+ * wheel belongs to its tooltip. Every tooltip moves, in both directions.
  *
- * The offset resets on its own when you point at something else, because a
- * tooltip scrolled halfway down and then left that way is a tooltip that looks
- * broken on the next item.
+ * - The wheel moves it up and down.
+ * - Shift and the wheel move it sideways.
+ * - Control and the wheel make it bigger or smaller.
+ *
+ * What is drawn is still vanilla's own tooltip, moved — nothing is re-laid-out
+ * or re-wrapped, so an item with a picture in it looks exactly as it did.
  */
 object ScrollableTooltips {
 	@JvmField
 	val speed = SliderModuleSetting(
 		id = "speed",
-		label = "Speed",
+		label = "Scroll speed",
 		defaultValue = 10.0,
 		min = 1.0,
 		max = 40.0,
@@ -46,160 +44,104 @@ object ScrollableTooltips {
 	)
 
 	@JvmField
-	val horizontal = ToggleModuleSetting(
-		id = "horizontal",
-		label = "Sideways with Shift",
-		defaultValue = true,
-		description = "Hold shift to scroll sideways.",
+	val scale = SliderModuleSetting(
+		id = "scale",
+		label = "Tooltip scale (%)",
+		defaultValue = 100.0,
+		min = 30.0,
+		max = 150.0,
+		step = 5.0,
+		description = "The size every tooltip starts at. Hold control and scroll to change one as you read it.",
 	)
 
 	@JvmField
-	val resetOnChange = ToggleModuleSetting(
-		id = "reset_on_change",
-		label = "Reset on a new item",
-		defaultValue = true,
-		description = "Puts the tooltip back where it belongs when you point at something else.",
+	val scaleSpeed = SliderModuleSetting(
+		id = "scale_speed",
+		label = "Scale speed",
+		defaultValue = 3.0,
+		min = 1.0,
+		max = 10.0,
+		step = 1.0,
+		description = "How much one notch changes the size while control is held.",
 	)
-
-	@JvmField
-	val blockScroll = ToggleModuleSetting(
-		id = "block_scroll",
-		label = "Keep it off the screen",
-		defaultValue = false,
-		description = "Keeps the wheel off the menu underneath.",
-	)
-
-	private val configurable = listOf(speed, horizontal, resetOnChange, blockScroll)
-
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurable.forEach {
-			when (it) {
-				is SliderModuleSetting -> it.reset()
-				is ToggleModuleSetting -> it.reset()
-				else -> Unit
-			}
-		}
-	})
 
 	@JvmField
 	val module = Module(
 		id = "scrollable_tooltips",
 		name = "Scrollable Tooltips",
-		description = "Scrolls a tooltip too tall to fit",
+		description = "Scroll to move a tooltip, control-scroll to resize it",
 		category = ModuleCategory.GENERAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = configurable + reset,
+		settings = listOf(speed, scale, scaleSpeed),
 	)
 
+	/** How far the tooltip has been moved, in tooltip pixels. */
 	private var offsetX = 0f
 	private var offsetY = 0f
 
-	/** What was being pointed at when the offset was last meaningful. */
+	/** How far control-scrolling has taken the size from [scale], as a multiplier added to it. */
+	private var scaleOffset = 0f
+
+	/** What was being pointed at when the offsets were last meaningful. */
 	private var lastScreen: Screen? = null
 	private var lastSlot = -1
 
-	/** True while a tooltip was drawn on the last frame, so scrolling means this. */
-	private var tooltipShown = false
+	private const val MIN_SCALE = 0.3f
+	private const val MAX_SCALE = 2.0f
 
 	/**
-	 * A turn of the wheel. Returns true when the screen underneath should not
-	 * also see it.
+	 * A turn of the wheel, taken before the screen underneath sees it.
+	 *
+	 * Taken whenever the cursor is on an item in a container, whatever the
+	 * tooltip's size — NoammAddons' rule. With nothing under the cursor the
+	 * wheel goes to the screen as it always did.
 	 */
 	@JvmStatic
-	fun onScroll(horizontalAmount: Double, verticalAmount: Double): Boolean {
-		if (!module.enabled || !tooltipShown) return false
+	fun onScroll(verticalAmount: Double): Boolean {
+		if (!module.enabled || verticalAmount == 0.0) return false
 		val client = Minecraft.getInstance()
-		if (client.gui.screen() == null) return false
+		val screen = client.gui.screen() as? AbstractContainerScreen<*> ?: return false
+		// The creative inventory is a list that scrolls, and wants its wheel.
+		if (screen is CreativeModeInventoryScreen) return false
+		val slot = (screen as? ContainerScreenAccessor)?.`cryptic$hoveredSlot`() ?: return false
+		if (!slot.hasItem()) return false
+		// A terminal's items are hidden and so are their tooltips.
+		if (TerminalSolver.hidesTooltip()) return false
 
-		// Asked of the keyboard, not the key mapping. Vanilla only updates its
-		// mappings while no screen is open, so `keyShift.isDown` reads false in
-		// every inventory there is — which is why this never went sideways.
-		val sideways = horizontal.value && client.hasShiftDown()
+		noteWhatIsHovered(screen, slot.index)
+
+		val shift = client.hasShiftDown()
+		val control = client.hasControlDown()
+		val step = (verticalAmount * speed.value).toFloat()
 
 		when {
-			// Some mice and drivers send a shifted wheel as a horizontal one,
-			// which is the same request arriving on the other axis.
-			verticalAmount == 0.0 && horizontalAmount != 0.0 ->
-				if (horizontal.value) offsetX += (horizontalAmount * speed.value).toFloat() else return false
-			verticalAmount == 0.0 -> return false
-			sideways -> offsetX += (verticalAmount * speed.value).toFloat()
-			else -> offsetY += (verticalAmount * speed.value).toFloat()
+			shift && !control -> offsetX -= step
+			control && !shift -> {
+				val base = scale.value.toFloat() / 100f
+				val next = (base + scaleOffset + (verticalAmount * scaleSpeed.value / 100.0).toFloat())
+					.coerceIn(MIN_SCALE, MAX_SCALE)
+				scaleOffset = next - base
+			}
+			else -> offsetY += step
 		}
-		return blockScroll.value
+		return true
 	}
 
 	/**
-	 * Called before a tooltip is drawn, to move it.
+	 * Called before a tooltip is drawn, to move and size it.
 	 *
-	 * The offset is clamped here rather than when the wheel turns, because this
-	 * is the only place the tooltip's real size and position are known. The rule
-	 * is that a tooltip may be moved exactly far enough to show its hidden part
-	 * and no further: its top can come down to the top of the screen, its bottom
-	 * up to the bottom, and one that already fits cannot be moved at all.
-	 *
-	 * The push is unconditional so that the matching pop always has something to
-	 * undo, whatever the settings say by the time the tooltip finishes.
+	 * Scaled about the cursor, which is where the tooltip hangs from, so a
+	 * tooltip made smaller shrinks towards the item it is describing rather than
+	 * towards a corner of the screen. The push is unconditional so that the
+	 * matching pop always has something to undo, whatever the settings say by
+	 * the time the tooltip finishes.
 	 */
 	@JvmStatic
-	fun beforeTooltip(
-		graphics: GuiGraphicsExtractor,
-		font: Font,
-		lines: List<ClientTooltipComponent>,
-		anchorX: Int,
-		anchorY: Int,
-		positioner: ClientTooltipPositioner,
-	) {
-		tooltipShown = true
-		noteWhatIsHovered()
-
+	fun beforeTooltip(graphics: GuiGraphicsExtractor, anchorX: Int, anchorY: Int) {
 		val pose = graphics.pose()
 		pose.pushMatrix()
-		if (!module.enabled || lines.isEmpty()) return
-
-		// Measured the way vanilla measures it, so the edges agree with what is
-		// actually about to be drawn.
-		var width = 0
-		var height = if (lines.size == 1) -2 else 0
-		for (line in lines) {
-			width = maxOf(width, line.getWidth(font))
-			height += line.getHeight(font)
-		}
-		val placed = positioner.positionTooltip(graphics.guiWidth(), graphics.guiHeight(), anchorX, anchorY, width, height)
-
-		offsetX = clampAxis(offsetX, placed.x(), width, graphics.guiWidth())
-		offsetY = clampAxis(offsetY, placed.y(), height, graphics.guiHeight())
-		pose.translate(offsetX, offsetY)
-	}
-
-	/**
-	 * How far one axis may move: towards the far edge until the tooltip's end
-	 * reaches it, towards the near edge until its start does, and always back
-	 * to zero.
-	 */
-	private fun clampAxis(offset: Float, start: Int, size: Int, screen: Int): Float {
-		val towardsFarEdge = (screen - EDGE_PADDING) - (start + size).toFloat()
-		val towardsNearEdge = EDGE_PADDING - start.toFloat()
-		return offset.coerceIn(minOf(0f, towardsFarEdge), maxOf(0f, towardsNearEdge))
-	}
-
-	/** Room left between the tooltip and the edge, which is its own border. */
-	private const val EDGE_PADDING = 4f
-
-	@JvmStatic
-	fun afterTooltip(graphics: GuiGraphicsExtractor) {
-		graphics.pose().popMatrix()
-	}
-
-	/**
-	 * Forgets the offset when the thing under the cursor changes.
-	 *
-	 * The slot index is what actually identifies an item here: two different
-	 * items can produce tooltips of exactly the same shape, and comparing what
-	 * the tooltip says would mean measuring it every frame.
-	 */
-	private fun noteWhatIsHovered() {
-		if (!resetOnChange.value) return
+		if (!module.enabled) return
 
 		val screen = Minecraft.getInstance().gui.screen()
 		val slot = (screen as? AbstractContainerScreen<*>)
@@ -207,26 +149,38 @@ object ScrollableTooltips {
 			?.`cryptic$hoveredSlot`()
 			?.index
 			?: -1
+		noteWhatIsHovered(screen, slot)
 
-		if (screen !== lastScreen || slot != lastSlot) {
-			lastScreen = screen
-			lastSlot = slot
-			offsetX = 0f
-			offsetY = 0f
-		}
+		// Only an item's tooltip is moved. A button's hint in some other screen
+		// has no business sitting where the last item's tooltip was left.
+		if (slot < 0) return
+
+		val size = (scale.value.toFloat() / 100f + scaleOffset).coerceIn(MIN_SCALE, MAX_SCALE)
+		pose.translate(anchorX.toFloat(), anchorY.toFloat())
+		pose.scale(size, size)
+		pose.translate(offsetX, offsetY)
+		pose.translate(-anchorX.toFloat(), -anchorY.toFloat())
+	}
+
+	@JvmStatic
+	fun afterTooltip(graphics: GuiGraphicsExtractor) {
+		graphics.pose().popMatrix()
 	}
 
 	/**
-	 * Clears the flag that says a tooltip was on screen, which is how the wheel
-	 * goes back to whatever is underneath once one is gone.
+	 * Forgets the offsets when the thing under the cursor changes.
 	 *
-	 * Only the flag. The offset itself is left alone here: this runs on the tick
-	 * rather than the frame, and below twenty frames a second a tick can land
-	 * with no frame drawn between — resetting there would throw away a scroll
-	 * while the tooltip it belongs to is still on screen. Pointing at something
-	 * else is what clears it.
+	 * A tooltip scrolled halfway down and then left that way is a tooltip that
+	 * looks broken on the next item, so each one starts where the game put it.
+	 * The slot is what identifies an item here: two different items can produce
+	 * tooltips of exactly the same shape.
 	 */
-	fun endFrame() {
-		tooltipShown = false
+	private fun noteWhatIsHovered(screen: Screen?, slot: Int) {
+		if (screen === lastScreen && slot == lastSlot) return
+		lastScreen = screen
+		lastSlot = slot
+		offsetX = 0f
+		offsetY = 0f
+		scaleOffset = 0f
 	}
 }

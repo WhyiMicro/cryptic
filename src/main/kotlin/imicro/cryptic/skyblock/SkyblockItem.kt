@@ -21,6 +21,21 @@ object SkyblockItem {
 	}
 
 	/**
+	 * The texture a player head is wearing, as the base64 Hypixel sends.
+	 *
+	 * Hypixel dresses a great deal in heads — a mob's model, an ability's
+	 * effect, the Watcher himself — and none of it is otherwise labelled, so
+	 * the skin is the only thing that says which one this is.
+	 */
+	fun skullTexture(stack: ItemStack): String? =
+		stack.get(DataComponents.PROFILE)
+			?.partialProfile()
+			?.properties
+			?.get("textures")
+			?.firstOrNull()
+			?.value
+
+	/**
 	 * Whether any line of the item's description contains [text].
 	 *
 	 * Some of what SkyBlock does to an item is written only in its lore — a bow

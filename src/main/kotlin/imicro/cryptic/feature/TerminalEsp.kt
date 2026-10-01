@@ -13,6 +13,7 @@ import imicro.cryptic.render.WorldRender
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
+import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.Vec3
@@ -40,6 +41,11 @@ object TerminalEsp {
 
 	/** How far past the outermost terminal the world is asked for entities. */
 	private const val SEARCH_MARGIN = 2.0
+
+	/** NoammAddons' flash timings, in milliseconds. */
+	private const val FLASH_RISE_MS = 50L
+	private const val FLASH_HOLD_MS = 250L
+	private const val FLASH_FADE_MS = 200L
 
 	/** The name Hypixel gives a terminal nobody has finished yet. */
 	private const val UNFINISHED_NAME = "Inactive Terminal"
@@ -114,6 +120,24 @@ object TerminalEsp {
 		description = "Draws the terminals through the tower's own walls, including the ones behind you.",
 	)
 
+	private val flashSection = SectionModuleSetting(id = "flash_section", label = "Flash")
+
+	@JvmField
+	val flashOnClick = ToggleModuleSetting(
+		id = "flash_on_click",
+		label = "Flash on click",
+		defaultValue = true,
+		description = "Flashes a terminal's box when you click it, so a click that landed is one you can see.",
+	)
+
+	@JvmField
+	val flashColor = ColorModuleSetting(
+		id = "flash_color",
+		label = "Flash",
+		defaultRgb = 0xFF0000,
+		visibleIf = { flashOnClick.value },
+	)
+
 	@JvmField
 	val module = Module(
 		id = "terminal_esp",
@@ -122,7 +146,10 @@ object TerminalEsp {
 		category = ModuleCategory.FLOOR_7,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(mode, fillColor, outlineColor, drawingSection, lineWidth, throughWalls),
+		settings = listOf(
+			mode, fillColor, outlineColor, drawingSection, lineWidth, throughWalls,
+			flashSection, flashOnClick, flashColor,
+		),
 	)
 
 	/**
@@ -132,7 +159,10 @@ object TerminalEsp {
 	 * changes when somebody finishes it, and the render pass runs many times in
 	 * between.
 	 */
-	private var boxes: List<AABB> = emptyList()
+	private var boxes: List<Pair<Int, AABB>> = emptyList()
+
+	/** When each stand was last clicked, by entity id. */
+	private val clickedAt = HashMap<Int, Long>()
 
 	private var initialized = false
 
@@ -172,7 +202,44 @@ object TerminalEsp {
 		boxes = level.getEntitiesOfClass(ArmorStand::class.java, search) { stand ->
 			stand.customName?.string?.replace(formattingPattern, "") == UNFINISHED_NAME &&
 				positions.any { stand.distanceToSqr(it) <= MATCH_RANGE_SQUARED }
-		}.map { it.boundingBox }
+		}.map { it.id to it.boundingBox }
+		if (clickedAt.isNotEmpty()) clickedAt.entries.removeIf { System.currentTimeMillis() - it.value > FLASH_HOLD_MS + FLASH_FADE_MS }
+	}
+
+	/**
+	 * An entity you clicked or hit. Only the stands being boxed are remembered,
+	 * so this costs nothing anywhere else. NoammAddons' Flash On Click.
+	 */
+	@JvmStatic
+	fun onClicked(entity: Entity) {
+		if (!module.enabled || !flashOnClick.value || entity !is ArmorStand) return
+		if (boxes.any { it.first == entity.id }) clickedAt[entity.id] = System.currentTimeMillis()
+	}
+
+	/**
+	 * How far a box is through its flash, 0 to 1: up almost at once, held while
+	 * the click is fresh, then faded back to its own colour.
+	 */
+	private fun flashOf(id: Int): Float {
+		val at = clickedAt[id] ?: return 0f
+		val elapsed = System.currentTimeMillis() - at
+		return when {
+			elapsed < FLASH_RISE_MS -> elapsed.toFloat() / FLASH_RISE_MS
+			elapsed < FLASH_HOLD_MS -> 1f
+			else -> (1f - (elapsed - FLASH_HOLD_MS).toFloat() / FLASH_FADE_MS).coerceAtLeast(0f)
+		}
+	}
+
+	/** [base] moved towards the flash colour by [amount], keeping its own alpha. */
+	private fun flashed(base: Int, amount: Float): Int {
+		if (amount <= 0f) return base
+		val flash = flashColor.argb
+		fun channel(shift: Int): Int {
+			val from = base shr shift and 0xFF
+			val to = flash shr shift and 0xFF
+			return (from + (to - from) * amount).toInt().coerceIn(0, 255)
+		}
+		return (base and 0xFF000000.toInt()) or (channel(16) shl 16) or (channel(8) shl 8) or channel(0)
 	}
 
 	private fun render(context: LevelRenderContext) {
@@ -181,7 +248,8 @@ object TerminalEsp {
 		val fill = mode.selectedIndex != MODE_OUTLINE
 		val outline = mode.selectedIndex != MODE_FILL
 
-		for (box in boxes) {
+		for ((id, box) in boxes) {
+			val flash = if (flashOnClick.value) flashOf(id) else 0f
 			WorldRender.drawBox(
 				poseStack = context.poseStack(),
 				collector = context.submitNodeCollector(),
@@ -191,8 +259,8 @@ object TerminalEsp {
 				maxX = box.maxX,
 				maxY = box.maxY,
 				maxZ = box.maxZ,
-				outlineArgb = outlineColor.argb,
-				fillArgb = fillColor.argb,
+				outlineArgb = flashed(outlineColor.argb, flash),
+				fillArgb = flashed(fillColor.argb, flash),
 				outline = outline,
 				fill = fill,
 				phase = throughWalls.value,

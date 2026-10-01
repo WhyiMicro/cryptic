@@ -9,8 +9,11 @@ import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.network.chat.Component
 import net.minecraft.world.phys.shapes.Shapes
+import net.minecraft.world.phys.Vec3
 import org.joml.Quaternionf
 import org.joml.Vector3f
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Draws boxes in world space, for modules that highlight a position.
@@ -167,6 +170,107 @@ object WorldRender {
 	}
 
 	/**
+	 * Draws a line through a list of world positions.
+	 *
+	 * One submit for the whole path rather than one per segment, because the
+	 * queue is drained in order and a path split across submits is a path that
+	 * can be drawn with something else in the middle of it.
+	 */
+	fun drawLine(
+		poseStack: PoseStack,
+		collector: SubmitNodeCollector,
+		points: List<Vec3>,
+		argb: Int,
+		lineWidth: Float,
+		phase: Boolean,
+	) {
+		if (points.size < 2) return
+
+		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
+		poseStack.pushPose()
+		poseStack.translate(-camera.x, -camera.y, -camera.z)
+
+		val layer = if (phase) CrypticRenderLayers.LINES_THROUGH_WALLS else CrypticRenderLayers.LINES
+		val path = points.toList()
+		collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
+			for (index in 0 until path.size - 1) {
+				val from = path[index]
+				val to = path[index + 1]
+				consumer.addLine(
+					pose,
+					from.x.toFloat(), from.y.toFloat(), from.z.toFloat(),
+					to.x.toFloat(), to.y.toFloat(), to.z.toFloat(),
+					argb, lineWidth,
+				)
+			}
+		}
+
+		poseStack.popPose()
+	}
+
+	/**
+	 * Draws one line whose two ends are different colours.
+	 *
+	 * The colours are put on the vertices rather than drawn as a run of short
+	 * lines, so the gradient is the one the graphics card interpolates for
+	 * free — which is smooth at any length and costs exactly as much as a
+	 * plain line.
+	 */
+	fun drawGradientLine(
+		poseStack: PoseStack,
+		collector: SubmitNodeCollector,
+		from: Vec3,
+		to: Vec3,
+		argbFrom: Int,
+		argbTo: Int,
+		lineWidth: Float,
+		phase: Boolean,
+	) {
+		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
+		poseStack.pushPose()
+		poseStack.translate(-camera.x, -camera.y, -camera.z)
+
+		val layer = if (phase) CrypticRenderLayers.LINES_THROUGH_WALLS else CrypticRenderLayers.LINES
+		collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
+			consumer.addLine(
+				pose,
+				from.x.toFloat(), from.y.toFloat(), from.z.toFloat(),
+				to.x.toFloat(), to.y.toFloat(), to.z.toFloat(),
+				argbFrom, argbTo, lineWidth,
+			)
+		}
+
+		poseStack.popPose()
+	}
+
+	/**
+	 * Draws a ring lying flat around a point, for an ability with a radius.
+	 *
+	 * Enough segments that the corners stop reading as corners at the ten-block
+	 * radius this is mostly used at; a circle that looks like a polygon reads as
+	 * a smaller circle than it is.
+	 */
+	fun drawCircle(
+		poseStack: PoseStack,
+		collector: SubmitNodeCollector,
+		center: Vec3,
+		radius: Double,
+		argb: Int,
+		lineWidth: Float,
+		phase: Boolean,
+		segments: Int = CIRCLE_SEGMENTS,
+	) {
+		val points = ArrayList<Vec3>(segments + 1)
+		for (step in 0..segments) {
+			val angle = step * 2.0 * Math.PI / segments
+			points.add(Vec3(center.x + cos(angle) * radius, center.y, center.z + sin(angle) * radius))
+		}
+		drawLine(poseStack, collector, points, argb, lineWidth, phase)
+	}
+
+	private const val CIRCLE_SEGMENTS = 64
+
+	/**
 	 * Draws text that stands at a world position and faces the camera.
 	 *
 	 * The camera's own orientation is applied so the label stays readable from
@@ -203,6 +307,9 @@ object WorldRender {
 		poseStack.scale(TEXT_SCALE * scale, -TEXT_SCALE * scale, TEXT_SCALE * scale)
 
 		val halfWidth = font.width(text) / 2f
+		// Text asked to be read through walls is also asked to be read through
+		// ice and glass, which means being drawn after them.
+		CrypticRenderLayers.textOverTerrain = seeThrough
 		collector.submitText(
 			poseStack,
 			-halfWidth,
@@ -215,6 +322,7 @@ object WorldRender {
 			backgroundArgb,
 			0,
 		)
+		CrypticRenderLayers.textOverTerrain = false
 		poseStack.popPose()
 	}
 
@@ -300,9 +408,25 @@ object WorldRender {
 		x2: Float, y2: Float, z2: Float,
 		argb: Int,
 		lineWidth: Float,
+	) = addLine(pose, x1, y1, z1, x2, y2, z2, argb, argb, lineWidth)
+
+	/**
+	 * One line segment, with a colour at each end.
+	 *
+	 * A single colour is the same call with the same colour twice: everything
+	 * between the two vertices is the graphics card's own interpolation, which
+	 * is what makes a gradient cost nothing.
+	 */
+	private fun VertexConsumer.addLine(
+		pose: PoseStack.Pose,
+		x1: Float, y1: Float, z1: Float,
+		x2: Float, y2: Float, z2: Float,
+		argbFrom: Int,
+		argbTo: Int,
+		lineWidth: Float,
 	) {
 		val normal = Vector3f(x2 - x1, y2 - y1, z2 - z1).apply { if (lengthSquared() > 0f) normalize() }
-		addVertex(pose, x1, y1, z1).setColor(argb).setNormal(pose, normal).setLineWidth(lineWidth)
-		addVertex(pose, x2, y2, z2).setColor(argb).setNormal(pose, normal).setLineWidth(lineWidth)
+		addVertex(pose, x1, y1, z1).setColor(argbFrom).setNormal(pose, normal).setLineWidth(lineWidth)
+		addVertex(pose, x2, y2, z2).setColor(argbTo).setNormal(pose, normal).setLineWidth(lineWidth)
 	}
 }

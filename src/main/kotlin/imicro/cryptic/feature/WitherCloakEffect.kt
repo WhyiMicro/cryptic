@@ -6,7 +6,9 @@ import imicro.cryptic.Cryptic
 import imicro.cryptic.debug.DebugOverrides
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.ToggleModuleSetting
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
@@ -58,14 +60,35 @@ object WitherCloakEffect {
 	)
 
 	@JvmField
+	val dungeonsOnly = ToggleModuleSetting(
+		id = "dungeons_only",
+		label = "Only in dungeons",
+		defaultValue = false,
+		description = "Leaves the cloak as Hypixel draws it everywhere but the Catacombs.",
+	)
+
+	/** True while the floor has to be read for this, for [imicro.cryptic.CrypticClient]. */
+	val needsDungeon: Boolean get() = module.enabled && dungeonsOnly.value
+
+	/**
+	 * Whether the shields take the creeper's place right now.
+	 *
+	 * Everything that used to ask whether the module was on asks this instead,
+	 * so that outside a dungeon it behaves exactly as if it were off.
+	 */
+	private val active: Boolean
+		get() = module.enabled &&
+			(!dungeonsOnly.value || DungeonLocation.inDungeon || DebugOverrides.forceWitherCloak)
+
+	@JvmField
 	val module = Module(
 		id = "wither_cloak_effect",
-		name = "Wither Cloak Effect",
+		name = "Custom Wither Cloak",
 		description = "Replaces the Creeper Veil with orbiting shields",
 		category = ModuleCategory.VISUAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(shieldCount, shieldSpeed, shieldDistance),
+		settings = listOf(shieldCount, shieldSpeed, shieldDistance, dungeonsOnly),
 	)
 
 	private var initialized = false
@@ -90,7 +113,7 @@ object WitherCloakEffect {
 	}
 
 	fun tick(client: Minecraft) {
-		if (!module.enabled) {
+		if (!active) {
 			reset()
 			return
 		}
@@ -143,7 +166,7 @@ object WitherCloakEffect {
 	/** Called by the creeper power-layer mixin to prevent the vanilla overlay overlapping ours. */
 	@JvmStatic
 	fun shouldHideVanillaPower(state: CreeperRenderState): Boolean {
-		if (!module.enabled || !state.isPowered) return false
+		if (!active || !state.isPowered) return false
 		val now = System.currentTimeMillis()
 		val looksLikeCloakCreeper =
 			(state.isInvisible || state.isInvisibleToPlayer) &&
@@ -165,7 +188,7 @@ object WitherCloakEffect {
 	}
 
 	private fun onGameMessage(text: String) {
-		if (!module.enabled) return
+		if (!active) return
 		val normalized = text.trim()
 
 		when {
@@ -181,7 +204,7 @@ object WitherCloakEffect {
 	}
 
 	private fun extractRenderState(context: LevelExtractionContext) {
-		if (!module.enabled || !cloakActive) {
+		if (!active || !cloakActive) {
 			renderSnapshot = null
 			return
 		}

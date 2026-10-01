@@ -25,6 +25,18 @@ object ImGuiRuntime {
 
     private var initialized = false
     private var broken = false
+
+    /**
+     * Whether the menu's setup has been done ahead of its first opening.
+     *
+     * Opening it the first time used to do all of it at once, in that frame:
+     * make the Dear ImGui context, read two fonts, build the atlas, compile the
+     * OpenGL backend's shaders, and then rasterize every glyph the menu draws at
+     * every size it draws them — which is the hitch the first open had. All of
+     * that is done instead in one empty frame the moment the game has finished
+     * loading, when a hitch lands on the title screen and nobody is waiting on it.
+     */
+    private var warmedUp = false
     private var context: ImGuiContext? = null
     /**
      * The size the atlas is baked at, once, for the life of the process.
@@ -133,7 +145,11 @@ object ImGuiRuntime {
         if (!available) return
         val minecraft = Minecraft.getInstance()
         val screen = minecraft.gui.screen() as? ImGuiScreen
-        if (screen == null && !Toasts.wantsDrawing()) return
+        // One frame with nothing in it, as soon as the game has finished loading,
+        // so the first time the menu opens it has nothing left to set up. See
+        // [warmedUp].
+        val warmUp = !warmedUp && minecraft.isGameLoadFinished && minecraft.gui.overlay() == null
+        if (screen == null && !Toasts.wantsDrawing() && !warmUp) return
 
         // Dear ImGui's current context is process-global. Other mods may bundle
         // imgui-java too, so never leave Cryptic's context selected after its
@@ -152,6 +168,10 @@ object ImGuiRuntime {
             gl3.newFrame()
             ImGui.newFrame()
             frameStarted = true
+            if (warmUp) {
+                CrypticScreen.warmUpText()
+                warmedUp = true
+            }
             screen?.drawImGui()
             // After the menu, on the foreground list, so a notification is over
             // whatever raised it rather than under it.

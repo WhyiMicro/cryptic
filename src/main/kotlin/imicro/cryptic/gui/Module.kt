@@ -39,6 +39,7 @@ class WidgetIds(prefix: String) {
 
 /** Pre-built identifiers for the controls a module card owns itself. */
 class ModuleWidgetIds(moduleId: String, dropdownOptionCount: Int) {
+	val card = "##card_$moduleId"
 	val toggle = "##toggle_$moduleId"
 	val expand = "##expand_$moduleId"
 	val keybind = "##bind_$moduleId"
@@ -369,6 +370,41 @@ class TextModuleSetting(
 	fun reset() { value = defaultValue }
 }
 
+/**
+ * A key a module reacts to, chosen in its settings.
+ *
+ * Unlike a module's own [KeybindSetting], this is one of several a module can
+ * carry — one per corner of a menu, say — and it is read by the module while a
+ * screen of its own is open, never as a global hotkey. Keyboard keys only: the
+ * screens that use these are already taking mouse clicks, and a bind on a mouse
+ * button would collide with the click it sits beside.
+ */
+class KeybindModuleSetting(
+	id: String,
+	label: String,
+	val description: String = "",
+	visibleIf: () -> Boolean = { true },
+): ModuleSetting(id, label, visibleIf) {
+	/** A GLFW key code, or [UNBOUND]. Stable across launches, so it is what is saved. */
+	var keyCode: Int = UNBOUND
+
+	val bound: Boolean get() = keyCode != UNBOUND
+
+	/** The key the way a module's own badge names it: "R", "LEFT.SHIFT", "None". */
+	val keyName: String
+		get() = if (!bound) "None" else InputConstants.Type.KEYSYM.getOrCreate(keyCode).name
+			.removePrefix("key.keyboard.")
+			.uppercase()
+
+	fun matches(key: Int): Boolean = bound && key == keyCode
+
+	fun reset() { keyCode = UNBOUND }
+
+	companion object {
+		const val UNBOUND = -1
+	}
+}
+
 class DropdownModuleSetting(
 	id: String,
 	label: String,
@@ -463,6 +499,14 @@ class SectionModuleSetting(
 	id: String,
 	label: String,
 	visibleIf: () -> Boolean = { true },
+	/**
+	 * Whether the group starts folded away.
+	 *
+	 * For the long tail of a card: a dozen colour swatches that most people set
+	 * once are worth having, and worth having out of the way until they are
+	 * wanted.
+	 */
+	val startsCollapsed: Boolean = false,
 ): ModuleSetting(id, label, visibleIf)
 
 /**
@@ -492,10 +536,13 @@ object ModuleRegistry {
 		imicro.cryptic.feature.BreakerHelper.module,
 		imicro.cryptic.feature.NoDebuff.module,
 		imicro.cryptic.feature.HiddenMobs.module,
+		imicro.cryptic.feature.InvincibilityTimer.module,
+		imicro.cryptic.feature.SpiritLeapOverlay.module,
 		imicro.cryptic.feature.RoomAlerts.module,
 		imicro.cryptic.feature.LeapMessage.module,
 		imicro.cryptic.feature.Etherwarp.module,
-		imicro.cryptic.feature.WitherOutline.module,
+		imicro.cryptic.feature.F7Qol.module,
+		imicro.cryptic.feature.TerracottaTimer.module,
 		imicro.cryptic.feature.Highlight.module,
 		imicro.cryptic.feature.Secrets.module,
 		imicro.cryptic.feature.RenderOptimizer.module,
@@ -514,6 +561,16 @@ object ModuleRegistry {
 		imicro.cryptic.feature.ArrowHitboxes.module,
 		imicro.cryptic.feature.CustomScale.module,
 		imicro.cryptic.feature.LagDetector.module,
+		imicro.cryptic.feature.PartyFeatures.module,
+		imicro.cryptic.feature.AutoGfs.module,
+		imicro.cryptic.feature.AutoRequeue.module,
+		imicro.cryptic.feature.SpringBootsHelper.module,
+		imicro.cryptic.feature.PerformanceHud.module,
+		imicro.cryptic.feature.DarkMode.module,
+		imicro.cryptic.feature.BlessingDisplay.module,
+		imicro.cryptic.feature.PuzzleHud.module,
+		imicro.cryptic.feature.DungeonWarpCooldown.module,
+		imicro.cryptic.feature.ILoveGlass.module,
 		imicro.cryptic.feature.CookieReminder.module,
 		imicro.cryptic.feature.SmartTickTimer.module,
 		imicro.cryptic.feature.ArrowFix.module,
@@ -524,13 +581,17 @@ object ModuleRegistry {
 		imicro.cryptic.feature.SbKick.module,
 		imicro.cryptic.feature.TimeChanger.module,
 		imicro.cryptic.feature.LavaToWater.module,
-		imicro.cryptic.feature.DoorFix.module,
 		imicro.cryptic.feature.CarryManager.module,
 		imicro.cryptic.feature.ScrollableTooltips.module,
+		imicro.cryptic.feature.GyroHelper.module,
+		imicro.cryptic.feature.BloodCamp.module,
+		imicro.cryptic.feature.PuzzleSolver.module,
+		imicro.cryptic.feature.MageBeam.module,
 		imicro.cryptic.feature.CrosshairEditor.module,
 		imicro.cryptic.feature.SlotBinds.module,
 		imicro.cryptic.feature.NucleusQol.module,
 		imicro.cryptic.feature.Toasts.module,
+		imicro.cryptic.feature.ExampleModule.module,
 		imicro.cryptic.feature.ClickGui.module,
 	)
 

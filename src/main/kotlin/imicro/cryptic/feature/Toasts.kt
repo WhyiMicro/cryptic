@@ -10,7 +10,9 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.screens.inventory.ContainerScreen
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
  * Cryptic's own notifications: a pill in a corner saying what just happened.
@@ -42,6 +44,18 @@ object Toasts {
 
 	/** The pill's own padding, the badge's, and the gap between the two. */
 	private const val PADDING = 9f
+
+	/**
+	 * The inset at the pill's right-hand end, where the message ends.
+	 *
+	 * Larger than [PADDING] because what is inset there is flat text against a
+	 * half-circle, while what is inset on the left is the badge, which is a
+	 * rounded pill of its own and nests inside the curve at a smaller gap. Nine
+	 * pixels measured from the bounding box is nine pixels from a corner the
+	 * pill does not have, which is how the last letter ended up sitting in the
+	 * curve rather than inside it.
+	 */
+	private const val END_PADDING = 16f
 	private const val BADGE_PADDING = 9f
 	private const val GAP = 8f
 
@@ -175,14 +189,48 @@ object Toasts {
 		),
 	)
 
-	/** One notification, and when it went up. */
+	/**
+	 * One notification, and when it went up.
+	 *
+	 * [text] is asked every frame rather than fixed, so a notification that is
+	 * waiting on something can say how long it has left. [keys] is what makes
+	 * one a question: a key to an answer, tried while it is on screen.
+	 *
+	 * The four numbers at the bottom are where it was last drawn, in ImGui's
+	 * pixels, which is how a click finds the one it landed on.
+	 */
 	private class Toast(
 		val source: String,
-		val message: String,
+		val text: (secondsLeft: Int) -> String,
 		val error: Boolean,
 		val startedAt: Long,
-		val life: Double,
-	)
+		var life: Double,
+		val id: String? = null,
+		val keys: Map<Int, () -> Unit> = emptyMap(),
+	) {
+		var left = 0f
+		var top = 0f
+		var right = 0f
+		var bottom = 0f
+
+		/**
+		 * Set once it has been answered or waved away. It is still on screen for
+		 * the moment it takes to fade, and a second press of the key in that
+		 * moment must not answer it a second time.
+		 */
+		var done = false
+			private set
+
+		fun secondsLeft(now: Long): Int =
+			(life - (now - startedAt) / 1_000_000_000.0).coerceAtLeast(0.0).let { kotlin.math.ceil(it).toInt() }
+
+		/** Ends it now, fading out the way one that ran out of time does. */
+		fun dismiss(now: Long) {
+			done = true
+			val elapsed = (now - startedAt) / 1_000_000_000.0
+			life = minOf(life, elapsed + FADE_SECONDS)
+		}
+	}
 
 	private val shown = ArrayDeque<Toast>()
 
@@ -198,8 +246,104 @@ object Toasts {
 	 */
 	fun show(source: String, message: String, error: Boolean = false, life: Double = seconds.value) {
 		if (!module.enabled) return
-		shown.addLast(Toast(source, message, error, System.nanoTime(), life))
-		while (shown.size > MAX_SHOWN) shown.removeFirst()
+		add(Toast(source, { message }, error, System.nanoTime(), life))
+	}
+
+	/**
+	 * Raises a notification that asks something, and waits for a key.
+	 *
+	 * [keys] maps a GLFW key to what pressing it does; whichever is pressed
+	 * first answers the question and takes the notification down. [id] names it,
+	 * so the module that raised it can take it down itself when the question
+	 * stops being worth asking — and so asking the same thing twice replaces the
+	 * first rather than stacking under it.
+	 */
+	fun ask(
+		source: String,
+		id: String,
+		life: Double,
+		keys: Map<Int, () -> Unit>,
+		text: (secondsLeft: Int) -> String,
+	) {
+		if (!module.enabled) return
+		shown.removeAll { it.id == id }
+		add(Toast(source, text, false, System.nanoTime(), life, id, keys))
+	}
+
+	private fun add(toast: Toast) {
+		shown.addLast(toast)
+		// The oldest goes first, but a question outlives an announcement: four
+		// things being said in a row should not take a party invite down with
+		// them.
+		while (shown.size > MAX_SHOWN) {
+			val victim = shown.firstOrNull { it.keys.isEmpty() && it !== toast } ?: shown.first()
+			shown.remove(victim)
+		}
+	}
+
+	/** Takes down the notification raised under [id], if it is still up. */
+	fun dismiss(id: String) {
+		val now = System.nanoTime()
+		shown.forEach { if (it.id == id) it.dismiss(now) }
+	}
+
+	/**
+	 * A key going down, offered to whichever question is on screen.
+	 *
+	 * The newest first, so that two invites answer in the order a person would
+	 * read them. True when a question took the key, which keeps it from also
+	 * doing whatever it is bound to.
+	 */
+	fun handleKey(key: Int): Boolean {
+		if (!module.enabled) return false
+		val now = System.nanoTime()
+		val toast = shown.lastOrNull { key in it.keys && !it.done } ?: return false
+		toast.dismiss(now)
+		toast.keys.getValue(key).invoke()
+		return true
+	}
+
+	/**
+	 * A click, in window pixels. A notification under it goes away.
+	 *
+	 * Only while the cursor is free — with a screen open — because there is no
+	 * cursor to click with otherwise. True when one was hit, so the click does
+	 * not also land on whatever the notification was covering.
+	 */
+	fun handleClick(x: Double, y: Double): Boolean {
+		if (!module.enabled) return false
+		val now = System.nanoTime()
+		val toast = shown.lastOrNull {
+			x >= it.left && x <= it.right && y >= it.top && y <= it.bottom && !it.done
+		} ?: return false
+		toast.dismiss(now)
+		return true
+	}
+
+	/**
+	 * A key going down anywhere in the game, from the keyboard itself.
+	 *
+	 * Only answered where a letter cannot be something being typed: out in the
+	 * world, or in a chest, which has no text box. A Y in the middle of a chat
+	 * message must never accept a party invite.
+	 */
+	@JvmStatic
+	fun onKeyPressed(key: Int): Boolean {
+		if (shown.none { it.keys.isNotEmpty() && !it.done }) return false
+		val screen = Minecraft.getInstance().gui.screen()
+		if (screen != null && screen !is ContainerScreen) return false
+		return handleKey(key)
+	}
+
+	/** The left button going down, wherever the cursor is. See [handleClick]. */
+	@JvmStatic
+	fun onMousePressed(): Boolean {
+		if (shown.isEmpty()) return false
+		val mouse = Minecraft.getInstance().mouseHandler
+		// A grabbed cursor is the crosshair, which is not pointing at anything
+		// on the screen.
+		if (mouse.isMouseGrabbed) return false
+		return handleClick(mouse.xpos(), mouse.ypos())
 	}
 
 	/**
@@ -272,7 +416,8 @@ object Toasts {
 		val gap = GAP * factor
 
 		val sourceWidth = ImGuiRuntime.textWidth(toast.source, sourceSize)
-		val messageWidth = ImGuiRuntime.textWidth(toast.message, messageSize)
+		val message = toast.text(toast.secondsLeft(now))
+		val messageWidth = ImGuiRuntime.textWidth(message, messageSize)
 		val textHeight = ImGuiRuntime.textHeight(toast.source, sourceSize)
 
 		val badgeWidth = sourceWidth + badgePadding * 2
@@ -280,7 +425,15 @@ object Toasts {
 		// The badge is inset from the top and bottom by the same padding it is
 		// inset from the left, which is what makes it sit square in the pill.
 		val height = badgeHeight + padding * 2
-		val width = padding + badgeWidth + gap + messageWidth + padding
+
+		// Plus however far the end cap has curved back in by the time it reaches
+		// the top and bottom of the text, which is the part a flat inset misses.
+		val radius = height / 2f
+		val halfText = textHeight / 2f
+		val capInset = radius - sqrt((radius * radius - halfText * halfText).coerceAtLeast(0f))
+		val endPadding = END_PADDING * factor + capInset
+
+		val width = padding + badgeWidth + gap + messageWidth + endPadding
 
 		// In and out at the ends of its life, and a nudge in from its own edge so
 		// it arrives rather than appearing.
@@ -292,6 +445,12 @@ object Toasts {
 		val margin = MARGIN * factor
 		val x = if (left) margin - slide else screenWidth - margin - width + slide
 		val y = if (top) margin + offset else screenHeight - margin - height - offset
+
+		// Where it is, for the click that wants it gone.
+		toast.left = x
+		toast.top = y
+		toast.right = x + width
+		toast.bottom = y + height
 
 		val list = ImGui.getForegroundDrawList()
 
@@ -325,7 +484,7 @@ object Toasts {
 			badgeX + badgeWidth + gap,
 			textY,
 			abgr(if (toast.error) errorColor.argb else messageColor.argb, opacity),
-			toast.message,
+			message,
 		)
 
 		return height

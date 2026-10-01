@@ -64,14 +64,15 @@ object DungeonScore {
 		description = "Paul's EZPZ perk is worth ten bonus score. Auto asks Hypixel who won.",
 	)
 
+
 	private val bossSection = SectionModuleSetting("boss_section", "In boss")
 
 	@JvmField
 	val showInBoss = ToggleModuleSetting(
 		id = "show_in_boss",
-		label = "Show in boss",
+		label = "Show score in boss",
 		defaultValue = true,
-		description = "The map goes away in the boss room; this decides whether the score follows it.",
+		description = "The map is not drawn in the boss room. This keeps the score line up there on its own.",
 	)
 
 	@JvmField
@@ -86,9 +87,9 @@ object DungeonScore {
 	@JvmField
 	val showAtEnd = ToggleModuleSetting(
 		id = "show_at_end",
-		label = "Keep after the run",
+		label = "Show final rating",
 		defaultValue = true,
-		description = "Leaves the score up once the run has ended.",
+		description = "Once the run is over, draws Hypixel's own score screen — the grade and the final number — where the map was.",
 	)
 
 	@JvmField
@@ -229,6 +230,13 @@ object DungeonScore {
 	private var sent270 = false
 	private var sent300 = false
 
+	/**
+	 * Whether the 300 title has been shown, kept apart from [sent300] because a
+	 * teammate's mod can say so first — and when it does, the title is worth
+	 * having then rather than a moment later when this run's own sum agrees.
+	 */
+	private var shown300Title = false
+
 	val element: HudElement = ScoreElement()
 
 	fun initialize() {
@@ -243,6 +251,21 @@ object DungeonScore {
 	private fun resetRun() {
 		sent270 = false
 		sent300 = false
+		shown300Title = false
+	}
+
+	/**
+	 * A teammate's mod saying the run has reached 300.
+	 *
+	 * Their sum can land a moment before this one — a secret they found shows in
+	 * their tab list first — so the title goes up now. This run's own party
+	 * message still waits for this run's own sum, so it never claims a number it
+	 * has not seen.
+	 */
+	fun onTeammateReached300() {
+		if (!RoomAlerts.module.enabled || !DungeonLocation.inDungeon || shown300Title) return
+		shown300Title = true
+		if (title300.value) showTitle(Minecraft.getInstance(), "§a300")
 	}
 
 	/**
@@ -265,7 +288,10 @@ object DungeonScore {
 		if (!sent300 && score >= 300) {
 			sent300 = true
 			if (announce300.value) announce(client, scoreWording(300))
-			if (title300.value) showTitle(client, "§a300")
+			if (!shown300Title) {
+				shown300Title = true
+				if (title300.value) showTitle(client, "§a300")
+			}
 		}
 	}
 
@@ -304,8 +330,8 @@ object DungeonScore {
 	}
 
 	/**
-	 * And for a bat, every time — the count is what matters here rather than
-	 * the kill, and only the first five are worth a point.
+	 * And for the run's first bat, which is its one bonus point. Later bats are
+	 * worth nothing, so nothing is said about them.
 	 */
 	fun onBatKilled() {
 		if (!RoomAlerts.module.enabled || !announceBat.value) return
@@ -361,13 +387,6 @@ object DungeonScore {
 
 	/** True while the boss has made the second line's numbers final. */
 	private val minimal: Boolean get() = DungeonRun.inBoss && minimalInBoss.value
-
-	/**
-	 * True while the map should draw the boss room from above instead of the
-	 * floor it can no longer show.
-	 */
-	val showsBossView: Boolean
-		get() = DungeonRun.inBoss && showInBoss.value && !minimalInBoss.value
 
 	/** How much taller the map element is because the score sits under it. */
 	fun attachedHeight(): Int =
@@ -425,13 +444,18 @@ object DungeonScore {
 	 * The bonus points still on the table, and nothing else.
 	 *
 	 * Everything already earned is in the score above, so the second line only
-	 * lists what is missing: deaths taken, the mimic and prince not yet killed,
-	 * bats short of five, and crypts short of five.
+	 * lists what is missing: deaths taken, the mimic and the prince not yet
+	 * killed, and crypts short of five.
 	 *
-	 * The mimic and the prince leave the line entirely once they are dead rather
-	 * than staying on as a green tick. A tick is a thing to read and then decide
-	 * is not a problem; an absence is nothing to read at all, and this line is
-	 * looked at mid-run to answer "what is left".
+	 * Each one leaves the line entirely once done rather than staying on as a
+	 * green tick. A tick is a thing to read and then decide is not a problem; an
+	 * absence is nothing to read at all, and this line is looked at mid-run to
+	 * answer "what is left".
+	 *
+	 * The bat is not listed. Killing one is a secret like any other, and is
+	 * counted as one; the bonus point Hypixel also gives for it is still in the
+	 * score, but a line of its own for it was one more thing to read that the
+	 * secrets count already covers.
 	 */
 	private fun bonusLine(): String = buildString {
 		// Deaths are a penalty rather than a task, so nothing is owed at zero
@@ -439,19 +463,17 @@ object DungeonScore {
 		if (DungeonStats.deaths > 0) append("§7D: §c${DungeonStats.deaths}   ")
 		if (DungeonLocation.floor >= 6 && !DungeonStats.mimicKilled) append("§7M: §c✖   ")
 		if (princePossible() && !DungeonStats.princeKilled) append("§7P: §c✖   ")
-		append("§7B: ${count(DungeonStats.batCount, 5)}   ")
-		append("${count(DungeonStats.crypts, 5)}§7/§a5")
+		if (DungeonStats.crypts < MAX_CRYPTS) append("§c${DungeonStats.crypts}§7/§a$MAX_CRYPTS")
 	}.trim()
 
-	/** The same for the two that are counted rather than simply done. */
-	private fun count(found: Int, needed: Int): String =
-		if (found >= needed) "§a$found" else "§c$found"
+	/** The crypts that count towards the score; any past this are worth nothing. */
+	private const val MAX_CRYPTS = 5
 
 	/** A Prince only spawns in certain rooms, which the world scan can name. */
 	private fun princePossible(): Boolean = DungeonFloor.rooms.any { it.data?.prince == true }
 
 	private const val EXAMPLE_SECRETS = "§b10§7-§e12§7-§c55   §a300"
-	private const val EXAMPLE_BONUS = "§7D: §c1   §7M: §a✔   §7P: §c✖   §7B: §c3   §c0§7/§a5"
+	private const val EXAMPLE_BONUS = "§7D: §c1   §7M: §a✔   §7P: §c✖   §c0§7/§a5"
 
 	private class ScoreElement : HudElement("dungeon_score", "Dungeon Score", 0.02, 0.45, 1.0) {
 		private val font get() = Minecraft.getInstance().font

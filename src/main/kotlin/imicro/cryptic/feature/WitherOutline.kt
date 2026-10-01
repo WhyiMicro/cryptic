@@ -4,8 +4,7 @@ import imicro.cryptic.debug.DebugOverrides
 import imicro.cryptic.dungeon.DungeonBoss
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.gui.ColorModuleSetting
-import imicro.cryptic.gui.Module
-import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.ModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import net.minecraft.client.renderer.entity.state.EntityRenderState
 import net.minecraft.util.ARGB
@@ -34,66 +33,72 @@ object WitherOutline {
 	private const val DECOY_INVULNERABLE_TICKS = 800
 
 	@JvmField
+	val enabled = ToggleModuleSetting(
+		id = "wither_outline",
+		label = "Wither outline",
+		defaultValue = false,
+		description = "Outlines Maxor, Storm, Goldor and Necron.",
+	)
+
+	@JvmField
 	val perBossColors = ToggleModuleSetting(
-		id = "per_boss_colors",
+		id = "wither_per_boss_colors",
 		label = "Per-boss colors",
 		defaultValue = false,
 		description = "Colors each wither of the fight separately instead of all of them alike.",
+		visibleIf = { enabled.value },
 	)
 
 	@JvmField
 	val color = ColorModuleSetting(
-		id = "color",
+		id = "wither_color",
 		label = "Outline",
 		defaultRgb = 0xFFFFFF,
-		visibleIf = { !perBossColors.value },
+		visibleIf = { enabled.value && !perBossColors.value },
 	)
 
 	@JvmField
 	val maxorColor = ColorModuleSetting(
-		id = "maxor_color",
+		id = "wither_maxor_color",
 		label = "Maxor",
 		defaultRgb = 0x5804A4,
-		visibleIf = { perBossColors.value },
+		visibleIf = { enabled.value && perBossColors.value },
 	)
 
 	@JvmField
 	val stormColor = ColorModuleSetting(
-		id = "storm_color",
+		id = "wither_storm_color",
 		label = "Storm",
 		defaultRgb = 0x00D0FF,
-		visibleIf = { perBossColors.value },
+		visibleIf = { enabled.value && perBossColors.value },
 	)
 
 	@JvmField
 	val goldorColor = ColorModuleSetting(
-		id = "goldor_color",
+		id = "wither_goldor_color",
 		label = "Goldor",
 		defaultRgb = 0xFFFFFF,
-		visibleIf = { perBossColors.value },
+		visibleIf = { enabled.value && perBossColors.value },
 	)
 
 	@JvmField
 	val necronColor = ColorModuleSetting(
-		id = "necron_color",
+		id = "wither_necron_color",
 		label = "Necron",
 		defaultRgb = 0xFF0000,
-		visibleIf = { perBossColors.value },
+		visibleIf = { enabled.value && perBossColors.value },
 	)
 
-	@JvmField
-	val module = Module(
-		id = "wither_outline",
-		name = "Wither Outline",
-		description = "Outlines the F7 withers",
-		category = ModuleCategory.FLOOR_7,
-		hasDemoSettings = false,
-		supportsKeybind = false,
-		settings = listOf(perBossColors, color, maxorColor, stormColor, goldorColor, necronColor),
+	/** Listed on the F7/M7 QOL card. */
+	val settings: List<ModuleSetting> = listOf(
+		enabled, perBossColors, color, maxorColor, stormColor, goldorColor, necronColor,
 	)
+
+	/** True while the withers are to be outlined. */
+	val active: Boolean get() = F7Qol.module.enabled && enabled.value
 
 	/** True while the boss bar has to be read to know which colour to use. */
-	val needsBossTracking: Boolean get() = module.enabled && perBossColors.value
+	val needsBossTracking: Boolean get() = active && perBossColors.value
 
 	/**
 	 * The colour to outline [entity] with, or [EntityRenderState.NO_OUTLINE] to
@@ -106,7 +111,7 @@ object WitherOutline {
 	 */
 	@JvmStatic
 	fun outlineColorFor(entity: Entity): Int {
-		if (!module.enabled || entity !is WitherBoss) return EntityRenderState.NO_OUTLINE
+		if (!active || entity !is WitherBoss) return EntityRenderState.NO_OUTLINE
 		if (!DungeonLocation.inFloor7 && !DebugOverrides.outlineEveryWither) return EntityRenderState.NO_OUTLINE
 		if (entity.isInvisible || entity.invulnerableTicks == DECOY_INVULNERABLE_TICKS) {
 			return EntityRenderState.NO_OUTLINE

@@ -8,6 +8,7 @@ import imicro.cryptic.gui.ModuleRegistry
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
+import imicro.cryptic.gui.KeybindModuleSetting
 import imicro.cryptic.gui.RangeModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.SlotMapModuleSetting
@@ -319,6 +320,7 @@ object ConfigManager {
                     is ColorModuleSetting -> hash.mix(setting.argb.toLong())
                     is DropdownModuleSetting -> hash.mix(setting.selectedIndex.toLong())
                     is TextModuleSetting -> hash.mix(setting.value.hashCode().toLong())
+                    is KeybindModuleSetting -> hash.mix(setting.keyCode.toLong())
                     is SlotMapModuleSetting -> hash.mix(setting.encode().hashCode().toLong())
                     else -> hash
                 }
@@ -424,6 +426,7 @@ object ConfigManager {
                         is ColorModuleSetting -> settings.addProperty(setting.id, setting.hex)
                         is DropdownModuleSetting -> settings.addProperty(setting.id, setting.selected)
                         is TextModuleSetting -> settings.addProperty(setting.id, setting.value)
+                        is KeybindModuleSetting -> settings.addProperty(setting.id, setting.keyCode)
                         is SlotMapModuleSetting -> settings.addProperty(setting.id, setting.encode())
                         else -> Unit
                     }
@@ -443,6 +446,7 @@ object ConfigManager {
         }
 
         val modules = root.objectOrNull("modules") ?: return
+        mergeRetiredModules(modules)
         ModuleRegistry.byId.forEach { (id, module) ->
             val value = modules.objectOrNull(id) ?: return@forEach
             if (module.supportsToggle) value.boolean("enabled")?.let { module.enabled = it }
@@ -480,11 +484,65 @@ object ConfigManager {
                         is ColorModuleSetting -> settings.string(setting.id)?.let(setting::setHex)
                         is DropdownModuleSetting -> settings.string(setting.id)?.let(setting::select)
                         is TextModuleSetting -> settings.string(setting.id)?.let { setting.value = it }
+                        is KeybindModuleSetting -> settings.int(setting.id)?.let { setting.keyCode = it }
                         is SlotMapModuleSetting -> settings.string(setting.id)?.let(setting::decode)
                         else -> Unit
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * A module that became part of another: its card's on switch becomes the
+     * [enabledAs] switch on the new card, and each of its settings the same
+     * setting under [prefix]. [dropped] are settings the new card no longer has.
+     */
+    private class RetiredModule(
+        val id: String,
+        val enabledAs: String,
+        val prefix: String,
+        val dropped: Set<String> = emptySet(),
+    )
+
+    /** Keyed by the card they were folded into. */
+    private val RETIRED_MODULES = mapOf(
+        "f7_qol" to listOf(
+            RetiredModule("door_fix", enabledAs = "door_fix", prefix = "door_"),
+            RetiredModule("gate_highlight", enabledAs = "gate_highlight", prefix = "gate_", dropped = setOf("phase")),
+            RetiredModule("wither_outline", enabledAs = "wither_outline", prefix = "wither_"),
+        ),
+    )
+
+    /**
+     * Carries a profile written before modules were merged over to the merged
+     * card, so a switch that was on stays on.
+     *
+     * Only when the profile has nothing for the new card yet: once it has been
+     * saved with one, that is the answer, and the old entries — which the next
+     * save drops — say nothing new.
+     */
+    private fun mergeRetiredModules(modules: JsonObject) {
+        RETIRED_MODULES.forEach { (target, retired) ->
+            if (modules.has(target)) return@forEach
+            val present = retired.filter { modules.has(it.id) }
+            if (present.isEmpty()) return@forEach
+
+            val settings = JsonObject()
+            var anyEnabled = false
+            present.forEach { old ->
+                val entry = modules.objectOrNull(old.id) ?: return@forEach
+                val enabled = entry.boolean("enabled") ?: false
+                anyEnabled = anyEnabled || enabled
+                settings.addProperty(old.enabledAs, enabled)
+                entry.objectOrNull("settings")?.entrySet()?.forEach { (key, value) ->
+                    if (key !in old.dropped) settings.add(old.prefix + key, value)
+                }
+            }
+            modules.add(target, JsonObject().also {
+                it.addProperty("enabled", anyEnabled)
+                it.add("settings", settings)
+            })
         }
     }
 

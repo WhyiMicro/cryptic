@@ -26,6 +26,9 @@ object DungeonRun {
 	)
 
 	/** The centred banner Hypixel prints once a run is over, one per floor. */
+	/** Hypixel's colour codes, written into a line's text rather than its style. */
+	private val FORMATTING = Regex("§.")
+
 	private val endPattern = Regex("""^\s+(?:Master Mode )?The Catacombs - (?:Entrance|Floor [IVX]+)$""")
 
 	/** True once Mort has handed over the map, which is the run starting. */
@@ -60,7 +63,11 @@ object DungeonRun {
 		if (initialized) return
 		initialized = true
 
-		ClientReceiveMessageEvents.GAME.register { message, _ -> onMessage(message.string) }
+		// Plain text from here on. Hypixel writes colour codes into some lines —
+		// party chat above all, "§9Party §8> ..." — and every pattern the run
+		// and the score match against is written without them, so a teammate's
+		// "Mimic Killed!" in party chat was never once heard.
+		ClientReceiveMessageEvents.GAME.register { message, _ -> onMessage(message.string.replace(FORMATTING, "")) }
 		// Hypixel moves you between servers for every floor, so the run state
 		// from the last one must not survive into the next.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> reset() }

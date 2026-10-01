@@ -4,8 +4,11 @@ import imicro.cryptic.feature.CameraTweaks;
 import imicro.cryptic.feature.EtherwarpZeroPing;
 import imicro.cryptic.feature.Zoom;
 import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
@@ -24,6 +27,9 @@ import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
  */
 @Mixin(Camera.class)
 public abstract class CameraMixin {
+    @Shadow private float eyeHeight;
+    @Shadow private float eyeHeightOld;
+
     @Inject(method = "calculateFov", at = @At("RETURN"), cancellable = true)
     private void cryptic$zoomView(float partialTicks, CallbackInfoReturnable<Float> cir) {
         // The custom angle is applied as a ratio on whatever the game arrived
@@ -80,7 +86,14 @@ public abstract class CameraMixin {
         at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setPosition(DDD)V")
     )
     private void cryptic$fakeZpewCamera(Args args) {
-        Vec3 destination = EtherwarpZeroPing.cameraPosition();
+        // The camera's own eye height, not the player's: this one is eased
+        // between two ticks, which is what makes crouching a slide rather than
+        // a jump. Reading the player's instead left the camera at standing
+        // height the whole time you were sneaking.
+        float partialTick = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
+        float eye = Mth.lerp(partialTick, this.eyeHeightOld, this.eyeHeight);
+
+        Vec3 destination = EtherwarpZeroPing.cameraPosition(eye);
         if (destination == null) return;
         args.set(0, destination.x);
         args.set(1, destination.y);

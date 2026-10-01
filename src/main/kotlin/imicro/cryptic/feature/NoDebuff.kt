@@ -1,6 +1,5 @@
 package imicro.cryptic.feature
 
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.ToggleModuleSetting
@@ -36,10 +35,6 @@ object NoDebuff {
 
 	private val configurableSettings = listOf(blindness, nausea)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurableSettings.forEach { if (it is ToggleModuleSetting) it.reset() }
-	})
-
 	@JvmField
 	val module = Module(
 		id = "no_debuff",
@@ -48,7 +43,7 @@ object NoDebuff {
 		category = ModuleCategory.VISUAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = configurableSettings + reset,
+		settings = configurableSettings,
 	)
 
 	/**

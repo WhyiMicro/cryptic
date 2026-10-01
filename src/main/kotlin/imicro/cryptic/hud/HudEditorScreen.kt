@@ -19,8 +19,21 @@ import net.minecraft.network.chat.Component
  */
 class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.literal("Cryptic HUD")) {
 	private var dragged: HudElement? = null
+
+	/**
+	 * The element the arrow keys move.
+	 *
+	 * Set by clicking one and kept after the mouse is let go, because nudging
+	 * something into line means letting go of it first: the point of the keys
+	 * is the pixel a drag cannot hit.
+	 */
+	private var selected: HudElement? = null
 	private var grabX = 0.0
 	private var grabY = 0.0
+
+	/** Where the cursor was when the screen was last drawn. */
+	private var lastMouseX = 0.0
+	private var lastMouseY = 0.0
 
 	/** Which arms of the centre cross are currently holding the dragged element. */
 	private var snappedX = false
@@ -40,6 +53,8 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	override fun isPauseScreen(): Boolean = false
 
 	override fun extractRenderState(context: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+		lastMouseX = mouseX.toDouble()
+		lastMouseY = mouseY.toDouble()
 		context.fill(0, 0, width, height, BACKDROP)
 
 		if (dragged != null) drawCentreCross(context)
@@ -65,6 +80,7 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 			val hit = topmostAt(event.x(), event.y())
 			if (hit != null) {
 				dragged = hit
+				selected = hit
 				grabX = event.x() - hit.x * width
 				grabY = event.y() - hit.y * height
 				return true
@@ -162,9 +178,29 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	override fun keyPressed(event: KeyEvent): Boolean {
 		if (event.key() == InputConstants.KEY_R) {
 			Hud.elements.forEach(HudElement::reset)
+			selected = null
 			return true
 		}
-		return super.keyPressed(event)
+
+		// A pixel at a time, or five with shift held. Placements are fractions
+		// of the screen, so a step is divided by the screen rather than added.
+		val step = if (event.hasShiftDown()) FAST_NUDGE else 1
+		val nudge = when (event.key()) {
+			InputConstants.KEY_LEFT -> -step to 0
+			InputConstants.KEY_RIGHT -> step to 0
+			InputConstants.KEY_UP -> 0 to -step
+			InputConstants.KEY_DOWN -> 0 to step
+			else -> return super.keyPressed(event)
+		}
+
+		// Whatever is under the cursor first, so a nudge can be aimed without
+		// clicking — which would pick the element up and move it on the way.
+		val element = topmostAt(lastMouseX, lastMouseY) ?: selected ?: return true
+		selected = element
+		element.x += nudge.first.toDouble() / width
+		element.y += nudge.second.toDouble() / height
+		element.clampTo(width, height)
+		return true
 	}
 
 	/**
@@ -206,11 +242,14 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	}
 
 	private companion object {
-		const val HINT = "Drag to move  •  Scroll to resize  •  Right-click to reset one  •  R resets all"
+		const val HINT = "Drag to move  •  Arrows nudge  •  Scroll to resize  •  Right-click resets one  •  R resets all"
 		const val BACKDROP = 0xA0101010.toInt()
 
 		/** How near the middle an element has to be dragged before it is taken. */
 		const val SNAP_DISTANCE = 6
+
+		/** How far one arrow key moves an element with shift held. */
+		const val FAST_NUDGE = 5
 
 		/** The cross's reach when it is only offering, in GUI pixels. */
 		const val CROSS_ARM = 34

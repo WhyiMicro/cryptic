@@ -36,46 +36,80 @@ Several features are ported from other mods, whose licences travel with them:
   (BSD 3-Clause).
 - **[Odin](https://github.com/odtheking/Odin)** (BSD 3-Clause) — the terminal
   solver, Terminal Times and the terminal simulator: the solving rules for all
-  six Floor 7 terminals, all three render types, the client prediction and its
+  six Floor 7 terminals, the custom terminal GUI, the client prediction and its
   resolve timeout, the first-click protection, and the client-side terminals the
   simulator plays. Also the Simon Says device solver,
   Slot Binds, the Smart Tick Timer, SkyBlock and island detection, the
-  starred-mob half of Highlight and part of Render Optimizer.
+  starred-mob half of Highlight and part of Render Optimizer. Also the Puzzle
+  Solver's eight puzzles and the answer files they read, the Invincibility
+  Timer and its HUD, the cooldown colouring in Gyro Helper, and the shape of
+  Mage Beam — the run of particles read as one line between its two ends. The Spirit
+  Leap Overlay's menu and its sortings. The Performance HUD and its settings, the
+  Terracotta Timer, the Blessing Display, the Spring Boots Helper's table of
+  heights, and the party chat commands in Party Features. F7/M7 QOL's Section
+  Complete title, which waits for the gate the way its Inactive Waypoints tells
+  one section from the next; and the Melody HUD's live view, which joins Odin's
+  own relay through a port of its websocket connection and speaks its messages.
+  Auto Requeue's cue, the end-of-run line, and calling it off when somebody
+  leaves the party, from its Dungeon Queue.
   Licence in [`licenses/Odin-LICENSE.txt`](licenses/Odin-LICENSE.txt).
+- **[Blade Addons](https://github.com/BladeMasterGabe/blade-addons)** (CC0) — the
+  secret spawn timer, the leap count in the Spirit Leap Overlay, and the height
+  Class Colors' name labels are drawn at.
 - **[NoammAddons](https://github.com/Noamm9/NoammAddons)** (CC0) — door-key
   highlighting, room alerts, the map's room styles, Breaker Helper, hidden mobs,
   showing your own nametag, most of Render Optimizer, the Arrow Align and Sharp Shooter device
-  solvers, the terminal ESP, the Secrets module — its hitboxes, its auto-close
-  and its clicked-secret marker — and nine smaller ones: Arrow Fix, Arrow Hit
+  solvers, the terminal ESP and its flash on click, the Secrets module — its hitboxes, its auto-close
+  and its clicked-secret marker — and ten smaller ones: Arrow Fix, Arrow Hit
   Sound, Block Overlay, Camera, No Item Place, SB Kick, Time Changer, Lava to
-  Water and the Floor 7 Door Fix.
+  Water, and the Floor 7 Door Fix and Gate Highlight in F7/M7 QOL, with its Better P3
+  titles, which are its F7 Titles' terminal titles. Blood Camp, which times the Watcher and where
+  each of his mobs will stop, the Gyro Helper, and Mage Beam's hidden sheep and
+  its fade. The list of ways the party's mods word a mimic, prince or bat kill,
+  and the charm message that means a mimic died. Dark Mode, Scrollable
+  Tooltips, the Melody HUD in the Terminal Solver, and the same Terracotta
+  Timer, Blessing Display, Spring Boots Helper and party commands Odin has. The
+  Example Module is its Comp Test in idea. I love glass, which is its I Hate
+  Doors and I Hate Diorite on one card; the three teleports Etherwarp's fake
+  zpew and no rotate cover, with its Instant Transmission prediction; and
+  sending melody progress to the party. Auto GFS, and Auto Requeue with its
+  Check Party.
 - **[Athen](https://github.com/skies-starred/Athen)** (BSD 3-Clause,
   Copyright (c) 2025-2026 Starred) — the Lag Detector's format, Arrow Hitboxes,
   Custom Scale including its chibi styles, and the Carry Manager: the shape of a
   carry tracker, and the armour stands a slayer boss carries its owner and tier
   on. Licence in [`licenses/Athen-LICENSE.txt`](licenses/Athen-LICENSE.txt).
-- **[Devonian](https://github.com/Synnerz/Devonian)** — door highlighting,
-  including its rule for deciding a doorway leads nowhere worth going, and
-  colouring the blood portal by the score you are on.
+- **[Devonian](https://github.com/Synnerz/Devonian)** (GPL-3.0) — door
+  highlighting, including its rule for deciding a doorway leads nowhere worth
+  going, colouring the blood portal by the score you are on, the Puzzle HUD,
+  the Dungeon Warp Cooldown, and hiding every sheep in a dungeon for Mage Beam
+  rather than only the one at your feet. Licence in
+  [`licenses/Devonian-LICENSE.txt`](licenses/Devonian-LICENSE.txt).
 - **[Astrail Experiment](https://github.com/AzureSky0116/astrail-experiment)**
   (MIT) — the Experimentation Table rules: the control pane read by its item
   rather than its name, Chronomatron gaining one note a round, and
   Ultrasequencer ordered by stack size. Licence in
   [`licenses/astrail-experiment-LICENSE.txt`](licenses/astrail-experiment-LICENSE.txt).
+- **[Skyblocker](https://github.com/SkyblockerMod/Skyblocker)** (LGPL-3.0) — the
+  two puzzles Odin does not solve, Tic Tac Toe and the silverfish's Ice Path,
+  and the Water Board's two previews: where the water will run, and what a lever
+  would move. Also the Water Board's reset — the table of where every gate
+  starts on each of the four boards, and the rule that turns a half-played
+  board back into a list of pulls. Its six Lights On lever positions are facts about the wall they
+  sit on rather than code, and the solver around them is Cryptic's own; the
+  Booster Cookie Reminder reads the pair of tab list rows Skyblocker found the
+  cookie's remaining time on. Licence in
+  [`licenses/Skyblocker-LICENSE.txt`](licenses/Skyblocker-LICENSE.txt).
 - **[NotEnoughUpdates](https://github.com/NotEnoughUpdates/NotEnoughUpdates)**
   (LGPL-3.0) — the Wither Cloak effect. Notices in
   [`src/main/resources/META-INF/notices/`](src/main/resources/META-INF/notices/).
 
-Seven more mods were read rather than ported — no code of theirs is in Cryptic:
-**[Skyblocker](https://github.com/SkyblockerMod/Skyblocker)** (LGPL-3.0), for
-the Lights On device — its six lever positions are facts about the wall they sit
-on rather than code, and the solver around them is Cryptic's own, and for the
-Booster Cookie Reminder — which pair of tab list rows the cookie's remaining
-time is written on;
-**[Stella](https://github.com/Eclipse-5214/stella)** (LGPL-3.0), for Terminal
-Order — likewise only its published terminal numbering and class assignments,
-which are the M7 Guides community's convention and cross-check against
-NoammAddons' own terminal positions;
+Terminal Order's numbering and its class assignments are the M7 Guides
+community's, as published in Stella's terminal data. They are facts about the
+boss room and a party's convention about who goes where, not code or artwork,
+and nothing else of Stella's is in Cryptic.
+
+Five more mods were read rather than ported — no code of theirs is in Cryptic:
 **[Debugify](https://github.com/isXander/Debugify)** (LGPL-3.0), for the
 riding input fix in Camera — MC-206540, whose fix is one paragraph of turning
 the rider with its mount in the same tick;

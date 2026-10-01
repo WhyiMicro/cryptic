@@ -1,5 +1,6 @@
 package imicro.cryptic.terminal
 
+import imicro.cryptic.feature.MelodyHud
 import imicro.cryptic.feature.TerminalSolver
 import net.minecraft.core.component.DataComponents
 import net.minecraft.core.registries.BuiltInRegistries
@@ -66,6 +67,9 @@ class NumbersHandler : TerminalHandler(TerminalType.NUMBERS) {
 		}
 		// The label is the number written on the pane, not how far down the
 		// remaining list it is, so it keeps counting up as the puzzle empties.
+		// Unless the numbers are switched off, which leaves the three colours to
+		// say the order on their own.
+		if (TerminalSolver.hideNumbers.value) return SlotOverlay(color)
 		return SlotOverlay(color, (abs((solution.size - GRID_SLOTS) - position) + 1).toString())
 	}
 
@@ -256,10 +260,19 @@ class SelectAllHandler(color: DyeColor) : TerminalHandler(TerminalType.SELECT) {
  * note's position, and the button itself, but only while the two line up.
  */
 class MelodyHandler : TerminalHandler(TerminalType.MELODY) {
+	init {
+		// A new melody starts its count of rows again.
+		MelodyHud.onTerminalOpened()
+	}
+
 	override fun solve(items: List<ItemStack>, updatedIndex: Int): List<Int> {
 		val magenta = items.indexOfFirst { it.item == Items.STAINED_GLASS_PANE.magenta() }
 		val lime = items.indexOfLast { it.item == Items.STAINED_GLASS_PANE.lime() }
 		val button = items.indexOfLast { it.item == Items.DYED_TERRACOTTA.lime() }
+		// The one lit button is the row being played, which is how far the
+		// melody has got; the party is told as it moves down, and the relay
+		// as the note moves along.
+		MelodyHud.onOwnBoard(magenta, lime, button)
 
 		return buildList {
 			if (lime >= 0) add(lime)
@@ -277,8 +290,13 @@ class MelodyHandler : TerminalHandler(TerminalType.MELODY) {
 	 */
 	override fun canClick(slotIndex: Int, button: Int): Boolean = slotIndex in BUTTON_SLOTS
 
-	/** The note moves whether or not the button was pressed; nothing to guess. */
-	override fun simulateClick(slotIndex: Int, button: Int) = Unit
+	// No simulateClick override, on purpose: the base one takes the pressed
+	// button out of the answer, so with Client prediction on it goes dark the
+	// instant it is pressed rather than a round trip later. This used to opt
+	// out ("the note moves whether or not the button was pressed"), which is
+	// true of the note but not of the button — and the button staying lit for
+	// the length of your ping after you hit it is what made melody feel slower
+	// than Odin's, which never opted out.
 
 	override fun overlay(slotIndex: Int): SlotOverlay? {
 		val row = slotIndex / 9

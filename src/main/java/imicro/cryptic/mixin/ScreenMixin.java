@@ -2,6 +2,7 @@ package imicro.cryptic.mixin;
 
 import imicro.cryptic.feature.ExperimentSolver;
 import imicro.cryptic.feature.SlotBinds;
+import imicro.cryptic.feature.SpiritLeapOverlay;
 import imicro.cryptic.feature.TerminalSolver;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -22,6 +23,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class ScreenMixin {
     @Inject(method = "extractRenderStateWithTooltipAndSubtitles", at = @At("HEAD"), cancellable = true)
     private void cryptic$drawTerminal(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo info) {
+        // The Spirit Leap menu, replaced by its four corners the same way.
+        if (SpiritLeapOverlay.render((Screen) (Object) this, graphics, mouseX, mouseY)) {
+            info.cancel();
+            return;
+        }
         if (TerminalSolver.renderCustomGui((Screen) (Object) this, graphics, mouseX, mouseY)) {
             info.cancel();
         }

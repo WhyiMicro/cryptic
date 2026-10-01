@@ -4,9 +4,11 @@ import com.mojang.blaze3d.platform.InputConstants
 import imicro.cryptic.CrypticClient
 import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
+import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.KeybindSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.hud.Hud
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
@@ -35,6 +37,36 @@ object ClickGui {
 		},
 	)
 
+	/** Indices into [sorting]. */
+	const val SORT_A_TO_Z = 0
+	const val SORT_Z_TO_A = 1
+	const val SORT_WIDTH = 2
+
+	@JvmField
+	val sorting = DropdownModuleSetting(
+		id = "sorting",
+		label = "Sort modules",
+		options = listOf("A-Z", "Z-A", "Width"),
+		defaultIndex = SORT_A_TO_Z,
+		description = "The order cards are listed in. Width puts the longest names first.",
+	)
+
+	@JvmField
+	val leftClickToggles = ToggleModuleSetting(
+		id = "left_click_toggles",
+		label = "Left-click to toggle",
+		defaultValue = true,
+		description = "Turns a module on or off by clicking its card, as well as its switch.",
+	)
+
+	@JvmField
+	val rightClickExpands = ToggleModuleSetting(
+		id = "right_click_expands",
+		label = "Right-click to expand",
+		defaultValue = true,
+		description = "Opens a module's settings by right-clicking the card, as well as the plus.",
+	)
+
 	@JvmField
 	val editHud = ButtonModuleSetting(
 		id = "edit_hud",
@@ -58,7 +90,7 @@ object ClickGui {
 		supportsToggle = false,
 		supportsKeybind = true,
 		keybind = guiKeybind,
-		settings = listOf(accentColor, editHud),
+		settings = listOf(accentColor, sorting, leftClickToggles, rightClickExpands, editHud),
 	)
 
 	/** Dear ImGui packs colors as ABGR. */

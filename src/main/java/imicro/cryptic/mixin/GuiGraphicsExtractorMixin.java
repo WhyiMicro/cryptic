@@ -17,12 +17,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.List;
 
 /**
- * Moves a tooltip by whatever Scrollable Tooltips has been scrolled to.
+ * Moves and sizes a tooltip by whatever Scrollable Tooltips has been scrolled
+ * to.
  *
  * Wrapped around the whole method rather than applied to the coordinates it is
  * given: the position those produce is clamped to the screen by the positioner,
- * which is exactly the behaviour being worked around. Translating the matrix
- * moves the finished tooltip, clamp and all.
+ * which is exactly the behaviour being worked around. Changing the matrix moves
+ * the finished tooltip, clamp and all - the same place NoammAddons does it.
  */
 @Mixin(GuiGraphicsExtractor.class)
 public abstract class GuiGraphicsExtractorMixin {
@@ -61,7 +62,7 @@ public abstract class GuiGraphicsExtractorMixin {
         @Nullable Identifier style,
         CallbackInfo info
     ) {
-        ScrollableTooltips.beforeTooltip((GuiGraphicsExtractor) (Object) this, font, lines, xo, yo, positioner);
+        ScrollableTooltips.beforeTooltip((GuiGraphicsExtractor) (Object) this, xo, yo);
     }
 
     @Inject(method = "tooltip", at = @At("RETURN"))

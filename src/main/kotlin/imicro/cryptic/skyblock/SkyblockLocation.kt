@@ -2,6 +2,7 @@ package imicro.cryptic.skyblock
 
 import net.minecraft.client.Minecraft
 import net.minecraft.world.scores.DisplaySlot
+import net.minecraft.world.scores.PlayerTeam
 
 /**
  * Whether the player is on SkyBlock at all, and which island.
@@ -56,6 +57,26 @@ object SkyblockLocation {
 		for (info in connection.onlinePlayers) {
 			val row = info.tabListDisplayName?.string?.replace(formattingPattern, "")?.trim() ?: continue
 			areaPattern.find(row)?.let { return it.groupValues[1].trim() }
+		}
+		return null
+	}
+
+	/** The sidebar's date line: "10/01/26 m123AB", the second half naming the server. */
+	private val lobbyPattern = Regex("""\d\d/\d\d/\d\d (\w{1,6})""")
+
+	/**
+	 * The server this lobby runs on, as the sidebar's top line names it, or null
+	 * when there is no such line. Odin's relays key their rooms on it, so two
+	 * players in the same dungeon land in the same room. Read when asked rather
+	 * than every tick, since it is asked about once a boss fight.
+	 */
+	fun lobbyId(): String? {
+		val scoreboard = Minecraft.getInstance().level?.scoreboard ?: return null
+		val objective = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR) ?: return null
+		for (entry in scoreboard.listPlayerScores(objective)) {
+			val team = scoreboard.getPlayersTeam(entry.owner())
+			val line = PlayerTeam.formatNameForTeam(team, entry.ownerName()).string.replace(formattingPattern, "")
+			lobbyPattern.find(line)?.let { return it.groupValues[1] }
 		}
 		return null
 	}

@@ -238,6 +238,136 @@ leap to.
 
 ---
 
+```
+/cryptic debug room
+```
+
+Prints the room you are standing in, the turn Hypixel dropped it into the floor
+at, and where in the room's own coordinates you are. Every puzzle solver's
+answer is written in those coordinates, so when one draws in the wrong place
+this is the first thing to look at: a missing turn means the marker buried at
+the corner of the roof has not been found, and a wrong one means every position
+in the room is being reflected.
+
+```
+/cryptic debug blaze
+```
+
+Lists every named entity around you with what the Blaze solver reads out of it,
+which for a health tag is the number the puzzle is ordered by. The solver is
+one regular expression applied to a nametag, and a nametag is a thing no log
+ever records, so when it draws nothing this is the only way to see why.
+
+```
+/cryptic debug highlight
+```
+
+Lists everything near you that Cryptic is marking, with the reason for each —
+starred, prince, one of the special group, or a glow — and whether it is one of
+Hypixel's own NPCs. A box on something that is not a mob can be read off here
+rather than guessed at.
+
+---
+
+## Inventory, party and the newer HUDs
+
+```
+/cryptic debug inventory
+```
+
+Prints the two things the game thinks are open — the screen on display and the
+menu the player is holding — and the last few menus opened and shut.
+
+They are usually the same thing. When they are not, the inventory looks normal
+and takes no clicks at all until it is closed and opened again, because the game
+throws away any click made in a menu other than the one the player holds. Cryptic
+now notices that state and repairs it, writing a line to `logs/latest.log`
+beginning `[Cryptic/inventory]` when it does; this is how to look at it directly,
+and the list of recent menus is what says which one was left behind.
+
+```
+/cryptic debug party
+```
+
+Party commands and their replies are shown to you instead of being sent, and the
+reply says who Cryptic thinks leads the party. With it on, a party command can
+be tried on your own:
+
+```
+/tellraw @s {"text":"Party > [MVP+] Steve: !ping"}
+```
+
+```
+/cryptic debug partyinvite
+```
+
+Raises a party invite from nobody, so the notification and its two keys can be
+tried. Turn `/cryptic debug party` on first, or pressing Y sends a real
+`/party accept`.
+
+```
+/cryptic debug terracotta
+```
+
+Lets the Terracotta Timer run anywhere and prints what it is counting. The real
+thing needs Sadan's room; with this on, any flower pot placed starts a timer, and
+the countdown runs on the client's own ticks where there is no server clock.
+
+```
+/cryptic debug lava
+```
+
+Prints what lava is being drawn as: the texture, the layer and the tint of the
+model a chunk builder is handed for it, after every mod that swaps fluid models
+has had its say — SkyHanni has a lava replacement of its own, and Sodium builds
+the chunks — along with how many times Cryptic has swapped it since the chunks
+were last rebuilt. A model that reads right here with lava that still looks
+wrong means the chunks were never rebuilt; a model that reads wrong means
+something after Cryptic changed it.
+
+```
+/cryptic debug f7
+```
+
+Prints which Goldor section the F7/M7 QOL Section Complete title thinks it is
+on, and which of its two halves it is still waiting for: every terminal, device
+and lever done, and the gate blown.
+
+```
+/cryptic debug leap
+```
+
+Prints which teammate the Spirit Leap menu puts in each corner and where each
+face came from: the player standing in the world, their player entry, or their
+row of the tab list. A face from "nowhere" is drawn as no face at all.
+
+```
+/cryptic debug requeue
+```
+
+Prints what Auto Requeue knows: the team size it read, the floor it would queue,
+who asked for downtime, who left the party, and whether it is counting down or
+listening for `r`. Pair it with `/cryptic debug party`, which makes it print the
+queue command and its party messages instead of sending them.
+
+```
+/cryptic debug melody
+```
+
+Prints whether the Melody HUD is connected to Odin's relay, the lobby it would
+join, and what it has heard from each teammate — the relay's marker, note and
+row, and what they last said in party chat.
+
+```
+/cryptic debug hudsample
+```
+
+Gives the Blessing Display, the Spring Boots Helper, the Puzzle HUD, the Dungeon
+Warp Cooldown, the Melody HUD and the F7/M7 QOL titles made-up numbers to show,
+so they can be seen and placed without a blessing, a pair of boots or a boss.
+
+---
+
 ## Things that need no switch
 
 A few states are easier to fake directly than to add a command for.
@@ -249,8 +379,8 @@ into your own chat is enough:
 /tellraw @s {"text":"[BOSS] Maxor: WELL! WELL! WELL! LOOK WHO'S HERE!"}
 ```
 
-That flips the mod into boss mode — the map hides itself, the score switches to
-its in-boss form, and door highlighting stops.
+That flips the mod into boss mode — the map hides itself, the score stays up on its
+own if it is set to, and door highlighting stops.
 
 **A Dungeon Breaker**, for testing Breaker Helper:
 

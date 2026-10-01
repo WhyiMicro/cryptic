@@ -1,8 +1,7 @@
 package imicro.cryptic.feature
 
 import imicro.cryptic.dungeon.Floor7
-import imicro.cryptic.gui.Module
-import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.ToggleModuleSetting
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
@@ -24,17 +23,20 @@ import net.minecraft.world.level.block.state.properties.DoubleBlockHalf
  * nowhere else. The server is not told anything, no packet is sent, and a door
  * that is genuinely absent is left absent — only a door that is there and drawn
  * crooked is turned the right way round.
+ *
+ * A switch on the F7/M7 QOL card rather than a card of its own.
  */
 object DoorFix {
 	@JvmField
-	val module = Module(
+	val enabled = ToggleModuleSetting(
 		id = "door_fix",
-		name = "Door Fix",
-		description = "Fixes s3's rotated doors",
-		category = ModuleCategory.FLOOR_7,
-		hasDemoSettings = false,
-		supportsKeybind = false,
+		label = "Door fix",
+		defaultValue = true,
+		description = "Turns s3's iron doors the right way round, which Hypixel sends sideways.",
 	)
+
+	/** True while the doors are to be straightened. */
+	val active: Boolean get() = F7Qol.module.enabled && enabled.value
 
 	/**
 	 * Where the doors stand, in three columns up the west wall of s3.
@@ -58,10 +60,10 @@ object DoorFix {
 		.setValue(BlockStateProperties.OPEN, false)
 
 	/** True while the section that has the crooked doors is the one being run. */
-	val needsPhaseTracking: Boolean get() = module.enabled
+	val needsPhaseTracking: Boolean get() = active
 
 	fun tick(client: Minecraft) {
-		if (!module.enabled || Floor7.p3Section != 3) return
+		if (!active || Floor7.p3Section != 3) return
 		val level = client.level ?: return
 
 		for (pos in DOORS) {

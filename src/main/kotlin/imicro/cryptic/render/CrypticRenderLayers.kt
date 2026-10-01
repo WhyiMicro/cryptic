@@ -73,4 +73,27 @@ object CrypticRenderLayers {
 		"cryptic_lines_through_walls",
 		RenderSetup.builder(CrypticRenderPipelines.LINES_THROUGH_WALLS).createRenderSetup(),
 	)
+
+	/**
+	 * Whether this is one of the layers that should be drawn last.
+	 *
+	 * Asked by the submit mixin for every piece of custom geometry in the
+	 * frame, so it is two identity comparisons and nothing else.
+	 */
+	@JvmStatic
+	fun drawsOverTerrain(type: RenderType): Boolean =
+		type === FILLED_THROUGH_WALLS || type === LINES_THROUGH_WALLS
+
+	/**
+	 * Set for the length of one text submit, when that text is Cryptic's and
+	 * meant to be read through whatever is in front of it.
+	 *
+	 * A flag rather than a render type because text carries none: the caller
+	 * sets it, submits, and clears it, all on the render thread.
+	 */
+	@JvmStatic
+	var textOverTerrain: Boolean = false
+
+	@JvmStatic
+	fun textDrawsOverTerrain(): Boolean = textOverTerrain
 }

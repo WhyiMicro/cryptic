@@ -33,19 +33,25 @@ import net.minecraft.world.inventory.ContainerInput
  * doing it by dragging is slow and easy to get wrong under pressure. A bind
  * makes it one click on either end.
  *
- * Nothing here fabricates a click the player did not make: a bind turns one
- * click into the swap it obviously meant, in a menu they opened themselves.
+ * A bind with an end on the hotbar is one click in, one click out: the game has
+ * a single action for "put this slot in that hotbar number". Two slots with
+ * neither on the hotbar have no such action and take three clicks through the
+ * cursor, which is what the "Allow outside of hotbar" switch is for.
  */
 object SlotBinds {
 	/**
 	 * The slots a bind may touch, which are the player's own.
 	 *
-	 * Odin's range, and the reason for it is that the inventory screen numbers
-	 * armour and the crafting grid below five: binding those would swap
-	 * equipment rather than items. The hotbar is the last nine.
+	 * Odin's range. The inventory screen numbers the crafting grid below five,
+	 * and those are not slots anything is kept in; the four armour slots are
+	 * five to eight and can be bound like any other. The hotbar is the last
+	 * nine.
 	 */
 	private val BINDABLE = 5 until 45
 	private val HOTBAR = 36..44
+
+	/** The four armour slots, helmet down to boots. */
+	private val ARMOR = 5..8
 
 	/** Indices into [lineDisplay]. */
 	private const val LINES_HOVER = 0
@@ -97,6 +103,15 @@ object SlotBinds {
 	)
 
 	@JvmField
+	val allowOutsideHotbar = ToggleModuleSetting(
+		id = "allow_outside_hotbar",
+		label = "Allow outside of hotbar",
+		defaultValue = true,
+		description = "Lets two slots be bound with neither on the hotbar, such as a worn helmet and a spare one. " +
+			"That swap takes three clicks rather than one.",
+	)
+
+	@JvmField
 	val binds = SlotMapModuleSetting(id = "binds", label = "Binds")
 
 	@JvmField
@@ -134,7 +149,7 @@ object SlotBinds {
 		hasDemoSettings = false,
 		supportsKeybind = true,
 		keybind = bindKey,
-		settings = listOf(profile, save, dungeonsOnly, lineDisplay, lineColor, lineWidth, binds),
+		settings = listOf(profile, save, dungeonsOnly, allowOutsideHotbar, lineDisplay, lineColor, lineWidth, binds),
 	)
 
 	/**
@@ -242,6 +257,10 @@ object SlotBinds {
 			say("A slot cannot be bound to itself", error = true)
 			return true
 		}
+		if (started !in HOTBAR && slot !in HOTBAR && !allowOutsideHotbar.value) {
+			say("One of the two slots has to be on the hotbar", error = true)
+			return true
+		}
 
 		current[started] = slot
 		current[slot] = started
@@ -266,26 +285,48 @@ object SlotBinds {
 
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return false
-		val container = screen.menu.containerId
+		// The menu the player holds, which is the one the game checks a click
+		// against — not the screen's, which can disagree with it.
+		val container = player.containerMenu.containerId
 
-		// The game has one action for "put this slot in that hotbar number", so
-		// a bind with an end in the hotbar is a single click. Odin only allows
-		// those; there is no need to. Two slots anywhere else swap the way a
-		// person would do it by hand — pick one up, drop it on the other, put
-		// what came back where the first one was — which is three actions and
-		// works between any two slots at all.
-		when {
-			clicked in HOTBAR ->
-				swapWithHotbar(client, player, container, bound, clicked)
-			bound in HOTBAR ->
-				swapWithHotbar(client, player, container, clicked, bound)
-			else -> {
-				pickup(client, player, container, clicked)
-				pickup(client, player, container, bound)
-				pickup(client, player, container, clicked)
-			}
+		// With an end on the hotbar the game has one action for the whole swap,
+		// "put this slot in that hotbar number", and that is all that is sent —
+		// which is all Odin and NoammAddons ever send.
+		val hotbar = if (clicked in HOTBAR) clicked else if (bound in HOTBAR) bound else null
+		if (hotbar != null) {
+			val slot = if (hotbar == clicked) bound else clicked
+			client.gameMode?.handleContainerInput(container, slot, hotbar - HOTBAR.first, ContainerInput.SWAP, player)
+			return true
 		}
+
+		if (!allowOutsideHotbar.value) return false
+		// Something already in hand would be dropped into the first slot clicked.
+		if (!player.containerMenu.carried.isEmpty) return false
+
+		// Two slots with neither on the hotbar can only be exchanged through the
+		// cursor: pick one up, drop it on the other, put what came back where the
+		// first one was. Which of the two is picked up first turned out to
+		// matter. Starting on a worn piece leaves its armour slot empty for the
+		// third click to fill, and Hypixel does not take that click: the swap
+		// half happens and the piece you meant to put on is left in your hand.
+		// Starting on the *other* slot never empties the armour slot — the
+		// middle click exchanges the two in one go — so with armour involved the
+		// order is fixed, whichever end was clicked.
+		val first = if (clicked in ARMOR && bound !in ARMOR) bound else clicked
+		val second = if (first == clicked) bound else clicked
+		pickup(client, player, container, first)
+		pickup(client, player, container, second)
+		pickup(client, player, container, first)
 		return true
+	}
+
+	private fun pickup(
+		client: Minecraft,
+		player: net.minecraft.world.entity.player.Player,
+		container: Int,
+		slot: Int,
+	) {
+		client.gameMode?.handleContainerInput(container, slot, 0, ContainerInput.PICKUP, player)
 	}
 
 	/**
@@ -298,31 +339,6 @@ object SlotBinds {
 	 */
 	private fun swapsHere(): Boolean =
 		SkyblockLocation.onSkyblock && (!dungeonsOnly.value || DungeonLocation.inDungeon)
-
-	private fun swapWithHotbar(
-		client: Minecraft,
-		player: net.minecraft.world.entity.player.Player,
-		container: Int,
-		slot: Int,
-		hotbar: Int,
-	) {
-		client.gameMode?.handleContainerInput(
-			container,
-			slot,
-			hotbar - HOTBAR.first,
-			ContainerInput.SWAP,
-			player,
-		)
-	}
-
-	private fun pickup(
-		client: Minecraft,
-		player: net.minecraft.world.entity.player.Player,
-		container: Int,
-		slot: Int,
-	) {
-		client.gameMode?.handleContainerInput(container, slot, 0, ContainerInput.PICKUP, player)
-	}
 
 	/**
 	 * Draws the line joining a bound slot to its partner.

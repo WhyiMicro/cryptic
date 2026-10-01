@@ -1,7 +1,6 @@
 package imicro.cryptic.feature
 
 import imicro.cryptic.dungeon.DungeonLocation
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.Module
@@ -139,16 +138,6 @@ object HiddenMobs {
 		shadowAssassinOutlineColor,
 	)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurableSettings.forEach {
-			when (it) {
-				is ToggleModuleSetting -> it.reset()
-				is ColorModuleSetting -> it.reset()
-				else -> Unit
-			}
-		}
-	})
-
 	@JvmField
 	val module = Module(
 		id = "hidden_mobs",
@@ -157,7 +146,7 @@ object HiddenMobs {
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = configurableSettings + reset,
+		settings = configurableSettings,
 	)
 
 	/**

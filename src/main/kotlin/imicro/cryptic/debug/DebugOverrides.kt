@@ -54,6 +54,23 @@ object DebugOverrides {
 	var highlightEveryArmorStand = false
 		private set
 
+	/**
+	 * Lets the Terracotta Timer run anywhere, off any flower pot.
+	 *
+	 * The real thing needs Sadan's room and a dead terracotta, so placing a pot
+	 * in the dev world stands in for one.
+	 */
+	var terracottaAnywhere = false
+		private set
+
+	/** Prints party commands and their replies instead of sending them. */
+	var previewPartyCommands = false
+		private set
+
+	/** Makes the Spring Boots Helper and Blessing Display show sample numbers. */
+	var sampleHudValues = false
+		private set
+
 	/** The class names `/cryptic debug setclass` accepts, lowercased for typing. */
 	val classNames: List<String> = DungeonClass.entries
 		.filter { it != DungeonClass.UNKNOWN }
@@ -87,6 +104,21 @@ object DebugOverrides {
 	fun toggleArmorStandKeys(): Boolean {
 		highlightEveryArmorStand = !highlightEveryArmorStand
 		return highlightEveryArmorStand
+	}
+
+	fun toggleTerracottaAnywhere(): Boolean {
+		terracottaAnywhere = !terracottaAnywhere
+		return terracottaAnywhere
+	}
+
+	fun togglePartyPreview(): Boolean {
+		previewPartyCommands = !previewPartyCommands
+		return previewPartyCommands
+	}
+
+	fun toggleSampleHudValues(): Boolean {
+		sampleHudValues = !sampleHudValues
+		return sampleHudValues
 	}
 
 	/**

@@ -61,23 +61,47 @@ object CookieReminder {
 		description = "How long the notification stays up.",
 	)
 
-	private val check = ButtonModuleSetting("check", "Check now", action = {
+	private val check = ButtonModuleSetting("check", "Check now", action = { requestCheck() })
+
+	/**
+	 * Whether a pressed "Check now" is still waiting for an answer.
+	 *
+	 * The tab list is a packet, not a screen, so it is normally readable from
+	 * anywhere — but on a server hop, or in the first moments after joining, it
+	 * has not arrived and there is nothing to read. Answering "no cookie" then
+	 * would be a guess dressed as a reading, and answering nothing at all looks
+	 * like a button that does not work. So the press is remembered and the
+	 * answer given when there is one.
+	 */
+	private var awaitingCheck = false
+
+	/** How long a pressed check keeps waiting before it gives up, in ticks. */
+	private const val CHECK_PATIENCE = 200
+
+	private var checkWaitedFor = 0
+
+	private fun requestCheck() {
+		awaitingCheck = true
+		checkWaitedFor = 0
+		if (answerCheck()) return
+		Toasts.show(SOURCE, "Waiting for the tab list...", false, seconds.value)
+	}
+
+	/** Answers a pending check if the tab list can say anything yet. */
+	private fun answerCheck(): Boolean {
 		val reading = BoosterCookie.read()
+		if (reading is BoosterCookie.Reading.Unknown) return false
+
+		awaitingCheck = false
 		val message = when (reading) {
-			is BoosterCookie.Reading.Unknown -> "Cannot see the tab list from here"
 			is BoosterCookie.Reading.Inactive -> "No active booster cookie"
 			is BoosterCookie.Reading.Active ->
 				reading.minutesLeft?.let { "Cookie active, ${describe(it)} left" } ?: "Cookie active"
+			else -> return true
 		}
 		Toasts.show(SOURCE, message, reading is BoosterCookie.Reading.Inactive, seconds.value)
-	})
-
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		warnMinutes.reset()
-		announceExpired.reset()
-		seconds.reset()
-		forget()
-	})
+		return true
+	}
 
 	@JvmField
 	val module = Module(
@@ -87,7 +111,7 @@ object CookieReminder {
 		category = ModuleCategory.GENERAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(announceExpired, warnMinutes, seconds, check, reset),
+		settings = listOf(announceExpired, warnMinutes, seconds, check),
 	)
 
 	private var ticksUntilPoll = 0
@@ -108,6 +132,16 @@ object CookieReminder {
 			return
 		}
 		if (client.player == null) return
+
+		if (awaitingCheck) {
+			// Every tick rather than on the poll, because somebody is standing
+			// in front of the button waiting for it.
+			if (!answerCheck() && ++checkWaitedFor > CHECK_PATIENCE) {
+				awaitingCheck = false
+				Toasts.show(SOURCE, "Still cannot see the tab list", true, seconds.value)
+			}
+		}
+
 		if (ticksUntilPoll-- > 0) return
 		ticksUntilPoll = POLL_TICKS
 
@@ -151,7 +185,9 @@ object CookieReminder {
 		saidExpiring = false
 		saidGone = false
 		ticksUntilPoll = 0
+		awaitingCheck = false
 	}
+
 
 	/** Whole minutes as something readable, since an hour of them is not. */
 	private fun describe(minutes: Long): String = when {

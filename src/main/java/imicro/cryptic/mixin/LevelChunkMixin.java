@@ -2,7 +2,9 @@ package imicro.cryptic.mixin;
 
 import imicro.cryptic.device.SharpShooter;
 import imicro.cryptic.device.SimonSays;
+import imicro.cryptic.feature.TerracottaTimer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.FlowerPotBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import org.spongepowered.asm.mixin.Mixin;
@@ -32,6 +34,12 @@ public abstract class LevelChunkMixin {
 
     @Inject(method = "setBlockState", at = @At("HEAD"))
     private void cryptic$noteBlockChange(BlockPos pos, BlockState state, int flags, CallbackInfoReturnable<BlockState> info) {
+        // A terracotta going down leaves a flower pot, and what it replaced does
+        // not matter, so this one needs no lookup at all.
+        if (TerracottaTimer.isWatching() && state.getBlock() instanceof FlowerPotBlock) {
+            TerracottaTimer.onPotPlaced(pos);
+        }
+
         // Asked before the old state is looked up, because that lookup is the
         // only real cost here and almost every block change in the world is
         // one nothing is listening for.

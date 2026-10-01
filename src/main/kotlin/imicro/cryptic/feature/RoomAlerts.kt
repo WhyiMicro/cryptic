@@ -3,12 +3,10 @@ package imicro.cryptic.feature
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.dungeon.map.DungeonRoom
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
-import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
@@ -89,19 +87,6 @@ object RoomAlerts {
 		volume,
 	)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurableSettings.forEach {
-			when (it) {
-				is ToggleModuleSetting -> it.reset()
-				is TextModuleSetting -> it.reset()
-				is SliderModuleSetting -> it.reset()
-				else -> Unit
-			}
-		}
-		// The score's announcements sit on this card now.
-		DungeonScore.resetSettings()
-	})
-
 	@JvmField
 	val module = Module(
 		id = "room_alerts",
@@ -114,7 +99,7 @@ object RoomAlerts {
 			DungeonScore.titleSettings +
 			listOf(announcementsSection) + DungeonScore.announcementSettings +
 			DungeonScore.customSettings +
-			listOf(soundSection, playSound, volume, reset),
+			listOf(soundSection, playSound, volume),
 	)
 
 	private var initialized = false

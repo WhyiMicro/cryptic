@@ -1,6 +1,7 @@
 package imicro.cryptic.terminal
 
 import imicro.cryptic.terminal.sim.TermSimScreen
+import imicro.cryptic.feature.MelodyHud
 import imicro.cryptic.feature.TerminalSolver
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
@@ -98,6 +99,7 @@ object Terminals {
 	}
 
 	fun closed() {
+		if (current?.type == TerminalType.MELODY) MelodyHud.onTerminalClosed()
 		current = null
 		currentTitle = null
 		currentContainerId = Int.MIN_VALUE

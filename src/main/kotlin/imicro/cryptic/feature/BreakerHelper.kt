@@ -2,7 +2,6 @@ package imicro.cryptic.feature
 
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.map.DungeonRoom
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.ToggleModuleSetting
@@ -76,10 +75,6 @@ object BreakerHelper {
 
 	private val configurableSettings = listOf(protectSecrets, zeroPing)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurableSettings.forEach { if (it is ToggleModuleSetting) it.reset() }
-	})
-
 	@JvmField
 	val module = Module(
 		id = "breaker_helper",
@@ -88,7 +83,7 @@ object BreakerHelper {
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = configurableSettings + reset,
+		settings = configurableSettings,
 	)
 
 	private var initialized = false

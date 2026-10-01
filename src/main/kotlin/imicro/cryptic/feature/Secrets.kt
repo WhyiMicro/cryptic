@@ -1,6 +1,10 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.debug.InventoryWatch
 import imicro.cryptic.dungeon.DungeonLocation
+import imicro.cryptic.dungeon.DungeonRun
+import imicro.cryptic.dungeon.RoomSecrets
+import imicro.cryptic.dungeon.map.DungeonRoom
 import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
@@ -9,12 +13,16 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.hud.Hud
+import imicro.cryptic.hud.HudElement
 import imicro.cryptic.render.WorldRender
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
@@ -22,7 +30,6 @@ import net.minecraft.network.protocol.game.ServerboundContainerClosePacket
 import net.minecraft.sounds.SoundEvent
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.util.ARGB
-import net.minecraft.world.inventory.ContainerInput
 import net.minecraft.world.inventory.MenuType
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.Blocks
@@ -80,11 +87,10 @@ object Secrets {
 	)
 
 	/**
-	 * Everything a dungeon chest can hold, which is a short and fixed list.
-	 * The healing potion is named several ways across floors, so all of them
-	 * are matched to the one switch.
+	 * Everything a secret can give you, which is a short and fixed list. The
+	 * healing potion is named several ways across floors, so all of them count.
 	 */
-	private val extractableItems = listOf(
+	private val secretItems = listOf(
 		"Healing Potion" to setOf(
 			"Health Potion VIII Splash Potion", "Healing Potion 8 Splash Potion",
 			"Healing Potion VIII Splash Potion", "Healing VIII Splash Potion",
@@ -121,29 +127,16 @@ object Secrets {
 		description = "Shuts a secret chest as it opens.",
 	)
 
-	// ---- Chest extraction ------------------------------------------------
-
-	private val extractionSection = SectionModuleSetting(id = "extraction_section", label = "Chest extraction")
-
 	@JvmField
-	val extractItems = ToggleModuleSetting(
-		id = "extract_items",
-		label = "Take items out",
-		description = "Pulls the chosen items into your inventory before the chest closes.",
+	val movableCounter = ToggleModuleSetting(
+		id = "movable_counter",
+		label = "Moveable secrets counter",
+		description = "Takes the room's secret count out of the action bar and puts it where you place it: " +
+			"red with none found, yellow partway, green once they all are.",
 	)
 
-	/**
-	 * One switch per item, rather than a list to tick inside a popup: a dungeon
-	 * chest holds a dozen things at most, and a switch you can see the state of
-	 * beats one you have to open something to read.
-	 */
-	private val extractToggles: List<ToggleModuleSetting> = extractableItems.map { (label, _) ->
-		ToggleModuleSetting(
-			id = "extract_" + label.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_'),
-			label = label,
-			visibleIf = { extractItems.value },
-		)
-	}
+	/** Whether the action bar's count is being moved into the counter, which [RoomSecrets] asks. */
+	val movesCounter: Boolean get() = module.enabled && movableCounter.value
 
 	// ---- Secret hitboxes -------------------------------------------------
 
@@ -225,7 +218,7 @@ object Secrets {
 		defaultRgb = 0x55FF55,
 		supportsAlpha = true,
 		defaultAlpha = 0x50,
-		visibleIf = { highlightClicked.value },
+		visibleIf = { highlightClicked.value && clickedStyle.selectedIndex != OUTLINE },
 	)
 
 	@JvmField
@@ -234,7 +227,7 @@ object Secrets {
 		label = "Outline",
 		defaultRgb = 0x55FF55,
 		supportsAlpha = true,
-		visibleIf = { highlightClicked.value },
+		visibleIf = { highlightClicked.value && clickedStyle.selectedIndex != FILL },
 	)
 
 	@JvmField
@@ -245,7 +238,7 @@ object Secrets {
 		supportsAlpha = true,
 		defaultAlpha = 0x50,
 		description = "What a chest is marked in once Hypixel says it is locked.",
-		visibleIf = { highlightClicked.value },
+		visibleIf = { highlightClicked.value && clickedStyle.selectedIndex != OUTLINE },
 	)
 
 	@JvmField
@@ -254,7 +247,7 @@ object Secrets {
 		label = "Locked outline",
 		defaultRgb = 0xFF5555,
 		supportsAlpha = true,
-		visibleIf = { highlightClicked.value },
+		visibleIf = { highlightClicked.value && clickedStyle.selectedIndex != FILL },
 	)
 
 	@JvmField
@@ -323,7 +316,7 @@ object Secrets {
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(autoCloseChest, extractionSection, extractItems) + extractToggles + listOf(
+		settings = listOf(autoCloseChest, movableCounter) + listOf(
 			hitboxSection,
 			hitboxesOnlyInDungeons,
 			leverHitbox,
@@ -360,21 +353,13 @@ object Secrets {
 	/** An item secret fires once per pickup burst rather than once per item. */
 	private var lastItemSecretAt = 0L
 
-	/**
-	 * The chest whose contents are still on their way.
-	 *
-	 * A chest opening and a chest having anything in it are two packets, and
-	 * the second one is the first moment there is something to take.
-	 */
-	@Volatile
-	private var awaitingContents: Int? = null
-
 	private const val ITEM_SECRET_COOLDOWN_MILLIS = 2000L
 
 	/** What Hypixel says when the chest you opened wants a key. */
 	private const val LOCKED_MESSAGE = "That chest is locked!"
 
 	fun initialize() {
+		Hud.register(CounterElement())
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> onWorldChange() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> onWorldChange() }
@@ -382,6 +367,101 @@ object Secrets {
 			if (!overlay && message.string == LOCKED_MESSAGE) onChestLocked()
 		}
 	}
+
+	// ---- The counter -----------------------------------------------------
+
+	/**
+	 * The room's secret count, where Hypixel's action bar used to show it.
+	 *
+	 * Taken from the room being stood in rather than from the action bar, which
+	 * is a second behind on both counts that matter: walking into a room, when
+	 * it still shows the last one, and taking a secret, when it still shows the
+	 * number from before. The room is known the moment it is walked into, and its
+	 * total comes with it. A secret taken here counts the moment Cryptic sees it
+	 * taken; Hypixel's own count, read off the action bar, takes over once it
+	 * agrees, and puts right any guess it does not agree with.
+	 */
+	private class CounterElement: HudElement("secrets_counter", "Secrets Counter", 0.47, 0.84) {
+		private val font get() = Minecraft.getInstance().font
+
+		// As wide as the widest count, so the text stays centred as it changes.
+		override val width: Int get() = font.width(COUNTER_WIDEST)
+		override val height: Int get() = font.lineHeight
+
+		override fun isVisible(): Boolean = counterValues() != null
+
+		override fun showInEditor(): Boolean = movesCounter
+
+		override fun render(context: GuiGraphicsExtractor) {
+			val (found, total) = counterValues() ?: return
+			draw(context, found, total)
+		}
+
+		override fun renderExample(context: GuiGraphicsExtractor) = draw(context, 1, 3)
+
+		private fun draw(context: GuiGraphicsExtractor, found: Int, total: Int) {
+			val color = when {
+				found <= 0 -> COUNTER_RED
+				found >= total -> COUNTER_GREEN
+				else -> COUNTER_YELLOW
+			}
+			val text = "$found/$total"
+			context.text(font, text, (width - font.width(text)) / 2, 0, color)
+		}
+	}
+
+	/** The count to show, found then total, or null for none. */
+	private fun counterValues(): Pair<Int, Int>? {
+		if (!movesCounter || !DungeonLocation.inDungeon || DungeonRun.inBoss) return null
+
+		val room = DungeonMap.currentRoom()
+		val total = room?.data?.secrets ?: 0
+		if (room != null && total > 0) {
+			val fresh = room === guessRoom && System.currentTimeMillis() - guessAt < GUESS_MILLIS
+			val found = if (fresh) maxOf(room.foundSecrets, guessCount) else room.foundSecrets
+			return found.coerceIn(0, total) to total
+		}
+
+		// A room the scan has named and that holds no secrets at all - most
+		// puzzles, the blood room, the entrance - has nothing to count, so the
+		// counter goes the moment you step in rather than showing the last
+		// room's number until Hypixel's own text would have faded.
+		if (room?.data != null) return null
+
+		// A room the scan has not named has no total of its own, so Hypixel's
+		// count stands in, for as long as the action bar would have shown it.
+		if (RoomSecrets.found < 0 || System.currentTimeMillis() - RoomSecrets.seenAt >= COUNTER_SHOWN_MILLIS) return null
+		return RoomSecrets.found to RoomSecrets.total
+	}
+
+	/**
+	 * A secret taken in the room being stood in, before Hypixel has counted it.
+	 *
+	 * Counted from the room's last confirmed number, and only for a few seconds:
+	 * long enough for the action bar to catch up, short enough that a click that
+	 * turned out not to be a secret stops showing as one on its own.
+	 */
+	private fun guessFound() {
+		val room = DungeonMap.currentRoom() ?: return
+		val now = System.currentTimeMillis()
+		if (room !== guessRoom || now - guessAt >= GUESS_MILLIS) {
+			guessRoom = room
+			guessCount = room.foundSecrets
+		}
+		guessCount++
+		guessAt = now
+	}
+
+	private var guessRoom: DungeonRoom? = null
+	private var guessCount = 0
+	private var guessAt = 0L
+
+	private const val GUESS_MILLIS = 4000L
+	private const val COUNTER_WIDEST = "00/00"
+	private const val COUNTER_SHOWN_MILLIS = 3000L
+	private const val COUNTER_RED = 0xFFFF5555.toInt()
+	private const val COUNTER_YELLOW = 0xFFFFFF55.toInt()
+	private const val COUNTER_GREEN = 0xFF55FF55.toInt()
 
 	// ---- Hitboxes --------------------------------------------------------
 
@@ -442,84 +522,48 @@ object Secrets {
 	// ---- Chests ----------------------------------------------------------
 
 	/**
-	 * Whether the chest that just opened should be emptied and shut again.
+	 * Whether the chest that just opened should be shut again.
 	 *
 	 * Only a plain chest, and only in a dungeon: a menu with a name of its own
 	 * is Hypixel asking a question, and closing it would answer for you.
-	 * Anything wanted is shift-clicked across first — if the inventory is full
-	 * the server simply will not move it, and the chest closes either way.
 	 */
 	@JvmStatic
 	fun closesChest(containerId: Int, type: MenuType<*>, title: String): Boolean {
 		if (!module.enabled) return false
-		if (!autoCloseChest.value && !extractItems.value) return false
+		if (!autoCloseChest.value) return false
 		if (!DungeonLocation.inDungeon) return false
 		if (type != MenuType.GENERIC_9x3 && type != MenuType.GENERIC_9x6) return false
 		if (title != "Chest" && title != "Large Chest") return false
-
-		// Taking anything out means waiting: this packet only says a chest has
-		// opened, and its contents arrive in the next one. Closing here — which
-		// is what an earlier version did — shut the chest before there was
-		// anything in it to take.
-		if (extractItems.value) {
-			awaitingContents = containerId
-			return true
-		}
 
 		close(containerId)
 		return true
 	}
 
 	/**
-	 * The chest's contents, which is the first moment anything can be taken.
+	 * Shuts the chest the way pressing escape would.
 	 *
-	 * Everything wanted is shift-clicked across and the chest is shut behind
-	 * it, whether or not auto close is on — a chest opened to empty it is
-	 * finished with either way. A full inventory simply means the server moves
-	 * nothing, and it closes all the same.
+	 * Taking the screen down is only half of closing a container. The player
+	 * also holds the menu that is open, and the game refuses any click whose
+	 * menu is not the one it holds — so a chest whose screen was removed and
+	 * nothing else left the player holding a chest that no longer existed, and
+	 * the next inventory opened would not take a single click until it had been
+	 * closed and opened again. That was the inventory that needed opening twice,
+	 * and the log said so every time: "Ignoring click in mismatching container".
 	 */
-	@JvmStatic
-	fun onChestFilled(containerId: Int) {
-		if (awaitingContents != containerId) return
-		awaitingContents = null
-
-		val client = Minecraft.getInstance()
-		client.execute {
-			takeWantedItems(containerId)
-			close(containerId)
-		}
-	}
-
 	private fun close(containerId: Int) {
 		val client = Minecraft.getInstance()
 		client.execute {
-			client.player?.connection?.send(ServerboundContainerClosePacket(containerId))
-			client.gui.setScreen(null)
+			val player = client.player ?: return@execute
+			InventoryWatch.note("Secrets auto-closed chest $containerId")
+			player.connection.send(ServerboundContainerClosePacket(containerId))
+			if (player.containerMenu.containerId == containerId) {
+				// Puts the player's own inventory back as the open menu, and
+				// takes the screen down with it.
+				player.clientSideCloseContainer()
+			} else if ((client.gui.screen() as? AbstractContainerScreen<*>)?.menu?.containerId == containerId) {
+				client.gui.setScreen(null)
+			}
 		}
-	}
-
-	private fun takeWantedItems(containerId: Int) {
-		val client = Minecraft.getInstance()
-		val player = client.player ?: return
-		val menu = player.containerMenu
-		if (menu.containerId != containerId) return
-
-		// Only the chest's own slots; the rest of the menu is the player's
-		// inventory, and shift-clicking there would send things the other way.
-		val chestSlots = menu.slots.count { it.container !== player.inventory }
-		for (slot in 0 until chestSlots) {
-			val stack = menu.slots.getOrNull(slot)?.item ?: continue
-			if (stack.isEmpty || !isWanted(stack)) continue
-			client.gameMode?.handleContainerInput(containerId, slot, 0, ContainerInput.QUICK_MOVE, player)
-		}
-	}
-
-	private fun isWanted(stack: ItemStack): Boolean {
-		val name = stack.hoverName.string
-		extractableItems.forEachIndexed { index, (_, names) ->
-			if (extractToggles[index].value && names.any { name.contains(it, ignoreCase = true) }) return true
-		}
-		return false
 	}
 
 	// ---- Taking a secret -------------------------------------------------
@@ -577,7 +621,7 @@ object Secrets {
 	@JvmStatic
 	fun isSecretDrop(stack: ItemStack): Boolean {
 		val name = stack.hoverName.string
-		return extractableItems.any { (_, names) -> names.any { name.contains(it, ignoreCase = true) } }
+		return secretItems.any { (_, names) -> names.any { name.contains(it, ignoreCase = true) } }
 	}
 
 	private fun mark(pos: BlockPos) {
@@ -585,6 +629,7 @@ object Secrets {
 		if (taken.putIfAbsent(pos, Taken(System.currentTimeMillis())) != null) return
 		lastMarked = pos
 		if (secretSound.value) play()
+		if (movesCounter) guessFound()
 	}
 
 	/** Hypixel says so in chat, and the box turns to say it too. Odin's idea. */
@@ -592,6 +637,8 @@ object Secrets {
 	fun onChestLocked() {
 		if (!module.enabled) return
 		lastMarked?.let { taken[it]?.locked = true }
+		// A locked chest was not a secret taken, so the counter takes it back.
+		if (guessRoom === DungeonMap.currentRoom() && guessCount > 0) guessCount--
 	}
 
 	fun tick() {

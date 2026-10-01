@@ -298,7 +298,20 @@ object DeviceSolver {
 
 	// ---- Drawing ---------------------------------------------------------
 
-	private val drawingSection = SectionModuleSetting(id = "drawing_section", label = "Drawing")
+	private val drawingSection = SectionModuleSetting(
+		id = "drawing_section",
+		label = "Drawing",
+		visibleIf = { anyDevice() },
+	)
+
+	private fun anyDevice(): Boolean =
+		arrowAlign.value || lightsOn.value || simonSays.value || sharpShooter.value
+
+	/** The lights are always outlined; the other two only in a style that has one. */
+	private fun anyOutline(): Boolean =
+		lightsOn.value ||
+			(simonSays.value && simonStyle.selectedIndex != STYLE_FILL) ||
+			(sharpShooter.value && i4Style.selectedIndex != STYLE_FILL)
 
 	@JvmField
 	val lineWidth = SliderModuleSetting(
@@ -308,6 +321,7 @@ object DeviceSolver {
 		min = 1.0,
 		max = 10.0,
 		step = 0.5,
+		visibleIf = { anyOutline() },
 	)
 
 	@JvmField
@@ -316,6 +330,7 @@ object DeviceSolver {
 		label = "Phase",
 		defaultValue = true,
 		description = "Draws the devices through walls.",
+		visibleIf = { anyDevice() },
 	)
 
 	@JvmField

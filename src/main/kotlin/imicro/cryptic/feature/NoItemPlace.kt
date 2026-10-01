@@ -1,7 +1,6 @@
 package imicro.cryptic.feature
 
 import imicro.cryptic.dungeon.Floor7
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.ToggleModuleSetting
@@ -62,8 +61,6 @@ object NoItemPlace {
 		description = "Only during Necron's phase.",
 	)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = { relics.reset() })
-
 	@JvmField
 	val module = Module(
 		id = "no_item_place",
@@ -72,7 +69,7 @@ object NoItemPlace {
 		category = ModuleCategory.GENERAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(relics, reset),
+		settings = listOf(relics),
 	)
 
 	/** True when this placement should be swallowed. */

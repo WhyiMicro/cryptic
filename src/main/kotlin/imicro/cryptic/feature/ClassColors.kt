@@ -31,10 +31,19 @@ object ClassColors {
 	private val colorsSection = SectionModuleSetting("colors_section", "Colors")
 
 	@JvmField
+	val disableGlow = ToggleModuleSetting(
+		id = "disable_glow",
+		label = "Disable player glow",
+		defaultValue = false,
+		description = "Stops every player glowing in a dungeon, you included. The name labels keep their class colours.",
+	)
+
+	@JvmField
 	val applyToSelf = ToggleModuleSetting(
 		id = "apply_to_self",
 		label = "Apply to self",
 		defaultValue = false,
+		description = "Gives you your class's glow. Off, you do not glow at all.",
 	)
 
 	@JvmField
@@ -113,7 +122,8 @@ object ClassColors {
 		visibleIf = { showNames.value },
 	)
 
-	private val configurableSettings = listOf(
+	private val colorSettings = listOf(
+		disableGlow,
 		applyToSelf,
 		archerColor,
 		berserkColor,
@@ -121,6 +131,9 @@ object ClassColors {
 		mageColor,
 		tankColor,
 		unknownColor,
+	)
+
+	private val nameSettings = listOf(
 		showNames,
 		showLetter,
 		letterSide,
@@ -128,6 +141,8 @@ object ClassColors {
 		nameScale,
 		nameHeight,
 	)
+
+	private val configurableSettings = colorSettings + nameSettings
 
 	private val reset = ButtonModuleSetting("reset", "Reset", action = {
 		configurableSettings.forEach {
@@ -149,11 +164,7 @@ object ClassColors {
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(colorsSection) +
-			configurableSettings.take(7) +
-			namesSection +
-			configurableSettings.drop(7) +
-			reset,
+		settings = listOf(colorsSection) + colorSettings + namesSection + nameSettings + reset,
 	)
 
 	/**
@@ -187,12 +198,22 @@ object ClassColors {
 		DungeonClass.UNKNOWN -> unknownColor.rgb
 	}
 
-	/** Makes the configured self option work in third person even without a server glow flag. */
+	/**
+	 * Whether a player glows, or null to leave it to the game.
+	 *
+	 * Only players, only in a dungeon, and only with this module on — anything
+	 * else is not this module's to decide. "Disable player glow" turns it off
+	 * for everyone. Otherwise your own glow follows "Apply to self" both ways:
+	 * switched on, you glow in third person even without the server's glow
+	 * flag; switched off, you do not glow at all, because Hypixel sets that flag
+	 * on everyone in a dungeon and "off" would otherwise only have meant your
+	 * glow kept its plain team colour. Teammates are left to the server.
+	 */
 	@JvmStatic
-	fun shouldForceSelfGlow(entity: Entity): Boolean =
-		DungeonTeam.inDungeons &&
-			applyToSelf.value &&
-			module.enabled &&
-			entity is Player &&
-			entity === Minecraft.getInstance().player
+	fun glowOverride(entity: Entity): Boolean? {
+		if (!DungeonTeam.inDungeons || !module.enabled || entity !is Player) return null
+		if (disableGlow.value) return false
+		if (entity !== Minecraft.getInstance().player) return null
+		return applyToSelf.value
+	}
 }

@@ -180,18 +180,6 @@ object CrosshairEditor {
 		gridSize, blendMode, scale, opacity, outline, outlineColor, targetTint, targetColor, thirdPerson,
 	)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurable.forEach {
-			when (it) {
-				is DropdownModuleSetting -> it.reset()
-				is SliderModuleSetting -> it.reset()
-				is ToggleModuleSetting -> it.reset()
-				is ColorModuleSetting -> it.reset()
-				else -> Unit
-			}
-		}
-	})
-
 	/** The module card's bind button, pointed at the real key mapping. */
 	private val openKeybind = KeybindSetting(
 		currentKeyName = {
@@ -219,7 +207,7 @@ object CrosshairEditor {
 		keybind = openKeybind,
 		settings = listOf(editor, gridSize, pixels) + palette +
 			listOf(lookSection, blendMode, scale, opacity, outline, outlineColor, targetTint, targetColor) +
-			listOf(whenSection, thirdPerson, reset),
+			listOf(whenSection, thirdPerson),
 	)
 
 	val usesVanillaBlending: Boolean get() = blendMode.selectedIndex == BLEND_VANILLA

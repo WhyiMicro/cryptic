@@ -83,17 +83,6 @@ object ArrowHitSound {
 
 	private val configurable = listOf(silence, sound, volume, pitch)
 
-	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurable.forEach {
-			when (it) {
-				is ToggleModuleSetting -> it.reset()
-				is DropdownModuleSetting -> it.reset()
-				is SliderModuleSetting -> it.reset()
-				else -> Unit
-			}
-		}
-	})
-
 	@JvmField
 	val module = Module(
 		id = "arrow_hit_sound",
@@ -102,7 +91,7 @@ object ArrowHitSound {
 		category = ModuleCategory.GENERAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(silence, sound, volume, pitch, preview, reset),
+		settings = listOf(silence, sound, volume, pitch, preview),
 	)
 
 	/**
