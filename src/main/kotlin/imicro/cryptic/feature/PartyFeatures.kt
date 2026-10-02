@@ -76,7 +76,7 @@ object PartyFeatures {
 	private val partyingWith = Regex("""^You'll be partying with: (.+)$""")
 	private val transferredTo = Regex("""^The party was transferred to $RANK$NAME (?:by|because) """)
 	private val promotedLeader = Regex("""^$RANK$NAME has promoted $RANK$NAME to Party Leader""")
-	private val listHeading = Regex("""^Party Members \(\d+\)$""")
+	private val listHeading = Regex("""^Party Members \((\d+)\)$""")
 	private val listedLeader = Regex("""^Party Leader: $RANK$NAME""")
 	private val listedRow = Regex("""^Party (?:Leader|Moderators|Members): (.+)$""")
 	private val listedName = Regex("""$RANK$NAME ?●""")
@@ -194,8 +194,9 @@ object PartyFeatures {
 	@JvmField
 	val transfer = command(
 		"transfer",
-		"!pt",
-		"As leader: hands the party to whoever asked. Off to begin with, since anybody in the party can ask.",
+		"!pt [name]",
+		"As leader: !pt hands the party to whoever asked, !pt <name> to the member the name fits best. Also !ptme. " +
+			"Off to begin with, since anybody in the party can ask.",
 		default = false,
 	)
 
@@ -287,6 +288,23 @@ object PartyFeatures {
 	 * Followed whether or not Party Features itself is switched on.
 	 */
 	fun mightLead(): Boolean = mayLead()
+
+	/** Who leads the party, or null when nothing seen has said. */
+	fun leaderName(): String? = leader
+
+	/** How many the last /party list counted, and when it arrived. */
+	@Volatile
+	var listedSize: Int? = null
+		private set
+
+	@Volatile
+	var listedAt = 0L
+		private set
+
+	/** When Hypixel last said there is no party, or that you have left it. */
+	@Volatile
+	var noPartyAt = 0L
+		private set
 
 	private fun setLeader(name: String?) {
 		leader = name
@@ -472,7 +490,12 @@ object PartyFeatures {
 		promotedLeader.find(line)?.let { return setLeader(it.groupValues[2]) }
 
 		// The party list, which is the one complete account there is.
-		if (listHeading.matches(line)) return members.clear()
+		listHeading.matchEntire(line)?.let {
+			members.clear()
+			listedSize = it.groupValues[1].toIntOrNull()
+			listedAt = System.currentTimeMillis()
+			return
+		}
 		listedRow.find(line)?.let { row ->
 			listedName.findAll(row.groupValues[1]).forEach { members += it.groupValues[1] }
 			listedLeader.find(line)?.let { setLeader(it.groupValues[1]) }
@@ -489,7 +512,10 @@ object PartyFeatures {
 			refusedAsLeader = true
 			return
 		}
-		if (partyGone.any { it.containsMatchIn(line) }) return forgetParty()
+		if (partyGone.any { it.containsMatchIn(line) }) {
+			noPartyAt = System.currentTimeMillis()
+			return forgetParty()
+		}
 
 		// Inviting somebody with no party of your own is how one is made, and
 		// makes you its leader. With a leader already known this says nothing
@@ -579,14 +605,17 @@ object PartyFeatures {
 		val argument = words.getOrNull(1)?.takeIf { it.matches(Regex("""\w{1,16}""")) }
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return
-		val fromSelf = sender == self()
 
 		when (name) {
 			"w", "warp" -> if (warp.value && mayLead()) send("party warp")
 			"ai", "allinvite", "allinv" -> if (allInvite.value && mayLead()) send("party settings allinvite")
 			"inv", "invite" -> if (invite.value && mayLead() && argument != null) send("party invite $argument")
-			"pt", "ptme", "transfer" ->
-				if (transfer.value && mayLead() && !fromSelf) send("party transfer $sender")
+			"pt", "ptme", "transfer" -> if (transfer.value && mayLead()) {
+				// "!pt" alone hands the party to whoever asked; "!pt name" to the
+				// member that name fits, which is also how the leader passes it on.
+				val target = if (argument != null && name != "ptme") closestMember(argument) ?: argument else sender
+				if (!target.equals(self(), ignoreCase = true)) send("party transfer $target")
+			}
 			"k", "kick" -> if (kick.value && mayLead() && argument != null) {
 				// Whoever in the party the typed name fits, so the start of a
 				// name is enough. With nobody it fits, it is sent as it was

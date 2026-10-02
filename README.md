@@ -24,6 +24,9 @@ The jar lands in `build/libs/`.
   protection, and what each solving mode sends.
 - [Floor 7 devices](docs/floor-7-devices.md) — the arrow, lights and Simon Says
   devices, the terminal ESP, and which clicks each of them will swallow.
+- [Waypoints and messages](docs/waypoints-and-messages.md) — Dungeon Waypoints,
+  its editor and `/cryptic dwp`, Boss Waypoints with `/cryptic bwp`, and Positional
+  Messages with `/cryptic posmsg`.
 
 ## Credits
 
@@ -31,7 +34,9 @@ Several features are ported from other mods, whose licences travel with them:
 
 - **[dtMap](https://github.com/ricedotwho/dtMap)** (BSD 3-Clause) — the dungeon
   map, the room database, the score arithmetic, the door-key sound and several
-  map textures. Licence in [`licenses/dtMap-LICENSE.txt`](licenses/dtMap-LICENSE.txt).
+  map textures, the grey a room is drawn in until it is opened, and the door
+  colours: grey into the unknown, the special room's own colour once it is known.
+  Licence in [`licenses/dtMap-LICENSE.txt`](licenses/dtMap-LICENSE.txt).
   dtMap's score maths is itself from [Odin](https://github.com/odtheking/Odin)
   (BSD 3-Clause).
 - **[Odin](https://github.com/odtheking/Odin)** (BSD 3-Clause) — the terminal
@@ -52,6 +57,10 @@ Several features are ported from other mods, whose licences travel with them:
   own relay through a port of its websocket connection and speaks its messages.
   Auto Requeue's cue, the end-of-run line, and calling it off when somebody
   leaves the party, from its Dungeon Queue.
+  The Spirit Bear timer, the Livid Solver and its invulnerability timer,
+  Positional Messages and its cylinder, the Dungeon Waypoints editor, its /dwp
+  command and its waypoint packs,
+  and the melody coordinates and percentages in the Terminal Solver.
   Licence in [`licenses/Odin-LICENSE.txt`](licenses/Odin-LICENSE.txt).
 - **[Blade Addons](https://github.com/BladeMasterGabe/blade-addons)** (CC0) — the
   secret spawn timer, the leap count in the Spirit Leap Overlay, and the height
@@ -74,6 +83,8 @@ Several features are ported from other mods, whose licences travel with them:
   zpew and no rotate cover, with its Instant Transmission prediction; and
   sending melody progress to the party. Auto GFS, and Auto Requeue with its
   Check Party.
+  The Spirit Bear, Spirit Bow and Thorn highlights, and the Livid Solver's
+  tracer, health, hiding of the wrong Livids and Ice Spray alert.
 - **[Athen](https://github.com/skies-starred/Athen)** (BSD 3-Clause,
   Copyright (c) 2025-2026 Starred) — the Lag Detector's format, Arrow Hitboxes,
   Custom Scale including its chibi styles, and the Carry Manager: the shape of a
@@ -83,7 +94,9 @@ Several features are ported from other mods, whose licences travel with them:
   highlighting, including its rule for deciding a doorway leads nowhere worth
   going, colouring the blood portal by the score you are on, the Puzzle HUD,
   the Dungeon Warp Cooldown, and hiding every sheep in a dungeon for Mage Beam
-  rather than only the one at your feet. Licence in
+  rather than only the one at your feet. Dungeon Waypoints' secret spots: its
+  table of every room's chests, items, essence, bats, redstone keys and levers,
+  and the colour per kind. Licence in
   [`licenses/Devonian-LICENSE.txt`](licenses/Devonian-LICENSE.txt).
 - **[Astrail Experiment](https://github.com/AzureSky0116/astrail-experiment)**
   (MIT) — the Experimentation Table rules: the control pane read by its item

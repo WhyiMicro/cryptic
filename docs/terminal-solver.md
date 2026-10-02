@@ -136,7 +136,11 @@ only the chat line is shown. `/cryptic debug melody` says whether it is
 connected.
 
 **Send melody progress** tells the party when you open melody and as each row
-is done — `Melody 0/4`, `1/4`, `2/4`, `3/4`.
+is done — `Melody 0/4`, `1/4`, `2/4`, `3/4`. **Progress format** switches that to
+Odin's percentages, `Melody 25%` and so on. **Send coords** says where you are
+standing when you open melody, the way Odin's Melody Send Coords does, so the
+party knows which melody is taken. **Show player** picks how a teammate is
+named on the HUD: by class, by name, or both.
 
 Every colour the solver paints with is a setting, including melody's column,
 pointer and resting slot.

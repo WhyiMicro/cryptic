@@ -10,6 +10,8 @@ import imicro.cryptic.feature.BloodCamp;
 import imicro.cryptic.feature.CameraTweaks;
 import imicro.cryptic.feature.CarryManager;
 import imicro.cryptic.feature.DungeonWarpCooldown;
+import imicro.cryptic.feature.DungeonWaypoints;
+import imicro.cryptic.feature.LividSolver;
 import imicro.cryptic.feature.F7Qol;
 import imicro.cryptic.feature.Etherwarp;
 import imicro.cryptic.feature.EtherwarpZeroPing;
@@ -58,6 +60,7 @@ import net.minecraft.network.protocol.ping.ClientboundPongResponsePacket;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ambient.Bat;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.zombie.Zombie;
@@ -79,6 +82,7 @@ public abstract class ClientPacketListenerMixin {
         // to look at by the time anything else could notice.
         if (packet.getSound().value() == SoundEvents.BAT_DEATH) {
             Secrets.onBatDied(packet.getX(), packet.getY(), packet.getZ());
+            DungeonWaypoints.onBatDied(packet.getX(), packet.getY(), packet.getZ());
         }
         // The Spring Boots charge is a note that climbs in pitch, and nothing else.
         SpringBootsHelper.onSound(packet);
@@ -106,6 +110,7 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = "handleMovePlayer", at = @At("RETURN"))
     private void cryptic$afterTeleport(ClientboundPlayerPositionPacket packet, CallbackInfo info) {
         EtherwarpZeroPing.afterServerTeleport();
+        DungeonWaypoints.onTeleport();
     }
 
     /**
@@ -150,6 +155,7 @@ public abstract class ClientPacketListenerMixin {
         if (!(client.level.getEntity(packet.getItemId()) instanceof ItemEntity item)) return;
         if (!Secrets.isSecretDrop(item.getItem())) return;
         Secrets.onSecretItemPickedUp(item.blockPosition());
+        DungeonWaypoints.onItemPickedUp(item.blockPosition());
     }
 
     /**
@@ -167,6 +173,8 @@ public abstract class ClientPacketListenerMixin {
 
         Entity dying = packet.getEntity(client.level);
         if (dying != null) CarryManager.onEntityDied(dying.getId());
+        // A bat secret taken, wherever the bat had flown to.
+        if (dying instanceof Bat) DungeonWaypoints.onBatDied(dying.getX(), dying.getY(), dying.getZ());
 
         if (dying instanceof Zombie zombie && zombie.isBaby() && DungeonRun.INSTANCE.mimicCouldDieNow()) {
             // Both halves: the title, and the two bonus points the score has
@@ -415,6 +423,8 @@ public abstract class ClientPacketListenerMixin {
         MelodyHud.onSystemChat(packet.content(), packet.overlay());
         AutoRequeue.onSystemChat(packet.content(), packet.overlay());
         AutoGfs.onSystemChat(packet.content(), packet.overlay());
+        DungeonWaypoints.onSystemChat(packet.content(), packet.overlay());
+        LividSolver.onSystemChat(packet.content(), packet.overlay());
     }
 
     /**

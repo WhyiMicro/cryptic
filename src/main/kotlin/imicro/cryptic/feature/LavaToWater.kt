@@ -47,6 +47,7 @@ object LavaToWater {
 		label = "Tint",
 		defaultRgb = 0x3F76E4,
 		visibleIf = { colorTint.value },
+		inlineWith = colorTint,
 	)
 
 	@JvmField

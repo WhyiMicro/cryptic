@@ -1,5 +1,6 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.feature.DungeonWaypoints;
 import imicro.cryptic.feature.PuzzleSolver;
 import imicro.cryptic.feature.Secrets;
 import imicro.cryptic.feature.TerminalEsp;
@@ -22,6 +23,7 @@ public abstract class MultiPlayerGameModeMixin {
     @Inject(method = "useItemOn", at = @At("HEAD"))
     private void cryptic$noteSecretClick(LocalPlayer player, InteractionHand hand, BlockHitResult hit, CallbackInfoReturnable<?> info) {
         Secrets.onBlockUsed(hit.getBlockPos());
+        DungeonWaypoints.onBlockUsed(hit.getBlockPos());
         PuzzleSolver.onBlockUsed(hit.getBlockPos());
     }
 

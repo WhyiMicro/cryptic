@@ -215,6 +215,12 @@ sealed class ModuleSetting(
 	}
 
 	fun isVisible() = visibleIf()
+
+	/**
+	 * Whether this setting gets a row of its own. A colour drawn beside its
+	 * toggle does not: it is part of that toggle's row.
+	 */
+	open val hasOwnRow: Boolean get() = true
 }
 
 class ToggleModuleSetting(
@@ -226,6 +232,10 @@ class ToggleModuleSetting(
 ): ModuleSetting(id, label, visibleIf) {
 	var value: Boolean = defaultValue
 	fun reset() { value = defaultValue }
+
+	/** A colour drawn as a swatch beside this toggle, when one is paired with it. */
+	var inlineColor: ColorModuleSetting? = null
+		internal set
 }
 
 class SliderModuleSetting(
@@ -314,7 +324,19 @@ class ColorModuleSetting(
 	val defaultAlpha: Int = 0xFF,
 	val description: String = "",
 	visibleIf: () -> Boolean = { true },
+	/**
+	 * The toggle this colour belongs to, which then draws it as a swatch beside
+	 * itself instead of the colour taking a row. Only for a toggle with exactly
+	 * one colour of its own.
+	 */
+	val inlineWith: ToggleModuleSetting? = null,
 ): ModuleSetting(id, label, visibleIf) {
+	init {
+		inlineWith?.inlineColor = this
+	}
+
+	override val hasOwnRow: Boolean get() = inlineWith == null
+
 	private val defaultArgb = ((defaultAlpha and 0xFF) shl 24) or (defaultRgb and 0xFFFFFF)
 
 	var argb: Int = defaultArgb
@@ -564,6 +586,11 @@ object ModuleRegistry {
 		imicro.cryptic.feature.PartyFeatures.module,
 		imicro.cryptic.feature.AutoGfs.module,
 		imicro.cryptic.feature.AutoRequeue.module,
+		imicro.cryptic.feature.SpiritBear.module,
+		imicro.cryptic.feature.LividSolver.module,
+		imicro.cryptic.feature.PositionalMessages.module,
+		imicro.cryptic.feature.DungeonWaypoints.module,
+		imicro.cryptic.feature.BossWaypoints.module,
 		imicro.cryptic.feature.SpringBootsHelper.module,
 		imicro.cryptic.feature.PerformanceHud.module,
 		imicro.cryptic.feature.DarkMode.module,

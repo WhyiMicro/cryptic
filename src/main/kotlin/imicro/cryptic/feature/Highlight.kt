@@ -208,6 +208,7 @@ object Highlight {
 		supportsAlpha = true,
 		defaultAlpha = 0xA0,
 		visibleIf = { highlightMimicChest.value },
+		inlineWith = highlightMimicChest,
 	)
 
 	@JvmField

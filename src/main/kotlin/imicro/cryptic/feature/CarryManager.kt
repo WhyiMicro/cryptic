@@ -148,6 +148,7 @@ object CarryManager {
 		supportsAlpha = true,
 		defaultAlpha = 0xFF,
 		visibleIf = { tracer.value },
+		inlineWith = tracer,
 	)
 
 	@JvmField

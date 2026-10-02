@@ -48,9 +48,9 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 	 * corner itself is then the point every schematic coordinate is measured
 	 * from.
 	 *
-	 * Only one-tile rooms are answered, which is every puzzle in the game.
-	 * Larger rooms have their corner somewhere out in the middle of the shape,
-	 * and nothing in Cryptic needs their coordinates.
+	 * Larger rooms are answered too, once all of their tiles are known: the
+	 * marker is on one outside corner of the whole shape, and Dungeon
+	 * Waypoints needs every room's coordinates, not only the puzzles'.
 	 */
 	var rotation: RoomRotation? = null
 		private set
@@ -72,24 +72,43 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 	fun resolveRotation(level: Level): Boolean {
 		if (rotation != null) return true
 		if (rotationChecked) return false
-		if (tiles.size != 1) {
+		if (tiles.isEmpty()) return false
+		// A larger room is only looked at once every tile of it is known: with
+		// a tile missing, a corner on the inside of the shape looks like an
+		// outside one, and the marker could be read off the wrong corner.
+		if (shape != Shape.UNKNOWN && tiles.size < shape.tileCount) return false
+		if (shape == Shape.UNKNOWN && tiles.size != 1) return false
+
+		val first = tiles.first()
+		val top = roofHeight(level, centerXOf(first), centerZOf(first)) ?: return false
+
+		// The fairy room carries no marker; Odin reads it as never turned.
+		if (data?.name == "Fairy") {
+			rotation = RoomRotation.SOUTH
+			clayPos = BlockPos(centerXOf(first) + RoomRotation.SOUTH.dx, top, centerZOf(first) + RoomRotation.SOUTH.dz)
 			rotationChecked = true
-			return false
+			return true
 		}
 
-		val tile = tiles.first()
-		val centerX = DungeonFloor.WORLD_TOP_LEFT + tile.x * DungeonFloor.BLOCKS_PER_TILE
-		val centerZ = DungeonFloor.WORLD_TOP_LEFT + tile.z * DungeonFloor.BLOCKS_PER_TILE
+		// Every outside corner of every tile, which for one tile is its four.
+		// A corner is outside when neither neighbour towards it belongs to the
+		// room — the marker sits on the corner of the whole shape, never on a
+		// seam between two of its tiles. The same corners Devonian and Skytils
+		// check, so their room coordinates line up with these.
+		for (tile in tiles) {
+			for (candidate in RoomRotation.entries) {
+				val stepX = Integer.signum(candidate.dx)
+				val stepZ = Integer.signum(candidate.dz)
+				if (tiles.any { it.x == tile.x + stepX && it.z == tile.z }) continue
+				if (tiles.any { it.x == tile.x && it.z == tile.z + stepZ }) continue
 
-		val top = roofHeight(level, centerX, centerZ) ?: return false
-
-		for (candidate in RoomRotation.entries) {
-			val probe = BlockPos(centerX + candidate.dx, top, centerZ + candidate.dz)
-			if (level.getBlockState(probe).block == Blocks.DYED_TERRACOTTA.blue()) {
-				rotation = candidate
-				clayPos = probe
-				rotationChecked = true
-				return true
+				val probe = BlockPos(centerXOf(tile) + candidate.dx, top, centerZOf(tile) + candidate.dz)
+				if (level.getBlockState(probe).block == Blocks.DYED_TERRACOTTA.blue()) {
+					rotation = candidate
+					clayPos = probe
+					rotationChecked = true
+					return true
+				}
 			}
 		}
 
@@ -98,6 +117,10 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 		// solvers treat as "no coordinates for this room".
 		return false
 	}
+
+	private fun centerXOf(tile: Vec2i): Int = DungeonFloor.WORLD_TOP_LEFT + tile.x * DungeonFloor.BLOCKS_PER_TILE
+
+	private fun centerZOf(tile: Vec2i): Int = DungeonFloor.WORLD_TOP_LEFT + tile.z * DungeonFloor.BLOCKS_PER_TILE
 
 	/**
 	 * The top of the room's roof at its middle.
@@ -332,11 +355,13 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 		// whole floor is the one case where that is wrong: a trap room dimmed
 		// to half strength is the same brown as an ordinary one, and telling
 		// them apart before walking in is the entire point of revealing it.
-		return if (!revealAll && (state == State.UNDISCOVERED || state == State.UNOPENED)) {
-			intArrayOf(DungeonMapColors.darken(base))
-		} else {
-			intArrayOf(base)
+		if (!revealAll && (state == State.UNDISCOVERED || state == State.UNOPENED)) {
+			// dtMap's way: a room nobody has opened is grey, whatever it turns out
+			// to be, so the map reads as the route travelled. The blood room keeps
+			// a dimmed red, since knowing where it is is half the point.
+			return intArrayOf(if (type == Type.BLOOD) DungeonMapColors.darken(base) else DungeonMapColors.unexplored())
 		}
+		return intArrayOf(base)
 	}
 
 	/**
@@ -449,11 +474,18 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 	 * True once the fairy room has been passed through.
 	 *
 	 * A fairy room is never cleared and holds no secrets, so it never turns
-	 * green on its own. What finishes it is the wither door on its far side
-	 * being opened, which is the party moving on towards blood.
+	 * green on its own. It sits between two wither doors, the one the party
+	 * opens to get in and the one inside that leads on towards blood, and it
+	 * is finished when that second one opens. Asking whether any of them is
+	 * open answered yes the moment the party walked in, so every one has to be.
 	 */
 	val fairyPassed: Boolean
-		get() = doors.any { it.type == DungeonDoor.Type.WITHER && it.opened }
+		get() {
+			val wither = doors.filter { it.type == DungeonDoor.Type.WITHER }
+			// Both of them: with only the way in known so far, "all open" would
+			// be true the moment the party walked in.
+			return wither.size >= 2 && wither.all { it.opened }
+		}
 
 	/**
 	 * The colour a room's name is written in.
@@ -466,7 +498,8 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 	private fun labelColor(): Int {
 		if (state == State.FAILED) return 0xFFFF5555.toInt()
 
-		if (type == Type.FAIRY) return if (fairyPassed) 0xFF55FF55.toInt() else 0xFFA0A0A0.toInt()
+		// White once entered, green once the wither door inside has opened.
+		if (type == Type.FAIRY) return if (fairyPassed) 0xFF55FF55.toInt() else 0xFFFFFFFF.toInt()
 		if (type == Type.PUZZLE) return if (state == State.GREEN) 0xFF55FF55.toInt() else 0xFFA0A0A0.toInt()
 		// The blood room is the same two states as a puzzle: the Watcher has
 		// let you through, or he has not.

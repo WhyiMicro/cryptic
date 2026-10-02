@@ -3,6 +3,8 @@ package imicro.cryptic.mixin;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import imicro.cryptic.feature.AutoClicker;
 import imicro.cryptic.feature.DeviceSolver;
+import imicro.cryptic.feature.BossWaypoints;
+import imicro.cryptic.feature.DungeonWaypoints;
 import imicro.cryptic.feature.PuzzleSolver;
 import imicro.cryptic.gui.ImGuiRuntime;
 import net.minecraft.client.Minecraft;
@@ -48,7 +50,8 @@ public abstract class MinecraftMixin {
         // The puzzles that can be failed by one wrong click are asked here as
         // well, because this is the point where a click has been decided on and
         // nothing has been sent yet.
-        if (DeviceSolver.blocksBlockUse(hit.getBlockPos()) || PuzzleSolver.blocksClick(hit.getBlockPos())) {
+        if (DeviceSolver.blocksBlockUse(hit.getBlockPos()) || PuzzleSolver.blocksClick(hit.getBlockPos())
+                || DungeonWaypoints.onEditorClick(hit.getBlockPos()) || BossWaypoints.onEditorClick(hit.getBlockPos())) {
             info.cancel();
         }
     }

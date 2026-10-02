@@ -6,6 +6,7 @@ import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.dungeon.DungeonTeam
 import imicro.cryptic.dungeon.DungeonTeam.DungeonClass
 import imicro.cryptic.dungeon.Floor7
+import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.ModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
@@ -88,6 +89,10 @@ object MelodyHud {
 	private const val GOLDOR_START = "[BOSS] Goldor: Who dares trespass into my domain?"
 	private const val CORE_OPENING = "The Core entrance is opening!"
 
+	private const val FORMAT_QUARTERS = 0
+	private const val LABEL_CLASS = 0
+	private const val LABEL_NAME = 1
+
 	private val section = SectionModuleSetting("melody_hud_section", "Melody")
 
 	@JvmField
@@ -96,6 +101,25 @@ object MelodyHud {
 		label = "Send melody progress",
 		defaultValue = false,
 		description = "Tells the party when you open melody and as each row is done: Melody 0/4, 1/4, 2/4, 3/4.",
+	)
+
+	@JvmField
+	val progressFormat = DropdownModuleSetting(
+		id = "melody_progress_format",
+		label = "Progress format",
+		options = listOf("Melody 1/4", "Melody 25%"),
+		defaultIndex = FORMAT_QUARTERS,
+		description = "Quarters, or the percentages Odin sends. Both are understood by every melody mod.",
+		visibleIf = { sendProgress.value },
+	)
+
+	@JvmField
+	val sendCoords = ToggleModuleSetting(
+		id = "melody_send_coords",
+		label = "Send coords",
+		defaultValue = false,
+		description = "Says where you are in party chat when you open melody, so the party knows which one is taken. " +
+			"Odin's Melody Send Coords.",
 	)
 
 	@JvmField
@@ -130,11 +154,21 @@ object MelodyHud {
 		visibleIf = { enabled.value },
 	)
 
+	@JvmField
+	val playerLabel = DropdownModuleSetting(
+		id = "melody_label",
+		label = "Show player",
+		options = listOf("Class", "Name", "Class & Name"),
+		defaultIndex = LABEL_CLASS,
+		description = "How the teammate is named under their melody. Odin's Show Player.",
+		visibleIf = { enabled.value },
+	)
+
 	/** Listed on the Terminal Solver's card. */
-	val settings: List<ModuleSetting> = listOf(section, sendProgress, enabled, live, seconds)
+	val settings: List<ModuleSetting> = listOf(section, sendProgress, progressFormat, sendCoords, enabled, live, seconds, playerLabel)
 
 	/** True while this wants the floor and the boss read, for [imicro.cryptic.CrypticClient]. */
-	val wanted: Boolean get() = TerminalSolver.module.enabled && (enabled.value || sendProgress.value)
+	val wanted: Boolean get() = TerminalSolver.module.enabled && (enabled.value || sendProgress.value || sendCoords.value)
 
 	private val shown: Boolean get() = TerminalSolver.module.enabled && enabled.value
 
@@ -332,6 +366,10 @@ object MelodyHud {
 	fun onTerminalOpened() {
 		announcedRow = -1
 		resetSent()
+		if (TerminalSolver.module.enabled && sendCoords.value && ownMelodyCounts()) {
+			val at = Minecraft.getInstance().player?.blockPosition() ?: return
+			say("x: ${at.x}, y: ${at.y}, z: ${at.z}")
+		}
 	}
 
 	/** Your melody closing, done or not, which takes you off everybody's HUD. */
@@ -383,11 +421,16 @@ object MelodyHud {
 		announcedRow = row
 
 		if (!TerminalSolver.module.enabled || !sendProgress.value) return
-		val client = Minecraft.getInstance()
 		// The simulator's melody is nobody's business but yours.
 		if (!ownMelodyCounts()) return
 
-		val line = "Melody ${row - 1}/$QUARTERS"
+		val done = row - 1
+		say(if (progressFormat.selectedIndex == FORMAT_QUARTERS) "Melody $done/$QUARTERS" else "Melody ${done * 25}%")
+	}
+
+	/** A line to party chat, or a preview of it under `/cryptic debug party`. Only in the boss. */
+	private fun say(line: String) {
+		val client = Minecraft.getInstance()
 		if (DebugOverrides.previewPartyCommands) {
 			client.gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §7Would send: §f/pc $line"))
 			return
@@ -451,7 +494,7 @@ object MelodyHud {
 		/** The row number is drawn at twice the size, to fill the grid's height. */
 		private val numberScale = 2
 
-		override val width: Int get() = maxOf(gridWidth + 4 + font.width("4") * numberScale, font.width(label(EXAMPLE_LABEL)))
+		override val width: Int get() = maxOf(gridWidth + 4 + font.width("4") * numberScale, font.width(label(labelParts(EXAMPLE_NAME, EXAMPLE))))
 		override val height: Int get() = blockHeight(EXAMPLE) * maxOf(1, current().size)
 
 		override fun isVisible(): Boolean =
@@ -478,11 +521,17 @@ object MelodyHud {
 		/** "ARCHER has melody! 1/4", the class in its colour, or the name when the class is not known. */
 		private fun labelParts(name: String, melody: Melody): List<Pair<String, Int>> {
 			val dungeonClass = if (name == EXAMPLE_NAME) DungeonClass.ARCHER else DungeonTeam.classOf(name)
-			val who = dungeonClass
-				?.takeIf { it != DungeonClass.UNKNOWN }
-				?.let { it.name.uppercase(Locale.ROOT) to (0xFF000000.toInt() or (ClassColors.getClassColor(it) and 0xFFFFFF)) }
-				?: (name to GREY)
-			return listOf(who, " has melody! " to PURPLE, "${melody.done}/$QUARTERS" to PURPLE)
+			val known = dungeonClass?.takeIf { it != DungeonClass.UNKNOWN }
+			val color = known?.let { 0xFF000000.toInt() or (ClassColors.getClassColor(it) and 0xFFFFFF) } ?: GREY
+			val shownName = if (name == EXAMPLE_NAME) "Steve" else name
+			val className = known?.name?.uppercase(Locale.ROOT)
+			val who: List<Pair<String, Int>> = when {
+				className == null -> listOf(shownName to GREY)
+				playerLabel.selectedIndex == LABEL_CLASS -> listOf(className to color)
+				playerLabel.selectedIndex == LABEL_NAME -> listOf(shownName to color)
+				else -> listOf(shownName to color, " (" to GREY, className to color, ")" to GREY)
+			}
+			return who + listOf(" has melody! " to PURPLE, "${melody.done}/$QUARTERS" to PURPLE)
 		}
 
 		private fun draw(context: GuiGraphicsExtractor, top: Int, name: String, melody: Melody) {
@@ -538,7 +587,6 @@ object MelodyHud {
 
 		private companion object {
 			const val EXAMPLE_NAME = "\u0000example"
-			val EXAMPLE_LABEL = listOf("ARCHER" to WHITE, " has melody! " to PURPLE, "1/4" to PURPLE)
 		}
 	}
 }

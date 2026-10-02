@@ -4,7 +4,6 @@ import com.mojang.blaze3d.platform.InputConstants
 import imgui.ImDrawList
 import imgui.ImGui
 import imgui.flag.ImGuiCol
-import imgui.flag.ImGuiColorEditFlags
 import imgui.flag.ImGuiInputTextFlags
 import imgui.flag.ImGuiMouseButton
 import imgui.flag.ImGuiStyleVar
@@ -188,8 +187,10 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             return true
         }
         // The shortcut every other search field in every other program uses.
-        if (!searchOpen && event.key() == GLFW.GLFW_KEY_F && (event.modifiers() and GLFW.GLFW_MOD_CONTROL) != 0) {
-            openSearch()
+        // With the search already open it puts the cursor back in the field,
+        // after a click elsewhere took it out, and keeps what was typed.
+        if (event.key() == GLFW.GLFW_KEY_F && (event.modifiers() and GLFW.GLFW_MOD_CONTROL) != 0) {
+            if (searchOpen) searchFocusRequested = true else openSearch()
             return true
         }
         return super.keyPressed(event)
@@ -1219,7 +1220,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
 
         for (index in settings.indices) {
             val setting = settings[index]
-            if (!setting.isVisible()) continue
+            if (!setting.isVisible() || !setting.hasOwnRow) continue
 
             if (setting is SectionModuleSetting) {
                 rows += groupRows * group.let { if (it == null) 1f else ease(openness(module, it)) }
@@ -1266,7 +1267,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         expanded: Boolean,
     ): DropdownOverlay? {
         val settingsY = cardY + dp(CUSTOM_SETTINGS_Y, scale)
-        val firstSetting = module.settings.firstOrNull { it.isVisible() }
+        val firstSetting = module.settings.firstOrNull { it.isVisible() && it.hasOwnRow }
         // A module that names its own first group gets that name instead of the
         // implicit one, rather than both.
         val leadingSection = firstSetting as? SectionModuleSetting
@@ -1319,7 +1320,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         val settings = module.settings
         for (index in settings.indices) {
             val setting = settings[index]
-            if (!setting.isVisible()) continue
+            if (!setting.isVisible() || !setting.hasOwnRow) continue
 
             if (setting is SectionModuleSetting && setting !== leadingSection) {
                 closeGroup()
@@ -1351,6 +1352,20 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
                         dt,
                         interactive,
                     )
+                    // A colour paired with this toggle sits just left of the switch,
+                    // which is what saves it a row of its own.
+                    setting.inlineColor?.let { color ->
+                        val size = dp(COLOR_SWATCH_SIZE, scale)
+                        drawColorSwatch(
+                            draw,
+                            color,
+                            cardX + cardWidth - dp(45f, scale) - dp(8f, scale) - size,
+                            rowY + dp(1f, scale),
+                            size,
+                            scale,
+                            interactive,
+                        )
+                    }
                     rowY += dp(CUSTOM_TOGGLE_ROW_HEIGHT, scale)
                 }
                 is ButtonModuleSetting -> {
@@ -1457,7 +1472,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         var total = 0f
         var inGroup = section == null
         for (setting in module.settings) {
-            if (!setting.isVisible()) continue
+            if (!setting.isVisible() || !setting.hasOwnRow) continue
             if (setting is SectionModuleSetting) {
                 if (setting === section) {
                     inGroup = true
@@ -1660,98 +1675,245 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         interactive: Boolean,
     ) {
         drawText(draw, setting.label, cardX + dp(14f, scale), rowY + dp(3f, scale), TEXT, dp(9.5f, scale))
+        val size = dp(COLOR_SWATCH_SIZE, scale)
+        drawColorSwatch(draw, setting, cardX + cardWidth - dp(14f, scale) - size, rowY + dp(1f, scale), size, scale, interactive)
+    }
 
-        val swatchWidth = dp(47f, scale)
-        val swatchHeight = dp(18f, scale)
-        val swatchX = cardX + cardWidth - dp(14f, scale) - swatchWidth
-        val swatchY = rowY
-        val popupId = setting.widgetIds.picker
-        val hovered = interactive && ImGui.isMouseHoveringRect(
-            swatchX,
-            swatchY,
-            swatchX + swatchWidth,
-            swatchY + swatchHeight,
-        )
+    /**
+     * A colour as a small rounded square, which opens the picker when clicked.
+     *
+     * Drawn the same on a colour's own row and beside the toggle it belongs to,
+     * so a colour looks like a colour wherever it is.
+     */
+    private fun drawColorSwatch(
+        draw: ImDrawList,
+        setting: ColorModuleSetting,
+        x: Float,
+        y: Float,
+        size: Float,
+        scale: Float,
+        interactive: Boolean,
+    ) {
+        val hovered = interactive && ImGui.isMouseHoveringRect(x, y, x + size, y + size)
+        val radius = dp(4f, scale)
+        // The colour and nothing round it, like the swatch in the reference.
+        // A colour with alpha is drawn over a checkerboard, so a see-through
+        // one does not just read as darker.
+        if (setting.supportsAlpha && setting.alpha < 0xFF) {
+            drawChecker(draw, x, y, x + size, y + size, size / 4f)
+            roundCorners(draw, x, y, x + size, y + size, radius, contentColor(SURFACE))
+        }
+        draw.addRectFilled(x, y, x + size, y + size, contentColor(setting.abgr), radius)
+        // A faint lift on hover, which is all a control this small needs.
+        if (hovered) draw.addRectFilled(x, y, x + size, y + size, contentColor(0x30FFFFFF), radius)
 
-        draw.addRectFilled(
-            swatchX,
-            swatchY,
-            swatchX + swatchWidth,
-            swatchY + swatchHeight,
-            contentColor(if (hovered) TEXT else TRACK),
-            swatchHeight / 2f,
-        )
-        draw.addRectFilled(
-            swatchX + dp(1.5f, scale),
-            swatchY + dp(1.5f, scale),
-            swatchX + swatchWidth - dp(1.5f, scale),
-            swatchY + swatchHeight - dp(1.5f, scale),
-            contentColor(setting.abgr),
-            (swatchHeight - dp(3f, scale)) / 2f,
-        )
-
-        if (interactive && hit(setting.widgetIds.control, swatchX, swatchY, swatchWidth, swatchHeight)) {
+        if (interactive && hit(setting.widgetIds.control, x, y, size, size)) {
             colorHexBuffers.getOrPut(setting) { ImString(9) }.set(setting.hexDigits)
+            pickerHsv[setting] = hsvOf(setting.rgb)
             // Focused and selected on open, so a hex on the clipboard can go
             // straight in with one paste.
             colorHexFocusRequested = setting
-            ImGui.openPopup(popupId)
+            ImGui.openPopup(setting.widgetIds.picker)
         }
+        drawColorPicker(setting, scale)
+    }
 
+    /** Hue, saturation and value for each colour whose picker is open, kept across frames. */
+    private val pickerHsv = mutableMapOf<ColorModuleSetting, FloatArray>()
+
+    private fun hsvOf(rgb: Int): FloatArray =
+        java.awt.Color.RGBtoHSB((rgb ushr 16) and 0xFF, (rgb ushr 8) and 0xFF, rgb and 0xFF, null)
+
+    /** An ImGui colour (ABGR) from 0xRRGGBB and an alpha. */
+    private fun abgrOf(rgb: Int, alpha: Int = 0xFF): Int =
+        ((alpha and 0xFF) shl 24) or ((rgb and 0xFF) shl 16) or (rgb and 0x00FF00) or ((rgb ushr 16) and 0xFF)
+
+    private fun drawChecker(draw: ImDrawList, x0: Float, y0: Float, x1: Float, y1: Float, cell: Float) {
+        draw.addRectFilled(x0, y0, x1, y1, contentColor(0xFFCCCCCC.toInt()))
+        var row = 0
+        var y = y0
+        while (y < y1) {
+            var x = x0 + if (row % 2 == 0) 0f else cell
+            while (x < x1) {
+                draw.addRectFilled(x, y, minOf(x + cell, x1), minOf(y + cell, y1), contentColor(0xFF888888.toInt()))
+                x += cell * 2
+            }
+            y += cell
+            row++
+        }
+    }
+
+    /**
+     * Rounds the corners of whatever was just drawn in a rectangle, by painting
+     * the popup's own background over the corners outside the curve. ImGui
+     * cannot round a gradient, and this looks the same as rounding it.
+     */
+    private fun roundCorners(
+        draw: ImDrawList,
+        x0: Float,
+        y0: Float,
+        x1: Float,
+        y1: Float,
+        radius: Float,
+        background: Int = contentColor(SURFACE),
+    ) {
+        // Each corner is filled exactly: a fan of triangles from the corner
+        // point to the arc. Nothing is painted outside the shape — a thick
+        // rounded stroke used to, over the popup's corners, the next bar and
+        // the toggle beside a swatch — and nothing inside the curve is missed.
+        val r = radius.coerceAtMost(minOf(x1 - x0, y1 - y0) / 2f)
+        if (r <= 0f) return
+        fun corner(cornerX: Float, cornerY: Float, centerX: Float, centerY: Float, from: Double) {
+            val steps = 10
+            var previousX = centerX + (r * cos(from)).toFloat()
+            var previousY = centerY + (r * sin(from)).toFloat()
+            for (step in 1..steps) {
+                val angle = from + Math.PI / 2 * step / steps
+                val x = centerX + (r * cos(angle)).toFloat()
+                val y = centerY + (r * sin(angle)).toFloat()
+                draw.addTriangleFilled(cornerX, cornerY, previousX, previousY, x, y, background)
+                previousX = x
+                previousY = y
+            }
+        }
+        corner(x0, y0, x0 + r, y0 + r, Math.PI)
+        corner(x1, y0, x1 - r, y0 + r, Math.PI * 1.5)
+        corner(x1, y1, x1 - r, y1 - r, 0.0)
+        corner(x0, y1, x0 + r, y1 - r, Math.PI / 2)
+    }
+
+    /**
+     * Where a bar's handle sits for [value], 0 to 1. Its centre runs between
+     * half a handle in from each end, so at either end it sits inside the bar
+     * rather than over the edge of the popup.
+     */
+    private fun barHandleX(value: Float, left: Float, width: Float, scale: Float): Float {
+        val half = dp(BAR_HANDLE_HALF_WIDTH, scale)
+        return left + half + value * (width - half * 2f)
+    }
+
+    /** The value, 0 to 1, a bar is dragged to: the reverse of [barHandleX]. */
+    private fun barValueAt(mouseX: Float, left: Float, width: Float, scale: Float): Float {
+        val half = dp(BAR_HANDLE_HALF_WIDTH, scale)
+        return ((mouseX - left - half) / (width - half * 2f)).coerceIn(0f, 1f)
+    }
+
+    /** The handle on a bar: a white-edged pill in the colour it has picked. */
+    private fun drawBarHandle(draw: ImDrawList, x: Float, y0: Float, y1: Float, fill: Int, scale: Float) {
+        val halfWidth = dp(BAR_HANDLE_HALF_WIDTH, scale)
+        val overhang = dp(3f, scale)
+        draw.addRectFilled(x - halfWidth, y0 - overhang, x + halfWidth, y1 + overhang, contentColor(0xFFFFFFFF.toInt()), halfWidth)
+        val inset = dp(2f, scale)
+        draw.addRectFilled(
+            x - halfWidth + inset,
+            y0 - overhang + inset,
+            x + halfWidth - inset,
+            y1 + overhang - inset,
+            contentColor(fill),
+            halfWidth - inset,
+        )
+    }
+
+    /**
+     * The colour picker: saturation and brightness in a rounded square with a
+     * ring on the colour, a rainbow bar for the hue, a bar for the opacity when
+     * the colour has one, and the hex code under it all.
+     */
+    private fun drawColorPicker(setting: ColorModuleSetting, scale: Float) {
         ImGui.pushStyleColor(ImGuiCol.Text, contentColor(TEXT))
         ImGui.pushStyleColor(ImGuiCol.PopupBg, contentColor(SURFACE))
         ImGui.pushStyleColor(ImGuiCol.Border, contentColor(TRACK))
         ImGui.pushStyleColor(ImGuiCol.FrameBg, contentColor(SURFACE_RAISED))
         ImGui.pushStyleColor(ImGuiCol.FrameBgHovered, contentColor(SURFACE_ACTIVE))
         ImGui.pushStyleColor(ImGuiCol.FrameBgActive, contentColor(SURFACE_ACTIVE))
-        ImGui.pushStyleColor(ImGuiCol.Button, contentColor(SURFACE_RAISED))
-        ImGui.pushStyleColor(ImGuiCol.ButtonHovered, contentColor(SURFACE_ACTIVE))
-        ImGui.pushStyleColor(ImGuiCol.ButtonActive, contentColor(ACCENT_DARK))
-        ImGui.pushStyleVar(ImGuiStyleVar.PopupRounding, dp(9f, scale))
+        ImGui.pushStyleVar(ImGuiStyleVar.PopupRounding, dp(12f, scale))
         ImGui.pushStyleVar(ImGuiStyleVar.FrameRounding, dp(6f, scale))
-        ImGui.pushStyleVar(ImGuiStyleVar.WindowPadding, dp(10f, scale), dp(9f, scale))
+        ImGui.pushStyleVar(ImGuiStyleVar.WindowPadding, dp(8f, scale), dp(8f, scale))
 
-        if (ImGui.beginPopup(popupId)) {
-            ImGui.text(setting.label)
-            val rgb = setting.rgb
-            val picker = if (setting.supportsAlpha) {
-                floatArrayOf(
-                    ((rgb ushr 16) and 0xFF) / 255f,
-                    ((rgb ushr 8) and 0xFF) / 255f,
-                    (rgb and 0xFF) / 255f,
-                    setting.alpha / 255f,
-                )
-            } else {
-                floatArrayOf(
-                    ((rgb ushr 16) and 0xFF) / 255f,
-                    ((rgb ushr 8) and 0xFF) / 255f,
-                    (rgb and 0xFF) / 255f,
-                )
-            }
-            ImGui.setNextItemWidth(dp(150f, scale))
-            var flags = ImGuiColorEditFlags.NoInputs or
-                ImGuiColorEditFlags.NoSidePreview or
-                ImGuiColorEditFlags.NoSmallPreview or
-                ImGuiColorEditFlags.PickerHueBar
-            flags = if (setting.supportsAlpha) flags or ImGuiColorEditFlags.AlphaBar else flags or ImGuiColorEditFlags.NoAlpha
-            val pickerChanged = if (setting.supportsAlpha) {
-                ImGui.colorPicker4("##color_picker", picker, flags)
-            } else {
-                ImGui.colorPicker3("##color_picker", picker, flags)
-            }
-            if (pickerChanged) {
-                val red = (picker[0] * 255f).roundToInt().coerceIn(0, 255)
-                val green = (picker[1] * 255f).roundToInt().coerceIn(0, 255)
-                val blue = (picker[2] * 255f).roundToInt().coerceIn(0, 255)
-                setting.rgb = (red shl 16) or (green shl 8) or blue
-                if (setting.supportsAlpha) {
-                    setting.alpha = (picker[3] * 255f).roundToInt().coerceIn(0, 255)
-                }
+        if (ImGui.beginPopup(setting.widgetIds.picker)) {
+            val draw = ImGui.getWindowDrawList()
+            val hsv = pickerHsv.getOrPut(setting) { hsvOf(setting.rgb) }
+            val width = dp(196f, scale)
+            val gap = dp(10f, scale)
+            val left = ImGui.getCursorScreenPosX()
+
+            var top = ImGui.getCursorScreenPosY()
+
+            fun apply() {
+                setting.rgb = java.awt.Color.HSBtoRGB(hsv[0], hsv[1], hsv[2]) and 0xFFFFFF
                 colorHexBuffers.getOrPut(setting) { ImString(9) }.set(setting.hexDigits)
             }
 
+            // Saturation across, brightness down.
+            val squareHeight = dp(150f, scale)
+            val pureHue = java.awt.Color.HSBtoRGB(hsv[0], 1f, 1f) and 0xFFFFFF
+            val white = contentColor(0xFFFFFFFF.toInt())
+            val black = contentColor(0xFF000000.toInt())
+            val hueColor = contentColor(abgrOf(pureHue))
+            draw.addRectFilledMultiColor(left, top, left + width, top + squareHeight, white, hueColor, hueColor, white)
+            draw.addRectFilledMultiColor(left, top, left + width, top + squareHeight, 0, 0, black, black)
+            roundCorners(draw, left, top, left + width, top + squareHeight, dp(10f, scale))
+            ImGui.setCursorScreenPos(left, top)
+            ImGui.invisibleButton("##sv", width, squareHeight)
+            // The ring stays wholly inside the square: its centre runs along
+            // a square smaller by its radius, so the edge colours are reached
+            // with the ring touching the edge rather than hanging off it.
+            val ringRadius = dp(6f, scale)
+            val travelX = width - ringRadius * 2f
+            val travelY = squareHeight - ringRadius * 2f
+            if (ImGui.isItemActive()) {
+                hsv[1] = ((ImGui.getMousePosX() - left - ringRadius) / travelX).coerceIn(0f, 1f)
+                hsv[2] = 1f - ((ImGui.getMousePosY() - top - ringRadius) / travelY).coerceIn(0f, 1f)
+                apply()
+            }
+            val ringX = left + ringRadius + hsv[1] * travelX
+            val ringY = top + ringRadius + (1f - hsv[2]) * travelY
+            draw.addCircle(ringX, ringY, ringRadius + dp(1f, scale), contentColor(0x80000000.toInt()), 32, dp(1f, scale))
+            draw.addCircle(ringX, ringY, ringRadius - dp(1f, scale), white, 32, dp(2f, scale))
+            top += squareHeight + gap
+
+            // The hue, as a rainbow.
+            val barHeight = dp(12f, scale)
+            val stops = intArrayOf(0xFF0000, 0xFFFF00, 0x00FF00, 0x00FFFF, 0x0000FF, 0xFF00FF, 0xFF0000)
+            val segment = width / (stops.size - 1)
+            for (index in 0 until stops.size - 1) {
+                val from = contentColor(abgrOf(stops[index]))
+                val to = contentColor(abgrOf(stops[index + 1]))
+                draw.addRectFilledMultiColor(left + segment * index, top, left + segment * (index + 1) + 0.5f, top + barHeight, from, to, to, from)
+            }
+            roundCorners(draw, left, top, left + width, top + barHeight, barHeight / 2f)
+            ImGui.setCursorScreenPos(left, top - dp(3f, scale))
+            ImGui.invisibleButton("##hue", width, barHeight + dp(6f, scale))
+            if (ImGui.isItemActive()) {
+                hsv[0] = barValueAt(ImGui.getMousePosX(), left, width, scale).coerceAtMost(0.9999f)
+                apply()
+            }
+            drawBarHandle(draw, barHandleX(hsv[0], left, width, scale), top, top + barHeight, abgrOf(pureHue), scale)
+            top += barHeight + gap
+
+            // The opacity, over a checkerboard, for a colour that has one.
+            if (setting.supportsAlpha) {
+                drawChecker(draw, left, top, left + width, top + barHeight, barHeight / 2f)
+                val clear = contentColor(abgrOf(setting.rgb, 0))
+                val solid = contentColor(abgrOf(setting.rgb))
+                draw.addRectFilledMultiColor(left, top, left + width, top + barHeight, clear, solid, solid, clear)
+                roundCorners(draw, left, top, left + width, top + barHeight, barHeight / 2f)
+                ImGui.setCursorScreenPos(left, top - dp(3f, scale))
+                ImGui.invisibleButton("##alpha", width, barHeight + dp(6f, scale))
+                if (ImGui.isItemActive()) {
+                    setting.alpha = (barValueAt(ImGui.getMousePosX(), left, width, scale) * 255f).roundToInt()
+                    colorHexBuffers.getOrPut(setting) { ImString(9) }.set(setting.hexDigits)
+                }
+                drawBarHandle(draw, barHandleX(setting.alpha / 255f, left, width, scale), top, top + barHeight, setting.abgr, scale)
+                top += barHeight + gap
+            }
+
+            // The hex code, with a # in front that is only there to say so.
+            val hashWidth = dp(14f, scale)
+            drawText(draw, "#", left + dp(2f, scale), top + dp(4f, scale), MUTED_TEXT, dp(11f, scale))
+            ImGui.setCursorScreenPos(left + hashWidth, top)
             val hexBuffer = colorHexBuffers.getOrPut(setting) { ImString(9).also { it.set(setting.hexDigits) } }
-            ImGui.setNextItemWidth(dp(150f, scale))
+            ImGui.setNextItemWidth(width - hashWidth)
             pushFieldFont(dp(10f, scale), dp(20f, scale), dp(6f, scale))
             if (colorHexFocusRequested === setting) {
                 colorHexFocusRequested = null
@@ -1766,12 +1928,14 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
                     ImGuiInputTextFlags.AutoSelectAll,
             )
             popFieldFont()
-            if (hexChanged) setting.setHex(hexBuffer.get())
+            if (hexChanged && setting.setHex(hexBuffer.get())) pickerHsv[setting] = hsvOf(setting.rgb)
             ImGui.endPopup()
+        } else {
+            pickerHsv.remove(setting)
         }
 
         ImGui.popStyleVar(3)
-        ImGui.popStyleColor(9)
+        ImGui.popStyleColor(6)
     }
 
     private fun drawCustomSlider(
@@ -2661,6 +2825,12 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         const val CUSTOM_TOGGLE_ROW_HEIGHT = 21f
         const val CUSTOM_BUTTON_ROW_HEIGHT = 25f
         const val CUSTOM_COLOR_ROW_HEIGHT = 23f
+
+        /** A colour swatch: a rounded square as tall as a toggle. */
+        const val COLOR_SWATCH_SIZE = 15f
+
+        /** Half the width of a colour bar's handle. */
+        const val BAR_HANDLE_HALF_WIDTH = 5f
         const val CUSTOM_DROPDOWN_ROW_HEIGHT = 25f
         const val TEXT_LABEL_HEIGHT = 14f
         const val TEXT_FIELD_HEIGHT = 20f

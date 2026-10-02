@@ -166,6 +166,7 @@ object MageBeam {
 		defaultRgb = 0xFFFFFF,
 		supportsAlpha = true,
 		visibleIf = { endMarker.value },
+		inlineWith = endMarker,
 	)
 
 	private val colorSection = SectionModuleSetting("color_section", "Color")
@@ -192,6 +193,7 @@ object MageBeam {
 		defaultRgb = 0xFF55FF,
 		supportsAlpha = true,
 		visibleIf = { gradient.value },
+		inlineWith = gradient,
 	)
 
 	private val configurable = listOf(

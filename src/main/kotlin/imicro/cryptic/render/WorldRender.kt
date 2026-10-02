@@ -109,6 +109,7 @@ object WorldRender {
 		fill: Boolean,
 		phase: Boolean,
 		lineWidth: Float,
+		faces: Int = ALL_FACES,
 	) {
 		if (!outline && !fill) return
 
@@ -118,7 +119,7 @@ object WorldRender {
 		if (fill) {
 			val layer = if (phase) CrypticRenderLayers.FILLED_THROUGH_WALLS else CrypticRenderLayers.FILLED
 			collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
-				consumer.addFilledBox(pose, minX, minY, minZ, maxX, maxY, maxZ, fillArgb)
+				consumer.addFilledBox(pose, minX, minY, minZ, maxX, maxY, maxZ, fillArgb, faces)
 			}
 		}
 
@@ -271,6 +272,49 @@ object WorldRender {
 	private const val CIRCLE_SEGMENTS = 64
 
 	/**
+	 * Draws a short open cylinder: a ring at [center], another [height] above
+	 * it, and a line joining the two at every segment. Odin's `drawCylinder`
+	 * (BSD 3-Clause, Copyright (c) 2025 odtheking), which is what makes a
+	 * positional message read as a band you stand in rather than a thin hoop.
+	 */
+	fun drawCylinder(
+		poseStack: PoseStack,
+		collector: SubmitNodeCollector,
+		center: Vec3,
+		radius: Double,
+		height: Double,
+		argb: Int,
+		lineWidth: Float,
+		phase: Boolean,
+		segments: Int = 32,
+	) {
+		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
+		poseStack.pushPose()
+		poseStack.translate(-camera.x, -camera.y, -camera.z)
+
+		val layer = if (phase) CrypticRenderLayers.LINES_THROUGH_WALLS else CrypticRenderLayers.LINES
+		val cx = center.x.toFloat()
+		val cy = center.y.toFloat()
+		val cz = center.z.toFloat()
+		val top = (center.y + height).toFloat()
+		collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
+			for (step in 0 until segments) {
+				val a1 = step * 2.0 * Math.PI / segments
+				val a2 = (step + 1) * 2.0 * Math.PI / segments
+				val x1 = cx + (cos(a1) * radius).toFloat()
+				val z1 = cz + (sin(a1) * radius).toFloat()
+				val x2 = cx + (cos(a2) * radius).toFloat()
+				val z2 = cz + (sin(a2) * radius).toFloat()
+				consumer.addLine(pose, x1, top, z1, x2, top, z2, argb, lineWidth)
+				consumer.addLine(pose, x1, cy, z1, x2, cy, z2, argb, lineWidth)
+				if (height > 0.0) consumer.addLine(pose, x1, cy, z1, x1, top, z1, argb, lineWidth)
+			}
+		}
+
+		poseStack.popPose()
+	}
+
+	/**
 	 * Draws text that stands at a world position and faces the camera.
 	 *
 	 * The camera's own orientation is applied so the label stays readable from
@@ -335,21 +379,35 @@ object WorldRender {
 		y2: Double,
 		z2: Double,
 		argb: Int,
+		faces: Int = ALL_FACES,
 	) {
-		val minX = x1.toFloat() - SURFACE_OFFSET
-		val minY = y1.toFloat() - SURFACE_OFFSET
-		val minZ = z1.toFloat() - SURFACE_OFFSET
-		val maxX = x2.toFloat() + SURFACE_OFFSET
-		val maxY = y2.toFloat() + SURFACE_OFFSET
-		val maxZ = z2.toFloat() + SURFACE_OFFSET
+		// A side that is left out is also not pushed outwards: two boxes that
+		// meet there would otherwise overlap by the offset, and the strip where
+		// they overlap is drawn twice and shows as a line.
+		fun out(face: Int) = if ((faces and face) != 0) SURFACE_OFFSET else 0f
+		val minX = x1.toFloat() - out(FACE_WEST)
+		val minY = y1.toFloat() - out(FACE_DOWN)
+		val minZ = z1.toFloat() - out(FACE_NORTH)
+		val maxX = x2.toFloat() + out(FACE_EAST)
+		val maxY = y2.toFloat() + out(FACE_UP)
+		val maxZ = z2.toFloat() + out(FACE_SOUTH)
 
-		addQuad(pose, minX, minY, minZ, maxX, minY, minZ, maxX, minY, maxZ, minX, minY, maxZ, argb)
-		addQuad(pose, minX, maxY, minZ, minX, maxY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, argb)
-		addQuad(pose, minX, minY, minZ, minX, maxY, minZ, maxX, maxY, minZ, maxX, minY, minZ, argb)
-		addQuad(pose, minX, minY, maxZ, maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ, argb)
-		addQuad(pose, minX, minY, minZ, minX, minY, maxZ, minX, maxY, maxZ, minX, maxY, minZ, argb)
-		addQuad(pose, maxX, minY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, maxX, minY, maxZ, argb)
+		if ((faces and FACE_DOWN) != 0) addQuad(pose, minX, minY, minZ, maxX, minY, minZ, maxX, minY, maxZ, minX, minY, maxZ, argb)
+		if ((faces and FACE_UP) != 0) addQuad(pose, minX, maxY, minZ, minX, maxY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, argb)
+		if ((faces and FACE_NORTH) != 0) addQuad(pose, minX, minY, minZ, minX, maxY, minZ, maxX, maxY, minZ, maxX, minY, minZ, argb)
+		if ((faces and FACE_SOUTH) != 0) addQuad(pose, minX, minY, maxZ, maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ, argb)
+		if ((faces and FACE_WEST) != 0) addQuad(pose, minX, minY, minZ, minX, minY, maxZ, minX, maxY, maxZ, minX, maxY, minZ, argb)
+		if ((faces and FACE_EAST) != 0) addQuad(pose, maxX, minY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, maxX, minY, maxZ, argb)
 	}
+
+	/** The sides of a filled box, for leaving out the ones that touch another. */
+	const val FACE_DOWN = 1
+	const val FACE_UP = 2
+	const val FACE_NORTH = 4
+	const val FACE_SOUTH = 8
+	const val FACE_WEST = 16
+	const val FACE_EAST = 32
+	const val ALL_FACES = 63
 
 	private fun VertexConsumer.addBoxOutline(
 		pose: PoseStack.Pose,

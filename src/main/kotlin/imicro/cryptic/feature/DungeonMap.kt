@@ -147,7 +147,12 @@ object DungeonMap {
 	val rareColor = ColorModuleSetting("rare_color", "Rare", DungeonMapColors.RARE)
 
 	@JvmField
-	val unexploredColor = ColorModuleSetting("unexplored_color", "Unexplored", DungeonMapColors.UNOPENED)
+	val unexploredColor = ColorModuleSetting(
+		"unexplored_color",
+		"Undiscovered",
+		DungeonMapColors.UNOPENED,
+		description = "The grey a room is drawn in until somebody opens it, as dtMap draws it.",
+	)
 
 	@JvmField
 	val darkenUnexplored = SliderModuleSetting(
@@ -157,7 +162,7 @@ object DungeonMap {
 		min = 10.0,
 		max = 100.0,
 		step = 5.0,
-		description = "How much colour a room keeps before anyone has been in it.",
+		description = "How much colour the blood room, and a closed room's guessed types, keep before anyone has been in them.",
 	)
 
 	private val doorsSection =
@@ -264,6 +269,7 @@ object DungeonMap {
 		defaultRgb = 0xFFFFFF,
 		description = "The ring around a head whose class Cryptic does not know.",
 		visibleIf = { playerHeads.value },
+		inlineWith = playerHeads,
 	)
 
 	@JvmField
@@ -428,7 +434,8 @@ object DungeonMap {
 			PuzzleSolver.module.enabled ||
 			Secrets.movesCounter ||
 			PuzzleHud.needsScan ||
-			ILoveGlass.needsDoors
+			ILoveGlass.needsDoors ||
+			DungeonWaypoints.needsDungeon
 
 	/** The tile the player was last seen in, so a room is only entered once. */
 	private var lastTile: Vec2i? = null
@@ -753,15 +760,26 @@ object DungeonMap {
 		private fun renderCheckmark(context: GuiGraphicsExtractor, room: DungeonRoom, revealAll: Boolean) {
 			if (!revealAll && room.hidden) return
 
-			val texture = when (room.state) {
-				DungeonRoom.State.GREEN -> GREEN_CHECK
-				DungeonRoom.State.CLEARED -> WHITE_CHECK
-				DungeonRoom.State.FAILED -> CROSS
-				// A guessed room is already saying what it might be in its
-				// colours, and a question mark on top only hides them.
-				DungeonRoom.State.UNOPENED ->
-					if (questionMarks.value && room.guess.isEmpty()) QUESTION else null
-				else -> null
+			val texture = when {
+				// Hypixel marks the fairy room done the moment it is walked into. It
+				// is not done until the party has gone through it, which is the
+				// wither door inside it opening: no mark before anybody is in it,
+				// white once they are, green once that door is open.
+				room.type == DungeonRoom.Type.FAIRY -> when {
+					room.fairyPassed -> GREEN_CHECK
+					room.hidden || room.unopened -> null
+					else -> WHITE_CHECK
+				}
+				else -> when (room.state) {
+					DungeonRoom.State.GREEN -> GREEN_CHECK
+					DungeonRoom.State.CLEARED -> WHITE_CHECK
+					DungeonRoom.State.FAILED -> CROSS
+					// A guessed room is already saying what it might be in its
+					// colours, and a question mark on top only hides them.
+					DungeonRoom.State.UNOPENED ->
+						if (questionMarks.value && room.guess.isEmpty()) QUESTION else null
+					else -> null
+				}
 			}
 
 			if (texture != null && room.type != DungeonRoom.Type.ENTRANCE) {

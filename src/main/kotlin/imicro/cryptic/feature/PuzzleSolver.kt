@@ -256,6 +256,7 @@ object PuzzleSolver {
 		label = "Route",
 		defaultRgb = 0xFF55FF,
 		visibleIf = { iceFillEnabled.value },
+		inlineWith = iceFillEnabled,
 	)
 
 	@JvmField
@@ -500,6 +501,7 @@ object PuzzleSolver {
 		supportsAlpha = true,
 		defaultAlpha = 0xC0,
 		visibleIf = { quizEnabled.value },
+		inlineWith = quizEnabled,
 	)
 
 	@JvmField
@@ -576,6 +578,7 @@ object PuzzleSolver {
 		supportsAlpha = true,
 		defaultAlpha = 0x80,
 		visibleIf = { boulderEnabled.value },
+		inlineWith = boulderEnabled,
 	)
 
 	// ---- Tic Tac Toe -----------------------------------------------------
@@ -598,6 +601,7 @@ object PuzzleSolver {
 		supportsAlpha = true,
 		defaultAlpha = 0x80,
 		visibleIf = { ticTacToeEnabled.value },
+		inlineWith = ticTacToeEnabled,
 	)
 
 	@JvmField
@@ -635,6 +639,7 @@ object PuzzleSolver {
 		label = "Route",
 		defaultRgb = 0xFF5555,
 		visibleIf = { silverfishEnabled.value },
+		inlineWith = silverfishEnabled,
 	)
 
 	// ---- All of them -----------------------------------------------------

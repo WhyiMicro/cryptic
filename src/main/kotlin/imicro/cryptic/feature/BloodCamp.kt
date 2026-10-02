@@ -266,6 +266,7 @@ object BloodCamp {
 		defaultRgb = 0xFF5555,
 		description = "Rounded to the nearest color a title can be written in.",
 		visibleIf = { killTitle.value },
+		inlineWith = killTitle,
 	)
 
 	@JvmField

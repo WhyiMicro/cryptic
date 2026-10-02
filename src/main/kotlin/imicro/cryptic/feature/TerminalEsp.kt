@@ -136,6 +136,7 @@ object TerminalEsp {
 		label = "Flash",
 		defaultRgb = 0xFF0000,
 		visibleIf = { flashOnClick.value },
+		inlineWith = flashOnClick,
 	)
 
 	@JvmField

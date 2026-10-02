@@ -77,21 +77,57 @@ class DungeonDoor(val tile: Vec2i, val horizontal: Boolean, var type: Type) {
 		// A door lives in the four-pixel gap between two rooms, and is only as
 		// wide as the setting asks across the direction it joins.
 		if (horizontal) {
-			context.fill(x + 16, z + inset, x + 20, z + inset + thickness, color())
+			context.fill(x + 16, z + inset, x + 20, z + inset + thickness, color(revealAll))
 		} else {
-			context.fill(x + inset, z + 16, x + inset + thickness, z + 20, color())
+			context.fill(x + inset, z + 16, x + inset + thickness, z + 20, color(revealAll))
 		}
 	}
 
 	/**
-	 * A door is dimmed to match the rooms it joins.
+	 * The colour a door is drawn in, dtMap's way (BSD 3-Clause, Copyright (c)
+	 * 2026 rice.who).
 	 *
-	 * Rooms nobody has reached are drawn dim, so a door drawn at full strength
-	 * beside them reads as a piece of map that is somehow further along than
-	 * everything around it — which is exactly what it is not.
+	 * While a room on either side has not been opened, an ordinary door is the
+	 * same grey as an unopened room: it says there is a way through and nothing
+	 * about what is behind it. A wither or blood door keeps its own colour, dim
+	 * while it is still locked, because which kind of door it is is the news.
+	 *
+	 * Once both sides are known, an ordinary door takes the colour of the
+	 * special room it leads into — a puzzle, a trap, a mini boss, a rare room,
+	 * the fairy room — so the map shows the way into each at a glance. An
+	 * opened wither door into the fairy room turns the fairy room's colour.
+	 *
+	 * With the whole floor revealed nothing is unknown, so a door into a room
+	 * nobody has been in is the colour it will be, dimmed like the room.
 	 */
-	private fun color(): Int {
-		val base = DungeonMapColors.door(type)
-		return if (leadsNowhereKnown) DungeonMapColors.darken(base) else base
+	private fun color(revealAll: Boolean): Int {
+		val unknown = leadsNowhereKnown
+		if (unknown && !revealAll) {
+			return when (type) {
+				Type.BLOOD -> if (opened) DungeonMapColors.door(Type.BLOOD) else DungeonMapColors.darken(DungeonMapColors.door(Type.BLOOD))
+				Type.WITHER -> if (opened) DungeonMapColors.door(Type.WITHER) else DungeonMapColors.darken(DungeonMapColors.door(Type.WITHER))
+				else -> DungeonMapColors.unexplored()
+			}
+		}
+
+		val base = when (type) {
+			Type.BLOOD -> DungeonMapColors.door(Type.BLOOD)
+			Type.WITHER -> when {
+				!opened -> DungeonMapColors.door(Type.WITHER)
+				rooms.any { it.type == DungeonRoom.Type.FAIRY } -> DungeonMapColors.room(DungeonRoom.Type.FAIRY)
+				else -> DungeonMapColors.door(Type.NORMAL)
+			}
+			else -> when (rooms.firstOrNull { it.type != DungeonRoom.Type.NORMAL && it.type != DungeonRoom.Type.UNKNOWN }?.type) {
+				DungeonRoom.Type.ENTRANCE -> DungeonMapColors.door(Type.ENTRANCE)
+				DungeonRoom.Type.BLOOD -> DungeonMapColors.door(Type.BLOOD)
+				DungeonRoom.Type.CHAMPION -> DungeonMapColors.room(DungeonRoom.Type.CHAMPION)
+				DungeonRoom.Type.PUZZLE -> DungeonMapColors.room(DungeonRoom.Type.PUZZLE)
+				DungeonRoom.Type.RARE -> DungeonMapColors.room(DungeonRoom.Type.RARE)
+				DungeonRoom.Type.TRAP -> DungeonMapColors.room(DungeonRoom.Type.TRAP)
+				DungeonRoom.Type.FAIRY -> DungeonMapColors.room(DungeonRoom.Type.FAIRY)
+				else -> DungeonMapColors.door(Type.NORMAL)
+			}
+		}
+		return if (unknown) DungeonMapColors.darken(base) else base
 	}
 }

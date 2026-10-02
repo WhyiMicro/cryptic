@@ -1,6 +1,7 @@
 package imicro.cryptic.mixin;
 
 import imicro.cryptic.feature.ILoveGlass;
+import imicro.cryptic.feature.SpiritBear;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
@@ -29,6 +30,9 @@ public abstract class ClientLevelMixin {
         index = 1
     )
     private BlockState cryptic$glaze(BlockPos pos, BlockState state, int flags, int limit) {
+        // The block being replaced is still in the world here, which is what
+        // lets Spirit Bear tell a lantern lighting from one going out.
+        SpiritBear.onBlockChanged(pos, ((ClientLevel) (Object) this).getBlockState(pos), state);
         return ILoveGlass.substitute(pos, state);
     }
 }

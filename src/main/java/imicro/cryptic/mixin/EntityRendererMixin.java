@@ -8,6 +8,8 @@ import imicro.cryptic.feature.CustomScale;
 import imicro.cryptic.feature.HiddenMobs;
 import imicro.cryptic.feature.HidePlayers;
 import imicro.cryptic.feature.MageBeam;
+import imicro.cryptic.feature.LividSolver;
+import imicro.cryptic.feature.SpiritBear;
 import imicro.cryptic.feature.CarryManager;
 import imicro.cryptic.feature.Highlight;
 import imicro.cryptic.feature.RenderOptimizer;
@@ -37,7 +39,7 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
      */
     @Inject(method = "shouldRender", at = @At("HEAD"), cancellable = true)
     private void cryptic$skipHiddenEntities(T entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> info) {
-        if (RenderOptimizer.hidesEntity(entity) || Highlight.hidesNameTag(entity) || HidePlayers.hides(entity) || MageBeam.hidesSheep(entity)) {
+        if (RenderOptimizer.hidesEntity(entity) || Highlight.hidesNameTag(entity) || HidePlayers.hides(entity) || MageBeam.hidesSheep(entity) || LividSolver.hides(entity)) {
             info.setReturnValue(false);
         }
     }
@@ -124,6 +126,9 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
         }
         if (outlineColor == EntityRenderState.NO_OUTLINE) {
             outlineColor = CarryManager.outlineColorFor(entity);
+        }
+        if (outlineColor == EntityRenderState.NO_OUTLINE) {
+            outlineColor = SpiritBear.outlineColorFor(entity);
         }
         if (outlineColor != EntityRenderState.NO_OUTLINE) {
             state.outlineColor = outlineColor;

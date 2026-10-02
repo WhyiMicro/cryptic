@@ -342,6 +342,14 @@ face came from: the player standing in the world, their player entry, or their
 row of the tab list. A face from "nowhere" is drawn as no face at all.
 
 ```
+/cryptic debug waypoints
+```
+
+Prints the room Dungeon Waypoints is drawing in: its name, tiles, shape,
+rotation and the corner its coordinates are measured from, and how many secret
+and custom waypoints it has. A room with no rotation has nothing drawn in it.
+
+```
 /cryptic debug requeue
 ```
 

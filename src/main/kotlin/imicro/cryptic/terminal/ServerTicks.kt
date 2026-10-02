@@ -42,9 +42,19 @@ object ServerTicks {
 		lastPingAt = 0L
 	}
 
+	/**
+	 * Every server tick counted since the game started, for timers that run in
+	 * the server's ticks rather than the clock's: Spirit Bear's spawn and
+	 * Livid's invulnerability both stretch when the server lags.
+	 */
+	@Volatile
+	var total = 0L
+		private set
+
 	@JvmStatic
 	fun onServerTick() {
 		lastPingAt = System.currentTimeMillis()
+		total++
 		Terminals.current?.let { it.serverTicksOpen++ }
 	}
 }

@@ -79,6 +79,11 @@ import imicro.cryptic.feature.GateHighlight
 import imicro.cryptic.feature.F7Qol
 import imicro.cryptic.feature.AutoGfs
 import imicro.cryptic.feature.AutoRequeue
+import imicro.cryptic.feature.SpiritBear
+import imicro.cryptic.feature.LividSolver
+import imicro.cryptic.feature.PositionalMessages
+import imicro.cryptic.feature.DungeonWaypoints
+import imicro.cryptic.feature.BossWaypoints
 import imicro.cryptic.feature.GyroHelper
 import imicro.cryptic.feature.Highlight
 import imicro.cryptic.feature.InvincibilityTimer
@@ -266,6 +271,11 @@ object CrypticClient : ClientModInitializer {
 		F7Qol.initialize()
 		AutoGfs.initialize()
 		AutoRequeue.initialize()
+		SpiritBear.initialize()
+		LividSolver.initialize()
+		PositionalMessages.initialize()
+		DungeonWaypoints.initialize()
+		BossWaypoints.initialize()
 		SpiritLeapOverlay.initialize()
 		BloodCamp.initialize()
 		PuzzleSolver.initialize()
@@ -288,6 +298,17 @@ object CrypticClient : ClientModInitializer {
 
 		// Last, so every element and setting above exists to be filled in.
 		ConfigManager.initialize()
+
+		// Two subcommands big enough to live with their modules. Brigadier merges
+		// a second "cryptic" into the first, so these sit beside the rest.
+		ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
+			dispatcher.register(
+				ClientCommands.literal("cryptic")
+					.then(PositionalMessages.command())
+					.then(DungeonWaypoints.command())
+					.then(BossWaypoints.command()),
+			)
+		}
 
 		ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
 			dispatcher.register(
@@ -636,6 +657,14 @@ object CrypticClient : ClientModInitializer {
 								// Which Goldor section the Section Complete title
 								// thinks it is on, and what it is still waiting for.
 								F7Qol.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("waypoints").executes { context ->
+								// The room the waypoints are drawn in, which way it
+								// is turned, and how many there are to draw.
+								DungeonWaypoints.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
@@ -1011,6 +1040,9 @@ object CrypticClient : ClientModInitializer {
 					WitherCloakEffect.needsDungeon || PuzzleHud.module.enabled ||
 					DungeonWarpCooldown.module.enabled || ILoveGlass.module.enabled ||
 					AutoGfs.module.enabled || AutoRequeue.module.enabled ||
+					SpiritBear.needsDungeon || LividSolver.needsDungeon ||
+					PositionalMessages.needsDungeon || DungeonWaypoints.needsDungeon ||
+					BossWaypoints.needsDungeon ||
 					(SlotBinds.module.enabled && SlotBinds.dungeonsOnly.value),
 			)
 			// Which part of Goldor's tower the player is in, for the modules
@@ -1063,6 +1095,10 @@ object CrypticClient : ClientModInitializer {
 			ILoveGlass.tick(client)
 			AutoGfs.tick(client)
 			AutoRequeue.tick(client)
+			LividSolver.tick(client)
+			PositionalMessages.tick(client)
+			DungeonWaypoints.tick(client)
+			BossWaypoints.tick(client)
 			// Asks the server how far away it is, but only while something is
 			// showing the answer.
 			ServerStats.tick(client)

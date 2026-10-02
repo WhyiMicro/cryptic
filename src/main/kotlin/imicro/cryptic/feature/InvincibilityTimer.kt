@@ -287,6 +287,7 @@ object InvincibilityTimer {
 		supportsAlpha = true,
 		defaultAlpha = 0xA0,
 		visibleIf = { showOnItem.value },
+		inlineWith = showOnItem,
 	)
 
 	@JvmField

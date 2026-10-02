@@ -220,7 +220,7 @@ object TerminalSolver {
 
 	// ---- Colors ----------------------------------------------------------
 
-	private val colorSection = SectionModuleSetting(id = "color_section", label = "Colors")
+	private val colorSection = SectionModuleSetting(id = "color_section", label = "Colors", startsCollapsed = true)
 
 	@JvmField
 	val backgroundColor = ColorModuleSetting(

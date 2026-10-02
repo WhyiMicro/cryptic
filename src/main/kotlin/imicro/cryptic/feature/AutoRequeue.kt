@@ -24,6 +24,10 @@ import net.minecraft.network.chat.Component
  * having asked for downtime — and so is Odin's rule that somebody leaving the
  * party calls it off.
  *
+ * Only the leader can queue, so nothing is decided until Hypixel has said who
+ * that is: the run ending sends `/pl`, and the list it answers with names the
+ * leader and counts the party. Anybody else, or no answer, and it stands down.
+ *
  * What neither does is pick the queue back up once the break is over. With
  * Wait for ready on, whoever asked for downtime saying `r` in party chat starts
  * the countdown again, for five minutes after the run; anybody saying `nr`
@@ -34,6 +38,10 @@ object AutoRequeue {
 
 	/** How long a break may last before nobody is listening for the end of it. */
 	private const val READY_WINDOW_MILLIS = 5 * 60 * 1000L
+
+	/** How long the party list may take to answer, and how long its count is trusted. */
+	private const val LIST_TIMEOUT_MILLIS = 4_000L
+	private const val LIST_FRESH_MILLIS = 60_000L
 
 	/** A full party, which is what Check party wants to see. */
 	private const val PARTY_SIZE = 5
@@ -129,6 +137,9 @@ object AutoRequeue {
 	/** The floor that was just played, for /joininstance. */
 	private var floorCommand: String? = null
 
+	/** When /pl was sent at the end of the run, or 0 while no answer is awaited. */
+	private var listAskedAt = 0L
+
 	/** When the queue command goes out, or 0 when nothing is counting down. */
 	private var requeueAt = 0L
 
@@ -179,10 +190,26 @@ object AutoRequeue {
 
 		if (DungeonRun.ended && !runEndHandled && DungeonLocation.inDungeon) {
 			runEndHandled = true
-			onRunEnded()
+			onRunEnded(client)
 		}
 
 		val now = System.currentTimeMillis()
+		if (listAskedAt != 0L) {
+			when {
+				PartyFeatures.listedAt >= listAskedAt -> {
+					listAskedAt = 0L
+					decide()
+				}
+				PartyFeatures.noPartyAt >= listAskedAt -> {
+					listAskedAt = 0L
+					note("Not requeueing: you are not in a party.")
+				}
+				now - listAskedAt > LIST_TIMEOUT_MILLIS -> {
+					listAskedAt = 0L
+					note("Not requeueing: the party list never answered, so who leads is not known.")
+				}
+			}
+		}
 		if (readyUntil != 0L && now > readyUntil) {
 			readyUntil = 0L
 			needsDowntime.clear()
@@ -194,13 +221,28 @@ object AutoRequeue {
 		}
 	}
 
-	private fun onRunEnded() {
+	private fun onRunEnded(client: Minecraft) {
 		floorCommand = DungeonLocation.floor.takeIf { it in FLOOR_NAMES.indices }?.let {
 			"joininstance ${if (DungeonLocation.masterMode) "MASTER_" else ""}CATACOMBS_FLOOR_${FLOOR_NAMES[it]}"
 		}
 
-		if (!PartyFeatures.mightLead()) {
-			note("Not requeueing: you are not the party leader.")
+		// Who leads, and how many are left, asked of Hypixel rather than assumed:
+		// only the leader can queue, and the party can have changed during the
+		// run without anybody saying so where it could be heard. The answer is
+		// read off the list as it arrives, in [tick].
+		if (DebugOverrides.previewPartyCommands) {
+			note("Would send: §f/pl")
+			decide()
+			return
+		}
+		listAskedAt = System.currentTimeMillis()
+		send(client, "pl")
+	}
+
+	/** The party list has answered: requeue, wait for a break to end, or say why not. */
+	private fun decide() {
+		if (!leading()) {
+			note("Not requeueing: ${PartyFeatures.leaderName() ?: "somebody else"} leads the party.")
 			return
 		}
 		blocker()?.let {
@@ -224,9 +266,21 @@ object AutoRequeue {
 	private fun blocker(): String? {
 		if (!checkParty.value) return null
 		leftDuringRun.firstOrNull()?.let { return "$it left the party" }
-		val size = DungeonTeam.classes.size
+		// The party list when it has just been read, the run's team otherwise.
+		val fresh = System.currentTimeMillis() - PartyFeatures.listedAt < LIST_FRESH_MILLIS
+		val size = (if (fresh) PartyFeatures.listedSize else null) ?: DungeonTeam.classes.size
 		if (size in 1 until PARTY_SIZE) return "only $size/$PARTY_SIZE in the party"
 		return null
+	}
+
+	/**
+	 * Whether you lead the party, as last seen. Only a known yes counts: a
+	 * requeue sent by somebody who does not lead does nothing but get refused.
+	 * The debug preview has no party to ask, so there an unknown leader passes.
+	 */
+	private fun leading(): Boolean {
+		val leader = PartyFeatures.leaderName() ?: return DebugOverrides.previewPartyCommands
+		return leader.equals(self(), ignoreCase = true)
 	}
 
 	private fun seconds(): Int = delay.value.toInt()
@@ -237,6 +291,10 @@ object AutoRequeue {
 	}
 
 	private fun fire(client: Minecraft) {
+		if (!leading()) {
+			note("Not requeueing: ${PartyFeatures.leaderName() ?: "somebody else"} leads the party now.")
+			return
+		}
 		blocker()?.let {
 			tell("Not requeueing: $it.")
 			return

@@ -99,6 +99,7 @@ object GyroHelper {
 		supportsAlpha = true,
 		defaultAlpha = 0x4C,
 		visibleIf = { drawBox.value },
+		inlineWith = drawBox,
 	)
 
 	@JvmField
@@ -108,6 +109,7 @@ object GyroHelper {
 		defaultRgb = 0xAA00AA,
 		supportsAlpha = true,
 		visibleIf = { drawRing.value },
+		inlineWith = drawRing,
 	)
 
 	@JvmField
@@ -126,6 +128,7 @@ object GyroHelper {
 		supportsAlpha = true,
 		defaultAlpha = 0x80,
 		visibleIf = { showCooldown.value },
+		inlineWith = showCooldown,
 	)
 
 	private val configurable = listOf(
