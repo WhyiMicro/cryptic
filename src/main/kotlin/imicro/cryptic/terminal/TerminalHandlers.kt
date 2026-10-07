@@ -36,7 +36,8 @@ class PanesHandler : TerminalHandler(TerminalType.PANES) {
 }
 
 /**
- * Click the fourteen panes in the order of the numbers on them.
+ * Click the ten panes in the order of the numbers on them. Fourteen before
+ * SkyBlock 0.27.2.
  *
  * The stack size is the number, so sorting by it is the whole solve. Only the
  * first of the remaining clicks is allowed, because clicking out of order
@@ -74,7 +75,7 @@ class NumbersHandler : TerminalHandler(TerminalType.NUMBERS) {
 	}
 
 	private companion object {
-		const val GRID_SLOTS = 14
+		const val GRID_SLOTS = 10
 
 		/** Fully transparent: the label still draws, the highlight does not. */
 		const val UNPAINTED = 0
@@ -276,7 +277,12 @@ class MelodyHandler : TerminalHandler(TerminalType.MELODY) {
 
 		return buildList {
 			if (lime >= 0) add(lime)
-			if (magenta >= 0) add(magenta)
+			// The marker is shown above the rows and again below them, as Odin
+			// draws it since the board lost a row.
+			if (magenta >= 0) {
+				add(magenta)
+				if (magenta / 9 == 0) add(magenta + 9 * (BOTTOM_ROW))
+			}
 			// The button only counts once the note has reached the column the
 			// marker sits in, which is the moment to press it.
 			if (button >= 0 && lime >= 0 && magenta >= 0 && lime % 9 == magenta % 9) add(button)
@@ -284,7 +290,7 @@ class MelodyHandler : TerminalHandler(TerminalType.MELODY) {
 	}
 
 	/**
-	 * The four buttons are always pressable, and pressing one at the wrong
+	 * The three buttons are always pressable, and pressing one at the wrong
 	 * moment is how melody is failed — so the answer is not allowed to say
 	 * otherwise, and the press is the player's to time.
 	 */
@@ -303,8 +309,9 @@ class MelodyHandler : TerminalHandler(TerminalType.MELODY) {
 		val column = slotIndex % 9
 		val lit = slotIndex in solution
 		return when {
-			// The top row is the marker, and is only drawn where it is.
-			row == 0 -> if (lit) SlotOverlay(TerminalSolver.melodyColumnColor.argb) else null
+			// The rows above and below are the marker, only drawn where it is.
+			row == 0 || row == BOTTOM_ROW -> if (lit) SlotOverlay(TerminalSolver.melodyColumnColor.argb) else null
+			row !in PLAY_ROWS -> null
 			column == BUTTON_COLUMN || column in NOTE_COLUMNS ->
 				SlotOverlay(
 					if (lit) TerminalSolver.melodyPointerColor.argb else TerminalSolver.melodySlotColor.argb,
@@ -316,7 +323,10 @@ class MelodyHandler : TerminalHandler(TerminalType.MELODY) {
 	override fun highlight(slotIndex: Int) = SlotOverlay(TerminalSolver.melodyPointerColor.argb)
 
 	private companion object {
-		val BUTTON_SLOTS = setOf(16, 25, 34, 43)
+		/** Three rows to play since SkyBlock 0.27.2, between the marker's two rows. */
+		val BUTTON_SLOTS = setOf(16, 25, 34)
+		val PLAY_ROWS = 1..3
+		const val BOTTOM_ROW = 4
 		const val BUTTON_COLUMN = 7
 		val NOTE_COLUMNS = 1..5
 	}

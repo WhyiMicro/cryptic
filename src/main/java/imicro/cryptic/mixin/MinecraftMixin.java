@@ -29,6 +29,25 @@ public abstract class MinecraftMixin {
     @Nullable
     public HitResult hitResult;
 
+    @Shadow
+    private int rightClickDelay;
+
+    /**
+     * A right click on nothing, for the waypoint editors' floating waypoints.
+     *
+     * The game sets the click delay first thing, so a swallowed click sets it
+     * here too: held down, the button would otherwise place and remove the
+     * same waypoint every tick.
+     */
+    @Inject(method = "startUseItem", at = @At("HEAD"), cancellable = true)
+    private void cryptic$floatingWaypoint(CallbackInfo info) {
+        if (this.hitResult != null && this.hitResult.getType() != HitResult.Type.MISS) return;
+        if (DungeonWaypoints.onEditorAirClick() || BossWaypoints.onEditorAirClick()) {
+            this.rightClickDelay = 4;
+            info.cancel();
+        }
+    }
+
     /**
      * Lets a device solver swallow a right click on a block.
      *

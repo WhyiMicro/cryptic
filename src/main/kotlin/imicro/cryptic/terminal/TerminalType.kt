@@ -23,7 +23,8 @@ enum class TerminalType(
 ) {
 	PANES("Correct all the panes!", Regex("^Correct all the panes!$"), 45, 3, 5, 1, 2),
 	RUBIX("Change all to same color!", Regex("^Change all to same color!$"), 45, 3, 3, 1, 3),
-	NUMBERS("Click in order!", Regex("^Click in order!$"), 36, 2, 7, 1, 1),
+	// Ten numbers since SkyBlock 0.27.2, five to a row in the middle columns.
+	NUMBERS("Click in order!", Regex("^Click in order!$"), 36, 2, 5, 1, 2),
 	STARTS_WITH("What starts with: '?'?", Regex("^What starts with: '(\\w)'\\?$"), 45, 3, 7, 1, 1),
 	SELECT("Select all the ? items!", Regex("^Select all the ([\\w ]+) items!$"), 54, 4, 7, 1, 1),
 	MELODY("Click the button on time!", Regex("^Click the button on time!$"), 54, 5, 7, 0, 1);

@@ -157,6 +157,14 @@ object BossWaypoints {
 	)
 
 	@JvmField
+	val floating = ToggleModuleSetting(
+		id = "floating",
+		label = "Allow floating waypoints",
+		defaultValue = false,
+		description = "With the crosshair on nothing, a click places a waypoint in the air 5 blocks ahead, as in Odin.",
+	)
+
+	@JvmField
 	val useBlockSize = ToggleModuleSetting(
 		id = "use_block_size",
 		label = "Use block size",
@@ -185,7 +193,7 @@ object BossWaypoints {
 		supportsKeybind = false,
 		settings = listOf(
 			drawingSection, lineWidth, labelScale,
-			editorSection, editMode, editKey, placeStyle, placePhase, placeColor, useBlockSize, size,
+			editorSection, editMode, editKey, placeStyle, placePhase, placeColor, floating, useBlockSize, size,
 		),
 	)
 
@@ -297,12 +305,15 @@ object BossWaypoints {
 			poseStack = context.poseStack(),
 			collector = context.submitNodeCollector(),
 			orientation = Minecraft.getInstance().gameRenderer.mainCamera().rotation(),
-			text = Component.literal(title).withColor(rgb),
+			// White, shadowed and through walls, in the middle of the block, as
+			// Dungeon Waypoints draws its labels.
+			text = Component.literal(title),
 			x = (box.minX + box.maxX) / 2,
-			y = box.maxY + 0.2,
+			y = (box.minY + box.maxY) / 2,
 			z = (box.minZ + box.maxZ) / 2,
 			scale = labelScale.value.toFloat(),
-			seeThrough = phase,
+			seeThrough = true,
+			centered = true,
 		)
 	}
 
@@ -310,9 +321,18 @@ object BossWaypoints {
 
 	private fun target(): BlockPos? {
 		floorKey() ?: return null
-		val hit = Minecraft.getInstance().hitResult as? BlockHitResult ?: return null
-		if (hit.type != HitResult.Type.BLOCK) return null
-		return hit.blockPos
+		val hit = Minecraft.getInstance().hitResult
+		if (hit is BlockHitResult && hit.type == HitResult.Type.BLOCK) return hit.blockPos
+		if (floating.value && (hit == null || hit.type == HitResult.Type.MISS)) return DungeonWaypoints.floatingPos()
+		return null
+	}
+
+	/** A right click on nothing while Edit mode is on: a floating waypoint, when they are allowed. */
+	@JvmStatic
+	fun onEditorAirClick(): Boolean {
+		if (!module.enabled || !editMode.value || !floating.value) return false
+		val pos = DungeonWaypoints.floatingPos() ?: return false
+		return onEditorClick(pos)
 	}
 
 	/** A right click while Edit mode is on, in a boss room. True swallows the click. */
@@ -377,6 +397,26 @@ object BossWaypoints {
 				"Boss edit mode §coff§7."
 			},
 		)
+	}
+
+	/**
+	 * Shift and the wheel, while editing in a boss room: steps through the
+	 * styles the next waypoint is drawn in. True takes the turn, so the hotbar
+	 * does not move with it.
+	 */
+	@JvmStatic
+	fun onScroll(amount: Double): Boolean {
+		if (!module.enabled || !editMode.value || amount == 0.0) return false
+		val client = Minecraft.getInstance()
+		if (client.gui.screen() != null || !client.options.keyShift.isDown) return false
+		floorKey() ?: return false
+		val step = if (amount > 0) -1 else 1
+		placeStyle.selectedIndex = Math.floorMod(placeStyle.selectedIndex + step, STYLE_NAMES.size)
+		client.gui.hud.setOverlayMessage(
+			Component.literal("Placing: ").append(Component.literal(STYLE_NAMES[placeStyle.selectedIndex]).withColor(placeColor.rgb)),
+			false,
+		)
+		return true
 	}
 
 	/** Opens the pack manager when asked, and watches the Edit mode key. */

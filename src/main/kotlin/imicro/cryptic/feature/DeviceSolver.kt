@@ -14,7 +14,6 @@ import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.render.CrypticRenderPipelines
 import imicro.cryptic.render.WorldRender
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
@@ -221,9 +220,39 @@ object DeviceSolver {
 	@JvmField
 	val simonAnnounceProgress = ToggleModuleSetting(
 		id = "simon_announce_progress",
-		label = "Announce progress",
+		label = "Send progress",
 		defaultValue = false,
-		description = "Sends a party message as each round of the sequence is finished.",
+		description = "Says \"SS 3/4\" in party chat as you finish each round of the sequence.",
+		visibleIf = { simonSays.value },
+	)
+
+	@JvmField
+	val simonLagGuard = ToggleModuleSetting(
+		id = "simon_lag_guard",
+		label = "Block clicks on lag",
+		defaultValue = true,
+		description = "Holds back a button press while the server has sent nothing for longer than the threshold. " +
+			"Presses that reach the server together fail the device. Sneak to override.",
+		visibleIf = { simonSays.value },
+	)
+
+	@JvmField
+	val simonLagMillis = SliderModuleSetting(
+		id = "simon_lag_millis",
+		label = "Lag threshold (ms)",
+		defaultValue = 300.0,
+		min = 100.0,
+		max = 1000.0,
+		step = 25.0,
+		visibleIf = { simonSays.value && simonLagGuard.value },
+	)
+
+	@JvmField
+	val simonBreakAlert = ToggleModuleSetting(
+		id = "simon_break_alert",
+		label = "Send \"SS broke!\"",
+		defaultValue = false,
+		description = "Says \"SS broke!\" in party chat when the device throws an attempt away, whoever was doing it.",
 		visibleIf = { simonSays.value },
 	)
 
@@ -347,7 +376,7 @@ object DeviceSolver {
 			lightsSection, lightsOn, lightsFill, lightsOutline,
 			simonSection, simonSays, simonStyle,
 			simonFirstColor, simonSecondColor, simonThirdColor,
-			simonBlockWrong, simonBlockWrongStart, simonMaxStartClicks, simonAnnounceProgress,
+			simonBlockWrong, simonBlockWrongStart, simonMaxStartClicks, simonLagGuard, simonLagMillis, simonAnnounceProgress, simonBreakAlert,
 			sharpSection, sharpShooter, i4Style,
 			i4TargetColor, i4ShowPrediction, i4PredictionColor, i4DoneColor, i4Announce,
 			drawingSection, lineWidth, throughWalls,
@@ -357,6 +386,8 @@ object DeviceSolver {
 	val arrowAlignEnabled: Boolean get() = module.enabled && arrowAlign.value
 	val lightsOnEnabled: Boolean get() = module.enabled && lightsOn.value
 	val simonSaysEnabled: Boolean get() = module.enabled && simonSays.value
+
+	val simonBreakAlertEnabled: Boolean get() = simonSaysEnabled && simonBreakAlert.value
 	val sharpShooterEnabled: Boolean get() = module.enabled && sharpShooter.value
 
 	/** True while any of the four wants to know where in the tower the player is. */
@@ -377,15 +408,21 @@ object DeviceSolver {
 
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
-		ClientReceiveMessageEvents.GAME.register { message, overlay ->
-			if (overlay) return@register
-			SimonSays.onChatMessage(message.string)
-			SharpShooter.onChatMessage(message.string)
-		}
+		// Chat is heard in [onSystemChat], from the packet: Goldor's greeting is
+		// boss dialogue, which other mods hide, and a hidden line never reaches
+		// Fabric's chat event.
 		// Hypixel moves the party to a new server between floors, so nothing
 		// recorded from the last tower may survive into the next one.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> forget() }
+	}
+
+	/** A chat packet, on the client thread, before any mod has hidden it. */
+	@JvmStatic
+	fun onSystemChat(message: Component, overlay: Boolean) {
+		if (overlay) return
+		SimonSays.onChatMessage(message.string)
+		SharpShooter.onChatMessage(message.string)
 	}
 
 	private fun forget() {

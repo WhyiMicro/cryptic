@@ -92,12 +92,12 @@ class RubixSim : TermSimScreen(TerminalType.RUBIX.termName, TerminalType.RUBIX.w
 	}
 }
 
-/** Click fourteen numbered panes in order. */
+/** Click ten numbered panes in order. */
 class NumbersSim : TermSimScreen(TerminalType.NUMBERS.termName, TerminalType.NUMBERS.windowSize) {
 	override fun create() {
-		val numbers = (1..14).shuffled().iterator()
+		val numbers = (1..10).shuffled().iterator()
 		rebuild { slot ->
-			if (slot.row() in 1..2 && slot.column() in 1..7) {
+			if (slot.row() in 1..2 && slot.column() in 2..6) {
 				val number = numbers.next()
 				named(ItemStack(Items.STAINED_GLASS_PANE.red(), number), "§a$number")
 			} else {
@@ -274,19 +274,20 @@ class MelodySim : TermSimScreen(TerminalType.MELODY.termName, TerminalType.MELOD
 		val row = row()
 		val column = column()
 		return when {
-			column == markedColumn && row !in 1..4 -> pane(Items.STAINED_GLASS_PANE.magenta())
+			column == markedColumn && (row == 0 || row == ROWS) -> pane(Items.STAINED_GLASS_PANE.magenta())
 			column == noteColumn && row == currentRow -> pane(Items.STAINED_GLASS_PANE.lime())
 			column in 1..5 && row == currentRow -> pane(Items.STAINED_GLASS_PANE.red())
 			column == BUTTON_COLUMN && row == currentRow -> named(ItemStack(Items.DYED_TERRACOTTA.lime()), "")
-			column == BUTTON_COLUMN && row in 1..4 -> named(ItemStack(Items.DYED_TERRACOTTA.red()), "")
-			column in 1..5 && row in 1..4 -> pane(Items.STAINED_GLASS_PANE.white())
+			column == BUTTON_COLUMN && row in 1 until ROWS -> named(ItemStack(Items.DYED_TERRACOTTA.red()), "")
+			column in 1..5 && row in 1 until ROWS -> pane(Items.STAINED_GLASS_PANE.white())
 			else -> fillerPane
 		}
 	}
 
 	private companion object {
 		const val BUTTON_COLUMN = 7
-		const val ROWS = 5
+		/** The row after the last to play, which is also where the lower marker is. */
+		const val ROWS = 4
 		const val TICKS_PER_STEP = 10
 	}
 }

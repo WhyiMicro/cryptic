@@ -110,23 +110,35 @@ object WorldRender {
 		phase: Boolean,
 		lineWidth: Float,
 		faces: Int = ALL_FACES,
+		tucked: Int = 0,
 	) {
 		if (!outline && !fill) return
 
-		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
+		val client = Minecraft.getInstance()
+		val camera = client.gameRenderer.mainCamera().position()
+		val centerX = (minX + maxX) / 2 - camera.x
+		val centerY = (minY + maxY) / 2 - camera.y
+		val centerZ = (minZ + maxZ) / 2 - camera.z
+		val distance = Math.sqrt(centerX * centerX + centerY * centerY + centerZ * centerZ)
+		// How far a tucked side is drawn inside its block: half a line, at this
+		// distance, so the line's own width stays on the block's visible face.
+		val tuck = if (tucked == 0) 0f else {
+			val pixel = 2.0 * distance * Math.tan(Math.toRadians(client.options.fov().get() / 2.0)) / client.window.height.coerceAtLeast(1)
+			((lineWidth / 2.0 + 0.25) * pixel).coerceIn(0.004, 0.25).toFloat()
+		}
 		poseStack.pushPose()
 		poseStack.translate(-camera.x, -camera.y, -camera.z)
 		if (fill) {
 			val layer = if (phase) CrypticRenderLayers.FILLED_THROUGH_WALLS else CrypticRenderLayers.FILLED
 			collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
-				consumer.addFilledBox(pose, minX, minY, minZ, maxX, maxY, maxZ, fillArgb, faces)
+				consumer.addFilledBox(pose, minX, minY, minZ, maxX, maxY, maxZ, fillArgb, faces and tucked.inv(), tucked, tuck)
 			}
 		}
 
 		if (outline) {
 			val layer = if (phase) CrypticRenderLayers.LINES_THROUGH_WALLS else CrypticRenderLayers.LINES
 			collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
-				consumer.addBoxOutline(pose, minX, minY, minZ, maxX, maxY, maxZ, outlineArgb, lineWidth)
+				consumer.addBoxOutline(pose, minX, minY, minZ, maxX, maxY, maxZ, outlineArgb, lineWidth, tucked, tuck)
 			}
 		}
 
@@ -341,6 +353,7 @@ object WorldRender {
 		dropShadow: Boolean = true,
 		backgroundArgb: Int = 0,
 		argb: Int = 0xFFFFFFFF.toInt(),
+		centered: Boolean = false,
 	) {
 		val font = Minecraft.getInstance().font
 		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
@@ -357,7 +370,8 @@ object WorldRender {
 		collector.submitText(
 			poseStack,
 			-halfWidth,
-			0f,
+			// Centred, the text sits with its middle on the point rather than its top.
+			if (centered) -(font.lineHeight - 1) / 2f else 0f,
 			text.visualOrderText,
 			dropShadow,
 			if (seeThrough) Font.DisplayMode.SEE_THROUGH else Font.DisplayMode.NORMAL,
@@ -380,11 +394,18 @@ object WorldRender {
 		z2: Double,
 		argb: Int,
 		faces: Int = ALL_FACES,
+		tucked: Int = 0,
+		tuck: Float = 0f,
 	) {
 		// A side that is left out is also not pushed outwards: two boxes that
 		// meet there would otherwise overlap by the offset, and the strip where
-		// they overlap is drawn twice and shows as a line.
-		fun out(face: Int) = if ((faces and face) != 0) SURFACE_OFFSET else 0f
+		// they overlap is drawn twice and shows as a line. A tucked side is
+		// pulled in, so the faces beside it stop short of the block next door.
+		fun out(face: Int) = when {
+			(tucked and face) != 0 -> -tuck
+			(faces and face) != 0 -> SURFACE_OFFSET
+			else -> 0f
+		}
 		val minX = x1.toFloat() - out(FACE_WEST)
 		val minY = y1.toFloat() - out(FACE_DOWN)
 		val minZ = z1.toFloat() - out(FACE_NORTH)
@@ -419,13 +440,18 @@ object WorldRender {
 		z2: Double,
 		argb: Int,
 		lineWidth: Float,
+		tucked: Int = 0,
+		tuck: Float = 0f,
 	) {
-		val minX = x1.toFloat() - SURFACE_OFFSET
-		val minY = y1.toFloat() - SURFACE_OFFSET
-		val minZ = z1.toFloat() - SURFACE_OFFSET
-		val maxX = x2.toFloat() + SURFACE_OFFSET
-		val maxY = y2.toFloat() + SURFACE_OFFSET
-		val maxZ = z2.toFloat() + SURFACE_OFFSET
+		// A side against a solid block is drawn just inside it, so the edge's
+		// width does not show on the block beside it.
+		fun out(face: Int) = if ((tucked and face) != 0) -tuck else SURFACE_OFFSET
+		val minX = x1.toFloat() - out(FACE_WEST)
+		val minY = y1.toFloat() - out(FACE_DOWN)
+		val minZ = z1.toFloat() - out(FACE_NORTH)
+		val maxX = x2.toFloat() + out(FACE_EAST)
+		val maxY = y2.toFloat() + out(FACE_UP)
+		val maxZ = z2.toFloat() + out(FACE_SOUTH)
 
 		addLine(pose, minX, minY, minZ, maxX, minY, minZ, argb, lineWidth)
 		addLine(pose, maxX, minY, minZ, maxX, minY, maxZ, argb, lineWidth)

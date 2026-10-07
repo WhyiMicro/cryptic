@@ -1,5 +1,7 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.feature.BossWaypoints;
+import imicro.cryptic.feature.DungeonWaypoints;
 import imicro.cryptic.feature.ScrollableTooltips;
 import imicro.cryptic.feature.Toasts;
 import imicro.cryptic.feature.Zoom;
@@ -23,6 +25,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MouseHandlerMixin {
     @Inject(method = "onScroll", at = @At("HEAD"), cancellable = true)
     private void cryptic$zoomScroll(long handle, double xoffset, double yoffset, CallbackInfo ci) {
+        // Shift and the wheel while placing waypoints picks what to place,
+        // and must not also change the held item.
+        if (DungeonWaypoints.onScroll(yoffset) || BossWaypoints.onScroll(yoffset)) {
+            ci.cancel();
+            return;
+        }
         if (Zoom.onScroll(yoffset)) {
             ci.cancel();
             return;

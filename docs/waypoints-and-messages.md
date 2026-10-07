@@ -26,20 +26,38 @@ you take it:
    right-click it again to remove it. While Edit mode is on, a click does
    nothing else, so the chest or lever under it is not touched.
 3. Sneak and right-click to give a waypoint a title.
+4. Hold Shift and scroll to change which kind the next click places, without
+   moving the hotbar.
+5. With **Allow floating waypoints** on, a click with the crosshair on nothing
+   places a waypoint in the air 5 blocks ahead, as in Odin. Aim the same way
+   to remove it.
 
-There are four kinds, each with its own colour:
+There are five kinds. Each has a switch to show or hide it, with its colour
+beside the switch:
 
 - **Normal:** always shown.
 - **Secret:** hidden once the secret there is taken.
-- **Etherwarp:** hidden once you etherwarp onto it. Always drawn as a fill
-  without an outline, whatever the style, so it does not cover the crosshair.
+- **Etherwarp:** hidden once you etherwarp onto it. Always drawn as a solid
+  fill without an outline, whatever the style, so it does not cover the
+  crosshair.
 - **Dungeon Breaker:** hidden once its block is broken.
+- **Start:** where a route begins. Always an outline drawn through walls, so it
+  can be seen from anywhere in the room.
 
 Etherwarp and Dungeon Breaker waypoints are never drawn through walls, because
-the block you can see is the one that matters for both.
+the block you can see is the one that matters for both. Start waypoints always
+are. A Dungeon Breaker box's sides that are against a solid block are drawn
+just inside the block, so the outline never shows on the block beside it.
+
+A waypoint's title, and its kind with **Labels** on, is written in white with a
+shadow in the middle of its block, and can be read through walls.
 
 Waypoints are stored per room in the room's own coordinates, so one placed in
 Atlas shows in every Atlas, however the room is turned.
+
+The entrance room takes no waypoints: there is nothing to find there, and a
+waypoint placed beside Mort could land outside the room where it cannot be
+clicked off. Any kept under "Entrance" are dropped when packs are read.
 
 ### Packs
 
@@ -69,7 +87,7 @@ exceptions above for Etherwarp and Dungeon Breaker.
 | `/cryptic dwp` | Opens the pack manager |
 | `/cryptic dwp info` | Shows the status and the room you are in |
 | `/cryptic dwp edit` | Turns Edit mode on or off |
-| `/cryptic dwp type <normal\|secret\|etherwarp\|breaker>` | Sets what the next click places |
+| `/cryptic dwp type <normal\|secret\|etherwarp\|breaker\|start>` | Sets what the next click places |
 | `/cryptic dwp size <0.1-3>` | Makes new waypoints a fixed size, not the block's |
 | `/cryptic dwp useblocksize` | Switches between block size and fixed size |
 | `/cryptic dwp title <text>` | Titles the waypoint you are looking at |
@@ -91,6 +109,8 @@ position, kept per floor (`F7`, `M7` and so on).
 1. Turn on **Edit mode**, with `/cryptic bwp edit`, or with the **Edit mode key**.
 2. Right-click a block to place or remove a waypoint.
 3. Sneak and right-click to give it a title.
+4. Hold Shift and scroll to change the style of the next waypoint.
+5. **Allow floating waypoints** works as in Dungeon Waypoints.
 
 Each waypoint keeps the look the editor had when you placed it: **Style**
 (outline, fill or both), **Phase** (drawn through walls or not) and **Color**.

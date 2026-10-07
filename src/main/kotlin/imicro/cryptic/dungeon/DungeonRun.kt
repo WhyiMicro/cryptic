@@ -1,7 +1,8 @@
 package imicro.cryptic.dungeon
 
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
+import net.minecraft.client.Minecraft
+import net.minecraft.network.chat.Component
 
 /**
  * Where a dungeon run has got to, as told by chat.
@@ -36,8 +37,32 @@ object DungeonRun {
 		private set
 
 	/** True from the boss's greeting until the run is left. */
-	var inBoss = false
-		private set
+	private var heardBoss = false
+
+	/**
+	 * True in the boss room: from the boss's greeting, or from standing where
+	 * the boss room is, as Odin decides it.
+	 *
+	 * The greeting alone was not enough. A mod that hides boss dialogue hides
+	 * the greeting too, and Boss Waypoints then never once showed in a boss.
+	 */
+	val inBoss: Boolean
+		get() = heardBoss || inBossArea()
+
+	/** Odin's bounds: every boss room is east and south of the floor's rooms. */
+	private fun inBossArea(): Boolean {
+		if (!DungeonLocation.inDungeon) return false
+		val player = Minecraft.getInstance().player ?: return false
+		val x = player.x
+		val z = player.z
+		return when (DungeonLocation.floor) {
+			1 -> x > -71 && z > -39
+			in 2..4 -> x > -39 && z > -39
+			in 5..6 -> x > -39 && z > -7
+			7 -> x > -7 && z > -7
+			else -> false
+		}
+	}
 
 	/** True once the score summary has been printed. */
 	var ended = false
@@ -67,23 +92,31 @@ object DungeonRun {
 		// party chat above all, "§9Party §8> ..." — and every pattern the run
 		// and the score match against is written without them, so a teammate's
 		// "Mimic Killed!" in party chat was never once heard.
-		ClientReceiveMessageEvents.GAME.register { message, _ -> onMessage(message.string.replace(FORMATTING, "")) }
+		// Heard from the packet, in [onSystemChat], rather than from Fabric's
+		// chat event: a mod that hides a line cancels that event, and the boss
+		// greeting is a line such mods hide.
 		// Hypixel moves you between servers for every floor, so the run state
 		// from the last one must not survive into the next.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> reset() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> reset() }
 	}
 
+	/** A chat packet, on the client thread, before any mod has hidden it. */
+	@JvmStatic
+	fun onSystemChat(message: Component, overlay: Boolean) {
+		onMessage(message.string.replace(FORMATTING, ""))
+	}
+
 	fun reset() {
 		started = false
-		inBoss = false
+		heardBoss = false
 		ended = false
 	}
 
 	private fun onMessage(line: String) {
 		when {
 			line == START_MESSAGE -> started = true
-			bossEntryMessages.contains(line) -> inBoss = true
+			bossEntryMessages.contains(line) -> heardBoss = true
 			endPattern.matches(line) -> ended = true
 		}
 

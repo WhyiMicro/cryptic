@@ -87,9 +87,22 @@ this counts them instead of blocking outright, and swallows everything past
 **max start clicks**. The count resets when Goldor greets the party and when the
 device finishes showing its sequence.
 
-**Announce progress** sends a party message as each round of the sequence is
-finished. It is off by default, because enabling a module for its boxes should
-not quietly start typing in your party chat.
+Since SkyBlock 0.27.2 the sequence is four rounds long, not five.
+
+**Block clicks on lag** (on by default) holds back a button press while the
+server has gone quiet for longer than **Lag threshold** (300ms). Hypixel sends a
+ping every tick, one every 50ms, so a gap that long is the server stalling, and
+presses sent during it reach the device together, which fails it. The action
+bar says when a press is held back. It goes by the ping rather than by the
+button answering, because the game shows a button pressed before the server
+has heard of it.
+
+**Send progress** says "SS 3/4" in party chat as you finish each round of the
+sequence. **Send "SS broke!"** says "SS broke!" when the device throws an
+attempt away, whoever was doing it: NoammAddons' check (CC0), which is every
+button going while no light is lit, at least twelve ticks after the last one.
+It stops once the device is done. Both are off by default, because enabling a
+module for its boxes should not quietly start typing in your party chat.
 
 Sneaking overrides every one of these blocks, on both devices. A solver that has
 lost track must never be able to stop a device being played by hand.

@@ -84,15 +84,18 @@ object DungeonStats {
 	}
 
 	/**
-	 * Whether a bat has been killed, which is worth one bonus point for the run.
+	 * Who has killed a bat, each of them worth one bonus point.
 	 *
-	 * One, not one per bat: Hypixel's "A Bat has been slain. +1 Bonus Score" is
-	 * the run's single bat point, and Odin counts it once. This used to count a
-	 * point per bat up to five, which put the score up to four points too high
-	 * once a second bat died — enough to call 300 before the run was there.
+	 * One point per player, not per bat and not per run: Odin counts it this way
+	 * since its SkyBlock 0.27.2 update. Hypixel tells only the killer "A Bat has
+	 * been slain. +1 Bonus Score", and teammates' kills are heard from their
+	 * mods in party chat. A set of names, so a second bat by the same player, or
+	 * a kill announced twice, adds nothing.
 	 */
-	var batKilled = false
-		private set
+	private val batKillers = HashSet<String>()
+
+	/** Whether anybody has killed a bat yet. */
+	val batKilled: Boolean get() = batKillers.isNotEmpty()
 
 	/** Each puzzle the tab list has named, against its tick, cross or dot. */
 	private val puzzles = mutableMapOf<String, Char>()
@@ -120,7 +123,7 @@ object DungeonStats {
 		puzzleCount = 0
 		mimicKilled = false
 		princeKilled = false
-		batKilled = false
+		batKillers.clear()
 		puzzles.clear()
 		puzzleFailers.clear()
 		ticksUntilRefresh = 0
@@ -200,8 +203,8 @@ object DungeonStats {
 		}
 
 		if (batPattern.matches(line)) {
-			val first = !batKilled
-			batKilled = true
+			val name = net.minecraft.client.Minecraft.getInstance().player?.name?.string ?: "you"
+			val first = batKillers.add(name)
 			// Hypixel tells only the killer, so the party hears it from here.
 			if (first) DungeonScore.onBatKilled()
 			return
@@ -225,7 +228,7 @@ object DungeonStats {
 		when {
 			DungeonLocation.floor >= 6 && MIMIC_MESSAGES.any { it in said } -> mimicKilled = true
 			PRINCE_MESSAGES.any { it in said } -> princeKilled = true
-			BAT_MESSAGES.any { it in said } -> batKilled = true
+			BAT_MESSAGES.any { it in said } -> batKillers += match.groupValues[2].substringBefore(' ')
 			// A teammate's score reaching 300 first, which is worth a title now.
 			"300 score" in said -> DungeonScore.onTeammateReached300()
 		}
@@ -268,7 +271,7 @@ object DungeonStats {
 	/** The bonus points already banked, Paul aside. */
 	private val bonusWithoutPaul: Int
 		get() = (if (mimicKilled) 2 else 0) + (if (princeKilled) 1 else 0) +
-			(if (batKilled) 1 else 0) + crypts.coerceAtMost(5)
+			batKillers.size + crypts.coerceAtMost(5)
 
 	/** Paul's mayoral perk is worth ten points on top of everything else. */
 	val paulScore: Int get() = if (MayorPaul.active) 10 else 0

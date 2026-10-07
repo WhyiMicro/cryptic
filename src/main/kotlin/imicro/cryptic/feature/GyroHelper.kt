@@ -8,12 +8,12 @@ import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.render.WorldRender
 import imicro.cryptic.skyblock.SkyblockItem
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
+import net.minecraft.network.chat.Component
 import net.minecraft.tags.BlockTags
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.phys.Vec3
@@ -170,11 +170,24 @@ object GyroHelper {
 		// particular one of them.
 		LevelRenderEvents.BEFORE_BLOCK_OUTLINE.register { _, _ -> !hidesBlockOutline() }
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> castAt = 0L }
-		// Both halves of chat: the mana cost is an action bar message, but
-		// Hypixel moves it into the chat line itself while something else is
-		// using the action bar.
-		ClientReceiveMessageEvents.GAME.register { message, _ -> onActionBar(message.string) }
 	}
+
+	/**
+	 * Both halves of chat, from the packet: the mana cost is an action bar
+	 * message, but Hypixel moves it into the chat line itself while something
+	 * else is using the action bar.
+	 *
+	 * Read from the packet rather than from Fabric's chat event, which is
+	 * where it was read before. A mod that rewrites or hides the action bar —
+	 * SkyHanni and Skyblocker both can — cancels that event, and the cast was
+	 * never heard, so the colour never changed.
+	 */
+	@JvmStatic
+	fun onSystemChat(message: Component, overlay: Boolean) {
+		onActionBar(message.string.replace(FORMATTING, ""))
+	}
+
+	private val FORMATTING = Regex("§.")
 
 	/**
 	 * The wand's own mana message, which is the only announcement a cast makes.

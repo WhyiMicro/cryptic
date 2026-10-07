@@ -1,5 +1,6 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.dungeon.BossTimings.Timing
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.gui.ButtonModuleSetting
@@ -516,6 +517,15 @@ object BloodCamp {
 
 		if (greetedAt == null) {
 			greetedAt = ticks
+			// Since SkyBlock 0.27.2 the Watcher moves his first wave on a fixed
+			// time after his greeting, as Odin now counts it, rather than on a
+			// time read off how soon the wave came.
+			if (killTitle.value) {
+				titleIn = Timing.WATCHER_MOVE.ticks
+				Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
+					Component.literal("§8[Cryptic] §7Watcher moves in §f${seconds(titleIn / 20.0, 2)}s§7."),
+				)
+			}
 			return
 		}
 
@@ -526,22 +536,6 @@ object BloodCamp {
 		firstWave = false
 
 		val client = Minecraft.getInstance()
-		if (killTitle.value) {
-			// NoammAddons' table: the gap between the greeting and the wave
-			// decides how long the Watcher leaves it there.
-			val moveTicks = when (seconds) {
-				in 31..33 -> 36
-				in 28..30 -> 33
-				in 25..27 -> 30
-				in 22..24 -> 27
-				in 1..21 -> 24
-				else -> seconds + 3
-			}
-			titleIn = moveTicks
-			client.gui.hud.chat.addClientSystemMessage(
-				Component.literal("§8[Cryptic] §7Watcher moves in §f${seconds(moveTicks.toDouble(), 2)}s§7."),
-			)
-		}
 
 		if (!speedAlert.value) return
 		val title = when {
@@ -768,8 +762,8 @@ object BloodCamp {
 		return client.connection?.getPlayerInfo(uuid)?.latency ?: 0
 	}
 
-	/** A wave is this many mobs plus the floor number, which is Odin's count. */
-	private const val WAVE_BASE = 12
+	/** A wave is this many mobs plus the floor number, which is Odin's count: 12 before SkyBlock 0.27.2. */
+	private const val WAVE_BASE = 8
 
 	/** Below this the bar is rounding noise rather than a mob left standing. */
 	private const val WATCHER_BAR_FLOOR = 0.05f

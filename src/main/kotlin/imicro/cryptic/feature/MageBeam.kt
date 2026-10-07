@@ -279,10 +279,11 @@ object MageBeam {
 			far = furthest
 		}
 
-		/** True while a new point carries on in the direction this beam runs. */
+		/** True while a new point carries on in the direction this beam runs, close behind its last one. */
 		fun continues(point: Vec3): Boolean {
-			if (points.size <= 1) return true
 			val last = points.last()
+			if (last.distanceToSqr(point) > MAX_GAP * MAX_GAP) return false
+			if (points.size <= 1) return true
 			return last.subtract(points.first()).normalize()
 				.dot(point.subtract(last).normalize()) > STRAIGHT
 		}
@@ -341,11 +342,15 @@ object MageBeam {
 		if (packet.particle.type != ParticleTypes.FIREWORK) return false
 
 		val point = Vec3(packet.x, packet.y, packet.z)
-		val recent = beams.lastOrNull()
 		// Hypixel sends each beam twice; a point that is already on one is the
 		// second copy of it.
 		if (beams.none { point in it.points }) {
-			if (recent != null && ticks - recent.lastTick <= 1 && recent.continues(point)) {
+			// Any beam still arriving, not only the newest. Other fireworks come
+			// in between a beam's sparks — the dragons' in the last part of Floor 7
+			// — and with only the newest tried, every spark of the beam started a
+			// beam of its own, too short to draw.
+			val recent = beams.lastOrNull { ticks - it.lastTick <= 1 && it.continues(point) }
+			if (recent != null) {
 				recent.points.add(point)
 				recent.lastTick = ticks
 			} else {
@@ -607,6 +612,9 @@ object MageBeam {
 
 	/** How straight a point has to carry on to belong to the same beam. */
 	private const val STRAIGHT = 0.99
+
+	/** How far apart two sparks of one beam can be. */
+	private const val MAX_GAP = 5.0
 
 	/** Fewer points than this is a stray spark rather than a cast. */
 	private const val MIN_POINTS = 3

@@ -43,6 +43,37 @@ object AutoRequeue {
 	private const val LIST_TIMEOUT_MILLIS = 4_000L
 	private const val LIST_FRESH_MILLIS = 60_000L
 
+	/**
+	 * The least time between the party list being asked for and the queue
+	 * command. Hypixel refuses a command that follows another too closely —
+	 * "You are sending commands too fast!" — and the queue was the one refused.
+	 */
+	private const val COMMAND_GAP_MILLIS = 2_500L
+
+	/** How long after asking for the party list its answer is kept out of chat. */
+	private const val HIDE_WINDOW_MILLIS = 5_000L
+
+	/**
+	 * The last words of a final boss, which come before the run's score
+	 * banner: the party list is asked for here already, so it has been
+	 * answered, and the command cooldown has passed, by the time the run ends.
+	 * Only lines that are the end of the fight on that floor; any other floor
+	 * asks at the banner.
+	 */
+	private val earlyEnd = mapOf(
+		"[BOSS] Bonzo: Oh I'm dead!" to { DungeonLocation.floor == 1 },
+		"[BOSS] Necron: All this, for nothing..." to { DungeonLocation.floor == 7 && !DungeonLocation.masterMode },
+		"[BOSS] Wither King: Incredible. You did what I couldn't do myself." to { DungeonLocation.floor == 7 && DungeonLocation.masterMode },
+	)
+
+	/** What the party list is made of, so its answer can be kept out of chat. */
+	private val listLines = listOf(
+		Regex("""^-{5,}$"""),
+		Regex("""^Party Members \(\d+\)$"""),
+		Regex("""^Party (?:Leader|Moderators|Members): """),
+		Regex("""^You are not currently in a party\.$"""),
+	)
+
 	/** A full party, which is what Check party wants to see. */
 	private const val PARTY_SIZE = 5
 
@@ -185,6 +216,7 @@ object AutoRequeue {
 			leftDuringRun.clear()
 			requeueAt = 0L
 			readyUntil = 0L
+			listSentAt = 0L
 		}
 		if (!DungeonRun.started) runStartSeen = false
 
@@ -221,6 +253,41 @@ object AutoRequeue {
 		}
 	}
 
+	/** When the party list was last asked for, by this module. */
+	private var listSentAt = 0L
+
+	/** Until when an answering party list is kept out of chat, and whether its heading has been seen. */
+	@Volatile
+	private var hideListUntil = 0L
+	private var hideSawHeading = false
+
+	/** Asks Hypixel for the party list, with its answer kept out of chat. */
+	private fun askList(client: Minecraft) {
+		val now = System.currentTimeMillis()
+		listSentAt = now
+		hideListUntil = now + HIDE_WINDOW_MILLIS
+		hideSawHeading = false
+		send(client, "pl")
+	}
+
+	/**
+	 * Whether a chat message is the answer to the party list this module asked
+	 * for, which is not shown: the end of a run has chat enough. Read by the
+	 * party features before this is asked, so nothing is lost by hiding it.
+	 */
+	@JvmStatic
+	fun hidesChat(message: Component, overlay: Boolean): Boolean {
+		if (overlay || hideListUntil == 0L || System.currentTimeMillis() > hideListUntil) return false
+		val lines = message.string.split('\n').map { it.replace(FORMATTING, "").trim() }.filter { it.isNotEmpty() }
+		if (lines.isEmpty() || !lines.all { line -> listLines.any { it.containsMatchIn(line) } }) return false
+		val heading = lines.any { listLines[1].matches(it) || listLines[3].matches(it) }
+		val rule = lines.any { listLines[0].matches(it) }
+		// The closing rule, after the heading, is the end of it.
+		if (heading) hideSawHeading = true
+		if (hideSawHeading && rule && (lines.size > 1 || !heading)) hideListUntil = 0L
+		return true
+	}
+
 	private fun onRunEnded(client: Minecraft) {
 		floorCommand = DungeonLocation.floor.takeIf { it in FLOOR_NAMES.indices }?.let {
 			"joininstance ${if (DungeonLocation.masterMode) "MASTER_" else ""}CATACOMBS_FLOOR_${FLOOR_NAMES[it]}"
@@ -235,8 +302,15 @@ object AutoRequeue {
 			decide()
 			return
 		}
-		listAskedAt = System.currentTimeMillis()
-		send(client, "pl")
+		// Asked already, at the boss's last words: wait for that answer, or
+		// use it if it is here.
+		val now = System.currentTimeMillis()
+		if (listSentAt != 0L && now - listSentAt < LIST_FRESH_MILLIS) {
+			listAskedAt = listSentAt
+			return
+		}
+		listAskedAt = now
+		askList(client)
 	}
 
 	/** The party list has answered: requeue, wait for a break to end, or say why not. */
@@ -286,7 +360,7 @@ object AutoRequeue {
 	private fun seconds(): Int = delay.value.toInt()
 
 	private fun schedule(message: String) {
-		requeueAt = System.currentTimeMillis() + seconds() * 1000L
+		requeueAt = maxOf(System.currentTimeMillis() + seconds() * 1000L, listSentAt + COMMAND_GAP_MILLIS)
 		tell(message)
 	}
 
@@ -324,6 +398,10 @@ object AutoRequeue {
 	}
 
 	private fun onLine(line: String) {
+		if (!runEndHandled && earlyEnd[line]?.invoke() == true && !DebugOverrides.previewPartyCommands) {
+			askList(Minecraft.getInstance())
+			return
+		}
 		for (pattern in memberGone) {
 			pattern.find(line)?.let { return onLeft(it.groupValues[1]) }
 		}

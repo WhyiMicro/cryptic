@@ -32,6 +32,15 @@ object BeamsSolver {
 	private val pairs = ConcurrentHashMap<BlockPos, Pair<BlockPos, Int>>()
 
 	/**
+	 * The colour each pair was given, kept for as long as you are in the room.
+	 *
+	 * Handed out again on every recount, the colours moved round whenever a
+	 * pair was broken: the count of standing pairs went down by one, and every
+	 * pair after the broken one took the colour of the one before it.
+	 */
+	private val colors = ConcurrentHashMap<BlockPos, Int>()
+
+	/**
 	 * Eight colours meant to be told apart at a glance.
 	 *
 	 * The two ends of a beam are marked in the same colour, so what matters is
@@ -69,7 +78,8 @@ object BeamsSolver {
 	private const val GOLDEN_ANGLE = 0.618033f
 
 	fun onRoomEnter(room: DungeonRoom) {
-		reset()
+		// The colours stay: walking out and back in is the same pairs.
+		pairs.clear()
 		if (room.data?.name != PUZZLE) return
 		recalculate(room)
 	}
@@ -85,8 +95,7 @@ object BeamsSolver {
 		// over the answer sheet. The sheet lists more pairs than any one room
 		// uses, so colouring by its index left gaps - and a gap of eight is two
 		// beams wearing the same colour, which is the one thing this must not
-		// do.
-		var taken = 0
+		// do. A pair keeps the colour it was first given.
 		PuzzleAssets.beams.forEach { pair ->
 			if (pair.size < 6) return@forEach
 			val first = room.getRealCoords(BlockPos(pair[0], pair[1], pair[2])) ?: return@forEach
@@ -94,7 +103,7 @@ object BeamsSolver {
 			if (level.getBlockState(first).block != Blocks.SEA_LANTERN) return@forEach
 			if (level.getBlockState(second).block != Blocks.SEA_LANTERN) return@forEach
 
-			pairs[first] = second to colorFor(taken++)
+			pairs[first] = second to colors.getOrPut(first) { colorFor(colors.size) }
 		}
 	}
 
@@ -136,5 +145,8 @@ object BeamsSolver {
 		}
 	}
 
-	fun reset() = pairs.clear()
+	fun reset() {
+		pairs.clear()
+		colors.clear()
+	}
 }

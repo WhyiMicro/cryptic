@@ -60,7 +60,9 @@ Several features are ported from other mods, whose licences travel with them:
   The Spirit Bear timer, the Livid Solver and its invulnerability timer,
   Positional Messages and its cylinder, the Dungeon Waypoints editor, its /dwp
   command and its waypoint packs,
-  and the melody coordinates and percentages in the Terminal Solver.
+  and the melody coordinates and percentages in the Terminal Solver. The
+  Croesus Helper's run colours, its reading of a run's chests, and the price
+  table it values them with.
   Licence in [`licenses/Odin-LICENSE.txt`](licenses/Odin-LICENSE.txt).
 - **[Blade Addons](https://github.com/BladeMasterGabe/blade-addons)** (CC0) — the
   secret spawn timer, the leap count in the Spirit Leap Overlay, and the height
@@ -84,7 +86,8 @@ Several features are ported from other mods, whose licences travel with them:
   sending melody progress to the party. Auto GFS, and Auto Requeue with its
   Check Party.
   The Spirit Bear, Spirit Bow and Thorn highlights, and the Livid Solver's
-  tracer, health, hiding of the wrong Livids and Ice Spray alert.
+  tracer, health, hiding of the wrong Livids and Ice Spray alert. The Croesus
+  Helper's profit beside a chest's title and its list of chests.
 - **[Athen](https://github.com/skies-starred/Athen)** (BSD 3-Clause,
   Copyright (c) 2025-2026 Starred) — the Lag Detector's format, Arrow Hitboxes,
   Custom Scale including its chibi styles, and the Carry Manager: the shape of a
@@ -111,7 +114,8 @@ Several features are ported from other mods, whose licences travel with them:
   board back into a list of pulls. Its six Lights On lever positions are facts about the wall they
   sit on rather than code, and the solver around them is Cryptic's own; the
   Booster Cookie Reminder reads the pair of tab list rows Skyblocker found the
-  cookie's remaining time on. Licence in
+  cookie's remaining time on. The Croesus Helper's table of drops whose names
+  are not their ids, and its rule for a second chest worth a key. Licence in
   [`licenses/Skyblocker-LICENSE.txt`](licenses/Skyblocker-LICENSE.txt).
 - **[NotEnoughUpdates](https://github.com/NotEnoughUpdates/NotEnoughUpdates)**
   (LGPL-3.0) — the Wither Cloak effect. Notices in
@@ -122,7 +126,10 @@ community's, as published in Stella's terminal data. They are facts about the
 boss room and a party's convention about who goes where, not code or artwork,
 and nothing else of Stella's is in Cryptic.
 
-Five more mods were read rather than ported — no code of theirs is in Cryptic:
+Six more mods were read rather than ported — no code of theirs is in Cryptic:
+**[SkyHanni](https://github.com/hannibal002/SkyHanni)** (LGPL-2.1), for telling
+Croesus' runs apart by their page and slot, and for the look of the Croesus
+Helper's two profit lists — their layout, colours and number format;
 **[Debugify](https://github.com/isXander/Debugify)** (LGPL-3.0), for the
 riding input fix in Camera — MC-206540, whose fix is one paragraph of turning
 the rider with its mount in the same tick;

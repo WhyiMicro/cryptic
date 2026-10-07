@@ -1,5 +1,7 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.dungeon.BossTimings
+import imicro.cryptic.dungeon.BossTimings.Timing
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.dungeon.DungeonStats
@@ -10,10 +12,10 @@ import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.terminal.ServerTicks
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.network.chat.Component
 import java.util.Locale
 
 /**
@@ -33,6 +35,10 @@ import java.util.Locale
  * Counted in **server** ticks, not client frames: Hypixel sends a ping every
  * tick it gets through, and what these are timing is the server's clock rather
  * than the player's.
+ *
+ * How long each one runs is in [imicro.cryptic.dungeon.BossTimings], where it
+ * can be changed with `/cryptic debug timing`: SkyBlock 0.27.2 sped the Floor 7
+ * fight up, and the new numbers are still being measured.
  */
 object SmartTickTimer {
 	/** The gap between the prefix column and the number column, in pixels. */
@@ -46,7 +52,6 @@ object SmartTickTimer {
 	private val fireFreezePattern =
 		Regex("""^\[BOSS] The Professor: Oh? You found my Guardians. one weakness\?$""")
 
-	private val necronPattern = Regex("""^\[BOSS] Necron: I'm afraid, your journey ends now\.$""")
 	private val goldorPattern = Regex("""^\[BOSS] Goldor: Who dares trespass into my domain\?$""")
 	private val corePattern = Regex("""^The Core entrance is opening!$""")
 	private val stormEndPattern = Regex("""^\[BOSS] Storm: I should have known that I stood no chance\.$""")
@@ -182,6 +187,12 @@ object SmartTickTimer {
 	/** Fired once per Storm phase: the call comes more than once, the window does not. */
 	private var pyTriggered = false
 
+	/** How long the PY count was when it started, for its colours. */
+	private var pyMax = Timing.PY.ticks
+
+	/** How long the Necron count was when it started, for its colours. */
+	private var necronMax = Timing.NECRON.ticks
+
 	/**
 	 * Ticks left of the current second, for the secret spawn timer.
 	 *
@@ -207,7 +218,9 @@ object SmartTickTimer {
 
 		Hud.register(TimerElement())
 		Hud.register(SecretSpawnElement())
-		ClientReceiveMessageEvents.GAME.register { message, overlay -> if (!overlay) onMessage(message.string) }
+		// Chat is heard in [onSystemChat], from the packet: these lines are boss
+		// dialogue, which other mods hide, and a hidden line never reaches
+		// Fabric's chat event.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> forget() }
 	}
@@ -225,30 +238,48 @@ object SmartTickTimer {
 		secretSpawnTicks = -1
 	}
 
+	/** A chat packet, on the client thread, before any mod has hidden it. */
+	@JvmStatic
+	fun onSystemChat(message: Component, overlay: Boolean) {
+		if (!overlay) onMessage(message.string.replace(FORMATTING, ""))
+	}
+
 	private fun onMessage(line: String) {
 		if (!module.enabled) return
 
+		// The Necron drop, counted from Goldor's last words and set again on
+		// every line between them and Necron's: started early so there is time
+		// to read it, and finished on the line it is really timed from.
+		BossTimings.NECRON_LEAD_IN[line]?.let { lead ->
+			val ticks = lead + Timing.NECRON.ticks
+			if (necronTicks < 0) necronMax = ticks
+			necronTicks = ticks
+			return
+		}
+
 		when {
-			necronPattern.matches(line) -> necronTicks = 60
-			goldorPattern.matches(line) -> goldorCoreTicks = 60
+			goldorPattern.matches(line) -> goldorCoreTicks = Timing.GOLDOR_CORE.ticks
 			corePattern.matches(line) -> {
 				goldorStartTicks = -1
 				goldorCoreTicks = -1
 			}
 			stormEndPattern.matches(line) -> {
-				goldorStartTicks = 104
+				goldorStartTicks = Timing.GOLDOR_START.ticks
 				padTicks = -1
 				stormTicks = -1
 			}
 			stormStartPattern.matches(line) -> {
 				padTicks = 20
-				lightningTicks = 560
+				lightningTicks = Timing.LIGHTNING.ticks
 				stormTicks = 0
+				pyTriggered = false
 			}
-			fireFreezePattern.matches(line) -> fireFreezeTicks = 206
+			fireFreezePattern.matches(line) -> fireFreezeTicks = Timing.FIRE_FREEZE.ticks
 			!pyTriggered && stormPyPattern.matches(line) -> {
 				pyTriggered = true
-				pyTicks = 95
+				// From the call to the moment to lower the pillar, as Odin counts it.
+				pyTicks = Timing.PY.ticks
+				pyMax = pyTicks
 			}
 		}
 	}
@@ -296,7 +327,7 @@ object SmartTickTimer {
 		serverTicks++
 
 		if (secretSpawnTicks > 0) secretSpawnTicks--
-		if (goldorCoreTicks == 0 && goldorStartTicks <= 0) goldorCoreTicks = 60
+		if (goldorCoreTicks == 0 && goldorStartTicks <= 0) goldorCoreTicks = Timing.GOLDOR_CORE.ticks
 		if (goldorStartTicks >= 0) goldorStartTicks--
 		if (goldorCoreTicks >= 0) goldorCoreTicks--
 		if (padTicks == 0) padTicks = 20
@@ -334,7 +365,19 @@ object SmartTickTimer {
 		val prefix: String,
 		val ticks: Int,
 		val max: Int,
+		/** Its own colours, where the thirds of [max] are not what matters. */
+		val color: ((Int) -> String)? = null,
 	)
+
+	/**
+	 * PY's colours: orange from 40 ticks and red from 20, because the pads
+	 * move every 20 ticks and those are the last two moves before Storm's.
+	 */
+	private fun pyColor(ticks: Int): String = when {
+		ticks > 40 -> "§a"
+		ticks > 20 -> "§6"
+		else -> "§c"
+	}
 
 	/**
 	 * The timers switched on, in a fixed order, whether or not they are running.
@@ -345,16 +388,16 @@ object SmartTickTimer {
 	 */
 	private fun enabledRows(): List<Row> {
 		val rows = mutableListOf<Row>()
-		if (necronTimer.value) rows += Row("§4Necron:", necronTicks, 60)
-		if (goldorStartTimer.value) rows += Row("§aStart:", goldorStartTicks, 100)
-		if (goldorCoreTimer.value) rows += Row("§7Core:", goldorCoreTicks, 60)
+		if (necronTimer.value) rows += Row("§4Necron:", necronTicks, necronMax)
+		if (goldorStartTimer.value) rows += Row("§aStart:", goldorStartTicks, Timing.GOLDOR_START.ticks)
+		if (goldorCoreTimer.value) rows += Row("§7Core:", goldorCoreTicks, Timing.GOLDOR_CORE.ticks)
 		if (stormPadTimer.value) rows += Row("§bPad:", padTicks, 20)
-		if (stormPyTimer.value) rows += Row("§bPY:", pyTicks, 95)
-		if (stormTickTimer.value) rows += Row("§bStorm:", stormTicks, 620)
-		if (lightningTimer.value) rows += Row("§bLightning:", lightningTicks, 560)
+		if (stormPyTimer.value) rows += Row("§bPY:", pyTicks, pyMax, ::pyColor)
+		if (stormTickTimer.value) rows += Row("§bStorm:", stormTicks, STORM_MAX)
+		if (lightningTimer.value) rows += Row("§bLightning:", lightningTicks, Timing.LIGHTNING.ticks)
 		// Counted from the cast rather than from the message: the ability is
 		// used a hundred ticks into the window, not at the start of it.
-		if (fireFreezeTimer.value) rows += Row("§bFire Freeze:", fireFreezeTicks - FIRE_FREEZE_CAST, 106)
+		if (fireFreezeTimer.value) rows += Row("§bFire Freeze:", fireFreezeTicks - FIRE_FREEZE_CAST, Timing.FIRE_FREEZE.ticks - FIRE_FREEZE_CAST)
 		return rows
 	}
 
@@ -362,7 +405,7 @@ object SmartTickTimer {
 	private fun liveRows(): List<Row> = enabledRows().filter { it.ticks >= 0 }
 
 	/** Odin's ramp: green for most of the window, orange, then red at the end. */
-	private fun colorFor(row: Row): String = when {
+	private fun colorFor(row: Row): String = row.color?.invoke(row.ticks) ?: when {
 		row.ticks >= row.max * 0.66f -> "§a"
 		row.ticks >= row.max * 0.33f -> "§6"
 		else -> "§c"
@@ -468,6 +511,9 @@ object SmartTickTimer {
 			)
 		}
 	}
+
+	/** How far the Storm count runs before it is red, which is Odin's, after the update. */
+	private const val STORM_MAX = 540
 
 	/** One of Hypixel's seconds, in server ticks. */
 	private const val SECOND_TICKS = 20

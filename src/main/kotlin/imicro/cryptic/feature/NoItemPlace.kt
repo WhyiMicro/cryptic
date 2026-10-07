@@ -1,5 +1,6 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.Floor7
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
@@ -14,7 +15,8 @@ import net.minecraft.world.item.context.BlockPlaceContext
  * its right-click items out of vanilla blocks — a Power Orb is a skull, the
  * Flower of Truth is a flower — so aiming a hair low while using one places it
  * in the world. In a dungeon that is a wither relic stuck in the floor during
- * Necron, or an Etherwarp Conduit left behind in a boss room.
+ * Necron, or an Etherwarp Conduit left behind in a boss room. It only acts in a
+ * dungeon.
  *
  * The click still happens: it is the *placement* that is dropped, and the
  * server goes on receiving the use it was sent. Nothing is faked, and an item
@@ -66,16 +68,20 @@ object NoItemPlace {
 		id = "no_item_place",
 		name = "No Item Place",
 		description = "Stops placing items by accident",
-		category = ModuleCategory.GENERAL,
+		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(relics),
 	)
 
+	/** True while the floor has to be read for this module. */
+	val needsDungeon: Boolean get() = module.enabled
+
 	/** True when this placement should be swallowed. */
 	@JvmStatic
 	fun blocks(context: BlockPlaceContext): Boolean {
-		if (!module.enabled) return false
+		// Only in a dungeon: outside one, placing these is sometimes the point.
+		if (!module.enabled || !DungeonLocation.inDungeon) return false
 		val stack = context.player?.mainHandItem ?: return false
 		val id = SkyblockItem.id(stack)
 		if (id.isEmpty()) return false

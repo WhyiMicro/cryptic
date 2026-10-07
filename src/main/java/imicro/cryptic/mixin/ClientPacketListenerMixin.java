@@ -1,10 +1,13 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.dungeon.BossTimings;
 import imicro.cryptic.dungeon.DungeonRun;
 import imicro.cryptic.dungeon.DungeonStats;
 import imicro.cryptic.dungeon.map.DungeonMapReader;
 import com.mojang.datafixers.util.Pair;
 import imicro.cryptic.feature.AutoGfs;
+import imicro.cryptic.feature.DeviceSolver;
+import imicro.cryptic.feature.GyroHelper;
 import imicro.cryptic.feature.AutoRequeue;
 import imicro.cryptic.feature.BloodCamp;
 import imicro.cryptic.feature.CameraTweaks;
@@ -212,6 +215,7 @@ public abstract class ClientPacketListenerMixin {
      */
     @Inject(method = "handleAddEntity", at = @At("HEAD"), cancellable = true)
     private void cryptic$hideSpawnedEntity(ClientboundAddEntityPacket packet, CallbackInfo info) {
+        BossTimings.onEntityAdded(packet.getType());
         if (RenderOptimizer.blocksSpawn(packet.getType())) info.cancel();
     }
 
@@ -414,9 +418,15 @@ public abstract class ClientPacketListenerMixin {
             value = "INVOKE",
             target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/network/PacketProcessor;)V",
             shift = At.Shift.AFTER
-        )
+        ),
+        cancellable = true
     )
     private void cryptic$readSystemChat(ClientboundSystemChatPacket packet, CallbackInfo info) {
+        DungeonRun.onSystemChat(packet.content(), packet.overlay());
+        BossTimings.onSystemChat(packet.content(), packet.overlay());
+        SmartTickTimer.onSystemChat(packet.content(), packet.overlay());
+        DeviceSolver.onSystemChat(packet.content(), packet.overlay());
+        GyroHelper.onSystemChat(packet.content(), packet.overlay());
         PartyFeatures.onSystemChat(packet.content(), packet.overlay());
         DungeonWarpCooldown.onSystemChat(packet.content(), packet.overlay());
         F7Qol.onSystemChat(packet.content(), packet.overlay());
@@ -425,6 +435,9 @@ public abstract class ClientPacketListenerMixin {
         AutoGfs.onSystemChat(packet.content(), packet.overlay());
         DungeonWaypoints.onSystemChat(packet.content(), packet.overlay());
         LividSolver.onSystemChat(packet.content(), packet.overlay());
+        // Last, once everything above has read it: the party list asked for
+        // at the end of a run is kept out of chat.
+        if (AutoRequeue.hidesChat(packet.content(), packet.overlay())) info.cancel();
     }
 
     /**

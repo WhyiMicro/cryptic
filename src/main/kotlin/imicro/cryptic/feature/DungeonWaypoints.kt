@@ -34,6 +34,7 @@ import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
 import net.minecraft.network.chat.Component
 import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.BlockHitResult
@@ -85,6 +86,12 @@ object DungeonWaypoints {
 	/** How soon "That chest is locked!" has to follow a click to undo it. */
 	private const val LOCKED_MILLIS = 1_500L
 
+	/** How far a floating waypoint is put, when the crosshair is on nothing: Odin's distance. */
+	private const val FLOATING_DISTANCE = 5.0
+
+	/** How close a box's side has to be to its block's to count as that side. */
+	private const val EDGE_EPSILON = 0.001
+
 	private val FORMATTING = Regex("§.")
 
 	/** Devonian's six kinds, by the keys its data uses. */
@@ -112,12 +119,23 @@ object DungeonWaypoints {
 		NORMAL("Normal", 0xFF5555),
 		SECRET("Secret", 0x5555FF),
 		ETHERWARP("Etherwarp", 0xFFAA00),
-		BREAKER("Dungeon Breaker", 0xAA00AA);
+		BREAKER("Dungeon Breaker", 0xAA00AA),
+
+		/** Where a route begins. Always an outline, always through walls, so it can be found from anywhere in the room. */
+		START("Start", 0x55FF55);
+
+		/** Shows or hides every waypoint of this kind, with its colour beside it. */
+		val show = ToggleModuleSetting(
+			id = "custom_${name.lowercase(Locale.ROOT)}",
+			label = label,
+			defaultValue = true,
+		)
 
 		val color = ColorModuleSetting(
 			id = "custom_${name.lowercase(Locale.ROOT)}_color",
-			label = label,
+			label = "$label color",
 			defaultRgb = defaultRgb,
+			inlineWith = show,
 		)
 
 		companion object {
@@ -243,6 +261,14 @@ object DungeonWaypoints {
 	)
 
 	@JvmField
+	val floating = ToggleModuleSetting(
+		id = "floating",
+		label = "Allow floating waypoints",
+		defaultValue = false,
+		description = "With the crosshair on nothing, a click places a waypoint in the air 5 blocks ahead, as in Odin.",
+	)
+
+	@JvmField
 	val useBlockSize = ToggleModuleSetting(
 		id = "use_block_size",
 		label = "Use block size",
@@ -271,8 +297,8 @@ object DungeonWaypoints {
 		supportsKeybind = false,
 		settings = listOf(styleSection, style, fillOpacity, lineWidth, throughWalls, labels, labelScale, secretSection, secrets, hideFound) +
 			SecretType.entries.flatMap { listOf(it.show, it.color) } +
-			listOf(customSection, custom) + CustomType.entries.map { it.color } +
-			listOf(editorSection, editMode, editKey, placeType, useBlockSize, size),
+			listOf(customSection, custom) + CustomType.entries.flatMap { listOf(it.show, it.color) } +
+			listOf(editorSection, editMode, editKey, placeType, floating, useBlockSize, size),
 	)
 
 	// ---- Data ------------------------------------------------------------
@@ -341,6 +367,8 @@ object DungeonWaypoints {
 		if (!module.enabled || !DungeonLocation.inDungeon || DungeonRun.inBoss) return null
 		val level = Minecraft.getInstance().level ?: return null
 		val room = DungeonMap.currentRoom() ?: return null
+		// Nothing is found in the entrance, and nothing is placed there either.
+		if (room.type == DungeonRoom.Type.ENTRANCE || room.data?.name == "Entrance") return null
 		if (room.data == null || !room.resolveRotation(level)) return null
 		return room
 	}
@@ -468,20 +496,33 @@ object DungeonWaypoints {
 		if (custom.value) {
 			for ((waypoint, at) in customsIn(room)) {
 				val kind = waypoint.kind
+				if (!kind.show.value) continue
 				when (kind) {
 					CustomType.SECRET, CustomType.ETHERWARP -> if (at in found) continue
 					CustomType.BREAKER -> if (level.getBlockState(at).isAir) continue
-					CustomType.NORMAL -> Unit
+					CustomType.NORMAL, CustomType.START -> Unit
 				}
 				val label = waypoint.title ?: if (labels.value) kind.label else null
 				// Etherwarp spots are a fill and nothing else, whatever the style:
 				// an outline on the block you are aiming the warp at is in the way
 				// of the crosshair. Etherwarp and breaker spots are never drawn
 				// through walls, since the block you can actually see is the one
-				// that counts for both.
+				// that counts for both. A start spot is the opposite: an outline,
+				// always through walls, so it can be found from anywhere in the room.
 				val fillOnly = kind == CustomType.ETHERWARP
-				val depthTested = kind == CustomType.ETHERWARP || kind == CustomType.BREAKER
-				draw(context, boxAt(at, waypoint.size), kind.color.rgb, label, fillOnly = fillOnly, phase = !depthTested && throughWalls.value)
+				val outlineOnly = kind == CustomType.START
+				val phase = when (kind) {
+					CustomType.ETHERWARP, CustomType.BREAKER -> false
+					CustomType.START -> true
+					else -> throughWalls.value
+				}
+				val box = boxAt(at, waypoint.size)
+				// A breaker block is usually set in a wall: the sides against a solid
+				// block are left inside it, so the outline never shows on the block
+				// next door.
+				val tucked = if (kind == CustomType.BREAKER) buriedSides(at, box) else 0
+				// And solid: the spot to warp onto is meant to be unmistakable.
+				draw(context, box, kind.color.rgb, label, fillOnly = fillOnly, outlineOnly = outlineOnly, phase = phase, solid = kind == CustomType.ETHERWARP, tucked = tucked)
 			}
 		}
 
@@ -499,6 +540,24 @@ object DungeonWaypoints {
 		return if (shape.isEmpty) AABB(pos) else shape.bounds().move(pos)
 	}
 
+	/** The sides of [box] that lie on its block's own sides and against a full block, where nothing can see them. */
+	private fun buriedSides(pos: BlockPos, box: AABB): Int {
+		val level = Minecraft.getInstance().level ?: return 0
+		var sides = 0
+		fun check(face: Int, side: Double, edge: Int, direction: Direction) {
+			if (Math.abs(side - edge) > EDGE_EPSILON) return
+			val next = pos.relative(direction)
+			if (level.getBlockState(next).isCollisionShapeFullBlock(level, next)) sides = sides or face
+		}
+		check(WorldRender.FACE_DOWN, box.minY, pos.y, Direction.DOWN)
+		check(WorldRender.FACE_UP, box.maxY, pos.y + 1, Direction.UP)
+		check(WorldRender.FACE_NORTH, box.minZ, pos.z, Direction.NORTH)
+		check(WorldRender.FACE_SOUTH, box.maxZ, pos.z + 1, Direction.SOUTH)
+		check(WorldRender.FACE_WEST, box.minX, pos.x, Direction.WEST)
+		check(WorldRender.FACE_EAST, box.maxX, pos.x + 1, Direction.EAST)
+		return sides
+	}
+
 	private fun draw(
 		context: LevelRenderContext,
 		box: AABB,
@@ -506,10 +565,17 @@ object DungeonWaypoints {
 		label: String?,
 		preview: Boolean = false,
 		fillOnly: Boolean = false,
+		outlineOnly: Boolean = false,
 		phase: Boolean = throughWalls.value,
+		solid: Boolean = false,
+		tucked: Int = 0,
 	) {
-		val mode = if (fillOnly) STYLE_FILL else style.selectedIndex
-		val opacity = (fillOpacity.value / 100.0 * 255).toInt().coerceIn(0, 255)
+		val mode = when {
+			fillOnly -> STYLE_FILL
+			outlineOnly -> STYLE_OUTLINE
+			else -> style.selectedIndex
+		}
+		val opacity = if (solid) 255 else (fillOpacity.value / 100.0 * 255).toInt().coerceIn(0, 255)
 		WorldRender.drawBox(
 			poseStack = context.poseStack(),
 			collector = context.submitNodeCollector(),
@@ -525,6 +591,7 @@ object DungeonWaypoints {
 			fill = mode != STYLE_OUTLINE,
 			phase = phase,
 			lineWidth = lineWidth.value.toFloat(),
+			tucked = tucked,
 		)
 		if (label == null) return
 		val client = Minecraft.getInstance()
@@ -532,12 +599,15 @@ object DungeonWaypoints {
 			poseStack = context.poseStack(),
 			collector = context.submitNodeCollector(),
 			orientation = client.gameRenderer.mainCamera().rotation(),
-			text = Component.literal(label).withColor(rgb and 0xFFFFFF),
+			// White, shadowed and through walls whatever the box does, in the
+			// middle of the block: a label is read, so it has to be readable.
+			text = Component.literal(label),
 			x = (box.minX + box.maxX) / 2,
-			y = box.maxY + 0.2,
+			y = (box.minY + box.maxY) / 2,
 			z = (box.minZ + box.maxZ) / 2,
 			scale = labelScale.value.toFloat(),
-			seeThrough = phase,
+			seeThrough = true,
+			centered = true,
 		)
 	}
 
@@ -545,12 +615,31 @@ object DungeonWaypoints {
 
 	private fun placing(): CustomType = CustomType.entries[placeType.selectedIndex.coerceIn(0, CustomType.entries.size - 1)]
 
-	/** The block under the crosshair, while there is a room to put it in. */
+	/**
+	 * The block under the crosshair, while there is a room to put it in. With
+	 * floating waypoints allowed and the crosshair on nothing, the spot in the
+	 * air ahead instead.
+	 */
 	private fun target(): BlockPos? {
-		val hit = Minecraft.getInstance().hitResult as? BlockHitResult ?: return null
-		if (hit.type != HitResult.Type.BLOCK) return null
 		room() ?: return null
-		return hit.blockPos
+		val hit = Minecraft.getInstance().hitResult
+		if (hit is BlockHitResult && hit.type == HitResult.Type.BLOCK) return hit.blockPos
+		if (floating.value && (hit == null || hit.type == HitResult.Type.MISS)) return floatingPos()
+		return null
+	}
+
+	/** The block [FLOATING_DISTANCE] ahead of the eyes, which is where Odin puts a waypoint in the air. */
+	internal fun floatingPos(): BlockPos? {
+		val player = Minecraft.getInstance().player ?: return null
+		return BlockPos.containing(player.eyePosition.add(player.lookAngle.scale(FLOATING_DISTANCE)))
+	}
+
+	/** A right click on nothing while Edit mode is on: a floating waypoint, when they are allowed. */
+	@JvmStatic
+	fun onEditorAirClick(): Boolean {
+		if (!module.enabled || !editMode.value || !floating.value) return false
+		val pos = floatingPos() ?: return false
+		return onEditorClick(pos)
 	}
 
 	/**
@@ -691,13 +780,13 @@ object DungeonWaypoints {
 			.then(ClientCommands.literal("type").then(
 				ClientCommands.argument("kind", StringArgumentType.word())
 					.suggests { _, builder ->
-						listOf("normal", "secret", "etherwarp", "breaker").forEach(builder::suggest)
+						listOf("normal", "secret", "etherwarp", "breaker", "start").forEach(builder::suggest)
 						builder.buildFuture()
 					}
 					.executes { context ->
 						val kind = CustomType.parse(StringArgumentType.getString(context, "kind"))
 						if (kind == null) {
-							feedback(context, "§cNo such kind. §7normal, secret, etherwarp or breaker.")
+							feedback(context, "§cNo such kind. §7normal, secret, etherwarp, breaker or start.")
 							return@executes 0
 						}
 						placeType.selectedIndex = kind.ordinal
@@ -760,6 +849,28 @@ object DungeonWaypoints {
 				"Edit mode §coff§7."
 			},
 		)
+	}
+
+	/**
+	 * Shift and the wheel, while editing in a room: steps through the kinds of
+	 * waypoint the next click places. True takes the turn, so the hotbar does
+	 * not move with it.
+	 */
+	@JvmStatic
+	fun onScroll(amount: Double): Boolean {
+		if (!module.enabled || !editMode.value || amount == 0.0) return false
+		val client = Minecraft.getInstance()
+		if (client.gui.screen() != null || !client.options.keyShift.isDown) return false
+		room() ?: return false
+		val count = CustomType.entries.size
+		val step = if (amount > 0) -1 else 1
+		placeType.selectedIndex = Math.floorMod(placeType.selectedIndex + step, count)
+		val kind = placing()
+		client.gui.hud.setOverlayMessage(
+			Component.literal("Placing: ").append(Component.literal(kind.label).withColor(kind.color.rgb)),
+			false,
+		)
+		return true
 	}
 
 	/** Opens the pack manager when asked, and watches the Edit mode key. */

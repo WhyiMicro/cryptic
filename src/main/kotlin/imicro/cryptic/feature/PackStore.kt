@@ -66,6 +66,9 @@ abstract class PackStore<T : Any>(
 	/** Anything to read when the store's own file does not exist yet. */
 	protected open fun loadLegacy() = Unit
 
+	/** Keys no waypoint may be kept under: dropped when the file is read and when a pack is imported. */
+	protected open val excludedKeys: Set<String> = emptySet()
+
 	fun load() {
 		packs.clear()
 		editName = null
@@ -76,6 +79,7 @@ abstract class PackStore<T : Any>(
 					val obj = element.asJsonObject
 					val rooms = LinkedHashMap<String, MutableList<T>>()
 					obj.getAsJsonObject("rooms")?.entrySet()?.forEach { (key, list) ->
+						if (key in excludedKeys) return@forEach
 						rooms[key] = list.asJsonArray.mapNotNull { runCatching { gson.fromJson(it, itemClass) }.getOrNull() }.toMutableList()
 					}
 					packs += Pack(obj.get("name").asString, obj.get("enabled")?.asBoolean ?: true, rooms)
@@ -167,7 +171,7 @@ abstract class PackStore<T : Any>(
 
 	/** Adds a pack decoded from [text]. Null when it is not something this store can read. */
 	fun import(name: String, text: String): Pack<T>? {
-		val rooms = decode(text) ?: return null
+		val rooms = decode(text)?.filterKeys { it !in excludedKeys } ?: return null
 		val pack = Pack(freeName(name), true, LinkedHashMap(rooms.mapValues { it.value.toMutableList() }))
 		packs += pack
 		if (editName == null) editName = pack.name

@@ -204,6 +204,69 @@ Run it again to go back to real wither and blood keys.
 
 ---
 
+## Boss timings
+
+SkyBlock 0.27.2 sped up the Floor 7 fight, so the Smart Tick Timer's numbers
+are being measured again. Two commands help.
+
+```
+/cryptic debug bosslog
+```
+
+Prints, in chat, every boss line, every lightning strike, and every wither
+starting or stopping to move (Storm moving himself, Necron dropping). Each is
+stamped with the server ticks since that boss's first line, what those come to
+in seconds, and the real seconds — the two only differ when the server lags:
+
+```
+[Boss] Storm +0t (0.00s, 0.00s real) Pathetic Maxor, just like expected.
+[Boss] Lightning volley +519t (25.95s, 26.08s real) after Storm's first line (+33t after the last line)
+[Boss] Storm +548t (27.40s, 27.56s real) (+62t) ENERGY HEED MY CALL!
+[Boss] Wither #412 started moving +647t (32.35s, 35.17s real) after Storm's first line (+99t after the last line)
+```
+
+Only the big lightning volley is printed, not every bolt Storm throws. A wither
+line also says how long after the last boss line it came, which is the number
+the PY and Necron timings are read from.
+
+Run it again to turn it off. It is always off when the game starts.
+
+```
+/cryptic debug timing
+/cryptic debug timing <name>
+/cryptic debug timing <name> <540 | 540t | 27s | 27.05s | reset>
+/cryptic debug timing reset
+```
+
+Lists every timing the Smart Tick Timer counts with, shows one, sets one in
+ticks or seconds, or puts one or all back. A timing that has been set is kept
+between sessions, in `config/cryptic/timings.json`.
+
+| Name | Default | Counts |
+|---|---|---|
+| `lightning` | 519t | Storm's first line until the big lightning volley |
+| `py` | 52t | Storm's PY call until the purple pillar should be lowered |
+| `goldor_start` | 64t | Storm dying until terminals can be done |
+| `goldor_core` | 60t | Goldor's repeating cycle |
+| `necron` | 15t | "I'm afraid, your journey ends now." until Necron drops |
+| `fire_freeze` | 206t | The Professor's line until Fire Freeze, with its 100-tick cast |
+| `watcher_move` | 400t (20s) | The Watcher's greeting until he moves his first wave on (Blood Camp's kill title) |
+| `livid` | 340t | Livid's greeting until he can be hurt (390 before 0.27.2) |
+
+`lightning` was measured with the log on 2026-10-06, over two runs; `py` and
+`necron` were then settled in game. The PY timer turns orange at 40 ticks and
+red at 20, the last two times the pads move before Storm does.
+
+The Necron timer starts before his last words, so it runs for about six
+seconds instead of under one: at Goldor's "....", 104 ticks before "I'm afraid,
+your journey ends now.", and it is set again on "Necron, forgive me." (52
+before) and on Necron's first line (41 before). Those gaps come from the boss
+log; the last of them puts the count right if one ever differs. `necron` is
+only the part after his last words.
+
+The log also says when a wither appears, and when one jumps more than two
+blocks in a tick.
+
 ## Classes and Floor 7
 
 ```

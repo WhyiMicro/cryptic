@@ -1,5 +1,6 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.feature.CroesusHelper;
 import imicro.cryptic.feature.ExperimentSolver;
 import imicro.cryptic.feature.SlotBinds;
 import imicro.cryptic.feature.SpiritLeapOverlay;
@@ -42,5 +43,6 @@ public abstract class ScreenMixin {
     private void cryptic$drawExperiment(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo info) {
         ExperimentSolver.render((Screen) (Object) this, graphics);
         SlotBinds.render((Screen) (Object) this, graphics, mouseX, mouseY);
+        CroesusHelper.renderOverlay((Screen) (Object) this, graphics, mouseX, mouseY);
     }
 }

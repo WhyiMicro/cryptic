@@ -2,6 +2,7 @@ package imicro.cryptic.device
 
 import imicro.cryptic.dungeon.Floor7
 import imicro.cryptic.feature.DeviceSolver
+import imicro.cryptic.terminal.ServerTicks
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
 import net.minecraft.world.level.block.Blocks
@@ -31,6 +32,18 @@ object SimonSays {
 	private val GRID: Set<BlockPos> =
 		GRID_Y.flatMap { y -> GRID_Z.map { z -> BlockPos(BUTTON_X, y, z) } }.toSet()
 
+	private val LANTERNS: List<BlockPos> =
+		GRID_Y.flatMap { y -> GRID_Z.map { z -> BlockPos(LANTERN_X, y, z) } }
+
+	/** "Steve completed a device! (1/2)": the only device in the first section is this one. */
+	private val DEVICE_DONE = Regex("""^S+ (?:activated|completed) a device! (d/d)$""")
+
+	/** Server ticks after the last lit lantern before an empty wall can be a failure, NoammAddons' twelve. */
+	private const val BREAK_GRACE_TICKS = 12
+
+	/** Ticks the wall has to stay empty, so the device finishing is heard first. */
+	private const val BREAK_CONFIRM_TICKS = 3
+
 	/**
 	 * How many of the sixteen have to have gone the same way before the grid is
 	 * taken to have been rebuilt rather than merely flickering.
@@ -40,8 +53,17 @@ object SimonSays {
 	/** Server ticks of quiet after the last lantern before a reset can be called. */
 	private const val QUIET_TICKS = 10
 
-	/** The full sequence is five long, which is what the announcement counts to. */
-	private const val SEQUENCE_LENGTH = 5
+	/**
+	 * The full sequence is four long, which is what the announcement counts to.
+	 * Five before SkyBlock 0.27.2, which took one set of lights away.
+	 */
+	private const val SEQUENCE_LENGTH = 4
+
+	/**
+	 * How long the server may go quiet before the lag guard stops holding
+	 * clicks back, taking it to be gone rather than slow.
+	 */
+	private const val LAG_GIVE_UP_MILLIS = 10_000L
 
 	/** Lantern positions, in the order the device showed them. */
 	private val clickInOrder = ArrayList<BlockPos>()
@@ -63,6 +85,14 @@ object SimonSays {
 
 	private var startClicks = 0
 
+	// The failure check, NoammAddons' (CC0): once the device has shown a
+	// sequence, every button going while no lantern is lit is the device
+	// throwing the attempt away. Read on the network thread, like the tick.
+	@Volatile private var deviceDone = false
+	private var armed = false
+	private var sinceLit = 0
+	private var emptyFor = 0
+
 	/** The lanterns still to be pressed, in order, for the render pass. */
 	val remaining: List<BlockPos>
 		get() = if (clickNeeded >= clickInOrder.size) {
@@ -81,11 +111,18 @@ object SimonSays {
 		reset()
 		firstPhase = true
 		startClicks = 0
+		deviceDone = false
+		armed = false
 	}
 
 	/** Goldor greeting the party is a new device, and a new allowance of starts. */
 	fun onChatMessage(line: String) {
-		if (line == "[BOSS] Goldor: Who dares trespass into my domain?") startClicks = 0
+		if (line == "[BOSS] Goldor: Who dares trespass into my domain?") {
+			startClicks = 0
+			deviceDone = false
+			armed = false
+		}
+		if (DEVICE_DONE.matches(line.replace(FORMATTING, "").trim())) deviceDone = true
 	}
 
 	/**
@@ -161,6 +198,8 @@ object SimonSays {
 	 * having finished showing its sequence and started waiting for it.
 	 */
 	fun onServerTick() {
+		// Never allowed to throw: this is the network thread.
+		runCatching { checkBroken() }
 		if (!isWatching() || !firstPhase) return
 
 		val level = Minecraft.getInstance().level ?: return
@@ -168,6 +207,34 @@ object SimonSays {
 		if (GRID.count { level.getBlockState(it).isBlock(Blocks.STONE_BUTTON) } > GRID_CHANGED_THRESHOLD) {
 			firstPhase = false
 			startClicks = 0
+		}
+	}
+
+	/** Tells the party when the device has thrown the attempt away. */
+	private fun checkBroken() {
+		if (!DeviceSolver.simonBreakAlertEnabled || !Floor7.inGoldor || deviceDone) {
+			armed = false
+			return
+		}
+		val client = Minecraft.getInstance()
+		val level = client.level ?: return
+		if (LANTERNS.any { level.getBlockState(it).isBlock(Blocks.SEA_LANTERN) }) {
+			sinceLit = 0
+			emptyFor = 0
+			armed = true
+			return
+		}
+		sinceLit++
+		if (!armed || sinceLit < BREAK_GRACE_TICKS) return
+		if (!GRID.all { level.getBlockState(it).isAir }) {
+			emptyFor = 0
+			return
+		}
+		if (++emptyFor < BREAK_CONFIRM_TICKS) return
+		armed = false
+		emptyFor = 0
+		client.execute {
+			if (!deviceDone) client.connection?.sendCommand("pc SS broke!")
 		}
 	}
 
@@ -194,10 +261,33 @@ object SimonSays {
 
 		if (pos.x != BUTTON_X || pos.y !in GRID_Y || pos.z !in GRID_Z) return false
 
-		announceProgress(pos)
+		if (!crouching && DeviceSolver.simonBlockWrong.value && pos.east() != clickInOrder.getOrNull(clickNeeded)) return true
+		if (!crouching && lagging()) return true
 
-		if (!DeviceSolver.simonBlockWrong.value || crouching) return false
-		return pos.east() != clickInOrder.getOrNull(clickNeeded)
+		announceProgress(pos)
+		return false
+	}
+
+	/**
+	 * Whether the server has gone quiet for longer than the lag guard's
+	 * threshold. Hypixel sends a ping every tick it runs, one every 50ms; when
+	 * they stop, the server has stalled, and a press sent now waits for it with
+	 * whatever was pressed before — and presses that reach the device together
+	 * fail it. Says so on the action bar when it holds a click back.
+	 *
+	 * The ping rather than the button's own answer, because the game presses a
+	 * button on your screen before the server has heard about it: the button
+	 * coming back pressed says nothing about whether the server is there.
+	 */
+	private fun lagging(): Boolean {
+		if (!DeviceSolver.simonLagGuard.value) return false
+		val waited = ServerTicks.sinceLastTick ?: return false
+		if (waited < DeviceSolver.simonLagMillis.value || waited > LAG_GIVE_UP_MILLIS) return false
+		Minecraft.getInstance().gui.hud.setOverlayMessage(
+			net.minecraft.network.chat.Component.literal("§cSS click held back: server quiet for ${waited}ms"),
+			false,
+		)
+		return true
 	}
 
 	/**
@@ -215,6 +305,8 @@ object SimonSays {
 		if (pos.east() != last) return
 		Minecraft.getInstance().connection?.sendCommand("pc SS ${clickInOrder.size}/$SEQUENCE_LENGTH")
 	}
+
+	private val FORMATTING = Regex("§.")
 
 	private fun BlockState.isBlock(block: net.minecraft.world.level.block.Block): Boolean = this.block == block
 

@@ -100,6 +100,15 @@ object WaterSolver {
 	/** Set when a solve could not happen yet, so it is tried again until it can. */
 	private var awaitingSolve = true
 
+	/**
+	 * Set by a reset that found water on the board, which is nearly every
+	 * reset: the water takes seconds to drain once the board is reset. The
+	 * solve waits for it, says so over the water lever, and says so in chat
+	 * when the answer is ready — before, the answer just appeared on its own a
+	 * few seconds after the reset seemed to have done nothing.
+	 */
+	private var waitingForDrain = false
+
 	/** The tick the water was let in on, or -1 while it has not been. */
 	private var waterAt = -1
 	private var ticks = 0
@@ -110,7 +119,7 @@ object WaterSolver {
 	 */
 	fun scan() {
 		if (!awaitingSolve) return
-		solve(loud = false)
+		solve(loud = waitingForDrain)
 	}
 
 	/**
@@ -128,7 +137,10 @@ object WaterSolver {
 		val level = Minecraft.getInstance().level ?: return
 
 		if (WaterPreview.boardState(room, level).running) {
-			if (loud) say("§eThere is water on the board§7 — turn the water off and let it drain, then reset.")
+			// Said once per reset; the solve is tried again every scan and
+			// goes through, out loud, as soon as the water has gone.
+			if (loud && !waitingForDrain) say("§eWaiting for the water to drain§7 — the board is solved as soon as it has. Turn the water off if it is still on.")
+			if (loud) waitingForDrain = true
 			return
 		}
 
@@ -182,9 +194,12 @@ object WaterSolver {
 		}
 		waterAt = -1
 		awaitingSolve = false
+		val afterDrain = waitingForDrain
+		waitingForDrain = false
 
 		val corrected = matchGates(room, level)
 		if (loud) {
+			if (afterDrain) say("§aThe water has drained.")
 			val pulls = solution.values.sumOf { it.size }
 			val note = if (corrected > 0) " §7($corrected already moved, taken into account)" else ""
 			say("§aWater board solved from the board as it stands§7: §f$pulls§7 pulls.$note")
@@ -258,8 +273,12 @@ object WaterSolver {
 
 	fun render(context: LevelRenderContext) {
 		if (!PuzzleSolver.waterEnabled.value) return
-		if (pattern == -1 || solution.isEmpty()) return
 		if (!PuzzleRooms.inside(PUZZLE)) return
+		if (waitingForDrain) {
+			Lever.WATER.pos?.let { PuzzleRender.text(context, "§eWaiting for the water to drain", Vec3(it.x + 0.5, it.y + 1.5, it.z + 0.5)) }
+			return
+		}
+		if (pattern == -1 || solution.isEmpty()) return
 
 		// Everything still to do, soonest first. The water lever's own zero comes
 		// after every other lever's, since those are made before it is.
@@ -334,6 +353,7 @@ object WaterSolver {
 		solution.clear()
 		waterAt = -1
 		awaitingSolve = true
+		waitingForDrain = false
 		solve(loud = true)
 	}
 
@@ -356,6 +376,7 @@ object WaterSolver {
 		solution.clear()
 		waterAt = -1
 		awaitingSolve = true
+		waitingForDrain = false
 	}
 
 	/**

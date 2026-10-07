@@ -102,14 +102,34 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 				if (tiles.any { it.x == tile.x + stepX && it.z == tile.z }) continue
 				if (tiles.any { it.x == tile.x && it.z == tile.z + stepZ }) continue
 
-				val probe = BlockPos(centerXOf(tile) + candidate.dx, top, centerZOf(tile) + candidate.dz)
-				if (level.getBlockState(probe).block == Blocks.DYED_TERRACOTTA.blue()) {
-					rotation = candidate
-					clayPos = probe
-					rotationChecked = true
-					return true
+				val cornerX = centerXOf(tile) + candidate.dx
+				val cornerZ = centerZOf(tile) + candidate.dz
+				// The marker is at the height of the roof, read at the middle of
+				// the first tile. A room with a tower in it — Supertall — is taller
+				// there than at its corners, so the top of the corner's own column
+				// is tried as well.
+				val heights = listOfNotNull(top, roofHeight(level, cornerX, cornerZ)).distinct()
+				for (y in heights) {
+					val probe = BlockPos(cornerX, y, cornerZ)
+					if (level.getBlockState(probe).block == Blocks.DYED_TERRACOTTA.blue()) {
+						rotation = candidate
+						clayPos = probe
+						rotationChecked = true
+						return true
+					}
 				}
 			}
+		}
+
+		// Odin never looks for a marker in a 2x2 room: it takes every one as
+		// unturned, measured from its north-west corner. Once the whole room
+		// has arrived and no corner had a marker, that is the answer here too.
+		if (shape == Shape.S2X2 && tiles.all { level.hasChunkAt(centerXOf(it) - 15, centerZOf(it) - 15) && level.hasChunkAt(centerXOf(it) + 15, centerZOf(it) + 15) }) {
+			val corner = tiles.minWith(compareBy<Vec2i>({ it.x }, { it.z }))
+			rotation = RoomRotation.SOUTH
+			clayPos = BlockPos(centerXOf(corner) + RoomRotation.SOUTH.dx, top, centerZOf(corner) + RoomRotation.SOUTH.dz)
+			rotationChecked = true
+			return true
 		}
 
 		// Not found: either the chunk is still arriving or this room does not
@@ -622,6 +642,10 @@ private val mapNames = mapOf(
 	"Lower Blaze" to "Higher Lower",
 )
 
-/** How far down a room's roof is looked for, which is Odin's range. */
-private const val ROOF_SEARCH_TOP = 140
+/**
+ * How far down a room's roof is looked for. Odin starts at 140, which is under
+ * Supertall's roof (its chests are at 142), so that room never found its
+ * marker and had no coordinates.
+ */
+private const val ROOF_SEARCH_TOP = 200
 private const val ROOF_SEARCH_BOTTOM = 12

@@ -59,6 +59,7 @@ import imicro.cryptic.dungeon.Floor7Progress
 import imicro.cryptic.dungeon.map.DungeonFloor
 import imicro.cryptic.dungeon.map.DungeonMapReader
 import imicro.cryptic.dungeon.DungeonLocation
+import imicro.cryptic.dungeon.BossTimings
 import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.dungeon.RoomSecrets
 import imicro.cryptic.dungeon.DungeonStats
@@ -85,6 +86,7 @@ import imicro.cryptic.feature.PositionalMessages
 import imicro.cryptic.feature.DungeonWaypoints
 import imicro.cryptic.feature.BossWaypoints
 import imicro.cryptic.feature.GyroHelper
+import imicro.cryptic.feature.CroesusHelper
 import imicro.cryptic.feature.Highlight
 import imicro.cryptic.feature.InvincibilityTimer
 import imicro.cryptic.feature.PuzzleSolver
@@ -267,6 +269,8 @@ object CrypticClient : ClientModInitializer {
 		TerminalTimes.initialize()
 		InvincibilityTimer.initialize()
 		GyroHelper.initialize()
+		CroesusHelper.initialize()
+		BossTimings.initialize()
 		GateHighlight.initialize()
 		F7Qol.initialize()
 		AutoGfs.initialize()
@@ -578,6 +582,8 @@ object CrypticClient : ClientModInitializer {
 								}
 								1
 							})
+							.then(BossTimings.timingCommand())
+							.then(BossTimings.bossLogCommand())
 							.then(ClientCommands.literal("cookie").executes { context ->
 								// The tab list's footer is the only place the
 								// cookie's remaining time is written down, and
@@ -1042,7 +1048,7 @@ object CrypticClient : ClientModInitializer {
 					AutoGfs.module.enabled || AutoRequeue.module.enabled ||
 					SpiritBear.needsDungeon || LividSolver.needsDungeon ||
 					PositionalMessages.needsDungeon || DungeonWaypoints.needsDungeon ||
-					BossWaypoints.needsDungeon ||
+					BossWaypoints.needsDungeon || NoItemPlace.needsDungeon || CroesusHelper.module.enabled ||
 					(SlotBinds.module.enabled && SlotBinds.dungeonsOnly.value),
 			)
 			// Which part of Goldor's tower the player is in, for the modules
@@ -1066,6 +1072,8 @@ object CrypticClient : ClientModInitializer {
 			DungeonMap.tick(client)
 			PuzzleSolver.tick(client)
 			MageBeam.tick(client)
+			CroesusHelper.tick(client)
+			BossTimings.tick(client)
 			DungeonScore.tick(client)
 			MelodyHud.tick()
 			DoorKeys.tick(client)

@@ -1,6 +1,7 @@
 package imicro.cryptic.feature
 
 import imicro.cryptic.debug.DebugOverrides
+import imicro.cryptic.dungeon.BossTimings.Timing
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.gui.ColorModuleSetting
@@ -41,7 +42,7 @@ import java.util.Locale
  * block of wool in the ceiling is dyed the real one's colour. Reading that
  * block is the whole solve; the rest is making the answer easy to aim at.
  *
- * The invulnerability timer is theirs too: Livid cannot be hurt for 390 server
+ * The invulnerability timer is theirs too: Livid cannot be hurt for 340 server
  * ticks after his greeting, which is when an Ice Spray lands best.
  */
 object LividSolver {
@@ -49,7 +50,7 @@ object LividSolver {
 	private const val STYLE_FILL = 1
 
 	/** How long Livid shrugs off damage after his greeting. */
-	private const val INVULNERABLE_TICKS = 390L
+	private val INVULNERABLE_TICKS: Long get() = Timing.LIVID.ticks.toLong()
 
 	private const val GREETING =
 		"[BOSS] Livid: Welcome, you've arrived right on time. I am Livid, the Master of Shadows."
@@ -150,7 +151,7 @@ object LividSolver {
 		id = "timer",
 		label = "Invulnerability timer",
 		defaultValue = true,
-		description = "Counts down the 390 ticks Livid cannot be hurt for after his greeting.",
+		description = "Counts down the 340 ticks Livid cannot be hurt for after his greeting (390 before SkyBlock 0.27.2).",
 	)
 
 	@JvmField

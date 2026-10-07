@@ -40,7 +40,7 @@ import java.util.Locale
  * row they are on, as it happens — so a teammate's melody can be watched
  * rather than guessed at. Cryptic joins the same room and speaks the same
  * messages, so it both sees Odin users and is seen by them. NoammAddons'
- * Melody Display is the sentence under it, "ARCHER has melody! 1/4", read
+ * Melody Display is the sentence under it, "ARCHER has melody! 1/3", read
  * from the party chat line every melody mod sends — which is also all there
  * is to show for a teammate whose mod is not on the relay.
  *
@@ -53,8 +53,8 @@ object MelodyHud {
 	private const val PURPLE = 0xFFFF55FF.toInt()
 	private const val GREEN = 0xFF55FF55.toInt()
 
-	/** A melody is four rows, and a row is a quarter. */
-	private const val QUARTERS = 4
+	/** A melody is three rows since SkyBlock 0.27.2, which took one away. */
+	private const val ROWS = 3
 
 	/** The five columns the note runs along. */
 	private const val COLUMNS = 5
@@ -79,9 +79,13 @@ object MelodyHud {
 	/** "Party > [MVP+] Name: the message", rank optional, and the emblem some names carry. */
 	private val partyLine = Regex("""^Party > (?:\[[^\]]+] )?(\w{1,16})(?: \S)?: (.+)$""")
 
-	/** "2/4" or "50%", standing on their own rather than inside a bigger number. */
-	private val fraction = Regex("""(?<![\d/])([0-4])/4(?![\d/])""")
-	private val percent = Regex("""(?<!\d)(100|75|50|25|0)%""")
+	/**
+	 * "2/3" or "67%", standing on their own rather than inside a bigger number.
+	 * The old four-row "2/4" and "50%" are read too, for teammates whose mods
+	 * have not caught up, and turned into rows of three.
+	 */
+	private val fraction = Regex("""(?<![\d/])([0-4])/([34])(?![\d/])""")
+	private val percent = Regex("""(?<!\d)(100|75|67|66|50|33|25|0)%""")
 
 	/** Hypixel's own line for a terminal being finished, which ends that player's melody. */
 	private val finished = Regex("""^(\w{1,16}) (?:activated|completed) a (?:terminal|device|lever)! \(\d+/\d+\)""")
@@ -100,16 +104,16 @@ object MelodyHud {
 		id = "melody_send_progress",
 		label = "Send melody progress",
 		defaultValue = false,
-		description = "Tells the party when you open melody and as each row is done: Melody 0/4, 1/4, 2/4, 3/4.",
+		description = "Tells the party when you open melody and as each row is done: Melody 0/3, 1/3, 2/3.",
 	)
 
 	@JvmField
 	val progressFormat = DropdownModuleSetting(
 		id = "melody_progress_format",
 		label = "Progress format",
-		options = listOf("Melody 1/4", "Melody 25%"),
+		options = listOf("Melody 1/3", "Melody 33%"),
 		defaultIndex = FORMAT_QUARTERS,
-		description = "Quarters, or the percentages Odin sends. Both are understood by every melody mod.",
+		description = "Rows done out of three, or the percentages Odin sends. Both are understood by every melody mod.",
 		visibleIf = { sendProgress.value },
 	)
 
@@ -192,7 +196,7 @@ object MelodyHud {
 		val hasLive: Boolean get() = marker != null || note != null || button != null
 
 		/** Rows done: what they said, or the row they are on, whichever is further. */
-		val done: Int get() = maxOf(quarters ?: 0, (button ?: 1) - 1).coerceIn(0, QUARTERS)
+		val done: Int get() = maxOf(quarters ?: 0, (button ?: 1) - 1).coerceIn(0, ROWS)
 	}
 
 	/** Insertion-ordered, so two teammates on melody keep their places. Client thread only. */
@@ -307,8 +311,10 @@ object MelodyHud {
 		val (name, said) = partyLine.find(line)?.destructured ?: return
 		if (name == self()) return
 
-		val quarters = fraction.find(said)?.groupValues?.get(1)?.toIntOrNull()
-			?: percent.find(said)?.groupValues?.get(1)?.toIntOrNull()?.div(25)
+		val quarters = fraction.find(said)?.let { match ->
+			val done = match.groupValues[1].toInt()
+			if (match.groupValues[2] == "3") done else Math.round(done * 3 / 4.0).toInt()
+		} ?: percent.find(said)?.groupValues?.get(1)?.toIntOrNull()?.let { Math.round(it * 3 / 100.0).toInt() }
 		val mentionsMelody = said.contains("melody", ignoreCase = true)
 
 		// A number only counts as melody's if it says so, or if this player has
@@ -339,7 +345,7 @@ object MelodyHud {
 
 		val melody = melodies.getOrPut(name) { Melody() }
 		when (kind) {
-			KIND_BUTTON -> melody.button = slot.takeIf { it in 1..QUARTERS }
+			KIND_BUTTON -> melody.button = slot.takeIf { it in 1..ROWS }
 			KIND_MARKER -> melody.marker = slot.takeIf { it in 0 until COLUMNS }
 			KIND_NOTE -> melody.note = slot.takeIf { it in 0 until COLUMNS }
 			else -> return
@@ -412,12 +418,12 @@ object MelodyHud {
 	}
 
 	/**
-	 * The row of your own melody that is being played, one to four. A row is
+	 * The row of your own melody that is being played, one to three. A row is
 	 * only ever announced going forwards: the board being resent must not say
-	 * "0/4" again halfway through.
+	 * "0/3" again halfway through.
 	 */
 	private fun onOwnRow(row: Int) {
-		if (row <= announcedRow || row !in 1..QUARTERS) return
+		if (row <= announcedRow || row !in 1..ROWS) return
 		announcedRow = row
 
 		if (!TerminalSolver.module.enabled || !sendProgress.value) return
@@ -425,7 +431,7 @@ object MelodyHud {
 		if (!ownMelodyCounts()) return
 
 		val done = row - 1
-		say(if (progressFormat.selectedIndex == FORMAT_QUARTERS) "Melody $done/$QUARTERS" else "Melody ${done * 25}%")
+		say(if (progressFormat.selectedIndex == FORMAT_QUARTERS) "Melody $done/$ROWS" else "Melody ${Math.round(done * 100 / 3.0)}%")
 	}
 
 	/** A line to party chat, or a preview of it under `/cryptic debug party`. Only in the boss. */
@@ -476,7 +482,7 @@ object MelodyHud {
 		)
 		melodies.forEach { (name, it) ->
 			lines += "§8[Cryptic] §7  $name: marker ${it.marker}, note ${it.note}, row ${it.button}, " +
-				"said ${it.quarters}/4"
+				"said ${it.quarters}/$ROWS"
 		}
 		return lines
 	}
@@ -518,7 +524,7 @@ object MelodyHud {
 
 		private fun label(parts: List<Pair<String, Int>>): String = parts.joinToString("") { it.first }
 
-		/** "ARCHER has melody! 1/4", the class in its colour, or the name when the class is not known. */
+		/** "ARCHER has melody! 1/3", the class in its colour, or the name when the class is not known. */
 		private fun labelParts(name: String, melody: Melody): List<Pair<String, Int>> {
 			val dungeonClass = if (name == EXAMPLE_NAME) DungeonClass.ARCHER else DungeonTeam.classOf(name)
 			val known = dungeonClass?.takeIf { it != DungeonClass.UNKNOWN }
@@ -531,7 +537,7 @@ object MelodyHud {
 				playerLabel.selectedIndex == LABEL_NAME -> listOf(shownName to color)
 				else -> listOf(shownName to color, " (" to GREY, className to color, ")" to GREY)
 			}
-			return who + listOf(" has melody! " to PURPLE, "${melody.done}/$QUARTERS" to PURPLE)
+			return who + listOf(" has melody! " to PURPLE, "${melody.done}/$ROWS" to PURPLE)
 		}
 
 		private fun draw(context: GuiGraphicsExtractor, top: Int, name: String, melody: Melody) {

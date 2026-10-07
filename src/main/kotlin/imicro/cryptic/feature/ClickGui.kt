@@ -60,14 +60,6 @@ object ClickGui {
 	)
 
 	@JvmField
-	val rightClickExpands = ToggleModuleSetting(
-		id = "right_click_expands",
-		label = "Right-click to expand",
-		defaultValue = true,
-		description = "Opens a module's settings by right-clicking the card, as well as the plus.",
-	)
-
-	@JvmField
 	val editHud = ButtonModuleSetting(
 		id = "edit_hud",
 		label = "Edit HUD",
@@ -90,7 +82,7 @@ object ClickGui {
 		supportsToggle = false,
 		supportsKeybind = true,
 		keybind = guiKeybind,
-		settings = listOf(accentColor, sorting, leftClickToggles, rightClickExpands, editHud),
+		settings = listOf(accentColor, sorting, leftClickToggles, editHud),
 	)
 
 	/** Dear ImGui packs colors as ABGR. */

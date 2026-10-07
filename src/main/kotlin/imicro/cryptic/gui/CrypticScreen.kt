@@ -1006,7 +1006,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         draw.pushClipRect(x, y, x + width, y + height, true)
 
         // Submitted before the controls that sit on top of it, so the switch,
-        // the bind and the plus all take a click of their own first and only a
+        // the bind and the rest take a click of their own first and only a
         // click on the empty part of the row lands here.
         val rowClicked = interactive &&
             module.supportsToggle &&
@@ -1046,12 +1046,12 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             drawToggle(draw, module, x + width - dp(45f, scale), y + dp(9f, scale), scale, dt, interactive)
         }
 
-        // A right-click anywhere on the card's own row does what the plus does,
-        // which is quicker than aiming at a fifteen-pixel square.
+        // A right-click anywhere on the card's own row opens or closes its
+        // settings. It is the only way to: the plus button it used to stand in
+        // for is gone, so this is always on.
         if (
             interactive &&
             module.hasSettings &&
-            ClickGui.rightClickExpands.value &&
             ImGui.isMouseClicked(ImGuiMouseButton.Right) &&
             ImGui.isMouseHoveringRect(x, y, x + width, y + dp(COLLAPSED_HEIGHT, scale))
         ) {
@@ -1061,27 +1061,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
 
         if (rowClicked) module.enabled = !module.enabled
 
-        val descriptionX = if (module.hasSettings) x + dp(37f, scale) else titleX
-        if (module.hasSettings) {
-            val expandX = x + dp(14f, scale)
-            val expandY = y + dp(25f, scale)
-            val expandSize = dp(15f, scale)
-            draw.addRectFilled(expandX, expandY, expandX + expandSize, expandY + expandSize, contentColor(SURFACE_RAISED), dp(4f, scale))
-            if (interactive && hit(module.widgetIds.expand, expandX, expandY, expandSize, expandSize)) {
-                if (!expandedModules.add(module)) expandedModules.remove(module)
-                if (module !in expandedModules && module.owns(openDropdown)) openDropdown = null
-            }
-            drawCenteredText(
-                draw,
-                if (module in expandedModules) "-" else "+",
-                expandX,
-                expandY,
-                expandSize,
-                expandSize,
-                TEXT,
-                dp(9f, scale),
-            )
-        }
+        val descriptionX = titleX
         // Clipped to the card. A description is one line and cards are a fixed
         // width, so a long one used to run out past the right edge and carry on
         // over whatever was beside it.
@@ -1153,10 +1133,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             dt,
         )
         togglePosition[module] = progress
-        draw.addRectFilled(x, y, x + width, y + height, contentColor(if (module.enabled) ACCENT else TOGGLE_OFF), height / 2f)
-        val radius = dp(5.5f, scale)
-        val knobX = x + dp(2.5f, scale) + radius + (width - dp(5f, scale) - radius * 2f) * progress
-        draw.addCircleFilled(knobX, y + height / 2f, radius, contentColor(KNOB), 32)
+        drawSwitch(draw, x, y, width, height, progress, scale)
         if (interactive && hit(module.widgetIds.toggle, x, y, width, height)) {
             module.enabled = !module.enabled
         }
@@ -2086,10 +2063,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             dt,
         )
         settingTogglePosition[setting] = progress
-        draw.addRectFilled(x, y, x + width, y + height, contentColor(if (setting.value) ACCENT else TOGGLE_OFF), height / 2f)
-        val radius = dp(5.5f, scale)
-        val knobX = x + dp(2.5f, scale) + radius + (width - dp(5f, scale) - radius * 2f) * progress
-        draw.addCircleFilled(knobX, y + height / 2f, radius, contentColor(KNOB), 32)
+        drawSwitch(draw, x, y, width, height, progress, scale)
         if (interactive && hit(setting.widgetIds.control, x, y, width, height)) {
             setting.value = !setting.value
         }
@@ -2493,7 +2467,33 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
     }
 
     private fun drawSliderHandle(draw: ImDrawList, x: Float, y: Float, scale: Float) {
-        draw.addCircleFilled(x, y, dp(6f, scale), contentColor(ACCENT), 32)
+        draw.addCircleFilled(x, y, dp(6f, scale), contentColor(KNOB_ON), 32)
+    }
+
+    /**
+     * A switch's track and knob, both following [progress] — the same eased
+     * value that slides the knob across. The colours blend with it rather than
+     * swapping when the setting flips, so the track fades from grey to the
+     * accent and the knob from dark to white as it travels, and a switch
+     * flicked back halfway turns back from where it is.
+     */
+    private fun drawSwitch(draw: ImDrawList, x: Float, y: Float, width: Float, height: Float, progress: Float, scale: Float) {
+        draw.addRectFilled(x, y, x + width, y + height, contentColor(blend(TOGGLE_OFF, ACCENT, progress)), height / 2f)
+        val radius = dp(5.5f, scale)
+        val knobX = x + dp(2.5f, scale) + radius + (width - dp(5f, scale) - radius * 2f) * progress
+        draw.addCircleFilled(knobX, y + height / 2f, radius, contentColor(blend(KNOB, KNOB_ON, progress)), 32)
+    }
+
+    /** [from] to [to], channel by channel. Works the same on ABGR as on ARGB. */
+    private fun blend(from: Int, to: Int, amount: Float): Int {
+        val t = amount.coerceIn(0f, 1f)
+        var out = 0
+        for (shift in intArrayOf(0, 8, 16, 24)) {
+            val a = (from ushr shift) and 0xFF
+            val b = (to ushr shift) and 0xFF
+            out = out or ((a + (b - a) * t).roundToInt().coerceIn(0, 255) shl shift)
+        }
+        return out
     }
 
     /**
@@ -2866,6 +2866,8 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         const val TRACK = 0xFF4B4B4B.toInt()
         const val TOGGLE_OFF = 0xFF474747.toInt()
         const val KNOB = 0xFF161616.toInt()
+        /** A switch's knob when on, and every slider's handle. */
+        const val KNOB_ON = 0xFFFFFFFF.toInt()
         const val TEXT = 0xFFE4E4E4.toInt()
         const val NAV_TEXT = 0xFFD8D8D8.toInt()
         const val MUTED_TEXT = 0xFFA4A4A4.toInt()

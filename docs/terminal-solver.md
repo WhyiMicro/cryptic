@@ -63,8 +63,8 @@ Hypixel bans for clicking a terminal faster than a human could have read it, and
 a solver makes that trivially easy to do by accident. So no click leaves inside
 the protection window — it is dropped, not queued.
 
-**Protection (ms)** is how long, from the terminal opening. 500 is the number to
-work from, minus your ping.
+**Protection (ms)** is how long, from the terminal opening: 200 to begin with,
+as Odin has it since SkyBlock 0.27.2, and as low as 100.
 
 **Account for server lag** adds a second condition: a number of server ticks as
 well as a number of milliseconds. The clock alone is not enough when the server
@@ -118,9 +118,9 @@ colours to say the order: the next pane, the one after, and the one after that.
 Some people read the colour faster than the digit.
 
 **Melody HUD** is about other people's melody rather than yours. Every mod that
-plays melody says how far it has got in party chat — "Melody 50%", "I ❤ Melody
-2/4" — and this holds the latest from each teammate on screen for a few seconds
-as `ARCHER has melody! 1/4`, the class in its colour, so the answer to "do we
+plays melody says how far it has got in party chat — "Melody 67%", "I ❤ Melody
+2/3" — and this holds the latest from each teammate on screen for a few seconds
+as `ARCHER has melody! 1/3`, the class in its colour, so the answer to "do we
 wait for it?" does not scroll away. It is a HUD element and can be placed like
 any other.
 
@@ -136,8 +136,10 @@ only the chat line is shown. `/cryptic debug melody` says whether it is
 connected.
 
 **Send melody progress** tells the party when you open melody and as each row
-is done — `Melody 0/4`, `1/4`, `2/4`, `3/4`. **Progress format** switches that to
-Odin's percentages, `Melody 25%` and so on. **Send coords** says where you are
+is done — `Melody 0/3`, `1/3`, `2/3`. **Progress format** switches that to
+Odin's percentages, `Melody 33%` and `67%`. Melody has had three rows since
+SkyBlock 0.27.2; a teammate whose mod still says `2/4` or `50%` is read as rows
+of three. **Send coords** says where you are
 standing when you open melody, the way Odin's Melody Send Coords does, so the
 party knows which melody is taken. **Show player** picks how a teammate is
 named on the HUD: by class, by name, or both.

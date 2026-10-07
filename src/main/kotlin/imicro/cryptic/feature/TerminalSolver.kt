@@ -191,8 +191,8 @@ object TerminalSolver {
 	val firstClickProtection = SliderModuleSetting(
 		id = "first_click_protection",
 		label = "Protection (ms)",
-		defaultValue = 500.0,
-		min = 350.0,
+		defaultValue = 200.0,
+		min = 100.0,
 		max = 800.0,
 		step = 10.0,
 		description = "Clicks dropped for this long. Use 500 minus your ping.",

@@ -605,6 +605,7 @@ object ModuleRegistry {
 		imicro.cryptic.feature.BlockOverlay.module,
 		imicro.cryptic.feature.CameraTweaks.module,
 		imicro.cryptic.feature.NoItemPlace.module,
+		imicro.cryptic.feature.CroesusHelper.module,
 		imicro.cryptic.feature.SbKick.module,
 		imicro.cryptic.feature.TimeChanger.module,
 		imicro.cryptic.feature.LavaToWater.module,

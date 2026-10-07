@@ -1,5 +1,6 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.feature.CroesusHelper;
 import imicro.cryptic.feature.InvincibilityTimer;
 import imicro.cryptic.feature.SlotBinds;
 import imicro.cryptic.feature.SpiritLeapOverlay;
@@ -33,6 +34,7 @@ public abstract class AbstractContainerScreenMixin {
      */
     @Inject(method = "extractSlot", at = @At("HEAD"), cancellable = true)
     private void cryptic$drawSlotCooldown(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY, CallbackInfo info) {
+        CroesusHelper.drawSlotHighlight(graphics, slot);
         if (InvincibilityTimer.drawSlotCooldown(graphics, slot)) info.cancel();
     }
 
@@ -48,6 +50,7 @@ public abstract class AbstractContainerScreenMixin {
      */
     @Inject(method = "slotClicked", at = @At("HEAD"), cancellable = true)
     private void cryptic$clickTerminalSlot(Slot slot, int slotId, int button, ContainerInput input, CallbackInfo info) {
+        CroesusHelper.onSlotClicked(slotId);
         if (TerminalSolver.handleSlotClick(slotId, button, input)) info.cancel();
     }
 

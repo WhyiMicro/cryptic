@@ -30,6 +30,12 @@ object WaypointPacks : PackStore<Custom>("Waypoint Packs", "waypoint-packs.json"
 		setEnabled = { DungeonWaypoints.secrets.value = it },
 	)
 
+	/**
+	 * The entrance has nothing to find, and a waypoint placed there could end
+	 * up outside the room, beside Mort, where it could not be clicked off.
+	 */
+	override val excludedKeys = setOf("Entrance")
+
 	override fun loadLegacy() {
 		val old = dir.resolve("dungeon-waypoints.json")
 		if (!Files.exists(old)) return
@@ -64,7 +70,8 @@ object WaypointPacks : PackStore<Custom>("Waypoint Packs", "waypoint-packs.json"
 					addProperty("filled", waypoint.kind == CustomType.ETHERWARP)
 					addProperty("depth", true)
 					waypoint.title?.let { addProperty("title", it) }
-					addProperty("type", if (waypoint.kind == CustomType.BREAKER) "NORMAL" else waypoint.kind.name)
+					// Odin has no breaker or start kind, so to Odin they are plain waypoints.
+					addProperty("type", if (waypoint.kind == CustomType.BREAKER || waypoint.kind == CustomType.START) "NORMAL" else waypoint.kind.name)
 					addProperty("crypticType", waypoint.kind.name)
 				})
 			}
