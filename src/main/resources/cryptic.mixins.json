@@ -4,6 +4,7 @@
 	"compatibilityLevel": "JAVA_25",
 	"client": [
 		"AbstractArrowAccessor",
+		"AbstractSoundInstanceMixin",
 		"AbstractContainerScreenMixin",
 		"ArrowLayerMixin",
 		"AvatarRendererMixin",
@@ -33,8 +34,10 @@
 		"LightmapRenderStateExtractorMixin",
 		"LivingEntityMixin",
 		"LocalPlayerAccessor",
+		"LocalPlayerMixin",
 		"MinecraftMixin",
 		"MouseHandlerMixin",
+		"MultiPlayerGameModeAccessor",
 		"MultiPlayerGameModeMixin",
 		"OptionsMixin",
 		"PlayerMixin",

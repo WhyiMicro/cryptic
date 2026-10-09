@@ -36,4 +36,5 @@ object FontAwesomeIcons {
     /** Four arrows from a centre point: "up-down-left-right", for moving things. */
     const val MOVE = "\uF0B2"
     const val TRASH = "\uF1F8"
+    const val PLAY = "\uF04B"
 }

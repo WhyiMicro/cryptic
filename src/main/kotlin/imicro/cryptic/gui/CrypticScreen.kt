@@ -231,10 +231,16 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             return true
         }
 
-        // A setting's bind is keyboard only, so a click while one is waiting
-        // just stops it waiting — and is not passed on, the way a click that
-        // sets a module's bind is not.
-        if (awaitingSettingKey != null) {
+        // A setting's bind takes a mouse button too — the side buttons are what
+        // the loadout pages sit on — except the left one, which is how the
+        // menu is used: a left click while one is waiting just stops it
+        // waiting. Neither is passed on, the way a click that sets a module's
+        // bind is not.
+        val settingKey = awaitingSettingKey
+        if (settingKey != null) {
+            if (event.button() != org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                settingKey.keyCode = KeybindModuleSetting.mouse(event.button())
+            }
             awaitingSettingKey = null
             return true
         }

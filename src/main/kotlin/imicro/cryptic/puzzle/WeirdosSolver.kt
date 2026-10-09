@@ -232,6 +232,7 @@ object WeirdosSolver {
 	fun render(context: LevelRenderContext) {
 		if (!PuzzleSolver.weirdosEnabled.value) return
 		if (!PuzzleRooms.clearing) return
+		renderPlaceholders(context)
 
 		val style = PuzzleSolver.weirdosStyle.selectedIndex
 		correct?.let { PuzzleRender.block(context, it, PuzzleSolver.weirdosColor.argb, style, phase = false) }
@@ -276,7 +277,160 @@ object WeirdosSolver {
 		chests.clear()
 		announced = false
 		heard.clear()
+		pendingClicks.clear()
+		spots = emptyList()
 	}
+
+	// ---- Instant clicks ----------------------------------------------------
+	//
+	// Lumen's Instant Three Weirdos (AGPL-3.0, Lumen contributors). The three
+	// weirdos load in a moment after the room does, and each is talked to by
+	// right-clicking the "CLICK" stand above it. Their places are fixed, so a
+	// box is drawn on each until it is filled, and a right click on a box talks
+	// to that weirdo: at once if its stand is there, or the moment it arrives
+	// if not — up to a second and a half later. Talking to all three before
+	// they have finished loading is the time saved.
+
+	/** Pending clicks: a weirdo's place, by index into [spots], and when it was clicked. */
+	private val pendingClicks = HashMap<Int, Long>()
+
+	/** Where the three weirdos stand, worked out once per room. */
+	private var spots: List<BlockPos> = emptyList()
+
+	/**
+	 * Where the weirdos stand: one step west of each chest, in the room's own
+	 * coordinates, which is [chestFor] the other way round. The chests are
+	 * there before the weirdos are, so this works before anybody has loaded.
+	 *
+	 * Lumen's three chest places are tried first, and only taken if a chest is
+	 * really in each; otherwise the room is searched for its three.
+	 */
+	private fun weirdoSpots(): List<BlockPos> {
+		if (spots.size == WEIRDOS) return spots
+		val room = PuzzleRooms.named(PUZZLE) ?: return emptyList()
+		val level = Minecraft.getInstance().level ?: return emptyList()
+
+		var found = CHEST_PLACES.mapNotNull { room.getRealCoords(it) }
+			.filter { level.getBlockState(it).block == Blocks.CHEST }
+		if (found.size != WEIRDOS) {
+			val middle = room.getRealCoords(BlockPos(15, CHEST_Y, 15)) ?: return emptyList()
+			found = findChests(level, middle.x + 0.5, middle.z + 0.5)
+		}
+		if (found.size != WEIRDOS) return emptyList()
+
+		spots = found.mapNotNull { chest ->
+			room.getRelativeCoords(chest)?.let { room.getRealCoords(it.offset(-1, 0, 0)) }
+		}.takeIf { it.size == WEIRDOS } ?: emptyList()
+		return spots
+	}
+
+	/** The box a weirdo stands in, a player's size. */
+	private fun standBox(spot: BlockPos) =
+		net.minecraft.world.phys.AABB(spot.x + 0.2, spot.y.toDouble(), spot.z + 0.2, spot.x + 0.8, spot.y + 1.8, spot.z + 0.8)
+
+	private fun instantActive(): Boolean =
+		PuzzleSolver.weirdosEnabled.value && PuzzleSolver.weirdosInstant.value && PuzzleRooms.inside(PUZZLE)
+
+	/**
+	 * A right click, before the game does anything with it. True when it was
+	 * aimed at one of the three places, and so was taken here.
+	 */
+	@JvmStatic
+	fun onUseItem(): Boolean {
+		if (!instantActive()) return false
+		val player = Minecraft.getInstance().player ?: return false
+		val places = weirdoSpots()
+		if (places.isEmpty()) return false
+
+		val eye = player.eyePosition
+		val end = eye.add(player.lookAngle.scale(REACH))
+		val slot = places.indices
+			.mapNotNull { index -> standBox(places[index]).clip(eye, end).orElse(null)?.let { index to eye.distanceToSqr(it) } }
+			.minByOrNull { it.second }?.first ?: return false
+
+		val stand = clickStand(places[slot])
+		if (stand != null) talkTo(stand) else pendingClicks[slot] = System.currentTimeMillis()
+		return true
+	}
+
+	/** An entity's data arriving: the moment a stand gets its "CLICK" name. */
+	@JvmStatic
+	fun onEntityData(id: Int) {
+		if (pendingClicks.isEmpty() || !instantActive()) return
+		val level = Minecraft.getInstance().level ?: return
+		val stand = level.getEntity(id) as? ArmorStand ?: return
+		if (!isClickStand(stand)) return
+		val places = weirdoSpots()
+		val slot = places.indices.minByOrNull { stand.position().distanceToSqr(center(places[it])) } ?: return
+		if (stand.position().distanceToSqr(center(places[slot])) > MATCH_DISTANCE_SQ) return
+		if (pendingClicks.remove(slot) != null) talkTo(stand)
+	}
+
+	/** Each tick: clicks that have waited too long go, and any whose stand is now here are sent. */
+	fun tick() {
+		if (pendingClicks.isEmpty()) return
+		if (!instantActive()) {
+			pendingClicks.clear()
+			return
+		}
+		val now = System.currentTimeMillis()
+		pendingClicks.entries.removeIf { now - it.value > PENDING_MILLIS }
+		val places = weirdoSpots()
+		pendingClicks.keys.toList().forEach { slot ->
+			val stand = places.getOrNull(slot)?.let(::clickStand) ?: return@forEach
+			pendingClicks.remove(slot)
+			talkTo(stand)
+		}
+	}
+
+	private fun center(spot: BlockPos) = net.minecraft.world.phys.Vec3(spot.x + 0.5, spot.y.toDouble(), spot.z + 0.5)
+
+	private fun isClickStand(stand: ArmorStand): Boolean =
+		stand.customName?.string?.contains("CLICK", ignoreCase = true) == true
+
+	/** The "CLICK" stand over a weirdo's place, if it has arrived. */
+	private fun clickStand(spot: BlockPos): ArmorStand? {
+		val level = Minecraft.getInstance().level ?: return null
+		val middle = center(spot)
+		return level.getEntitiesOfClass(ArmorStand::class.java, standBox(spot).inflate(1.0), ::isClickStand)
+			.map { it to it.position().distanceToSqr(middle) }
+			.filter { it.second <= MATCH_DISTANCE_SQ }
+			.minByOrNull { it.second }?.first
+	}
+
+	/** Right-clicks [stand], the way the game would, if it is within reach. */
+	private fun talkTo(stand: ArmorStand) {
+		val client = Minecraft.getInstance()
+		val player = client.player ?: return
+		val target = stand.boundingBox.center
+		if (player.eyePosition.distanceToSqr(target) > REACH * REACH) return
+		client.gameMode?.interact(player, stand, net.minecraft.world.phys.EntityHitResult(stand, target), net.minecraft.world.InteractionHand.MAIN_HAND)
+	}
+
+	/** The placeholder boxes, on every place nobody is standing in yet. */
+	private fun renderPlaceholders(context: LevelRenderContext) {
+		if (!instantActive()) return
+		val client = Minecraft.getInstance()
+		val level = client.level ?: return
+		val player = client.player ?: return
+		weirdoSpots().forEach { spot ->
+			val box = standBox(spot)
+			val occupied = level.getEntitiesOfClass(net.minecraft.world.entity.player.Player::class.java, box.inflate(0.6)) { it !== player }.isNotEmpty()
+			if (!occupied) PuzzleRender.box(context, box, PuzzleSolver.weirdosPlaceholderColor.argb, PuzzleRender.STYLE_BOTH, phase = true)
+		}
+	}
+
+	/** Lumen's chest places, in the room's own coordinates. */
+	private val CHEST_PLACES = listOf(BlockPos(14, CHEST_Y, 24), BlockPos(16, CHEST_Y, 25), BlockPos(18, CHEST_Y, 24))
+
+	/** A right click's reach, and the reach a click is sent from. */
+	private const val REACH = 5.0
+
+	/** How long a click on a weirdo that has not loaded yet is held for it. */
+	private const val PENDING_MILLIS = 1500L
+
+	/** How near its place a stand has to be to be that weirdo's. */
+	private const val MATCH_DISTANCE_SQ = 2.25
 
 
 	/**

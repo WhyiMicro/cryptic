@@ -58,6 +58,13 @@ object DungeonTeam {
 	var tabSkins: Map<String, PlayerSkin> = emptyMap()
 		private set
 
+	/**
+	 * Each teammate's class level, from the numeral after the class in their
+	 * row — "(Mage XXXIX)". Missing for a row that does not show one.
+	 */
+	var classLevels: Map<String, Int> = emptyMap()
+		private set
+
 	fun classOf(name: String): DungeonClass? = classes[name]
 
 	fun isTeammate(name: String): Boolean = classes.containsKey(name)
@@ -100,6 +107,7 @@ object DungeonTeam {
 		var updated: MutableMap<String, DungeonClass>? = null
 		var fallen: MutableSet<String>? = null
 		var skins: MutableMap<String, PlayerSkin>? = null
+		var levels: MutableMap<String, Int>? = null
 		var foundCatacombs = false
 
 		// In the order the rows are drawn in, which is not the order the
@@ -136,12 +144,28 @@ object DungeonTeam {
 			val target = updated ?: mutableMapOf<String, DungeonClass>().also { updated = it }
 			target[name] = dungeonClass
 			(skins ?: mutableMapOf<String, PlayerSkin>().also { skins = it })[name] = playerInfo.skin
+			parseLevel(match.groupValues[4])?.let { (levels ?: mutableMapOf<String, Int>().also { levels = it })[name] = it }
 		}
 
 		inDungeons = foundCatacombs
 		classes = if (foundCatacombs) updated ?: emptyMap() else emptyMap()
 		dead = if (foundCatacombs) fallen ?: emptySet() else emptySet()
 		tabSkins = if (foundCatacombs) skins ?: emptyMap() else emptyMap()
+		classLevels = if (foundCatacombs) levels ?: emptyMap() else emptyMap()
+	}
+
+	/** "XXXIX" or "39", as a number. */
+	private fun parseLevel(text: String): Int? {
+		if (text.isEmpty()) return null
+		text.toIntOrNull()?.let { return it }
+		val values = mapOf('I' to 1, 'V' to 5, 'X' to 10, 'L' to 50, 'C' to 100)
+		var total = 0
+		for (i in text.indices) {
+			val value = values[text[i]] ?: return null
+			val next = text.getOrNull(i + 1)?.let { values[it] } ?: 0
+			total += if (value < next) -value else value
+		}
+		return total
 	}
 
 	/**
@@ -200,6 +224,7 @@ object DungeonTeam {
 		classes = emptyMap()
 		dead = emptySet()
 		tabSkins = emptyMap()
+		classLevels = emptyMap()
 		ticksUntilRefresh = 0
 	}
 }

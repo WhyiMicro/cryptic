@@ -2,6 +2,7 @@ package imicro.cryptic.mixin;
 
 import imicro.cryptic.feature.BossWaypoints;
 import imicro.cryptic.feature.DungeonWaypoints;
+import imicro.cryptic.feature.KeybindManager;
 import imicro.cryptic.feature.ScrollableTooltips;
 import imicro.cryptic.feature.Toasts;
 import imicro.cryptic.feature.Zoom;
@@ -58,6 +59,7 @@ public abstract class MouseHandlerMixin {
         if (handle != Minecraft.getInstance().getWindow().handle()) return;
 
         if (action != 1) {
+            KeybindManager.onMouse(button.button(), false);
             if (button.button() == cryptic$swallowedButton) {
                 cryptic$swallowedButton = -1;
                 ci.cancel();
@@ -68,6 +70,8 @@ public abstract class MouseHandlerMixin {
         if (button.button() == 0 && Toasts.onMousePressed()) {
             cryptic$swallowedButton = 0;
             ci.cancel();
+            return;
         }
+        KeybindManager.onMouse(button.button(), true);
     }
 }

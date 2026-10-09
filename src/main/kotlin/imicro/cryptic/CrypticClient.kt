@@ -15,10 +15,13 @@ import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.network.chat.Component
 import java.util.Locale
 import org.lwjgl.glfw.GLFW
+import imicro.cryptic.gui.AliasScreen
 import imicro.cryptic.gui.CarryScreen
 import imicro.cryptic.gui.CrosshairScreen
 import imicro.cryptic.gui.CrypticScreen
 import imicro.cryptic.gui.ImGuiRuntime
+import imicro.cryptic.gui.KeybindsScreen
+import imicro.cryptic.gui.SoundsScreen
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.puzzle.BlazeSolver
 import imicro.cryptic.config.ConfigManager
@@ -41,13 +44,16 @@ import imicro.cryptic.feature.BlockOverlay
 import imicro.cryptic.feature.BloodCamp
 import imicro.cryptic.feature.CameraTweaks
 import imicro.cryptic.feature.CarryManager
+import imicro.cryptic.feature.KeybindManager
+import imicro.cryptic.feature.AliasManager
+import imicro.cryptic.feature.SoundVolumes
+import imicro.cryptic.feature.UpdateChecker
 import imicro.cryptic.feature.CrosshairEditor
 import imicro.cryptic.feature.DoorFix
 import imicro.cryptic.feature.LavaToWater
 import imicro.cryptic.feature.NoItemPlace
 import imicro.cryptic.feature.SbKick
 import imicro.cryptic.feature.TimeChanger
-import imicro.cryptic.feature.AutoSprint
 import imicro.cryptic.feature.CookieReminder
 import imicro.cryptic.feature.LagDetector
 import imicro.cryptic.feature.NucleusQol
@@ -86,6 +92,7 @@ import imicro.cryptic.feature.PositionalMessages
 import imicro.cryptic.feature.DungeonWaypoints
 import imicro.cryptic.feature.BossWaypoints
 import imicro.cryptic.feature.GyroHelper
+import imicro.cryptic.feature.LoadoutManager
 import imicro.cryptic.feature.CroesusHelper
 import imicro.cryptic.feature.Highlight
 import imicro.cryptic.feature.InvincibilityTimer
@@ -287,6 +294,10 @@ object CrypticClient : ClientModInitializer {
 		NucleusQol.initialize()
 		BlockOverlay.initialize()
 		CarryManager.initialize()
+		KeybindManager.initialize()
+		AliasManager.initialize()
+		SoundVolumes.initialize()
+		UpdateChecker.initialize()
 		TerracottaTimer.initialize()
 		MelodyHud.initialize()
 		BlessingDisplay.initialize()
@@ -868,6 +879,24 @@ object CrypticClient : ClientModInitializer {
 							1
 						},
 					)
+					// The Settings tab's managers, which open whether or not their
+					// module is on. Deferred like the rest, for the chat screen.
+					.then(ClientCommands.literal("keybinds").executes {
+						KeybindsScreen.request()
+						1
+					})
+					.then(ClientCommands.literal("aliases").executes {
+						AliasScreen.request()
+						1
+					})
+					.then(ClientCommands.literal("sounds").executes {
+						SoundsScreen.request()
+						1
+					})
+					.then(ClientCommands.literal("update").executes {
+						UpdateChecker.check(manual = true)
+						1
+					})
 					.then(
 						ClientCommands.literal("carry")
 							.executes {
@@ -1010,12 +1039,13 @@ object CrypticClient : ClientModInitializer {
 		}
 
 		ClientTickEvents.END_CLIENT_TICK.register { client ->
-			AutoSprint.tick(client)
 			// Which island, and whether it is SkyBlock at all, for the modules that
 			// must not act anywhere else.
 			SkyblockLocation.tick(
 				client,
 				SlotBinds.module.enabled || NucleusQol.module.enabled || CarryManager.module.enabled ||
+					LoadoutManager.needsSkyblock ||
+					KeybindManager.needsSkyblock ||
 					DungeonWarpCooldown.module.enabled,
 			)
 			Zoom.tick(client)
@@ -1024,8 +1054,8 @@ object CrypticClient : ClientModInitializer {
 				client,
 				ClassColors.module.enabled || DungeonMap.module.enabled ||
 					TerminalOrder.needsTeamTracking || SpiritLeapOverlay.module.enabled ||
-					F7Qol.module.enabled || MelodyHud.wanted ||
-					AutoGfs.module.enabled || AutoRequeue.module.enabled,
+					F7Qol.module.enabled || MelodyHud.wanted || GyroHelper.module.enabled ||
+					AutoGfs.module.enabled || AutoRequeue.module.enabled || KeybindManager.needsTeam,
 			)
 			// Which floor the player is on only matters to modules limited to one.
 			DungeonLocation.tick(
@@ -1045,6 +1075,7 @@ object CrypticClient : ClientModInitializer {
 					MelodyHud.wanted || LagDetector.needsDungeon ||
 					WitherCloakEffect.needsDungeon || PuzzleHud.module.enabled ||
 					DungeonWarpCooldown.module.enabled || ILoveGlass.module.enabled ||
+					KeybindManager.needsDungeon ||
 					AutoGfs.module.enabled || AutoRequeue.module.enabled ||
 					SpiritBear.needsDungeon || LividSolver.needsDungeon ||
 					PositionalMessages.needsDungeon || DungeonWaypoints.needsDungeon ||
@@ -1058,7 +1089,7 @@ object CrypticClient : ClientModInitializer {
 				TerminalEsp.module.enabled || TerminalOrder.module.enabled ||
 					DeviceSolver.needsPhaseTracking || F7Qol.module.enabled || MelodyHud.wanted ||
 					NoItemPlace.module.enabled ||
-					SpiritLeapOverlay.needsFloor7 || ILoveGlass.needsPhase,
+					SpiritLeapOverlay.needsFloor7 || ILoveGlass.needsPhase || KeybindManager.needsPhase,
 			)
 			// What the section has already had done to it, which only matters
 			// to whoever is drawing labels over the things still to do.
@@ -1073,6 +1104,8 @@ object CrypticClient : ClientModInitializer {
 			PuzzleSolver.tick(client)
 			MageBeam.tick(client)
 			CroesusHelper.tick(client)
+			LoadoutManager.tick(client)
+			GyroHelper.tick(client)
 			BossTimings.tick(client)
 			DungeonScore.tick(client)
 			MelodyHud.tick()
@@ -1094,6 +1127,10 @@ object CrypticClient : ClientModInitializer {
 			DoorFix.tick(client)
 			CarryManager.tick(client)
 			CarryScreen.openIfRequested(client)
+			KeybindsScreen.openIfRequested(client)
+			AliasScreen.openIfRequested(client)
+			SoundsScreen.openIfRequested(client)
+			AliasManager.tick(client)
 			CrosshairScreen.openIfRequested(client)
 			WitherCloakEffect.tick(client)
 			BlessingDisplay.tick(client)

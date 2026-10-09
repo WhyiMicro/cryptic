@@ -406,24 +406,57 @@ class KeybindModuleSetting(
 	label: String,
 	val description: String = "",
 	visibleIf: () -> Boolean = { true },
+	/** The key it starts on, before anybody binds it: a GLFW key, [mouse] of a button, or [UNBOUND]. */
+	val defaultKey: Int = UNBOUND,
 ): ModuleSetting(id, label, visibleIf) {
-	/** A GLFW key code, or [UNBOUND]. Stable across launches, so it is what is saved. */
-	var keyCode: Int = UNBOUND
+	/**
+	 * A GLFW key code, a mouse button as [mouse] makes it, or [UNBOUND]. Stable
+	 * across launches, so it is what is saved.
+	 */
+	var keyCode: Int = defaultKey
 
 	val bound: Boolean get() = keyCode != UNBOUND
 
-	/** The key the way a module's own badge names it: "R", "LEFT.SHIFT", "None". */
+	/** Whether the bind is a mouse button rather than a key. */
+	val isMouse: Boolean get() = keyCode >= MOUSE_BASE
+
+	/** The key the way a module's own badge names it: "R", "LEFT.SHIFT", "MOUSE.5", "None". */
 	val keyName: String
-		get() = if (!bound) "None" else InputConstants.Type.KEYSYM.getOrCreate(keyCode).name
-			.removePrefix("key.keyboard.")
-			.uppercase()
+		get() = if (!bound) "None" else nameOf(keyCode)
 
-	fun matches(key: Int): Boolean = bound && key == keyCode
+	/** A key press, by its GLFW code. Never true of a mouse bind. */
+	fun matches(key: Int): Boolean = bound && !isMouse && key == keyCode
 
-	fun reset() { keyCode = UNBOUND }
+	/** A mouse button press, by its GLFW button. */
+	fun matchesMouse(button: Int): Boolean = isMouse && keyCode - MOUSE_BASE == button
+
+	/** Whether the key or button is held down right now. */
+	fun isDown(window: com.mojang.blaze3d.platform.Window): Boolean = when {
+		!bound -> false
+		isMouse -> org.lwjgl.glfw.GLFW.glfwGetMouseButton(window.handle(), keyCode - MOUSE_BASE) == org.lwjgl.glfw.GLFW.GLFW_PRESS
+		else -> InputConstants.isKeyDown(window, keyCode)
+	}
+
+	fun reset() { keyCode = defaultKey }
 
 	companion object {
 		const val UNBOUND = -1
+
+		/**
+		 * Where mouse buttons start, far above every GLFW key code (the highest
+		 * is 348), so one number can hold either and old saves stay keys.
+		 */
+		const val MOUSE_BASE = 10_000
+
+		/** The bind for GLFW mouse [button]: 3 is the back side button, 4 the forward one. */
+		fun mouse(button: Int): Int = MOUSE_BASE + button
+
+		/** A key or [mouse] button the way a badge names it: "R", "LEFT.SHIFT", "MOUSE.5". */
+		fun nameOf(code: Int): String = if (code >= MOUSE_BASE) {
+			InputConstants.Type.MOUSE.getOrCreate(code - MOUSE_BASE).name.removePrefix("key.").uppercase()
+		} else {
+			InputConstants.Type.KEYSYM.getOrCreate(code).name.removePrefix("key.keyboard.").uppercase()
+		}
 	}
 }
 
@@ -539,7 +572,7 @@ object ModuleRegistry {
 	val autoSprint = Module(
 		id = "auto_sprint",
 		name = "Auto Sprint",
-		description = "Automatically sprints while moving forward",
+		description = "Holds sprint for you, as Odin does",
 		category = ModuleCategory.GENERAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
@@ -605,11 +638,16 @@ object ModuleRegistry {
 		imicro.cryptic.feature.BlockOverlay.module,
 		imicro.cryptic.feature.CameraTweaks.module,
 		imicro.cryptic.feature.NoItemPlace.module,
+		imicro.cryptic.feature.LoadoutManager.module,
 		imicro.cryptic.feature.CroesusHelper.module,
 		imicro.cryptic.feature.SbKick.module,
 		imicro.cryptic.feature.TimeChanger.module,
 		imicro.cryptic.feature.LavaToWater.module,
 		imicro.cryptic.feature.CarryManager.module,
+		imicro.cryptic.feature.KeybindManager.module,
+		imicro.cryptic.feature.AliasManager.module,
+		imicro.cryptic.feature.SoundVolumes.module,
+		imicro.cryptic.feature.UpdateChecker.module,
 		imicro.cryptic.feature.ScrollableTooltips.module,
 		imicro.cryptic.feature.GyroHelper.module,
 		imicro.cryptic.feature.BloodCamp.module,

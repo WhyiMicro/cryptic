@@ -16,7 +16,7 @@ import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.render.WorldRender
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
+import net.minecraft.network.chat.Component
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
@@ -358,14 +358,30 @@ object Secrets {
 	/** What Hypixel says when the chest you opened wants a key. */
 	private const val LOCKED_MESSAGE = "That chest is locked!"
 
+	/** What Hypixel says when the chest was opened before, by you or by anybody. */
+	private const val SEARCHED_MESSAGE = "This chest has already been searched!"
+
+	/**
+	 * Every secret the counter has counted on this server.
+	 *
+	 * Kept for the whole floor, where [taken] only lasts as long as a block's
+	 * highlight: a chest clicked again after that used to count again, as a
+	 * second secret, until Hypixel's own number put it right.
+	 */
+	private val counted = HashSet<BlockPos>()
+
+	/** The secret the counter last added, which Hypixel's answer may take back. */
+	private var lastCounted: BlockPos? = null
+
+	private val FORMATTING = Regex("§.")
+
 	fun initialize() {
 		Hud.register(CounterElement())
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> onWorldChange() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> onWorldChange() }
-		ClientReceiveMessageEvents.GAME.register { message, overlay ->
-			if (!overlay && message.string == LOCKED_MESSAGE) onChestLocked()
-		}
+		// Chat is heard in [onSystemChat], from the packet, before any mod can
+		// hide it.
 	}
 
 	// ---- The counter -----------------------------------------------------
@@ -629,7 +645,33 @@ object Secrets {
 		if (taken.putIfAbsent(pos, Taken(System.currentTimeMillis())) != null) return
 		lastMarked = pos
 		if (secretSound.value) play()
-		if (movesCounter) guessFound()
+		// Counted once a floor, however often it is clicked.
+		lastCounted = null
+		if (movesCounter && counted.add(pos.immutable())) {
+			lastCounted = pos.immutable()
+			guessFound()
+		}
+	}
+
+	/** A chat packet, on the client thread. */
+	@JvmStatic
+	fun onSystemChat(message: Component, overlay: Boolean) {
+		if (overlay) return
+		when (message.string.replace(FORMATTING, "").trim()) {
+			LOCKED_MESSAGE -> onChestLocked()
+			SEARCHED_MESSAGE -> onChestSearched()
+		}
+	}
+
+	/**
+	 * Hypixel saying the chest was opened before — by you earlier, or by a
+	 * teammate — so it was not a secret found now and the counter takes it
+	 * back. It stays counted, so clicking it again adds nothing either.
+	 */
+	private fun onChestSearched() {
+		if (!module.enabled || lastCounted == null) return
+		lastCounted = null
+		if (guessRoom === DungeonMap.currentRoom() && guessCount > 0) guessCount--
 	}
 
 	/** Hypixel says so in chat, and the box turns to say it too. Odin's idea. */
@@ -637,8 +679,13 @@ object Secrets {
 	fun onChestLocked() {
 		if (!module.enabled) return
 		lastMarked?.let { taken[it]?.locked = true }
-		// A locked chest was not a secret taken, so the counter takes it back.
-		if (guessRoom === DungeonMap.currentRoom() && guessCount > 0) guessCount--
+		// A locked chest was not a secret taken, so the counter takes it back,
+		// and may count it once it is opened with a key.
+		if (lastCounted != null && lastCounted == lastMarked) {
+			counted.remove(lastCounted)
+			lastCounted = null
+			if (guessRoom === DungeonMap.currentRoom() && guessCount > 0) guessCount--
+		}
 	}
 
 	fun tick() {
@@ -649,6 +696,8 @@ object Secrets {
 
 	fun onWorldChange() {
 		taken.clear()
+		counted.clear()
+		lastCounted = null
 		lastMarked = null
 	}
 

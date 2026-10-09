@@ -134,6 +134,15 @@ object PuzzleSolver {
 	)
 
 	@JvmField
+	val waterOffPlan = ToggleModuleSetting(
+		id = "water_off_plan",
+		label = "Warn when off plan",
+		defaultValue = true,
+		description = "After the water is in, says at once when a pull is missed, made well early, or was not in the plan, so the board can be reset instead of waited out.",
+		visibleIf = { waterEnabled.value },
+	)
+
+	@JvmField
 	val waterPreviewPath = ToggleModuleSetting(
 		id = "water_preview_path",
 		label = "Preview the water",
@@ -474,6 +483,25 @@ object PuzzleSolver {
 	)
 
 	@JvmField
+	val weirdosInstant = ToggleModuleSetting(
+		id = "weirdos_instant",
+		label = "Talk before they load",
+		description = "Draws a box where each weirdo will stand. Right-click a box to talk to that weirdo at once, or the moment it loads in. Lumen's Instant Three Weirdos.",
+		visibleIf = { weirdosEnabled.value },
+	)
+
+	@JvmField
+	val weirdosPlaceholderColor = ColorModuleSetting(
+		id = "weirdos_placeholder_color",
+		label = "Weirdo boxes",
+		defaultRgb = 0x55FFFF,
+		supportsAlpha = true,
+		defaultAlpha = 0x50,
+		visibleIf = { weirdosEnabled.value && weirdosInstant.value },
+		inlineWith = weirdosInstant,
+	)
+
+	@JvmField
 	val weirdosBlockWrong = ToggleModuleSetting(
 		id = "weirdos_block_wrong",
 		label = "Block the wrong chests",
@@ -613,6 +641,15 @@ object PuzzleSolver {
 	)
 
 	@JvmField
+	val ticTacToePreAim = ToggleModuleSetting(
+		id = "tic_tac_toe_pre_aim",
+		label = "Show before their move",
+		defaultValue = true,
+		description = "On the opponent's turn, marks the square that is your best move whatever they play, so you can aim at it before they move. Lumen's idea.",
+		visibleIf = { ticTacToeEnabled.value },
+	)
+
+	@JvmField
 	val ticTacToeStyle = DropdownModuleSetting(
 		id = "tic_tac_toe_style",
 		label = "Style",
@@ -675,10 +712,11 @@ object PuzzleSolver {
 		mazeSection, mazeEnabled, mazeColorOne, mazeColorMultiple, mazeColorVisited,
 		mazeStyle, mazeTracer, mazeTracerColor, mazeReset,
 		weirdosSection, weirdosEnabled, weirdosColor, weirdosWrongColor, weirdosStyle,
-		weirdosHideWrong, weirdosBlockWrong,
+		weirdosHideWrong, weirdosBlockWrong, weirdosInstant, weirdosPlaceholderColor,
 		ticTacToeSection, ticTacToeEnabled, ticTacToeColor, ticTacToeStyle, ticTacToeBlockWrong,
+		ticTacToePreAim,
 		waterSection, waterEnabled, waterOptimized, waterMinGap, waterTracer, waterTracerFirst,
-		waterTracerSecond, waterLeverHighlight, waterLeverStyle, waterPreviewPath, waterPreviewLevers,
+		waterTracerSecond, waterLeverHighlight, waterLeverStyle, waterOffPlan, waterPreviewPath, waterPreviewLevers,
 		waterReset,
 		generalSection, puzzleTimers, draftPrompt,
 	)
@@ -792,6 +830,10 @@ object PuzzleSolver {
 			if (waterEnabled.value) WaterSolver.scan()
 		}
 
+		// The gates, every tick: a pull is a gate moving, and a quarter second is
+		// most of the margin a timed pull has.
+		if (waterEnabled.value) WaterSolver.tick()
+		WeirdosSolver.tick()
 		if (ticTacToeEnabled.value) TicTacToeSolver.tick()
 		if (silverfishEnabled.value) SilverfishSolver.tick()
 	}
@@ -833,6 +875,28 @@ object PuzzleSolver {
 		if (!module.enabled) return
 		WaterSolver.onServerTick()
 		QuizSolver.onServerTick()
+	}
+
+	/**
+	 * A right click, before the game handles it: Three Weirdos may take it, to
+	 * talk to a weirdo that has not loaded in yet. True when it did.
+	 */
+	@JvmStatic
+	fun onUseItem(): Boolean {
+		if (!module.enabled || !PuzzleRooms.clearing) return false
+		return WeirdosSolver.onUseItem()
+	}
+
+	/** An entity's data arriving, on the client thread. */
+	@JvmStatic
+	fun onEntityData(id: Int) {
+		if (!module.enabled) return
+		// Inside a packet handler, where anything thrown is the connection's problem.
+		try {
+			WeirdosSolver.onEntityData(id)
+		} catch (error: RuntimeException) {
+			imicro.cryptic.Cryptic.LOGGER.error("Three Weirdos could not read an entity update", error)
+		}
 	}
 
 	/** A block being reached for: a lever pulled, or a boulder pushed. */

@@ -2,6 +2,7 @@ package imicro.cryptic.mixin;
 
 import imicro.cryptic.feature.CroesusHelper;
 import imicro.cryptic.feature.InvincibilityTimer;
+import imicro.cryptic.feature.LoadoutManager;
 import imicro.cryptic.feature.SlotBinds;
 import imicro.cryptic.feature.SpiritLeapOverlay;
 import imicro.cryptic.feature.TerminalSolver;
@@ -51,6 +52,7 @@ public abstract class AbstractContainerScreenMixin {
     @Inject(method = "slotClicked", at = @At("HEAD"), cancellable = true)
     private void cryptic$clickTerminalSlot(Slot slot, int slotId, int button, ContainerInput input, CallbackInfo info) {
         CroesusHelper.onSlotClicked(slotId);
+        LoadoutManager.onSlotClicked(slotId, button, input);
         if (TerminalSolver.handleSlotClick(slotId, button, input)) info.cancel();
     }
 
@@ -62,6 +64,12 @@ public abstract class AbstractContainerScreenMixin {
         }
 
         if (TerminalSolver.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y(), click.button())) {
+            info.setReturnValue(true);
+            return;
+        }
+
+        // The loadout menu's page buttons sit on the mouse's side buttons.
+        if (LoadoutManager.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.button())) {
             info.setReturnValue(true);
             return;
         }
@@ -89,6 +97,13 @@ public abstract class AbstractContainerScreenMixin {
         }
 
         if (TerminalSolver.handleKeyPress((AbstractContainerScreen<?>) (Object) this, event)) {
+            info.setReturnValue(true);
+            return;
+        }
+
+        // Before the hotbar keys get it: in the loadout menu, 1 to 0 put on a
+        // loadout rather than swap the hovered item.
+        if (LoadoutManager.handleKeyPress((AbstractContainerScreen<?>) (Object) this, event.key())) {
             info.setReturnValue(true);
             return;
         }

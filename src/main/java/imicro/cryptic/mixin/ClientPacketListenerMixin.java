@@ -38,6 +38,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerClosePacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
@@ -89,6 +90,7 @@ public abstract class ClientPacketListenerMixin {
         }
         // The Spring Boots charge is a note that climbs in pitch, and nothing else.
         SpringBootsHelper.onSound(packet);
+        GyroHelper.onSound(packet);
         if (Etherwarp.replaceTeleportSound(packet)) info.cancel();
     }
 
@@ -337,6 +339,12 @@ public abstract class ClientPacketListenerMixin {
      * Reads an entity's nametag and the item it holds, which between them
      * identify a corpse still standing and the archer passive's bone meal.
      */
+    /** A stand getting its name, which is when Three Weirdos can send a click it was holding. */
+    @Inject(method = "handleSetEntityData", at = @At("TAIL"))
+    private void cryptic$instantWeirdos(ClientboundSetEntityDataPacket packet, CallbackInfo info) {
+        PuzzleSolver.onEntityData(packet.id());
+    }
+
     @Inject(method = "handleSetEntityData", at = @At("TAIL"))
     private void cryptic$hideTaggedEntities(ClientboundSetEntityDataPacket packet, CallbackInfo info) {
         for (SynchedEntityData.DataValue<?> value : packet.packedItems()) {
@@ -427,6 +435,7 @@ public abstract class ClientPacketListenerMixin {
         SmartTickTimer.onSystemChat(packet.content(), packet.overlay());
         DeviceSolver.onSystemChat(packet.content(), packet.overlay());
         GyroHelper.onSystemChat(packet.content(), packet.overlay());
+        Secrets.onSystemChat(packet.content(), packet.overlay());
         PartyFeatures.onSystemChat(packet.content(), packet.overlay());
         DungeonWarpCooldown.onSystemChat(packet.content(), packet.overlay());
         F7Qol.onSystemChat(packet.content(), packet.overlay());
@@ -438,6 +447,23 @@ public abstract class ClientPacketListenerMixin {
         // Last, once everything above has read it: the party list asked for
         // at the end of a run is kept out of chat.
         if (AutoRequeue.hidesChat(packet.content(), packet.overlay())) info.cancel();
+    }
+
+    /**
+     * The action bar's own packet, the other way Hypixel can send it. The gyro
+     * hears Gravity Storm's mana line here as well as in the chat packet.
+     * After the hand-off, like the chat.
+     */
+    @Inject(
+        method = "setActionBarText",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/network/PacketProcessor;)V",
+            shift = At.Shift.AFTER
+        )
+    )
+    private void cryptic$readActionBar(ClientboundSetActionBarTextPacket packet, CallbackInfo info) {
+        GyroHelper.onActionBarPacket(packet.text());
     }
 
     /**

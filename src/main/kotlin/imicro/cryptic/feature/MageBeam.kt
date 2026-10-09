@@ -41,8 +41,17 @@ import java.util.concurrent.CopyOnWriteArrayList
  */
 object MageBeam {
 	@JvmField
+	val hideBeam = ToggleModuleSetting(
+		id = "hide_beam",
+		label = "Hide the whole beam",
+		defaultValue = false,
+		description = "Draws no line and hides the sparks too, so the beam is not shown at all. The sheep settings still apply.",
+	)
+
+	@JvmField
 	val duration = SliderModuleSetting(
 		id = "duration",
+		visibleIf = { !hideBeam.value },
 		label = "Duration",
 		defaultValue = 40.0,
 		min = 5.0,
@@ -54,6 +63,7 @@ object MageBeam {
 	@JvmField
 	val lineWidth = SliderModuleSetting(
 		id = "line_width",
+		visibleIf = { !hideBeam.value },
 		label = "Thickness",
 		defaultValue = 2.0,
 		min = 1.0,
@@ -64,6 +74,7 @@ object MageBeam {
 	@JvmField
 	val phase = ToggleModuleSetting(
 		id = "phase",
+		visibleIf = { !hideBeam.value },
 		label = "Phase",
 		defaultValue = true,
 		description = "Draws the beam through whatever is in front of it.",
@@ -72,6 +83,7 @@ object MageBeam {
 	@JvmField
 	val fade = ToggleModuleSetting(
 		id = "fade",
+		visibleIf = { !hideBeam.value },
 		label = "Fade out",
 		defaultValue = true,
 		description = "Thins the beam away over its duration instead of dropping it.",
@@ -124,16 +136,18 @@ object MageBeam {
 	@JvmField
 	val hideParticles = ToggleModuleSetting(
 		id = "hide_particles",
+		visibleIf = { !hideBeam.value },
 		label = "Hide the sparks",
 		defaultValue = true,
 		description = "Leaves only the line, instead of drawing it over the particles.",
 	)
 
-	private val markerSection = SectionModuleSetting("marker_section", "End marker")
+	private val markerSection = SectionModuleSetting("marker_section", "End marker", visibleIf = { !hideBeam.value })
 
 	@JvmField
 	val endMarker = ToggleModuleSetting(
 		id = "end_marker",
+		visibleIf = { !hideBeam.value },
 		label = "Mark the end",
 		defaultValue = true,
 		description = "A small cross where the beam stopped.",
@@ -145,7 +159,7 @@ object MageBeam {
 		label = "Only on a hit",
 		defaultValue = true,
 		description = "Marks only a beam that stopped on a mob, rather than one that ran into a wall.",
-		visibleIf = { endMarker.value },
+		visibleIf = { !hideBeam.value && endMarker.value },
 	)
 
 	@JvmField
@@ -156,7 +170,7 @@ object MageBeam {
 		min = 0.05,
 		max = 1.0,
 		step = 0.05,
-		visibleIf = { endMarker.value },
+		visibleIf = { !hideBeam.value && endMarker.value },
 	)
 
 	@JvmField
@@ -165,15 +179,16 @@ object MageBeam {
 		label = "Marker",
 		defaultRgb = 0xFFFFFF,
 		supportsAlpha = true,
-		visibleIf = { endMarker.value },
+		visibleIf = { !hideBeam.value && endMarker.value },
 		inlineWith = endMarker,
 	)
 
-	private val colorSection = SectionModuleSetting("color_section", "Color")
+	private val colorSection = SectionModuleSetting("color_section", "Color", visibleIf = { !hideBeam.value })
 
 	@JvmField
 	val color = ColorModuleSetting(
 		id = "color",
+		visibleIf = { !hideBeam.value },
 		label = "Beam",
 		defaultRgb = 0xAA0000,
 		supportsAlpha = true,
@@ -182,6 +197,7 @@ object MageBeam {
 	@JvmField
 	val gradient = ToggleModuleSetting(
 		id = "gradient",
+		visibleIf = { !hideBeam.value },
 		label = "Gradient",
 		description = "Runs the beam from one color to another along its length.",
 	)
@@ -192,11 +208,12 @@ object MageBeam {
 		label = "Far end",
 		defaultRgb = 0xFF55FF,
 		supportsAlpha = true,
-		visibleIf = { gradient.value },
+		visibleIf = { !hideBeam.value && gradient.value },
 		inlineWith = gradient,
 	)
 
 	private val configurable = listOf(
+		hideBeam,
 		duration,
 		lineWidth,
 		phase,
@@ -340,6 +357,8 @@ object MageBeam {
 	fun onParticle(packet: ClientboundLevelParticlesPacket): Boolean {
 		if (!module.enabled || !DungeonLocation.inDungeon) return false
 		if (packet.particle.type != ParticleTypes.FIREWORK) return false
+		// Nothing to draw, so nothing to record: the sparks just go.
+		if (hideBeam.value) return true
 
 		val point = Vec3(packet.x, packet.y, packet.z)
 		// Hypixel sends each beam twice; a point that is already on one is the
@@ -382,7 +401,7 @@ object MageBeam {
 	private fun render(context: LevelRenderContext) {
 		if (!module.enabled) return
 		if (sheepHitbox.value && DungeonLocation.inDungeon) drawSheepHitboxes(context)
-		if (beams.isEmpty()) return
+		if (beams.isEmpty() || hideBeam.value) return
 
 		val life = duration.value.toInt().coerceAtLeast(1)
 		val width = lineWidth.value.toFloat()

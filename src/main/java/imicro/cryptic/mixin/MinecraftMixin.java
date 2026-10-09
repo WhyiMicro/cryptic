@@ -1,7 +1,12 @@
 package imicro.cryptic.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import imicro.cryptic.feature.AutoClicker;
+import imicro.cryptic.feature.BreakerHelper;
+import net.minecraft.client.KeyMapping;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import imicro.cryptic.feature.DeviceSolver;
 import imicro.cryptic.feature.BossWaypoints;
 import imicro.cryptic.feature.DungeonWaypoints;
@@ -39,6 +44,15 @@ public abstract class MinecraftMixin {
      * here too: held down, the button would otherwise place and remove the
      * same waypoint every tick.
      */
+    /** A right click on a Three Weirdos box, which talks to that weirdo instead. */
+    @Inject(method = "startUseItem", at = @At("HEAD"), cancellable = true)
+    private void cryptic$instantWeirdos(CallbackInfo info) {
+        if (PuzzleSolver.onUseItem()) {
+            this.rightClickDelay = 4;
+            info.cancel();
+        }
+    }
+
     @Inject(method = "startUseItem", at = @At("HEAD"), cancellable = true)
     private void cryptic$floatingWaypoint(CallbackInfo info) {
         if (this.hitResult != null && this.hitResult.getType() != HitResult.Type.MISS) return;
@@ -88,6 +102,52 @@ public abstract class MinecraftMixin {
         if (this.hitResult instanceof EntityHitResult hit && DeviceSolver.blocksEntityUse(hit.getEntity())) {
             info.cancel();
         }
+    }
+
+    // ---- Breaker Helper: Lumen's way of mining with the Dungeon Breaker ----
+
+    /** A click of attack: refused on a secret, and the break pauses cleared before it. */
+    @Inject(method = "startAttack", at = @At("HEAD"), cancellable = true)
+    private void cryptic$breakerStartAttack(CallbackInfoReturnable<Boolean> cir) {
+        if (BreakerHelper.onStartAttack()) cir.setReturnValue(false);
+    }
+
+    @Inject(method = "startAttack", at = @At("RETURN"))
+    private void cryptic$breakerAttackDone(CallbackInfoReturnable<Boolean> cir) {
+        BreakerHelper.onAttackFinished();
+    }
+
+    @Inject(method = "handleKeybinds", at = @At("HEAD"))
+    private void cryptic$breakerKeybinds(CallbackInfo ci) {
+        BreakerHelper.onHandleKeybinds();
+    }
+
+    /** Whether a held attack keeps mining: it pauses on secrets, and past them presses again. */
+    @WrapOperation(
+        method = "handleKeybinds",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;continueAttack(Z)V")
+    )
+    private void cryptic$breakerContinueAttack(Minecraft self, boolean down, Operation<Void> original) {
+        original.call(self, BreakerHelper.continueAttack(down));
+    }
+
+    /** The tick after swapping to the Breaker, the attack click waits: it is left queued, not dropped. */
+    @WrapOperation(
+        method = "handleKeybinds",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/KeyMapping;consumeClick()Z")
+    )
+    private boolean cryptic$breakerHoldClick(KeyMapping key, Operation<Boolean> original) {
+        if (key == ((Minecraft) (Object) this).options.keyAttack && BreakerHelper.waitsAfterSwap()) return false;
+        return original.call(key);
+    }
+
+    @WrapOperation(
+        method = "handleKeybinds",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/KeyMapping;isDown()Z")
+    )
+    private boolean cryptic$breakerHoldDown(KeyMapping key, Operation<Boolean> original) {
+        if (key == ((Minecraft) (Object) this).options.keyAttack && BreakerHelper.waitsAfterSwap()) return false;
+        return original.call(key);
     }
 
     /**

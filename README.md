@@ -27,6 +27,8 @@ The jar lands in `build/libs/`.
 - [Waypoints and messages](docs/waypoints-and-messages.md) — Dungeon Waypoints,
   its editor and `/cryptic dwp`, Boss Waypoints with `/cryptic bwp`, and Positional
   Messages with `/cryptic posmsg`.
+- [Keybinds, aliases, sounds and updates](docs/settings-managers.md) — the
+  Settings tab's Keybinds, Alias and Sound managers, and the Update Checker.
 
 ## Credits
 
@@ -62,7 +64,11 @@ Several features are ported from other mods, whose licences travel with them:
   command and its waypoint packs,
   and the melody coordinates and percentages in the Terminal Solver. The
   Croesus Helper's run colours, its reading of a run's chests, and the price
-  table it values them with.
+  table it values them with. The Loadout Manager's keys in the loadout menu,
+  from Loadout Keybinds, and its key that opens it, from Command Keybinds.
+  Sharp Shooter's Terminator mode, from its Arrows Device's aim positions
+  between two lights.
+  Auto Sprint, which holds the sprint key where the game reads it.
   Licence in [`licenses/Odin-LICENSE.txt`](licenses/Odin-LICENSE.txt).
 - **[Blade Addons](https://github.com/BladeMasterGabe/blade-addons)** (CC0) — the
   secret spawn timer, the leap count in the Spirit Leap Overlay, and the height
@@ -88,11 +94,20 @@ Several features are ported from other mods, whose licences travel with them:
   The Spirit Bear, Spirit Bow and Thorn highlights, and the Livid Solver's
   tracer, health, hiding of the wrong Livids and Ice Spray alert. The Croesus
   Helper's profit beside a chest's title and its list of chests.
+  The Alias Manager, from its Command Shortcuts, and the Sound Manager: a
+  volume per sound, its categories and its list of recent sounds.
 - **[Athen](https://github.com/skies-starred/Athen)** (BSD 3-Clause,
   Copyright (c) 2025-2026 Starred) — the Lag Detector's format, Arrow Hitboxes,
   Custom Scale including its chibi styles, and the Carry Manager: the shape of a
   carry tracker, and the armour stands a slayer boss carries its owner and tier
-  on. Licence in [`licenses/Athen-LICENSE.txt`](licenses/Athen-LICENSE.txt).
+  on. The Keybinds Manager: a binding's keys, its command and its conditions
+  (where it works, islands, floors, classes, phases), and its categories. Licence in [`licenses/Athen-LICENSE.txt`](licenses/Athen-LICENSE.txt).
+- **[Lumen](https://github.com/jizu1/lumen)** (AGPL-3.0, Lumen contributors) — how Breaker
+  Helper's Zero ping mines: an instant mining speed so the game predicts the
+  break, the cleared pause between breaks, the held slot sent first, and pausing
+  a held attack on a secret. Also the Floor 7 levers it leaves hittable.
+  Three Weirdos' Talk before they load, from its Instant Three Weirdos, and Tic
+  Tac Toe's answer shown before the opponent moves.
 - **[Devonian](https://github.com/Synnerz/Devonian)** (GPL-3.0) — door
   highlighting, including its rule for deciding a doorway leads nowhere worth
   going, colouring the blood portal by the score you are on, the Puzzle HUD,

@@ -1,5 +1,7 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.dungeon.DungeonLocation
+import imicro.cryptic.dungeon.DungeonTeam
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
@@ -14,6 +16,8 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
+import net.minecraft.network.protocol.game.ClientboundSoundPacket
+import net.minecraft.sounds.SoundEvents
 import net.minecraft.tags.BlockTags
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.phys.Vec3
@@ -184,28 +188,106 @@ object GyroHelper {
 	 */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
-		onActionBar(message.string.replace(FORMATTING, ""))
+		val text = message.string.replace(FORMATTING, "")
+		onActionBar(text)
+		onCooldownMessage(text)
+	}
+
+	/**
+	 * The action bar's own packet, which is the other way Hypixel sends it.
+	 * Listening only to the chat packet's overlay half missed every cast that
+	 * came this way, and the colour never changed.
+	 */
+	@JvmStatic
+	fun onActionBarPacket(text: Component) {
+		onActionBar(text.string.replace(FORMATTING, ""))
 	}
 
 	private val FORMATTING = Regex("§.")
 
+	/** Whether the last action bar already said Gravity Storm, so one cast is one cast. */
+	private var lastBarHadStorm = false
+
 	/**
-	 * The wand's own mana message, which is the only announcement a cast makes.
+	 * The wand's own mana message, "-1200 Mana (Gravity Storm)".
 	 *
 	 * Matched on the ability's name alone rather than on the whole line: what
-	 * Hypixel writes around it is a mana cost that changes with your gear, and
-	 * the brackets it used to be matched inside are not worth depending on.
+	 * Hypixel writes around it is a mana cost that changes with your gear. The
+	 * line stays up for a few seconds and is sent again every second, so only
+	 * its first appearance is the cast — SkyHanni's rule.
 	 */
 	private fun onActionBar(text: String) {
 		if (!module.enabled) return
-		if (GRAVITY_STORM in text) castAt = System.currentTimeMillis()
+		val hasStorm = GRAVITY_STORM in text
+		if (hasStorm && !lastBarHadStorm) cast()
+		lastBarHadStorm = hasStorm
+	}
+
+	/**
+	 * "This ability is on cooldown for 12s." — Hypixel saying exactly how long
+	 * is left, which puts the count right whatever it thought before.
+	 */
+	private fun onCooldownMessage(text: String) {
+		if (!module.enabled || !isAiming()) return
+		val seconds = COOLDOWN_MESSAGE.find(text)?.groupValues?.get(1)?.toLongOrNull() ?: return
+		castAt = System.currentTimeMillis() - (cooldownMillis() - seconds * 1000L)
+	}
+
+	private val COOLDOWN_MESSAGE = Regex("""^This ability is on cooldown for (\d+)s\.""")
+
+	/**
+	 * Gravity Storm's own sound, which is SkyHanni's way of seeing the cast:
+	 * an enderman teleport at a pitch nothing else uses, within a moment of you
+	 * left-clicking with the wand. It comes whether or not the action bar shows
+	 * the mana, which can be taken over by other messages.
+	 */
+	@JvmStatic
+	fun onSound(packet: ClientboundSoundPacket) {
+		if (!module.enabled) return
+		val client = Minecraft.getInstance()
+		if (!client.isSameThread) return
+		if (packet.sound.value() != SoundEvents.ENDERMAN_TELEPORT) return
+		if (Math.abs(packet.pitch - STORM_PITCH) > 0.001f || packet.volume != 1f) return
+		if (System.currentTimeMillis() - lastSwingAt > CLICK_WINDOW_MILLIS || !isAiming()) return
+		cast()
+	}
+
+	/** When the wand was last swung, which the sound has to come right after. */
+	private var lastSwingAt = 0L
+	private var attackWasDown = false
+
+	/** Watches for a left click with the wand in hand. */
+	fun tick(client: Minecraft) {
+		val down = client.options.keyAttack.isDown
+		if (down && !attackWasDown && client.gui.screen() == null && isAiming()) lastSwingAt = System.currentTimeMillis()
+		attackWasDown = down
+	}
+
+	private fun cast() {
+		castAt = System.currentTimeMillis()
 	}
 
 	private const val GRAVITY_STORM = "Gravity Storm"
+	private const val STORM_PITCH = 0.61904764f
+	private const val CLICK_WINDOW_MILLIS = 400L
+
+	/**
+	 * Gravity Storm's cooldown, with a Mage's reduction in a dungeon taken off,
+	 * as SkyHanni works it out: a quarter off, or half for the party's only
+	 * mage, and another 1% for every two class levels.
+	 */
+	private fun cooldownMillis(): Long {
+		val name = Minecraft.getInstance().player?.name?.string ?: return COOLDOWN_MILLIS
+		if (!DungeonLocation.inDungeon || DungeonTeam.classOf(name) != DungeonTeam.DungeonClass.MAGE) return COOLDOWN_MILLIS
+		val mages = DungeonTeam.classes.values.count { it == DungeonTeam.DungeonClass.MAGE }
+		val level = DungeonTeam.classLevels[name] ?: 0
+		val multiplier = 1.0 - (if (mages == 1) 0.5 else 0.25) - 0.01 * (level / 2)
+		return (COOLDOWN_MILLIS * multiplier.coerceAtLeast(0.0)).toLong()
+	}
 
 	/** True while the last cast is still cooling down. */
 	private fun onCooldown(): Boolean =
-		castAt != 0L && System.currentTimeMillis() - castAt < COOLDOWN_MILLIS
+		castAt != 0L && System.currentTimeMillis() - castAt < cooldownMillis()
 
 	/** Whether the wand is in hand, which is the whole of what makes this show. */
 	fun isAiming(): Boolean {

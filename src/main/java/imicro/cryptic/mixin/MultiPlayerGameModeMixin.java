@@ -1,6 +1,9 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.feature.BreakerHelper;
 import imicro.cryptic.feature.DungeonWaypoints;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import imicro.cryptic.feature.PuzzleSolver;
 import imicro.cryptic.feature.Secrets;
 import imicro.cryptic.feature.TerminalEsp;
@@ -31,6 +34,12 @@ public abstract class MultiPlayerGameModeMixin {
     @Inject(method = "interact", at = @At("HEAD"))
     private void cryptic$noteEntityUse(Player player, Entity entity, EntityHitResult hit, InteractionHand hand, CallbackInfoReturnable<?> info) {
         TerminalEsp.onClicked(entity);
+    }
+
+    /** About to break a block: Breaker Helper makes sure the server knows what is held. */
+    @Inject(method = "startDestroyBlock", at = @At("HEAD"))
+    private void cryptic$breakerSyncSlot(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> info) {
+        BreakerHelper.onStartDestroyBlock();
     }
 
     @Inject(method = "attack", at = @At("HEAD"))

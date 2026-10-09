@@ -157,6 +157,15 @@ object BossWaypoints {
 	)
 
 	@JvmField
+	val shareFloors = ToggleModuleSetting(
+		id = "share_floors",
+		label = "Share with normal floors",
+		defaultValue = true,
+		description = "Master Mode uses the same boss room as the normal floor, so M7 shows F7's waypoints and F7 " +
+			"shows M7's. New waypoints are saved under the normal floor.",
+	)
+
+	@JvmField
 	val floating = ToggleModuleSetting(
 		id = "floating",
 		label = "Allow floating waypoints",
@@ -193,6 +202,7 @@ object BossWaypoints {
 		supportsKeybind = false,
 		settings = listOf(
 			drawingSection, lineWidth, labelScale,
+			shareFloors,
 			editorSection, editMode, editKey, placeStyle, placePhase, placeColor, floating, useBlockSize, size,
 		),
 	)
@@ -220,11 +230,34 @@ object BossWaypoints {
 		return (if (DungeonLocation.masterMode) "M" else "F") + floor
 	}
 
+	/**
+	 * The keys whose waypoints show in this boss room: its own, and with
+	 * [shareFloors] on its pair's too — Master Mode is the same map — normal
+	 * floor first.
+	 */
+	private fun sharedKeys(key: String): List<String> {
+		if (!shareFloors.value || key == "E") return listOf(key)
+		val floor = key.drop(1)
+		return listOf("F$floor", "M$floor")
+	}
+
+	/** Where a new waypoint goes: the normal floor while sharing, so both modes have it. */
+	private fun placeKey(key: String): String = sharedKeys(key).first()
+
+	/** Every waypoint showing here, from every pack, with the pack it is in. */
+	private fun visible(key: String) = sharedKeys(key).asSequence().flatMap { Packs.waypointsIn(it) }
+
+	/** The edited pack's list that holds a waypoint at [pos] here, or null. */
+	private fun editedListWith(key: String, pos: BlockPos): MutableList<BossWaypoint>? {
+		val pack = Packs.editPack ?: return null
+		return sharedKeys(key).mapNotNull { pack.rooms[it] }.firstOrNull { list -> list.any { it.pos == pos } }
+	}
+
 	// ---- Drawing ---------------------------------------------------------
 
 	private fun render(context: LevelRenderContext) {
 		val key = floorKey() ?: return
-		val waypoints = Packs.waypointsIn(key).map { it.second }.toList()
+		val waypoints = visible(key).map { it.second }.toList()
 		// Whole blocks drawn alike, by where they are, so a run of them can be
 		// filled as one shape instead of as boxes whose shared sides show.
 		val blocks = waypoints.filter { isWholeBlock(it) }.associateBy { it.pos }
@@ -340,12 +373,14 @@ object BossWaypoints {
 	fun onEditorClick(pos: BlockPos): Boolean {
 		if (!module.enabled || !editMode.value) return false
 		val key = floorKey() ?: return false
-		val list = Packs.editList(key)
+		// The list it is in when there is one, under either floor while they
+		// share; otherwise the list a new one goes in.
+		val list = editedListWith(key, pos) ?: Packs.editList(placeKey(key))
 		val existing = list.firstOrNull { it.pos == pos }
 		val client = Minecraft.getInstance()
 
 		if (existing == null) {
-			val owner = Packs.waypointsIn(key).firstOrNull { (pack, waypoint) -> waypoint.pos == pos && pack !== Packs.editPack }?.first
+			val owner = visible(key).firstOrNull { (pack, waypoint) -> waypoint.pos == pos && pack !== Packs.editPack }?.first
 			if (owner != null) {
 				note("That waypoint is in the pack §f${owner.name}§7. Edit that pack in /cryptic bwp to change it.")
 				return true
@@ -426,7 +461,7 @@ object BossWaypoints {
 			client.gui.setScreen(PackScreen(Packs))
 		}
 		if (!module.enabled || !editKey.bound) return
-		val down = client.gui.screen() == null && InputConstants.isKeyDown(client.window, editKey.keyCode)
+		val down = client.gui.screen() == null && editKey.isDown(client.window)
 		if (down && !editKeyDown) toggleEditMode()
 		editKeyDown = down
 	}
@@ -473,7 +508,8 @@ object BossWaypoints {
 					context,
 					"Boss Waypoints ${if (module.enabled) "§aon" else "§coff"}§7, edit mode " +
 						"${if (editMode.value) "§aon" else "§coff"}§7 into §f${Packs.editName ?: "no pack yet"}§7. " +
-						"Boss: §f${key ?: "not in one"}§7, waypoints here §f${key?.let { Packs.waypointsIn(it).count() } ?: 0}§7.",
+						"Boss: §f${key ?: "not in one"}§7, waypoints here §f${key?.let { visible(it).count() } ?: 0}§7" +
+						(if (key != null && sharedKeys(key).size > 1) " (${sharedKeys(key).joinToString(" and ")} shared)" else "") + ".",
 				)
 				1
 			})
@@ -521,7 +557,7 @@ object BossWaypoints {
 				ClientCommands.argument("text", StringArgumentType.greedyString()).executes { context ->
 					val key = floorKey()
 					val target = target()
-					val list = key?.let { Packs.editPack?.rooms?.get(it) }
+					val list = key?.let { k -> target?.let { editedListWith(k, it) } }
 					val existing = list?.firstOrNull { it.pos == target }
 					if (list == null || existing == null) {
 						feedback(context, "§cLook at one of the edited pack's boss waypoints first.")
@@ -536,9 +572,10 @@ object BossWaypoints {
 			.then(ClientCommands.literal("clear").executes { context ->
 				val key = floorKey()
 				val pack = Packs.editPack
-				val removed = if (key != null && pack != null) pack.rooms.remove(key)?.size ?: 0 else 0
+				val keys = key?.let(::sharedKeys).orEmpty()
+				val removed = if (pack != null) keys.sumOf { pack.rooms.remove(it)?.size ?: 0 } else 0
 				Packs.save()
-				feedback(context, if (key == null) "§cNot in a boss room." else "Removed $removed waypoint(s) from $key in ${pack?.name}.")
+				feedback(context, if (key == null) "§cNot in a boss room." else "Removed $removed waypoint(s) from ${keys.joinToString(" and ")} in ${pack?.name}.")
 				1
 			})
 }

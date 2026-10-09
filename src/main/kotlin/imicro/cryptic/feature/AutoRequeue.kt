@@ -162,6 +162,14 @@ object AutoRequeue {
 	/** Who asked for downtime this run, until they say they are ready. */
 	private val needsDowntime = LinkedHashSet<String>()
 
+	/**
+	 * Who was asking for downtime when the last run ended, which is the break
+	 * that run's end answered. Only these are let go when the next run starts:
+	 * a `!dt` sent after the end — in the countdown, or in the new run's lobby
+	 * while Hypixel counts down to the start — is for the run about to begin.
+	 */
+	private val downtimeAtEnd = HashSet<String>()
+
 	/** Who has left the party since the run began. */
 	private val leftDuringRun = LinkedHashSet<String>()
 
@@ -192,6 +200,7 @@ object AutoRequeue {
 
 	private fun reset() {
 		needsDowntime.clear()
+		downtimeAtEnd.clear()
 		leftDuringRun.clear()
 		requeueAt = 0L
 		readyUntil = 0L
@@ -208,11 +217,13 @@ object AutoRequeue {
 			return
 		}
 
-		// A new run starts the count of who asked for what afresh.
+		// A new run starts the count of who asked for what afresh, apart from a
+		// break asked for since the last run ended, which is for this one.
 		if (DungeonRun.started && !runStartSeen) {
 			runStartSeen = true
 			runEndHandled = false
-			needsDowntime.clear()
+			needsDowntime.removeAll(downtimeAtEnd)
+			downtimeAtEnd.clear()
 			leftDuringRun.clear()
 			requeueAt = 0L
 			readyUntil = 0L
@@ -289,6 +300,8 @@ object AutoRequeue {
 	}
 
 	private fun onRunEnded(client: Minecraft) {
+		downtimeAtEnd.clear()
+		downtimeAtEnd += needsDowntime
 		floorCommand = DungeonLocation.floor.takeIf { it in FLOOR_NAMES.indices }?.let {
 			"joininstance ${if (DungeonLocation.masterMode) "MASTER_" else ""}CATACOMBS_FLOOR_${FLOOR_NAMES[it]}"
 		}
@@ -416,12 +429,21 @@ object AutoRequeue {
 				// Asked for after the run, while the countdown was already going.
 				if (requeueAt != 0L) {
 					requeueAt = 0L
+					downtimeAtEnd += sender
 					if (waitForReady.value) {
 						readyUntil = System.currentTimeMillis() + READY_WINDOW_MILLIS
 						tell("Requeue stopped: $sender needs downtime. Write r when ready (5 min).")
 					} else {
 						tell("Requeue stopped: $sender needs downtime.")
 					}
+				} else if (readyUntil != 0L || listAskedAt != 0L) {
+					// The run's end is still being answered, so this break is
+					// part of that answer.
+					downtimeAtEnd += sender
+				} else if (runEndHandled) {
+					// The queue has already gone out: kept for the end of the
+					// run about to start, which Hypixel's own countdown is for.
+					note("$sender needs downtime after the next run; no requeue then.")
 				}
 			}
 			undowntimeCommand.containsMatchIn(text) -> {

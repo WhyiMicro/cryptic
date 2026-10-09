@@ -122,6 +122,20 @@ at random among those, and passes over anything it has already guessed wrongly
 twice. NoammAddons' heuristic, kept as it stands, because a wrong guess costs
 nothing but a re-aim.
 
+**Terminator mode** marks the block *between* two lights instead, as Odin's
+Arrows Device does: a Terminator fires three arrows in a flat spread, so aiming
+between two lights in a row hits both. Two aims are shown. The first,
+in **Target**, is the pair holding the lit block; the second, in
+**Prediction** while Show prediction is on, is the pair that adds the most
+blocks not yet shot. The lit block itself is left unmarked, so there is one
+thing to aim at.
+
+The tally starts over whenever the device does. Stepping off the plate throws
+the attempt away on Hypixel's side, so Cryptic forgets what was shot when the
+plate is pressed again, or when you step back onto the platform. Before this,
+the last person's progress was still marked, and the block that went dark as
+they stepped off counted as shot.
+
 Marks only draw while you are stood on the platform the device is shot from.
 From anywhere else in s4 the nine blocks are decoration on a far wall, and
 marking them there is clutter over a section that has four terminals in it.

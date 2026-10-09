@@ -1,6 +1,7 @@
 package imicro.cryptic.puzzle
 
 import imicro.cryptic.feature.PuzzleSolver
+import imicro.cryptic.skyblock.ServerStats
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
@@ -26,6 +27,13 @@ import java.util.Locale
  * the first time, and every time the board is reset — reads where each gate
  * actually is, so a board that has been half played is solved from where it
  * stands rather than from where it started.
+ *
+ * Once solved, the gates are watched rather than the clicks: a gate block
+ * leaving or coming back to its starting place is a pull, whoever made it, so a
+ * teammate's pull counts the same as yours. After the water is let in, a pull
+ * the plan did not want, one made well early, or one that is overdue puts the
+ * board off plan, which is said at once — the timed part of an answer cannot
+ * be corrected from the middle, and the way back is resetting the board.
  */
 object WaterSolver {
 	private const val PUZZLE = "Water Board"
@@ -89,6 +97,10 @@ object WaterSolver {
 
 		val pos: BlockPos?
 			get() = PuzzleRooms.real(PUZZLE, relative)
+
+		/** "Coal", "Diamond": for saying which lever went wrong. */
+		val title: String
+			get() = if (this == CLAY) "Terracotta" else name.lowercase(Locale.ROOT).replaceFirstChar { it.titlecase(Locale.ROOT) }
 	}
 
 	/** The layout, 0 to 3, or -1 before the board has been read. */
@@ -113,13 +125,96 @@ object WaterSolver {
 	private var waterAt = -1
 	private var ticks = 0
 
+	/** Each watched gate as last seen: true while it is away from where it starts. */
+	private val gateMoved = HashMap<Lever, Boolean>()
+
+	/** Why the board has gone off plan, once it has, or null while it is on it. */
+	private var offPlan: String? = null
+
 	/**
-	 * Solves the board if it has not been solved, and is quiet about why not.
-	 * Called four times a second while standing in the room.
+	 * Solves the board if it has not been solved, and is quiet about why not;
+	 * once it has, notices the water being let in by somebody else. Called four
+	 * times a second while standing in the room.
 	 */
 	fun scan() {
-		if (!awaitingSolve) return
-		solve(loud = waitingForDrain)
+		if (awaitingSolve) {
+			solve(loud = waitingForDrain)
+			return
+		}
+		watchForWater()
+	}
+
+	/**
+	 * The water running with no click of yours to have started it: a
+	 * teammate's. Seen a whole round trip after it happened — the click's way
+	 * there and the board's way back — so the clock is set back by the ping,
+	 * which is the one case it needs to be. When you pull the water yourself,
+	 * the clock starts at your click, and every timed pull after it travels the
+	 * same way your click did, so the two delays cancel out.
+	 */
+	private fun watchForWater() {
+		if (waterAt != -1 || solution.isEmpty()) return
+		val room = PuzzleRooms.named(PUZZLE) ?: return
+		val level = Minecraft.getInstance().level ?: return
+		if (!WaterPreview.boardState(room, level).running) return
+		waterAt = ticks - pingTicks()
+		solution[Lever.WATER]?.let { if (it.isNotEmpty()) it.removeAt(0) }
+	}
+
+	/**
+	 * Watches the gates, once a tick. A gate block leaving its starting place,
+	 * or coming back to it, is its lever being pulled — by you or anybody — and
+	 * is counted as the pull, made a round trip before it could be seen.
+	 */
+	fun tick() {
+		if (solution.isEmpty()) return
+		val room = PuzzleRooms.named(PUZZLE) ?: return
+		val level = Minecraft.getInstance().level ?: return
+		val lag = pingTicks()
+
+		Lever.entries.forEach { lever ->
+			val at = gatePos(room, lever) ?: return@forEach
+			val moved = level.getBlockState(at).block != lever.block
+			val was = gateMoved.put(lever, moved) ?: return@forEach
+			if (was != moved) credit(lever, ticks - lag)
+		}
+
+		if (waterAt != -1 && offPlan == null) checkOverdue(room, lag)
+	}
+
+	/** Where [lever]'s gate block starts on this layout, if it has one to watch. */
+	private fun gatePos(room: imicro.cryptic.dungeon.map.DungeonRoom, lever: Lever): BlockPos? {
+		if (lever.block == null || pattern < 0) return null
+		val offset = lever.start.getOrNull(pattern) ?: return null
+		return room.getRealCoords(WATER_ENTRANCE.offset(offset))
+	}
+
+	/** Any pull the plan owes that is well past due. */
+	private fun checkOverdue(room: imicro.cryptic.dungeon.map.DungeonRoom, lag: Int) {
+		solution.forEach { (lever, times) ->
+			if (lever == Lever.WATER) return@forEach
+			val first = times.firstOrNull() ?: return@forEach
+			val due = waterAt + (first * 20).toInt()
+			// A watched gate is only seen to move a round trip after the pull.
+			val seenLate = if (gatePos(room, lever) != null) lag else 0
+			val late = ticks - due - seenLate
+			if (late > LATE_TICKS) {
+				goOffPlan("${lever.title} has not been pulled, ${seconds(late / 20f)}s after it was due")
+				return
+			}
+		}
+	}
+
+	/** The ping in ticks, rounded, or nothing before it has been measured. */
+	private fun pingTicks(): Int {
+		val ping = ServerStats.ping
+		return if (ping <= 0) 0 else (ping + 25) / 50
+	}
+
+	private fun goOffPlan(reason: String) {
+		if (!PuzzleSolver.waterOffPlan.value || offPlan != null) return
+		offPlan = reason
+		say("§cWater board off plan:§7 $reason. If the gates do not open, reset the board by opening its chest.")
 	}
 
 	/**
@@ -198,6 +293,13 @@ object WaterSolver {
 		waitingForDrain = false
 
 		val corrected = matchGates(room, level)
+		// Where every gate stands now, for the watch that counts pulls from here.
+		offPlan = null
+		gateMoved.clear()
+		Lever.entries.forEach { lever ->
+			val at = gatePos(room, lever) ?: return@forEach
+			gateMoved[lever] = level.getBlockState(at).block != lever.block
+		}
 		if (loud) {
 			if (afterDrain) say("§aThe water has drained.")
 			val pulls = solution.values.sumOf { it.size }
@@ -249,21 +351,50 @@ object WaterSolver {
 	private fun Double.toFixed(): String = String.format(Locale.ROOT, "%.1f", this)
 
 	/**
-	 * A lever pulled. Skyblocker's rule: before the water, a lever the answer
-	 * did not want pulled now gets a pull added to put it back; otherwise the
-	 * first pull it owed is crossed off. The water lever starts the clock.
+	 * A lever you pulled. A lever whose gate is watched is left to the watch,
+	 * which sees the pull whoever made it and only once it has really happened;
+	 * the water lever, and a lever this layout gives no gate to watch, are
+	 * counted from the click.
 	 */
 	fun onLeverUsed(pos: BlockPos) {
 		if (solution.isEmpty()) return
 		val lever = Lever.entries.firstOrNull { it.pos == pos } ?: return
+		val room = PuzzleRooms.named(PUZZLE) ?: return
+		if (lever != Lever.WATER && gatePos(room, lever) != null) return
+		credit(lever, ticks)
+	}
+
+	/**
+	 * One pull of [lever], made on tick [at].
+	 *
+	 * Skyblocker's rule before the water: a lever the answer did not want pulled
+	 * gets a pull added to put it back, otherwise the first pull it owed is
+	 * crossed off. The water lever starts the clock. After the water, the pull is
+	 * held to the plan: one it had no pull left for, or one made well before its
+	 * time, puts the board off plan.
+	 */
+	private fun credit(lever: Lever, at: Int) {
 		val times = solution.getOrPut(lever) { mutableListOf() }
 
-		if (waterAt == -1 && lever != Lever.WATER && times.firstOrNull() != 0.0) {
-			times.add(0, 0.0)
+		if (lever == Lever.WATER) {
+			if (times.isNotEmpty()) times.removeAt(0)
+			if (waterAt == -1) waterAt = at
 			return
 		}
-		if (times.isNotEmpty()) times.removeAt(0)
-		if (lever == Lever.WATER && waterAt == -1) waterAt = ticks
+
+		if (waterAt == -1) {
+			if (times.firstOrNull() == 0.0) times.removeAt(0) else times.add(0, 0.0)
+			return
+		}
+
+		val first = times.firstOrNull()
+		if (first == null) {
+			goOffPlan("${lever.title} was pulled, and the plan had no pull left for it")
+			return
+		}
+		times.removeAt(0)
+		val early = waterAt + (first * 20).toInt() - at
+		if (early > EARLY_TICKS) goOffPlan("${lever.title} was pulled ${seconds(early / 20f)}s early")
 	}
 
 	@JvmStatic
@@ -279,6 +410,16 @@ object WaterSolver {
 			return
 		}
 		if (pattern == -1 || solution.isEmpty()) return
+
+		// Off plan, the countdowns are a plan for a board that is not there any
+		// more; only the way back is shown.
+		if (offPlan != null) {
+			Lever.WATER.pos?.let {
+				PuzzleRender.text(context, "§c§lOFF PLAN", Vec3(it.x + 0.5, it.y + 2.0, it.z + 0.5))
+				PuzzleRender.text(context, "§7Open the chest to reset", Vec3(it.x + 0.5, it.y + 1.5, it.z + 0.5))
+			}
+			return
+		}
 
 		// Everything still to do, soonest first. The water lever's own zero comes
 		// after every other lever's, since those are made before it is.
@@ -351,6 +492,8 @@ object WaterSolver {
 	fun reset() {
 		pattern = -1
 		solution.clear()
+		gateMoved.clear()
+		offPlan = null
 		waterAt = -1
 		awaitingSolve = true
 		waitingForDrain = false
@@ -374,6 +517,8 @@ object WaterSolver {
 	fun forget() {
 		pattern = -1
 		solution.clear()
+		gateMoved.clear()
+		offPlan = null
 		waterAt = -1
 		awaitingSolve = true
 		waitingForDrain = false
@@ -393,6 +538,7 @@ object WaterSolver {
 
 		lines += "  Outlets: " + Outlet.entries.joinToString(" ") { "${it.name}=${if (it.extended) "shut" else "open"}" }
 		lines += "  Water on the board: ${WaterPreview.boardState(room, level).running}, clock ${if (waterAt < 0) "not started" else "running"}"
+		lines += "  Plan: ${offPlan?.let { "off ($it)" } ?: "on"}, ping ${pingTicks()} ticks"
 
 		Lever.entries.forEach { lever ->
 			val offset = lever.start.getOrNull(pattern)
@@ -409,4 +555,10 @@ object WaterSolver {
 
 	/** Enough to put the water lever's zero after every other zero, and before any real time. */
 	private const val WATER_LAST = 0.001
+
+	/** How early a timed pull may be, in ticks, before the board is called off plan. */
+	private const val EARLY_TICKS = 20
+
+	/** How late a timed pull may be, in ticks, before the board is called off plan. */
+	private const val LATE_TICKS = 30
 }

@@ -96,13 +96,26 @@ object BeamsSolver {
 		// uses, so colouring by its index left gaps - and a gap of eight is two
 		// beams wearing the same colour, which is the one thing this must not
 		// do. A pair keeps the colour it was first given.
+		//
+		// A lantern belongs to one beam. The answer sheet (Odin's, as it is)
+		// lists one beam twice the right way round and another a second time
+		// back to front, and the back-to-front copy was stored as a beam of its
+		// own: two lines between the same two lanterns, and both boxes, in two
+		// different colours. So a pair whose lanterns are already taken is
+		// skipped, and a pair is kept and coloured by whichever of its two ends
+		// sorts first, so it is the same pair whichever way it was written.
+		val taken = HashSet<BlockPos>()
 		PuzzleAssets.beams.forEach { pair ->
 			if (pair.size < 6) return@forEach
-			val first = room.getRealCoords(BlockPos(pair[0], pair[1], pair[2])) ?: return@forEach
-			val second = room.getRealCoords(BlockPos(pair[3], pair[4], pair[5])) ?: return@forEach
-			if (level.getBlockState(first).block != Blocks.SEA_LANTERN) return@forEach
-			if (level.getBlockState(second).block != Blocks.SEA_LANTERN) return@forEach
+			val a = room.getRealCoords(BlockPos(pair[0], pair[1], pair[2])) ?: return@forEach
+			val b = room.getRealCoords(BlockPos(pair[3], pair[4], pair[5])) ?: return@forEach
+			if (a in taken || b in taken) return@forEach
+			if (level.getBlockState(a).block != Blocks.SEA_LANTERN) return@forEach
+			if (level.getBlockState(b).block != Blocks.SEA_LANTERN) return@forEach
 
+			taken += a
+			taken += b
+			val (first, second) = if (a < b) a to b else b to a
 			pairs[first] = second to colors.getOrPut(first) { colorFor(colors.size) }
 		}
 	}

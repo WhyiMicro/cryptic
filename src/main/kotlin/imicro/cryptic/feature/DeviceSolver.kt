@@ -288,11 +288,20 @@ object DeviceSolver {
 	)
 
 	@JvmField
+	val i4Terminator = ToggleModuleSetting(
+		id = "i4_terminator",
+		label = "Terminator mode",
+		defaultValue = false,
+		description = "Marks the block between two lights instead, so a Terminator's spread hits both.",
+		visibleIf = { sharpShooter.value },
+	)
+
+	@JvmField
 	val i4ShowPrediction = ToggleModuleSetting(
 		id = "i4_show_prediction",
 		label = "Show prediction",
 		defaultValue = true,
-		description = "Guesses which block lights up next so the shot can be lined up before it does.",
+		description = "Guesses which block lights up next so the shot can be lined up before it does. In Terminator mode, shows the next aim.",
 		visibleIf = { sharpShooter.value },
 	)
 
@@ -377,7 +386,7 @@ object DeviceSolver {
 			simonSection, simonSays, simonStyle,
 			simonFirstColor, simonSecondColor, simonThirdColor,
 			simonBlockWrong, simonBlockWrongStart, simonMaxStartClicks, simonLagGuard, simonLagMillis, simonAnnounceProgress, simonBreakAlert,
-			sharpSection, sharpShooter, i4Style,
+			sharpSection, sharpShooter, i4Style, i4Terminator,
 			i4TargetColor, i4ShowPrediction, i4PredictionColor, i4DoneColor, i4Announce,
 			drawingSection, lineWidth, throughWalls,
 		),
@@ -535,6 +544,17 @@ object DeviceSolver {
 		}
 
 		SharpShooter.done.forEach { mark(it, i4DoneColor) }
+
+		if (i4Terminator.value) {
+			// The aims are what to shoot at, so they take the target's colour;
+			// the lit block itself is left plain, as a mark on it would be a
+			// second thing to aim at.
+			val aims = SharpShooter.aims
+			if (i4ShowPrediction.value) aims.getOrNull(1)?.let { mark(it, i4PredictionColor) }
+			aims.firstOrNull()?.let { mark(it, i4TargetColor) }
+			return
+		}
+
 		// The guess goes under the target, so a guess that turned out right is
 		// drawn as the target rather than as two boxes fighting over one block.
 		SharpShooter.prediction?.takeIf { it != SharpShooter.target }?.let { mark(it, i4PredictionColor) }

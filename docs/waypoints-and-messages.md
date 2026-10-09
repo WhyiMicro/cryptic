@@ -106,6 +106,12 @@ In the Boss tab. It works like the Dungeon Waypoints editor, but in boss rooms,
 where there is no room rotation to work out. A boss waypoint is a plain world
 position, kept per floor (`F7`, `M7` and so on).
 
+**Share with normal floors** (on to begin with) treats a floor and its Master
+Mode as one, since they use the same boss room: in M7 the F7 waypoints show
+too, and the other way round. New waypoints are saved under the normal floor;
+one already saved under the Master Mode floor is still shown, and can still be
+removed or titled. Off, each keeps its own.
+
 1. Turn on **Edit mode**, with `/cryptic bwp edit`, or with the **Edit mode key**.
 2. Right-click a block to place or remove a waypoint.
 3. Sneak and right-click to give it a title.

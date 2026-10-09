@@ -4,8 +4,10 @@ import imicro.cryptic.dungeon.Floor7
 import imicro.cryptic.feature.DeviceSolver
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
+import net.minecraft.world.level.block.BasePressurePlateBlock
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import kotlin.math.abs
 
 /**
@@ -57,6 +59,16 @@ object SharpShooter {
 
 	private var announced = false
 
+	/**
+	 * Where to aim with a Terminator, best first: the block between two lights,
+	 * so the spread hits both. Empty unless Terminator mode is on.
+	 */
+	var aims: List<BlockPos> = emptyList()
+		private set
+
+	/** Whether the player was on the platform last tick, to see them step onto it. */
+	private var wasOnPlatform = false
+
 	/** True while the device is worth watching at all. */
 	fun isWatching(): Boolean = DeviceSolver.sharpShooterEnabled && Floor7.p3Section == 4
 
@@ -84,6 +96,10 @@ object SharpShooter {
 	 */
 	fun onBlockChanged(pos: BlockPos, old: BlockState, updated: BlockState) {
 		if (!isWatching()) return
+		if (isStartPlate(pos, old, updated)) {
+			restart()
+			return
+		}
 		val at = TARGETS.firstOrNull { it == pos } ?: return
 
 		if (updated.block == Blocks.EMERALD_BLOCK) {
@@ -117,8 +133,17 @@ object SharpShooter {
 	 * than merely quick, and it is nine block lookups.
 	 */
 	fun tick(client: Minecraft) {
-		if (!isWatching()) return
+		if (!isWatching()) {
+			wasOnPlatform = false
+			return
+		}
 		val level = client.level ?: return
+
+		// Stepping off the plate throws the attempt away, so stepping back on
+		// is a fresh start: nothing from the last go is still shot.
+		val on = onPlatform()
+		if (on && !wasOnPlatform) restart()
+		wasOnPlatform = on
 
 		val lit = TARGETS.firstOrNull { level.getBlockState(it).block == Blocks.EMERALD_BLOCK }
 		if (lit != target) {
@@ -146,7 +171,37 @@ object SharpShooter {
 		predictionAttempts.clear()
 		target = null
 		prediction = null
+		aims = emptyList()
 		announced = false
+		wasOnPlatform = false
+	}
+
+	/**
+	 * The device started again, by whoever stood on the plate.
+	 *
+	 * Whatever was counted before is gone on Hypixel's side — a lit block going
+	 * dark as the last player stepped off even reads here as "shot" — so the
+	 * tally starts over with the device. The lit block, if any, is kept.
+	 */
+	private fun restart() {
+		completed.clear()
+		predictionAttempts.clear()
+		announced = false
+		repredict()
+	}
+
+	/** The pressure plate in front of the device going from unpressed to pressed. */
+	private fun isStartPlate(pos: BlockPos, old: BlockState, updated: BlockState): Boolean {
+		if (updated.block !is BasePressurePlateBlock) return false
+		if (pos.y != PLATFORM_Y.toInt() || pos.x + 0.5 !in PLATFORM_X || pos.z + 0.5 !in PLATFORM_Z) return false
+		return !isPressed(old) && isPressed(updated)
+	}
+
+	private fun isPressed(state: BlockState): Boolean = when {
+		state.block !is BasePressurePlateBlock -> false
+		state.hasProperty(BlockStateProperties.POWERED) -> state.getValue(BlockStateProperties.POWERED)
+		state.hasProperty(BlockStateProperties.POWER) -> state.getValue(BlockStateProperties.POWER) > 0
+		else -> false
 	}
 
 	/**
@@ -159,6 +214,8 @@ object SharpShooter {
 	 * offered a third time.
 	 */
 	private fun repredict() {
+		aims = if (DeviceSolver.i4Terminator.value) target?.let(::terminatorAims).orEmpty() else emptyList()
+
 		if (!DeviceSolver.i4ShowPrediction.value) {
 			prediction = null
 			return
@@ -195,6 +252,51 @@ object SharpShooter {
 
 		predictionAttempts.merge(chosen, 1, Int::plus)
 		prediction = chosen
+	}
+
+	/**
+	 * Two spots to aim a Terminator at: the one covering the lit block, then the next.
+	 *
+	 * Ported from Odin's Arrows Device (BSD-3, Copyright (c) odtheking). A
+	 * Terminator fires three arrows in a flat spread, so aiming at the block
+	 * between two lights in a row hits both. The first aim is the pair with the
+	 * lit block that covers the most unshot blocks; the next is the pair
+	 * adding the most blocks not yet covered, then the most blocks, then the
+	 * nearest to the aim before it.
+	 */
+	private fun terminatorAims(lit: BlockPos): List<BlockPos> {
+		fun covers(pair: Pair<BlockPos, BlockPos>): Set<BlockPos> =
+			pair.toList().filter { it !in completed }.toSet()
+
+		val first = PAIRS.filter { lit in it.toList() }
+			.map { it to covers(it) }
+			.filter { it.second.isNotEmpty() }
+			.maxByOrNull { it.second.size } ?: return emptyList()
+
+		val chosen = mutableListOf(first)
+		val covered = first.second.toMutableSet()
+		val others = PAIRS.filter { lit !in it.toList() }.map { it to covers(it) }.filter { it.second.isNotEmpty() }
+
+		repeat(1) {
+			val last = between(chosen.last().first)
+			val next = others.filter { it !in chosen }.maxWithOrNull(compareBy(
+				{ it.second.count { block -> block !in covered } },
+				{ it.second.size },
+				{ -between(it.first).distSqr(last) },
+			)) ?: return@repeat
+			chosen.add(next)
+			covered.addAll(next.second)
+		}
+		return chosen.map { between(it.first) }
+	}
+
+	/** The block in the wall between two lights of a row. */
+	private fun between(pair: Pair<BlockPos, BlockPos>): BlockPos =
+		BlockPos((pair.first.x + pair.second.x) / 2, pair.first.y, pair.first.z)
+
+	/** Every two lights side by side in a row, which is what one Terminator shot can hit. */
+	private val PAIRS: List<Pair<BlockPos, BlockPos>> = TARGETS.flatMapIndexed { i, a ->
+		TARGETS.drop(i + 1).filter { b -> abs(a.x - b.x) == 2 && a.y == b.y && a.z == b.z }.map { b -> a to b }
 	}
 
 	private val DEVICE_DONE = Regex("""^(\w{3,16}) completed a device! \(\d/\d\)$""")

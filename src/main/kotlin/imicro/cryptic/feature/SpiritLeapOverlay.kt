@@ -14,6 +14,7 @@ import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import com.mojang.blaze3d.platform.InputConstants
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.render.RoundedRect
@@ -133,7 +134,15 @@ object SpiritLeapOverlay {
 		step = 0.1,
 	)
 
-	private val keybindSection = SectionModuleSetting("keybind_section", "Keybinds", startsCollapsed = true)
+	private val keybindSection = SectionModuleSetting("keybind_section", "Keybinds")
+
+	@JvmField
+	val useKeybinds = ToggleModuleSetting(
+		id = "use_keybinds",
+		label = "Use keybinds",
+		defaultValue = true,
+		description = "Leap with a key while the menu is open: 1 to 4 for the four corners to begin with.",
+	)
 
 	@JvmField
 	val keybindMode = DropdownModuleSetting(
@@ -142,26 +151,36 @@ object SpiritLeapOverlay {
 		options = listOf("Corners", "Class"),
 		defaultIndex = MODE_CORNERS,
 		description = "Whether a key picks a corner of the menu, or a class wherever it ended up.",
+		visibleIf = { useKeybinds.value },
 	)
 
-	private fun cornerBind(id: String, label: String) = KeybindModuleSetting(
+	private fun cornerBind(id: String, label: String, key: Int) = KeybindModuleSetting(
 		id = id,
 		label = label,
-		visibleIf = { keybindMode.selectedIndex == MODE_CORNERS },
+		visibleIf = { useKeybinds.value && keybindMode.selectedIndex == MODE_CORNERS },
+		defaultKey = key,
 	)
 
 	private fun classBind(id: String, label: String) = KeybindModuleSetting(
 		id = id,
 		label = label,
-		visibleIf = { keybindMode.selectedIndex != MODE_CORNERS },
+		visibleIf = { useKeybinds.value && keybindMode.selectedIndex != MODE_CORNERS },
 	)
 
-	/** Top left, top right, bottom left, bottom right — the order the corners are numbered in. */
+	/**
+	 * Top left, top right, bottom left, bottom right — the order the corners
+	 * are numbered in, and 1 to 4 to begin with. In the menu those keys leap
+	 * rather than swap the hovered item into the hotbar.
+	 *
+	 * The ids gained a "leap_" when the defaults came in: every profile had
+	 * these saved unbound, and a saved value wins over a default, so under the
+	 * old ids nobody would ever have got 1 to 4.
+	 */
 	private val cornerBinds = listOf(
-		cornerBind("top_left_key", "Top left"),
-		cornerBind("top_right_key", "Top right"),
-		cornerBind("bottom_left_key", "Bottom left"),
-		cornerBind("bottom_right_key", "Bottom right"),
+		cornerBind("leap_top_left_key", "Top left", InputConstants.KEY_1),
+		cornerBind("leap_top_right_key", "Top right", InputConstants.KEY_2),
+		cornerBind("leap_bottom_left_key", "Bottom left", InputConstants.KEY_3),
+		cornerBind("leap_bottom_right_key", "Bottom right", InputConstants.KEY_4),
 	)
 
 	private val classBinds = linkedMapOf(
@@ -210,6 +229,7 @@ object SpiritLeapOverlay {
 		cornerRadius,
 		renderScale,
 		keybindSection,
+		useKeybinds,
 		keybindMode,
 	) + cornerBinds + classBinds.values + listOf(
 		leapCountSection,
@@ -461,6 +481,7 @@ object SpiritLeapOverlay {
 	 */
 	@JvmStatic
 	fun handleKeyPress(screen: Screen, key: Int): Boolean {
+		if (!useKeybinds.value) return false
 		val chest = leapScreen(screen) ?: return false
 		val corners = corners()
 

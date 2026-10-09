@@ -18,8 +18,18 @@ import net.minecraft.world.phys.AABB
  * pixel. Once the board is known the move is a minimax search — the same one
  * everybody writes, because the game is small enough to solve exactly.
  *
- * It only answers on your turn, which is when an odd number of frames are up
- * and the board is not full.
+ * It answers on your turn, which is when an odd number of frames are up and
+ * the board is not full. On the opponent's turn it can answer early, which is
+ * Lumen's idea (AGPL-3.0, Lumen contributors): every move the opponent would
+ * sensibly make is tried, with your best reply to each, and a square that is
+ * your best reply to all of them is marked before they have moved — so it can
+ * be aimed at while they are still deciding.
+ *
+ * Lumen also marks two squares when the opponent has exactly two good moves
+ * and your answer to each is the other one. That case is left out here: tried
+ * against every board where it is the opponent's move, it never happens — for
+ * them to have only two good moves, every other has to lose, which only
+ * happens when they must block, and a block is one square.
  */
 object TicTacToeSolver {
 	private const val PUZZLE = "Tic Tac Toe"
@@ -31,8 +41,12 @@ object TicTacToeSolver {
 	/** Every square that reaches the best outcome, which is often more than one. */
 	private var squares: Set<Pair<Int, Int>> = emptySet()
 
+	/** On the opponent's turn, the squares that will be your answer whatever they play. */
+	private var predicted: Set<Pair<Int, Int>> = emptySet()
+
 	fun tick() {
 		squares = emptySet()
+		predicted = emptySet()
 		if (!PuzzleSolver.ticTacToeEnabled.value) return
 
 		val room = PuzzleRooms.named(PUZZLE) ?: return
@@ -45,9 +59,11 @@ object TicTacToeSolver {
 			player.x + SEARCH, player.y + SEARCH, player.z + SEARCH,
 		)
 		val frames = level.getEntitiesOfClass(ItemFrame::class.java, search, ItemFrame::hasFramedMap)
-		// Nine frames is a finished board, and an even number is the puzzle's
-		// turn rather than yours.
-		if (frames.size == 9 || frames.size % 2 == 0) return
+		// Nine frames is a finished board, and an empty one has nothing to go
+		// on. An even number is the puzzle's turn rather than yours.
+		if (frames.isEmpty() || frames.size == 9) return
+		val yourTurn = frames.size % 2 == 1
+		if (!yourTurn && !PuzzleSolver.ticTacToePreAim.value) return
 
 		val board = Array(3) { CharArray(3) }
 		frames.forEach { frame ->
@@ -73,10 +89,66 @@ object TicTacToeSolver {
 			}
 		}
 
+		// A board already won is over, and one whose marks could not all be read
+		// is not the board that is there.
+		if (outcome(board) != 0) return
+		if (board.sumOf { row -> row.count { it != '\u0000' } } != frames.size) return
+
 		// Every square that ends as well as the best one does. A tie is a win
 		// here - the puzzle is failed only by losing - so when two squares both
 		// tie there is no reason to send you to one of them in particular.
-		squares = bestMoves(board).toSet()
+		if (yourTurn) {
+			squares = bestMoves(board).toSet()
+			return
+		}
+		predict(board)
+	}
+
+	/**
+	 * Your answer before the opponent has moved, if it can be known.
+	 *
+	 * Each of their best moves is tried, and your best replies to it worked out.
+	 * A square that is among your best replies to every one of them is safe to
+	 * aim at now — none of their moves takes it, and none makes it wrong. Lumen
+	 * shows the replies to their first good move; only the squares common to
+	 * all of them are shown here, so a pre-aimed square is never one that their
+	 * actual move turns into a mistake.
+	 *
+	 * It assumes they play well. If they do not, their move still lands, and
+	 * the real answer replaces this one on your turn.
+	 */
+	private fun predict(board: Array<CharArray>) {
+		val replies = theirBestMoves(board)
+		if (replies.isEmpty()) return
+
+		// A reply that leaves you lost whatever you do makes every square equally
+		// "best", and marking all of them says nothing; only a board where your
+		// answer holds the draw is predicted.
+		val answers = replies.map { (row, column) ->
+			board[row][column] = 'X'
+			val (yours, score) = if (outcome(board) == 0) scoredBestMoves(board) else emptyList<Pair<Int, Int>>() to -WIN
+			board[row][column] = '\u0000'
+			if (score < 0) return
+			(row to column) to yours.toSet()
+		}
+
+		predicted = answers.map { it.second }.reduce { all, next -> all intersect next }
+	}
+
+	/** The opponent's best moves: every square that leaves you the worst outcome. */
+	private fun theirBestMoves(board: Array<CharArray>): List<Pair<Int, Int>> {
+		val scores = mutableListOf<Pair<Pair<Int, Int>, Int>>()
+		for (row in 0..2) {
+			for (column in 0..2) {
+				if (board[row][column] != '\u0000') continue
+				board[row][column] = 'X'
+				val score = search(board, Int.MIN_VALUE, Int.MAX_VALUE, true)
+				board[row][column] = '\u0000'
+				scores.add((row to column) to score)
+			}
+		}
+		val worst = scores.minOfOrNull { it.second } ?: return emptyList()
+		return scores.filter { it.second == worst }.map { it.first }
 	}
 
 	/**
@@ -137,16 +209,19 @@ object TicTacToeSolver {
 	private val BOARD_X_SEARCH = 6..10
 
 	fun render(context: LevelRenderContext) {
-		if (!PuzzleSolver.ticTacToeEnabled.value || squares.isEmpty()) return
+		if (!PuzzleSolver.ticTacToeEnabled.value) return
+		val marked = squares.ifEmpty { predicted }
+		if (marked.isEmpty()) return
 		val room = PuzzleRooms.named(PUZZLE) ?: return
+		val color = PuzzleSolver.ticTacToeColor.argb
 
 		// The button's own shape rather than the cube around it: what you shoot
 		// is a button on a wall, and a whole block marks the wall as well.
-		squares.mapNotNull { (row, column) -> buttonAt(room, row, column) }.forEach {
+		marked.mapNotNull { (row, column) -> buttonAt(room, row, column) }.forEach {
 			PuzzleRender.shape(
 				context,
 				it,
-				PuzzleSolver.ticTacToeColor.argb,
+				color,
 				PuzzleSolver.ticTacToeStyle.selectedIndex,
 				phase = false,
 			)
@@ -155,6 +230,7 @@ object TicTacToeSolver {
 
 	fun reset() {
 		squares = emptySet()
+		predicted = emptySet()
 	}
 
 
@@ -167,7 +243,10 @@ object TicTacToeSolver {
 	 * make. Scores come back equal only when the games they lead to end the
 	 * same way.
 	 */
-	private fun bestMoves(board: Array<CharArray>): List<Pair<Int, Int>> {
+	private fun bestMoves(board: Array<CharArray>): List<Pair<Int, Int>> = scoredBestMoves(board).first
+
+	/** [bestMoves], with the score they all reach. */
+	private fun scoredBestMoves(board: Array<CharArray>): Pair<List<Pair<Int, Int>>, Int> {
 		val scores = mutableListOf<Pair<Pair<Int, Int>, Int>>()
 
 		for (row in 0..2) {
@@ -180,8 +259,8 @@ object TicTacToeSolver {
 			}
 		}
 
-		val best = scores.maxOfOrNull { it.second } ?: return emptyList()
-		return scores.filter { it.second == best }.map { it.first }
+		val best = scores.maxOfOrNull { it.second } ?: return emptyList<Pair<Int, Int>>() to 0
+		return scores.filter { it.second == best }.map { it.first } to best
 	}
 
 	/**

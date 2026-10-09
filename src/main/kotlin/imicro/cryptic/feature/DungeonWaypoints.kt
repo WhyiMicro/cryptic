@@ -880,7 +880,7 @@ object DungeonWaypoints {
 			client.gui.setScreen(PackScreen(WaypointPacks))
 		}
 		if (!module.enabled || !editKey.bound) return
-		val down = client.gui.screen() == null && InputConstants.isKeyDown(client.window, editKey.keyCode)
+		val down = client.gui.screen() == null && editKey.isDown(client.window)
 		if (down && !editKeyDown) toggleEditMode()
 		editKeyDown = down
 	}

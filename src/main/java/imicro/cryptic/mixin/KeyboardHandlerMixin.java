@@ -1,5 +1,6 @@
 package imicro.cryptic.mixin;
 
+import imicro.cryptic.feature.KeybindManager;
 import imicro.cryptic.feature.Toasts;
 import net.minecraft.client.KeyboardHandler;
 import net.minecraft.client.Minecraft;
@@ -23,10 +24,23 @@ public abstract class KeyboardHandlerMixin {
     /** GLFW's code for a key going down, as opposed to repeating or coming up. */
     private static final int PRESS = 1;
 
+    /** GLFW's code for a key coming up. */
+    private static final int RELEASE = 0;
+
     @Inject(method = "keyPress", at = @At("HEAD"), cancellable = true)
     private void cryptic$answerNotification(long handle, int action, KeyEvent event, CallbackInfo info) {
-        if (action != PRESS) return;
         if (handle != Minecraft.getInstance().getWindow().handle()) return;
-        if (Toasts.onKeyPressed(event.key())) info.cancel();
+        // The Keybinds Manager hears every key going down and up, and keeps
+        // none of them from the game.
+        if (action == RELEASE) {
+            KeybindManager.onKey(event.key(), false);
+            return;
+        }
+        if (action != PRESS) return;
+        if (Toasts.onKeyPressed(event.key())) {
+            info.cancel();
+            return;
+        }
+        KeybindManager.onKey(event.key(), true);
     }
 }
