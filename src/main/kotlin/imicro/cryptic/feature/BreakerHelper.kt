@@ -341,7 +341,7 @@ object BreakerHelper {
 	/**
 	 * Whether the Breaker breaks [pos] in one hit, after Lumen: never in a
 	 * fairy room, only iron bars in a puzzle room except Water Board and Tic
-	 * Tac Toe, and nothing protected, obsidian, a button, a block entity or a
+	 * Tac Toe, and nothing protected, a button, a block entity or a
 	 * plant anywhere. The F7 levers and coal blocks always.
 	 */
 	private fun canInstantMine(pos: BlockPos, state: BlockState): Boolean {
@@ -358,7 +358,7 @@ object BreakerHelper {
 		}
 
 		val block = state.block
-		if (block in protectedBlocks || block == Blocks.OBSIDIAN) return false
+		if (block in protectedBlocks) return false
 		if (state.`is`(BlockTags.BUTTONS) || state.`is`(BlockTags.COPPER_CHESTS)) return false
 		return unbreakableKinds.none { it.isInstance(block) }
 	}

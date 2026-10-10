@@ -1103,6 +1103,7 @@ object CrypticClient : ClientModInitializer {
 			DungeonMap.tick(client)
 			PuzzleSolver.tick(client)
 			MageBeam.tick(client)
+			RenderOptimizer.tick(client)
 			CroesusHelper.tick(client)
 			LoadoutManager.tick(client)
 			GyroHelper.tick(client)

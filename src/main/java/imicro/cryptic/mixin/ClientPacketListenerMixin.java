@@ -1,6 +1,7 @@
 package imicro.cryptic.mixin;
 
 import imicro.cryptic.dungeon.BossTimings;
+import imicro.cryptic.feature.BetterChat;
 import imicro.cryptic.dungeon.DungeonRun;
 import imicro.cryptic.dungeon.DungeonStats;
 import imicro.cryptic.dungeon.map.DungeonMapReader;
@@ -444,9 +445,9 @@ public abstract class ClientPacketListenerMixin {
         AutoGfs.onSystemChat(packet.content(), packet.overlay());
         DungeonWaypoints.onSystemChat(packet.content(), packet.overlay());
         LividSolver.onSystemChat(packet.content(), packet.overlay());
-        // Last, once everything above has read it: the party list asked for
-        // at the end of a run is kept out of chat.
-        if (AutoRequeue.hidesChat(packet.content(), packet.overlay())) info.cancel();
+        // Last, once everything above has read it: Better Chat keeps a line
+        // out of the chat window, never out of the mod.
+        if (BetterChat.hidesChat(packet.content(), packet.overlay())) info.cancel();
     }
 
     /**

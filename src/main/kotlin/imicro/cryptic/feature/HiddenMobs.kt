@@ -160,9 +160,10 @@ object HiddenMobs {
 	 */
 	@JvmStatic
 	fun reveal(entity: Entity) {
-		if (!module.enabled || !entity.isInvisible) return
+		// Asked of every entity every frame, so the dungeon check goes first:
+		// outside one, nothing else here needs asking.
+		if (!module.enabled || !DungeonLocation.inDungeon || !entity.isInvisible) return
 		if (!fels.value && !shadowAssassins.value && !stealthyMobs.value) return
-		if (!DungeonLocation.inDungeon) return
 		if (reveals(entity)) entity.isInvisible = false
 	}
 

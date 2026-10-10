@@ -54,6 +54,9 @@ object CarryManager {
 	/** How often the world is searched for bosses, while a carry is running. */
 	private const val SCAN_INTERVAL_TICKS = 10
 
+	/** The island Voidgloom Seraph spawns on, as the tab list names it. */
+	private const val VOIDGLOOM_ISLAND = "The End"
+
 	/** The same token every other module uses for somebody's name. */
 	private const val PLAYER_TOKEN = "<player>"
 
@@ -351,7 +354,8 @@ object CarryManager {
 	 * to do.
 	 */
 	fun tick(client: Minecraft) {
-		if (!module.enabled || carries.isEmpty() || !SkyblockLocation.onSkyblock) {
+		// Voidgloom only spawns in The End, so nowhere else is scanned for it.
+		if (!module.enabled || carries.isEmpty() || !SkyblockLocation.onSkyblock || SkyblockLocation.area != VOIDGLOOM_ISLAND) {
 			if (tracked.isNotEmpty()) tracked.clear()
 			if (killed.isNotEmpty()) killed.clear()
 			boxes = emptyList()

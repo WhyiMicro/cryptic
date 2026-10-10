@@ -244,6 +244,10 @@ object RenderOptimizer {
 	fun hidesNameTag(name: Component): Boolean {
 		if (!module.enabled || !hideZeroHealth.value) return false
 		val text = name.string
+		// Asked of every nametag update, and a mob being hit updates its tag
+		// every time: both patterns end on the heart after a zero, so anything
+		// that does not is turned away before a pattern is tried.
+		if (!text.endsWith("§c❤") || !text.contains("0§")) return false
 		return zeroHealthPatterns.any { it.matches(text) }
 	}
 
@@ -314,12 +318,38 @@ object RenderOptimizer {
 	/**
 	 * A nametag counts as belonging to a corpse when the thing under it is one.
 	 * Hypixel stands its tags a block above the mob they name.
+	 *
+	 * Asked of every armour stand every frame, so it must not search the world
+	 * itself: that was one search per nametag per frame, and in a crowd of
+	 * mobs — Bal's blazes in the Crystal Hollows — a frame of searches. The
+	 * dying mobs are found once a tick in [tick] instead, and there are almost
+	 * never any, so this is usually one empty-list check.
 	 */
 	private fun standIsOverACorpse(stand: ArmorStand): Boolean {
+		val corpses = dyingBoxes
+		if (corpses.isEmpty()) return false
 		val below = stand.boundingBox.move(0.0, -1.0, 0.0)
-		return stand.level()
-			.getEntities(stand, below) { it is LivingEntity && it !is ArmorStand }
-			.any { !it.isAlive || (it as LivingEntity).health <= 0f }
+		return corpses.any { it.intersects(below) }
+	}
+
+	/** Where every dying mob is, as of the last tick, for [standIsOverACorpse]. */
+	@Volatile
+	private var dyingBoxes: List<net.minecraft.world.phys.AABB> = emptyList()
+
+	/** Finds the dying mobs, once a tick, only while the setting that needs them is on. */
+	fun tick(client: net.minecraft.client.Minecraft) {
+		val level = client.level
+		if (level == null || !module.enabled || !hideDeathAnimation.value || !hideDyingArmorStands.value) {
+			if (dyingBoxes.isNotEmpty()) dyingBoxes = emptyList()
+			return
+		}
+		var found: MutableList<net.minecraft.world.phys.AABB>? = null
+		for (entity in level.entitiesForRendering()) {
+			if (entity !is LivingEntity || entity is ArmorStand) continue
+			if (entity.isAlive && entity.health > 0f) continue
+			(found ?: ArrayList<net.minecraft.world.phys.AABB>().also { found = it }).add(entity.boundingBox)
+		}
+		dyingBoxes = found ?: emptyList()
 	}
 
 	@JvmStatic

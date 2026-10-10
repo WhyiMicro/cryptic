@@ -24,9 +24,12 @@ import net.minecraft.network.chat.Component
  * having asked for downtime — and so is Odin's rule that somebody leaving the
  * party calls it off.
  *
- * Only the leader can queue, so nothing is decided until Hypixel has said who
- * that is: the run ending sends `/pl`, and the list it answers with names the
- * leader and counts the party. Anybody else, or no answer, and it stands down.
+ * Only the leader can queue, and the party has to still be whole, and both
+ * are followed in chat through the run rather than asked for at the end — a
+ * `/pl` at the end was one more command in the second Hypixel is strictest
+ * about. The leader is named by every run's start ("Name entered The
+ * Catacombs"), which only the leader can trigger; the party is as many as the
+ * dungeon's tab list showed, less anybody chat says left.
  *
  * What neither does is pick the queue back up once the break is over. With
  * Wait for ready on, whoever asked for downtime saying `r` in party chat starts
@@ -39,40 +42,13 @@ object AutoRequeue {
 	/** How long a break may last before nobody is listening for the end of it. */
 	private const val READY_WINDOW_MILLIS = 5 * 60 * 1000L
 
-	/** How long the party list may take to answer, and how long its count is trusted. */
-	private const val LIST_TIMEOUT_MILLIS = 4_000L
-	private const val LIST_FRESH_MILLIS = 60_000L
-
 	/**
-	 * The least time between the party list being asked for and the queue
-	 * command. Hypixel refuses a command that follows another too closely —
-	 * "You are sending commands too fast!" — and the queue was the one refused.
+	 * The least time between this module's last command — the party message
+	 * saying it is about to queue — and the queue command. Hypixel refuses a
+	 * command that follows another too closely ("This command is on cooldown!
+	 * Try again in about a second!"), and the queue was the one refused.
 	 */
-	private const val COMMAND_GAP_MILLIS = 2_500L
-
-	/** How long after asking for the party list its answer is kept out of chat. */
-	private const val HIDE_WINDOW_MILLIS = 5_000L
-
-	/**
-	 * The last words of a final boss, which come before the run's score
-	 * banner: the party list is asked for here already, so it has been
-	 * answered, and the command cooldown has passed, by the time the run ends.
-	 * Only lines that are the end of the fight on that floor; any other floor
-	 * asks at the banner.
-	 */
-	private val earlyEnd = mapOf(
-		"[BOSS] Bonzo: Oh I'm dead!" to { DungeonLocation.floor == 1 },
-		"[BOSS] Necron: All this, for nothing..." to { DungeonLocation.floor == 7 && !DungeonLocation.masterMode },
-		"[BOSS] Wither King: Incredible. You did what I couldn't do myself." to { DungeonLocation.floor == 7 && DungeonLocation.masterMode },
-	)
-
-	/** What the party list is made of, so its answer can be kept out of chat. */
-	private val listLines = listOf(
-		Regex("""^-{5,}$"""),
-		Regex("""^Party Members \(\d+\)$"""),
-		Regex("""^Party (?:Leader|Moderators|Members): """),
-		Regex("""^You are not currently in a party\.$"""),
-	)
+	private const val COMMAND_GAP_MILLIS = 1_500L
 
 	/** A full party, which is what Check party wants to see. */
 	private const val PARTY_SIZE = 5
@@ -173,11 +149,18 @@ object AutoRequeue {
 	/** Who has left the party since the run began. */
 	private val leftDuringRun = LinkedHashSet<String>()
 
+	/**
+	 * The most players the dungeon's tab list has shown this run, which is the
+	 * party: everybody in it is in the run. The most, because the list fills
+	 * in over the first seconds and a player who disconnects drops off it.
+	 */
+	private var teamSeen = 0
+
+	/** When this module last sent a command, so the next keeps its distance. */
+	private var lastCommandAt = 0L
+
 	/** The floor that was just played, for /joininstance. */
 	private var floorCommand: String? = null
-
-	/** When /pl was sent at the end of the run, or 0 while no answer is awaited. */
-	private var listAskedAt = 0L
 
 	/** When the queue command goes out, or 0 when nothing is counting down. */
 	private var requeueAt = 0L
@@ -225,34 +208,21 @@ object AutoRequeue {
 			needsDowntime.removeAll(downtimeAtEnd)
 			downtimeAtEnd.clear()
 			leftDuringRun.clear()
+			teamSeen = 0
 			requeueAt = 0L
 			readyUntil = 0L
-			listSentAt = 0L
 		}
 		if (!DungeonRun.started) runStartSeen = false
+		if (DungeonRun.started && !runEndHandled && DungeonLocation.inDungeon) {
+			teamSeen = maxOf(teamSeen, DungeonTeam.classes.size)
+		}
 
 		if (DungeonRun.ended && !runEndHandled && DungeonLocation.inDungeon) {
 			runEndHandled = true
-			onRunEnded(client)
+			onRunEnded()
 		}
 
 		val now = System.currentTimeMillis()
-		if (listAskedAt != 0L) {
-			when {
-				PartyFeatures.listedAt >= listAskedAt -> {
-					listAskedAt = 0L
-					decide()
-				}
-				PartyFeatures.noPartyAt >= listAskedAt -> {
-					listAskedAt = 0L
-					note("Not requeueing: you are not in a party.")
-				}
-				now - listAskedAt > LIST_TIMEOUT_MILLIS -> {
-					listAskedAt = 0L
-					note("Not requeueing: the party list never answered, so who leads is not known.")
-				}
-			}
-		}
 		if (readyUntil != 0L && now > readyUntil) {
 			readyUntil = 0L
 			needsDowntime.clear()
@@ -264,72 +234,24 @@ object AutoRequeue {
 		}
 	}
 
-	/** When the party list was last asked for, by this module. */
-	private var listSentAt = 0L
-
-	/** Until when an answering party list is kept out of chat, and whether its heading has been seen. */
-	@Volatile
-	private var hideListUntil = 0L
-	private var hideSawHeading = false
-
-	/** Asks Hypixel for the party list, with its answer kept out of chat. */
-	private fun askList(client: Minecraft) {
-		val now = System.currentTimeMillis()
-		listSentAt = now
-		hideListUntil = now + HIDE_WINDOW_MILLIS
-		hideSawHeading = false
-		send(client, "pl")
-	}
-
-	/**
-	 * Whether a chat message is the answer to the party list this module asked
-	 * for, which is not shown: the end of a run has chat enough. Read by the
-	 * party features before this is asked, so nothing is lost by hiding it.
-	 */
-	@JvmStatic
-	fun hidesChat(message: Component, overlay: Boolean): Boolean {
-		if (overlay || hideListUntil == 0L || System.currentTimeMillis() > hideListUntil) return false
-		val lines = message.string.split('\n').map { it.replace(FORMATTING, "").trim() }.filter { it.isNotEmpty() }
-		if (lines.isEmpty() || !lines.all { line -> listLines.any { it.containsMatchIn(line) } }) return false
-		val heading = lines.any { listLines[1].matches(it) || listLines[3].matches(it) }
-		val rule = lines.any { listLines[0].matches(it) }
-		// The closing rule, after the heading, is the end of it.
-		if (heading) hideSawHeading = true
-		if (hideSawHeading && rule && (lines.size > 1 || !heading)) hideListUntil = 0L
-		return true
-	}
-
-	private fun onRunEnded(client: Minecraft) {
+	private fun onRunEnded() {
 		downtimeAtEnd.clear()
 		downtimeAtEnd += needsDowntime
 		floorCommand = DungeonLocation.floor.takeIf { it in FLOOR_NAMES.indices }?.let {
 			"joininstance ${if (DungeonLocation.masterMode) "MASTER_" else ""}CATACOMBS_FLOOR_${FLOOR_NAMES[it]}"
 		}
-
-		// Who leads, and how many are left, asked of Hypixel rather than assumed:
-		// only the leader can queue, and the party can have changed during the
-		// run without anybody saying so where it could be heard. The answer is
-		// read off the list as it arrives, in [tick].
-		if (DebugOverrides.previewPartyCommands) {
-			note("Would send: §f/pl")
-			decide()
-			return
-		}
-		// Asked already, at the boss's last words: wait for that answer, or
-		// use it if it is here.
-		val now = System.currentTimeMillis()
-		if (listSentAt != 0L && now - listSentAt < LIST_FRESH_MILLIS) {
-			listAskedAt = listSentAt
-			return
-		}
-		listAskedAt = now
-		askList(client)
+		decide()
 	}
 
-	/** The party list has answered: requeue, wait for a break to end, or say why not. */
+	/** The run is over: requeue, wait for a break to end, or say why not. */
 	private fun decide() {
+		val leader = PartyFeatures.leaderName()
+		if (leader == null && !DebugOverrides.previewPartyCommands) {
+			note("Not requeueing: who leads the party is not known. It is read from chat when a run starts.")
+			return
+		}
 		if (!leading()) {
-			note("Not requeueing: ${PartyFeatures.leaderName() ?: "somebody else"} leads the party.")
+			note("Not requeueing: $leader leads the party.")
 			return
 		}
 		blocker()?.let {
@@ -353,9 +275,9 @@ object AutoRequeue {
 	private fun blocker(): String? {
 		if (!checkParty.value) return null
 		leftDuringRun.firstOrNull()?.let { return "$it left the party" }
-		// The party list when it has just been read, the run's team otherwise.
-		val fresh = System.currentTimeMillis() - PartyFeatures.listedAt < LIST_FRESH_MILLIS
-		val size = (if (fresh) PartyFeatures.listedSize else null) ?: DungeonTeam.classes.size
+		// The run's team, as the tab list showed it at its fullest. Nobody joins a
+		// party mid-run, and anybody who left is caught above.
+		val size = maxOf(teamSeen, DungeonTeam.classes.size)
 		if (size in 1 until PARTY_SIZE) return "only $size/$PARTY_SIZE in the party"
 		return null
 	}
@@ -373,8 +295,9 @@ object AutoRequeue {
 	private fun seconds(): Int = delay.value.toInt()
 
 	private fun schedule(message: String) {
-		requeueAt = maxOf(System.currentTimeMillis() + seconds() * 1000L, listSentAt + COMMAND_GAP_MILLIS)
 		tell(message)
+		// After the message, so the gap is measured from it.
+		requeueAt = maxOf(System.currentTimeMillis() + seconds() * 1000L, lastCommandAt + COMMAND_GAP_MILLIS)
 	}
 
 	private fun fire(client: Minecraft) {
@@ -411,10 +334,6 @@ object AutoRequeue {
 	}
 
 	private fun onLine(line: String) {
-		if (!runEndHandled && earlyEnd[line]?.invoke() == true && !DebugOverrides.previewPartyCommands) {
-			askList(Minecraft.getInstance())
-			return
-		}
 		for (pattern in memberGone) {
 			pattern.find(line)?.let { return onLeft(it.groupValues[1]) }
 		}
@@ -436,7 +355,7 @@ object AutoRequeue {
 					} else {
 						tell("Requeue stopped: $sender needs downtime.")
 					}
-				} else if (readyUntil != 0L || listAskedAt != 0L) {
+				} else if (readyUntil != 0L) {
 					// The run's end is still being answered, so this break is
 					// part of that answer.
 					downtimeAtEnd += sender
@@ -499,11 +418,13 @@ object AutoRequeue {
 	}
 
 	private fun send(client: Minecraft, command: String) {
+		lastCommandAt = System.currentTimeMillis()
 		if (DebugOverrides.previewPartyCommands) {
 			note("Would send: §f/$command")
 			return
 		}
-		client.connection?.sendCommand(command)
+		// Through Party Features' queue, which spaces every command Cryptic sends.
+		PartyFeatures.enqueue(command)
 	}
 
 	/** For `/cryptic debug requeue`. */
@@ -511,7 +432,7 @@ object AutoRequeue {
 		val now = System.currentTimeMillis()
 		return listOf(
 			"§8[Cryptic] §7Auto Requeue: module ${if (module.enabled) "§aon" else "§coff"}§7, " +
-				"team §f${DungeonTeam.classes.size}§7, floor §f${floorCommand ?: "unknown"}",
+				"team §f${DungeonTeam.classes.size}§7 (most seen §f$teamSeen§7), leader §f${PartyFeatures.leaderName() ?: "unknown"}§7, floor §f${floorCommand ?: "unknown"}",
 			"§8[Cryptic] §7Downtime: §f${needsDowntime.ifEmpty { listOf("nobody") }.joinToString(", ")}§7, " +
 				"left: §f${leftDuringRun.ifEmpty { listOf("nobody") }.joinToString(", ")}",
 			"§8[Cryptic] §7Requeue in: §f" + (if (requeueAt == 0L) "not counting" else "${(requeueAt - now) / 1000}s") +

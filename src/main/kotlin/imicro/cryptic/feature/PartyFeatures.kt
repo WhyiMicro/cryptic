@@ -76,6 +76,13 @@ object PartyFeatures {
 	private val partyingWith = Regex("""^You'll be partying with: (.+)$""")
 	private val transferredTo = Regex("""^The party was transferred to $RANK$NAME (?:by|because) """)
 	private val promotedLeader = Regex("""^$RANK$NAME has promoted $RANK$NAME to Party Leader""")
+
+	/**
+	 * "[MVP+] Name entered The Catacombs, Floor VII!", which Hypixel shows the
+	 * whole party at the start of every run. Only the leader can start one, so
+	 * it names the leader each run without anybody asking.
+	 */
+	private val enteredDungeon = Regex("""^$RANK$NAME entered (?:MM )?The Catacombs,""")
 	private val listHeading = Regex("""^Party Members \((\d+)\)$""")
 	private val listedLeader = Regex("""^Party Leader: $RANK$NAME""")
 	private val listedRow = Regex("""^Party (?:Leader|Moderators|Members): (.+)$""")
@@ -358,6 +365,14 @@ object PartyFeatures {
 
 	private fun say(message: String) = send("pc $message")
 
+	/**
+	 * Queues a command for another module, without its slash, so every command
+	 * Cryptic sends keeps the same spacing. Two sent in the same moment — the
+	 * downtime reminder and Auto Requeue's message, both at the end of a run —
+	 * had the second refused for coming too fast.
+	 */
+	fun enqueue(command: String) = sendLater(0) { command }
+
 	private fun dispatch(client: Minecraft, command: String) {
 		// The debug switch shows what would have been sent, so every command can
 		// be tried without a party to try it on.
@@ -487,6 +502,7 @@ object PartyFeatures {
 			return
 		}
 		transferredTo.find(line)?.let { return setLeader(it.groupValues[1]) }
+		enteredDungeon.find(line)?.let { return setLeader(it.groupValues[1]) }
 		promotedLeader.find(line)?.let { return setLeader(it.groupValues[2]) }
 
 		// The party list, which is the one complete account there is.

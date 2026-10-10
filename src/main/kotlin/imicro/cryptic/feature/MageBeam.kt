@@ -328,8 +328,12 @@ object MageBeam {
 
 
 	fun tick(client: Minecraft) {
-		if (!module.enabled) {
+		// Only in a dungeon, where the ability's beam is read from at all. The
+		// mob snapshot below walks every entity in the world each tick, which
+		// is nothing in a dungeon room and a lot in a crowd of island mobs.
+		if (!module.enabled || !DungeonLocation.inDungeon) {
 			if (beams.isNotEmpty()) beams.clear()
+			if (recentBoxes.isNotEmpty()) recentBoxes = emptyList()
 			return
 		}
 

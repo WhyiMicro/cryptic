@@ -477,8 +477,9 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 		revealAll: Boolean,
 		extraLine: String? = null,
 	): Boolean {
-		if (!isIdentified(revealAll)) return false
-		val name = displayName() ?: return false
+		val name = (if (isIdentified(revealAll)) displayName() else null)
+			?: unscannedName(revealAll)
+			?: return false
 		// The entrance is obvious from its colour, and a name over it says less
 		// than the mark it would replace. The blood room keeps its name: it is
 		// the one room whose going green is worth reading at a glance, and the
@@ -488,6 +489,22 @@ class DungeonRoom(var type: Type, var shape: Shape) {
 		// One word per line: room names are wide and tiles are not.
 		renderCentered(context, scale, name.split(" ") + listOfNotNull(extraLine))
 		return true
+	}
+
+	/**
+	 * A name for a room the world scan has not reached, when its colour alone
+	 * says what it is.
+	 *
+	 * A room is named from the world, so one cleared by the rest of the party
+	 * while you were elsewhere is never named, and used to fall back to its
+	 * checkmark even in a name style. The map paints a trap room its own
+	 * orange, and a trap room is only ever Old Trap or New Trap, so it can be
+	 * called a trap without guessing which. Shown only where the room itself is.
+	 */
+	private fun unscannedName(revealAll: Boolean): String? {
+		if (data != null || type != Type.TRAP) return null
+		if (!revealAll && (hidden || unopened)) return null
+		return "Trap"
 	}
 
 	/**
