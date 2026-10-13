@@ -113,7 +113,8 @@ object TerminalOrder {
 	@JvmField
 	val fadeDistance = SliderModuleSetting(
 		id = "fade_distance",
-		label = "Fade from (blocks)",
+		label = "Fade from",
+		unit = "blocks",
 		defaultValue = 11.0,
 		min = 5.0,
 		max = 30.0,

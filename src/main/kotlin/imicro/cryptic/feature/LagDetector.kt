@@ -32,7 +32,8 @@ object LagDetector {
 	@JvmField
 	val threshold = SliderModuleSetting(
 		id = "threshold",
-		label = "Threshold (ms)",
+		label = "Threshold",
+		unit = "ms",
 		defaultValue = 500.0,
 		min = 100.0,
 		max = 1000.0,

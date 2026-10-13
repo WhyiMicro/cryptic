@@ -8,6 +8,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.WorldRender
 import imicro.cryptic.skyblock.SkyblockItem
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
@@ -93,8 +94,6 @@ object GyroHelper {
 		description = "Drops the game's own outline while you aim, so only one box shows.",
 	)
 
-	private val colorSection = SectionModuleSetting("color_section", "Colors")
-
 	@JvmField
 	val boxColor = ColorModuleSetting(
 		id = "box_color",
@@ -136,16 +135,11 @@ object GyroHelper {
 	)
 
 	private val configurable = listOf(
-		drawBox,
-		drawRing,
-		ringWidth,
+		drawBox.withMore(boxColor),
+		drawRing.withMore(ringWidth, ringColor),
 		phase,
 		hideBlockOutline,
-		colorSection,
-		boxColor,
-		ringColor,
-		showCooldown,
-		cooldownColor,
+		showCooldown.withMore(cooldownColor),
 	)
 
 	@JvmField

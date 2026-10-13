@@ -12,9 +12,11 @@ import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.PanelModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.skyblock.SkyblockItem
@@ -300,11 +302,7 @@ object InvincibilityTimer {
 		supportsKeybind = false,
 		settings = listOf(
 			announce,
-			playSound,
-			sound,
-			volume,
-			pitch,
-			previewSound,
+			playSound.withMore(sound, volume, pitch, previewSound),
 			procTitle,
 			onlyInDungeons,
 			shownSection,
@@ -315,14 +313,10 @@ object InvincibilityTimer {
 			showIcons,
 			showWhen,
 			onlyInBoss,
-			readyColor,
-			activeColor,
-			cooldownColor,
-			equippedColor,
+			PanelModuleSetting("hud_color_panel", "Colors", "What each state is drawn in: ready, invincible, on cooldown, and the mask you are wearing.")
+				.withMore(readyColor, activeColor, cooldownColor, equippedColor),
 			itemSection,
-			showOnItem,
-			asDurability,
-			itemColor,
+			showOnItem.withMore(asDurability, itemColor),
 		),
 	)
 

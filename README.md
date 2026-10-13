@@ -102,6 +102,9 @@ Several features are ported from other mods, whose licences travel with them:
   carry tracker, and the armour stands a slayer boss carries its owner and tier
   on. The Keybinds Manager: a binding's keys, its command and its conditions
   (where it works, islands, floors, classes, phases), and its categories. Licence in [`licenses/Athen-LICENSE.txt`](licenses/Athen-LICENSE.txt).
+- **[OdinClient](https://github.com/skies-starred/OdinClient)** (BSD 3-Clause,
+  Copyright (c) 2026 Starred) — the Experiment Solver keeping your own clicks
+  out of a game it is playing, from its Auto Experiments.
 - **[Lumen](https://github.com/jizu1/lumen)** (AGPL-3.0, Lumen contributors) — how Breaker
   Helper's Zero ping mines: an instant mining speed so the game predicts the
   break, the cleared pause between breaks, the held slot sent first, and pausing
@@ -130,8 +133,13 @@ Several features are ported from other mods, whose licences travel with them:
   sit on rather than code, and the solver around them is Cryptic's own; the
   Booster Cookie Reminder reads the pair of tab list rows Skyblocker found the
   cookie's remaining time on. The Croesus Helper's table of drops whose names
-  are not their ids, and its rule for a second chest worth a key. Licence in
-  [`licenses/Skyblocker-LICENSE.txt`](licenses/Skyblocker-LICENSE.txt).
+  are not their ids, and its rule for a second chest worth a key. Etherwarp's
+  Smooth teleport, which is its Smooth AOTE: both modes — predictive, which
+  walks the teleport the way Hypixel does and glides there from the click over
+  your ping, and responsive, which glides from where the server's teleport
+  started — your model following in third person, and its table of which items
+  teleport and how.
+  Licence in [`licenses/Skyblocker-LICENSE.txt`](licenses/Skyblocker-LICENSE.txt).
 - **[NotEnoughUpdates](https://github.com/NotEnoughUpdates/NotEnoughUpdates)**
   (LGPL-3.0) — the Wither Cloak effect. Notices in
   [`src/main/resources/META-INF/notices/`](src/main/resources/META-INF/notices/).

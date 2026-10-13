@@ -18,9 +18,11 @@ import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.PanelModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents
@@ -119,9 +121,6 @@ object DungeonMap {
 		step = 1.0,
 	)
 
-	private val roomsSection =
-		SectionModuleSetting("rooms_section", "Room customizations", startsCollapsed = true)
-
 	@JvmField
 	val normalColor = ColorModuleSetting("normal_color", "Normal", DungeonMapColors.NORMAL)
 
@@ -164,9 +163,6 @@ object DungeonMap {
 		step = 5.0,
 		description = "How much colour the blood room, and a closed room's guessed types, keep before anyone has been in them.",
 	)
-
-	private val doorsSection =
-		SectionModuleSetting("doors_section", "Door customizations", startsCollapsed = true)
 
 	@JvmField
 	val normalDoorColor = ColorModuleSetting("normal_door_color", "Normal", DungeonMapColors.NORMAL)
@@ -375,37 +371,19 @@ object DungeonMap {
 			padding,
 			reveal,
 			predictRooms,
-			roomsSection,
-			normalColor,
-			bloodColor,
-			entranceColor,
-			puzzleColor,
-			trapColor,
-			championColor,
-			fairyColor,
-			rareColor,
-			unexploredColor,
-			darkenUnexplored,
-			doorsSection,
-			doorThickness,
-			normalDoorColor,
-			witherDoorColor,
-			bloodDoorColor,
-			entranceDoorColor,
+			PanelModuleSetting("room_panel", "Room colors", "The colour of each kind of room, and how dim the unexplored ones are.").withMore(
+				normalColor, bloodColor, entranceColor, puzzleColor, trapColor,
+				championColor, fairyColor, rareColor, unexploredColor, darkenUnexplored,
+			),
+			PanelModuleSetting("door_panel", "Doors", "How thick doors are drawn, and the colour of each kind.").withMore(
+				doorThickness, normalDoorColor, witherDoorColor, bloodDoorColor, entranceDoorColor,
+			),
 			marksSection,
-			roomStyle,
-			checkmarkSize,
-			nameScale,
+			roomStyle.withMore(checkmarkSize, nameScale),
 			questionMarks,
 			princeMarker,
-			playerHeads,
-			markerSize,
-			classOutline,
-			playerColor,
-			selfMarker,
-			facingArrow,
-			leapNames,
-			leapNameScale,
+			playerHeads.withMore(markerSize, classOutline, playerColor, selfMarker, facingArrow),
+			leapNames.withMore(leapNameScale),
 		) + DungeonScore.scoreSettings + listOf(reset),
 	)
 

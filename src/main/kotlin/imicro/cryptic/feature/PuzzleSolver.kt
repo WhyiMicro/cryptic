@@ -9,6 +9,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.puzzle.BeamsSolver
@@ -60,12 +61,10 @@ import java.util.Locale
 object PuzzleSolver {
 	// ---- Water Board -----------------------------------------------------
 
-	private val waterSection = SectionModuleSetting("water_section", "Water Board", startsCollapsed = true)
-
 	@JvmField
 	val waterEnabled = ToggleModuleSetting(
 		id = "water",
-		label = "Toggle",
+		label = "Water Board",
 		defaultValue = true,
 		description = "Says which lever to pull, and counts down the timed ones.",
 	)
@@ -173,12 +172,10 @@ object PuzzleSolver {
 
 	// ---- Teleport Maze ---------------------------------------------------
 
-	private val mazeSection = SectionModuleSetting("maze_section", "Teleport Maze", startsCollapsed = true)
-
 	@JvmField
 	val mazeEnabled = ToggleModuleSetting(
 		id = "maze",
-		label = "Toggle",
+		label = "Teleport Maze",
 		defaultValue = true,
 		description = "Marks the pads you have used and the ones still worth taking.",
 	)
@@ -249,12 +246,10 @@ object PuzzleSolver {
 
 	// ---- Ice Fill --------------------------------------------------------
 
-	private val iceSection = SectionModuleSetting("ice_section", "Ice Fill", startsCollapsed = true)
-
 	@JvmField
 	val iceFillEnabled = ToggleModuleSetting(
 		id = "ice_fill",
-		label = "Toggle",
+		label = "Ice Fill",
 		defaultValue = true,
 		description = "Draws the line to walk on each of the three floors.",
 	)
@@ -286,12 +281,10 @@ object PuzzleSolver {
 
 	// ---- Blaze -----------------------------------------------------------
 
-	private val blazeSection = SectionModuleSetting("blaze_section", "Blaze", startsCollapsed = true)
-
 	@JvmField
 	val blazeEnabled = ToggleModuleSetting(
 		id = "blaze",
-		label = "Toggle",
+		label = "Blaze",
 		defaultValue = true,
 		description = "Boxes the blazes in the order they have to die.",
 	)
@@ -386,12 +379,10 @@ object PuzzleSolver {
 
 	// ---- Creeper Beams ---------------------------------------------------
 
-	private val beamsSection = SectionModuleSetting("beams_section", "Creeper Beams", startsCollapsed = true)
-
 	@JvmField
 	val beamsEnabled = ToggleModuleSetting(
 		id = "beams",
-		label = "Toggle",
+		label = "Creeper Beams",
 		defaultValue = true,
 		description = "Pairs up the lanterns each beam runs between.",
 	)
@@ -435,12 +426,10 @@ object PuzzleSolver {
 
 	// ---- Three Weirdos ---------------------------------------------------
 
-	private val weirdosSection = SectionModuleSetting("weirdos_section", "Three Weirdos", startsCollapsed = true)
-
 	@JvmField
 	val weirdosEnabled = ToggleModuleSetting(
 		id = "weirdos",
-		label = "Toggle",
+		label = "Three Weirdos",
 		defaultValue = true,
 		description = "Marks the chest the reward is in as soon as one of them gives it away.",
 	)
@@ -511,12 +500,10 @@ object PuzzleSolver {
 
 	// ---- Quiz ------------------------------------------------------------
 
-	private val quizSection = SectionModuleSetting("quiz_section", "Quiz", startsCollapsed = true)
-
 	@JvmField
 	val quizEnabled = ToggleModuleSetting(
 		id = "quiz",
-		label = "Toggle",
+		label = "Quiz",
 		defaultValue = true,
 		description = "Marks the right answer as Oruo reads the options out.",
 	)
@@ -561,12 +548,10 @@ object PuzzleSolver {
 
 	// ---- Boulder ---------------------------------------------------------
 
-	private val boulderSection = SectionModuleSetting("boulder_section", "Boulder", startsCollapsed = true)
-
 	@JvmField
 	val boulderEnabled = ToggleModuleSetting(
 		id = "boulder",
-		label = "Toggle",
+		label = "Boulder",
 		defaultValue = true,
 		description = "Boxes the boulder to push next.",
 	)
@@ -611,12 +596,10 @@ object PuzzleSolver {
 
 	// ---- Tic Tac Toe -----------------------------------------------------
 
-	private val ticTacToeSection = SectionModuleSetting("tic_tac_toe_section", "Tic Tac Toe", startsCollapsed = true)
-
 	@JvmField
 	val ticTacToeEnabled = ToggleModuleSetting(
 		id = "tic_tac_toe",
-		label = "Toggle",
+		label = "Tic Tac Toe",
 		defaultValue = true,
 		description = "Marks the square to shoot next, on your turn.",
 	)
@@ -660,12 +643,10 @@ object PuzzleSolver {
 
 	// ---- Ice Path --------------------------------------------------------
 
-	private val silverfishSection = SectionModuleSetting("silverfish_section", "Ice Path", startsCollapsed = true)
-
 	@JvmField
 	val silverfishEnabled = ToggleModuleSetting(
 		id = "silverfish",
-		label = "Toggle",
+		label = "Ice Path",
 		defaultValue = true,
 		description = "Draws the silverfish's shortest way to the exit.",
 	)
@@ -699,30 +680,38 @@ object PuzzleSolver {
 		description = "Offers a click to fetch an architect's draft when a puzzle fails.",
 	)
 
+	// One switch per puzzle, with what tunes it in the switch's "⋯" panel.
 	// In the order a person would look for them, which is alphabetical by the
 	// name of the puzzle rather than the order they were written in.
+	private val puzzlesSection = SectionModuleSetting("puzzles_section", "Puzzles")
+
 	private val configurable: List<imicro.cryptic.gui.ModuleSetting> = listOf(
-		blazeSection, blazeEnabled, blazeNextLine, blazeLineCount, blazeLineWidth, blazeStyle,
-		blazeFirstColor, blazeSecondColor, blazeThirdColor, blazeOtherColor, blazeSendComplete,
-		boulderSection, boulderEnabled, boulderAll, boulderStyle, boulderPhase, boulderColor,
-		beamsSection, beamsEnabled, beamsStyle, beamsPhase, beamsTracer, beamsAlpha,
-		iceSection, iceFillEnabled, iceFillColor, iceFillOptimized, iceFillReset,
-		silverfishSection, silverfishEnabled, silverfishColor,
-		quizSection, quizEnabled, quizColor, quizStyle, quizPhase, quizTimer,
-		mazeSection, mazeEnabled, mazeColorOne, mazeColorMultiple, mazeColorVisited,
-		mazeStyle, mazeTracer, mazeTracerColor, mazeReset,
-		weirdosSection, weirdosEnabled, weirdosColor, weirdosWrongColor, weirdosStyle,
-		weirdosHideWrong, weirdosBlockWrong, weirdosInstant, weirdosPlaceholderColor,
-		ticTacToeSection, ticTacToeEnabled, ticTacToeColor, ticTacToeStyle, ticTacToeBlockWrong,
-		ticTacToePreAim,
-		waterSection, waterEnabled, waterOptimized, waterMinGap, waterTracer, waterTracerFirst,
-		waterTracerSecond, waterLeverHighlight, waterLeverStyle, waterOffPlan, waterPreviewPath, waterPreviewLevers,
-		waterReset,
+		puzzlesSection,
+		blazeEnabled.withMore(
+			blazeNextLine, blazeLineCount, blazeLineWidth, blazeStyle,
+			blazeFirstColor, blazeSecondColor, blazeThirdColor, blazeOtherColor, blazeSendComplete,
+		),
+		boulderEnabled.withMore(boulderAll, boulderStyle, boulderPhase, boulderColor),
+		beamsEnabled.withMore(beamsStyle, beamsPhase, beamsTracer, beamsAlpha),
+		iceFillEnabled.withMore(iceFillColor, iceFillOptimized, iceFillReset),
+		silverfishEnabled.withMore(silverfishColor),
+		quizEnabled.withMore(quizColor, quizStyle, quizPhase, quizTimer),
+		mazeEnabled.withMore(mazeColorOne, mazeColorMultiple, mazeColorVisited, mazeStyle, mazeTracer, mazeTracerColor, mazeReset),
+		weirdosEnabled.withMore(
+			weirdosColor, weirdosWrongColor, weirdosStyle,
+			weirdosHideWrong, weirdosBlockWrong, weirdosInstant, weirdosPlaceholderColor,
+		),
+		ticTacToeEnabled.withMore(ticTacToeColor, ticTacToeStyle, ticTacToeBlockWrong, ticTacToePreAim),
+		waterEnabled.withMore(
+			waterOptimized, waterMinGap, waterTracer, waterTracerFirst, waterTracerSecond,
+			waterLeverHighlight, waterLeverStyle, waterOffPlan, waterPreviewPath, waterPreviewLevers,
+			waterReset,
+		),
 		generalSection, puzzleTimers, draftPrompt,
 	)
 
 	private val reset = ButtonModuleSetting("reset", "Reset all", action = {
-		configurable.forEach {
+		module.settings.forEach {
 			when (it) {
 				is ToggleModuleSetting -> it.reset()
 				is SliderModuleSetting -> it.reset()
@@ -734,7 +723,7 @@ object PuzzleSolver {
 	})
 
 	@JvmField
-	val module = Module(
+	val module: Module = Module(
 		id = "puzzle_solver",
 		name = "Puzzle Solver",
 		description = "Answers every Catacombs puzzle",

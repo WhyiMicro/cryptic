@@ -10,6 +10,7 @@ import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.render.WorldRender
@@ -180,8 +181,10 @@ object LividSolver {
 		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
-			style, highlightColor, fillColor, tracer, tracerColor, showHp, hideWrong, announce,
-			timerSection, timer, iceSprayTitle, iceSpraySound,
+			style.withMore(highlightColor, fillColor),
+			tracer.withMore(tracerColor),
+			showHp, hideWrong, announce,
+			timerSection, timer.withMore(iceSprayTitle, iceSpraySound),
 		),
 	)
 

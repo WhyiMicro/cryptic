@@ -13,6 +13,7 @@ import imicro.cryptic.feature.SpiritBear;
 import imicro.cryptic.feature.CarryManager;
 import imicro.cryptic.feature.Highlight;
 import imicro.cryptic.feature.RenderOptimizer;
+import imicro.cryptic.feature.SmoothTeleport;
 import imicro.cryptic.feature.WitherOutline;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.EntityRenderer;
@@ -94,6 +95,20 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
      * length above their head until this runs. Both are opt-in, because a name
      * that keeps its own size is often the point of shrinking somebody.
      */
+    /**
+     * Your own model in third person, carried along with a smooth teleport's
+     * camera rather than left waiting at the landing spot — Skyblocker's hook.
+     */
+    @Inject(method = "extractRenderState", at = @At("TAIL"))
+    private void cryptic$smoothTeleportModel(T entity, S state, float partialTick, CallbackInfo info) {
+        if (entity != net.minecraft.client.Minecraft.getInstance().player) return;
+        net.minecraft.world.phys.Vec3 position = SmoothTeleport.playerPosition(partialTick);
+        if (position == null) return;
+        state.x = position.x;
+        state.y = position.y;
+        state.z = position.z;
+    }
+
     @Inject(method = "extractRenderState", at = @At("TAIL"))
     private void cryptic$scaleAttachments(T entity, S state, float partialTick, CallbackInfo info) {
         if (!CustomScale.appliesTo(entity)) return;

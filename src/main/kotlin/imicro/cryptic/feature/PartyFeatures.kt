@@ -75,6 +75,7 @@ object PartyFeatures {
 	private val joinedParty = Regex("""^You have joined $RANK$NAME's party!""")
 	private val partyingWith = Regex("""^You'll be partying with: (.+)$""")
 	private val transferredTo = Regex("""^The party was transferred to $RANK$NAME (?:by|because) """)
+	private val transferredBecauseLeft = Regex("""^The party was transferred to $RANK$NAME because $RANK$NAME left""")
 	private val promotedLeader = Regex("""^$RANK$NAME has promoted $RANK$NAME to Party Leader""")
 
 	/**
@@ -96,7 +97,6 @@ object PartyFeatures {
 		Regex("""^$RANK$NAME was removed from your party because they disconnected"""),
 		Regex("""^Kicked $RANK$NAME because they were offline"""),
 	)
-	private val finderQueued = Regex("""^Party Finder > Your party has been queued in the dungeon finder""")
 	private val notLeader = Regex("""^You are not (?:this party's|the party) leader""")
 	private val partyGone = listOf(
 		Regex("""^You left the party"""),
@@ -501,6 +501,12 @@ object PartyFeatures {
 			}
 			return
 		}
+		// "...because Name left" is somebody leaving as well as a new leader, and
+		// it is the only word Hypixel gives of that leaving.
+		transferredBecauseLeft.find(line)?.let {
+			members -= it.groupValues[2]
+			return setLeader(it.groupValues[1])
+		}
 		transferredTo.find(line)?.let { return setLeader(it.groupValues[1]) }
 		enteredDungeon.find(line)?.let { return setLeader(it.groupValues[1]) }
 		promotedLeader.find(line)?.let { return setLeader(it.groupValues[2]) }
@@ -519,10 +525,19 @@ object PartyFeatures {
 		}
 
 		memberJoined.find(line)?.let { members += it.groupValues[1]; return }
-		finderJoined.find(line)?.let { members += it.groupValues[1]; return }
+		finderJoined.find(line)?.let {
+			val name = it.groupValues[1]
+			members += name
+			// You joining somebody's group: the group is theirs, and whose it is
+			// is not said. Not you, at least, until something names the leader.
+			if (name.equals(self(), ignoreCase = true) && leader == self()) leader = null
+			return
+		}
 		for (pattern in memberGone) pattern.find(line)?.let { members -= it.groupValues[1]; return }
 
-		if (finderQueued.containsMatchIn(line)) return setLeader(self())
+		// "Your party has been queued in the dungeon finder" was once read as
+		// you leading. It is shown to every member, so a member of somebody
+		// else's party was taken for its leader and tried to requeue it.
 		if (notLeader.containsMatchIn(line)) {
 			if (leader == self()) leader = null
 			refusedAsLeader = true

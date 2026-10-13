@@ -1,13 +1,16 @@
 package imicro.cryptic.feature
 
 import imicro.cryptic.Cryptic
+import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.PanelModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.RoundedRect
 import imicro.cryptic.render.VanillaGlyphs
 import imicro.cryptic.terminal.TerminalHandler
@@ -22,6 +25,8 @@ import net.minecraft.client.input.KeyEvent
 import net.minecraft.network.chat.Component
 import net.minecraft.network.chat.FontDescription
 import net.minecraft.network.chat.Style
+import net.minecraft.network.protocol.game.ClientboundSoundPacket
+import net.minecraft.sounds.SoundEvents
 import net.minecraft.world.inventory.ContainerInput
 import org.lwjgl.glfw.GLFW
 import kotlin.math.roundToInt
@@ -134,7 +139,8 @@ object TerminalSolver {
 	@JvmField
 	val resolveTimeout = SliderModuleSetting(
 		id = "resolve_timeout",
-		label = "Resolve timeout (ms)",
+		label = "Resolve timeout",
+		unit = "ms",
 		defaultValue = 600.0,
 		min = 300.0,
 		max = 1200.0,
@@ -190,7 +196,8 @@ object TerminalSolver {
 	@JvmField
 	val firstClickProtection = SliderModuleSetting(
 		id = "first_click_protection",
-		label = "Protection (ms)",
+		label = "Protection",
+		unit = "ms",
 		defaultValue = 200.0,
 		min = 100.0,
 		max = 800.0,
@@ -209,7 +216,8 @@ object TerminalSolver {
 	@JvmField
 	val lagProtectionTicks = SliderModuleSetting(
 		id = "lag_protection_ticks",
-		label = "Protection (ticks)",
+		label = "Protection",
+		unit = "ticks",
 		defaultValue = 8.0,
 		min = 7.0,
 		max = 16.0,
@@ -218,9 +226,104 @@ object TerminalSolver {
 		visibleIf = { accountForServerLag.value },
 	)
 
-	// ---- Colors ----------------------------------------------------------
+	// ---- Sound -----------------------------------------------------------
+	//
+	// Odin's Terminal Sounds and NoammAddons' terminal click sound (BSD
+	// 3-Clause, Copyright (c) 2025 odtheking; CC0, Noamm9): Hypixel answers
+	// every terminal click with a note-block pling at volume 8 and a pitch of
+	// 4.047619, a pair nothing else uses. While a terminal is open that sound
+	// is dropped as it arrives, and the one chosen here is played on the click
+	// instead — at once, rather than a round trip later.
 
-	private val colorSection = SectionModuleSetting(id = "color_section", label = "Colors", startsCollapsed = true)
+	private val soundSection = SectionModuleSetting(id = "sound_section", label = "Sound", startsCollapsed = true)
+
+	@JvmField
+	val clickSound = ToggleModuleSetting(
+		id = "click_sound",
+		label = "Custom click sound",
+		defaultValue = false,
+		description = "Plays the sound chosen below on every terminal click, and drops Hypixel's own click sound.",
+	)
+
+	@JvmField
+	val clickSoundChoice = DropdownModuleSetting(
+		id = "click_sound_choice",
+		label = "Sound",
+		options = SoundChoices.labels,
+		defaultIndex = SoundChoices.indexOf("Button Click"),
+		visibleIf = { clickSound.value },
+	)
+
+	@JvmField
+	val clickSoundVolume = SliderModuleSetting(
+		id = "click_sound_volume",
+		label = "Volume",
+		defaultValue = 0.5,
+		min = 0.0,
+		max = 1.0,
+		step = 0.05,
+		visibleIf = { clickSound.value },
+	)
+
+	@JvmField
+	val clickSoundPitch = SliderModuleSetting(
+		id = "click_sound_pitch",
+		label = "Pitch",
+		defaultValue = 1.0,
+		min = 0.5,
+		max = 2.0,
+		step = 0.05,
+		visibleIf = { clickSound.value },
+	)
+
+	private val previewClickSound = ButtonModuleSetting(
+		id = "preview_click_sound",
+		label = "Play sound",
+		action = { playClickSound() },
+		visibleIf = { clickSound.value },
+	)
+
+	/** True while terminal clicks sound like the sound chosen here, not like Hypixel's. */
+	val replacesClickSound: Boolean get() = module.enabled && clickSound.value
+
+	/** The chosen click sound, on the client thread. */
+	fun playClickSound() {
+		SoundChoices.play(clickSoundChoice.selectedIndex, clickSoundVolume.value.toFloat(), clickSoundPitch.value.toFloat())
+	}
+
+	/**
+	 * Whether a sound from the server is Hypixel's terminal click, to be
+	 * dropped. May be asked on the network thread, so it only reads.
+	 */
+	@JvmStatic
+	fun eatsServerSound(packet: ClientboundSoundPacket): Boolean {
+		if (!replacesClickSound || Terminals.current == null) return false
+		if (packet.sound.value() != SoundEvents.NOTE_BLOCK_PLING.value()) return false
+		return packet.volume == HYPIXEL_CLICK_VOLUME && kotlin.math.abs(packet.pitch - HYPIXEL_CLICK_PITCH) < 0.001f
+	}
+
+	/**
+	 * The gate falling and the core opening ring the same pling as a click, so
+	 * one that lands while a terminal is open was dropped with the clicks. It
+	 * is played again here, as Odin does, so neither goes unheard.
+	 */
+	@JvmStatic
+	fun onSystemChat(message: Component, overlay: Boolean) {
+		if (overlay || !replacesClickSound || Terminals.current == null) return
+		val text = message.string.replace(FORMATTING, "").trim()
+		if (text != GATE_DESTROYED && text != CORE_OPENING) return
+		Minecraft.getInstance().soundManager.play(
+			net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING.value(), 2f, 1f),
+		)
+	}
+
+	private const val HYPIXEL_CLICK_VOLUME = 8f
+	private const val HYPIXEL_CLICK_PITCH = 4.047619f
+	private const val GATE_DESTROYED = "The gate has been destroyed!"
+	private const val CORE_OPENING = "The Core entrance is opening!"
+	private val FORMATTING = Regex("§.")
+
+	// ---- Colors ----------------------------------------------------------
 
 	@JvmField
 	val backgroundColor = ColorModuleSetting(
@@ -356,37 +459,27 @@ object TerminalSolver {
 		settings = listOf(
 			renderSection,
 			termSize,
-			roundness,
-			containerRoundness,
-			slotGap,
 			melodyTermSize,
 			resourcePackFont,
+			PanelModuleSetting("shape_panel", "Shape", "How round the slots and the window are, and the gap between slots.")
+				.withMore(roundness, containerRoundness, slotGap),
+			PanelModuleSetting("color_panel", "Colors", "Every colour the terminal window is drawn in.").withMore(
+				backgroundColor, textColor, panesColor,
+				rubixColor1, rubixColor2, rubixReverseColor1, rubixReverseColor2,
+				orderColor1, orderColor2, orderColor3,
+				startsWithColor, selectColor,
+				melodyColumnColor, melodyPointerColor, melodySlotColor,
+			),
 			functionalitySection,
-			clickPrediction,
-			resolveTimeout,
+			clickPrediction.withMore(resolveTimeout),
 			stopMelodySolver,
 			rubixMode,
 			hideNumbers,
 			protectionSection,
 			firstClickProtection,
-			accountForServerLag,
-			lagProtectionTicks,
-			colorSection,
-			backgroundColor,
-			textColor,
-			panesColor,
-			rubixColor1,
-			rubixColor2,
-			rubixReverseColor1,
-			rubixReverseColor2,
-			orderColor1,
-			orderColor2,
-			orderColor3,
-			startsWithColor,
-			selectColor,
-			melodyColumnColor,
-			melodyPointerColor,
-			melodySlotColor,
+			accountForServerLag.withMore(lagProtectionTicks),
+			soundSection,
+			clickSound.withMore(clickSoundChoice, clickSoundVolume, clickSoundPitch, previewClickSound),
 		) + MelodyHud.settings,
 	)
 

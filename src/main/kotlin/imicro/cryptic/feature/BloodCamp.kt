@@ -7,10 +7,12 @@ import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.PanelModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.WorldRender
 import imicro.cryptic.skyblock.SkyblockItem
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
@@ -168,8 +170,6 @@ object BloodCamp {
 		visibleIf = { showMobs.value },
 	)
 
-	private val advancedSection = SectionModuleSetting("advanced_section", "Advanced", visibleIf = { showMobs.value })
-
 	@JvmField
 	val tickOffset = SliderModuleSetting(
 		id = "tick_offset",
@@ -293,38 +293,20 @@ object BloodCamp {
 	)
 
 	private val configurable = listOf(
-		showMobs,
-		boxColor,
-		fillBox,
-		showMobBox,
-		mobBoxColor,
-		finalColor,
-		boxSize,
-		lineColor,
-		showTimer,
-		decimals,
-		countdownColors,
-		timerColor,
-		farColor,
-		nearColor,
-		advancedSection,
-		tickOffset,
-		spawnTick,
-		interpolate,
-		pingOffset,
-		manualOffset,
+		showMobs.withMore(boxColor, fillBox, finalColor, lineColor, boxSize),
+		showMobBox.withMore(mobBoxColor),
+		showTimer.withMore(decimals, countdownColors, timerColor, farColor, nearColor),
+		PanelModuleSetting("timing_panel", "Timing", "When each mob is reckoned to have spawned, and how its box is moved for ping.", visibleIf = { showMobs.value })
+			.withMore(tickOffset, spawnTick, interpolate, pingOffset, manualOffset),
 		watcherBar,
 		alertSection,
-		killTitle,
-		customTitle,
-		titleColor,
+		killTitle.withMore(customTitle, titleColor),
 		doneTitle,
-		speedAlert,
-		sendSpeed,
+		speedAlert.withMore(sendSpeed),
 	)
 
 	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurable.forEach {
+		module.settings.forEach {
 			when (it) {
 				is ToggleModuleSetting -> it.reset()
 				is SliderModuleSetting -> it.reset()
@@ -336,7 +318,7 @@ object BloodCamp {
 	})
 
 	@JvmField
-	val module = Module(
+	val module: Module = Module(
 		id = "blood_camp",
 		name = "Blood Camp",
 		description = "Times the Watcher's waves and where they land",

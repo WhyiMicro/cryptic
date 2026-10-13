@@ -5,8 +5,10 @@ import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.PanelModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.mixin.PlayerTabOverlayAccessor
@@ -74,8 +76,6 @@ object BlessingDisplay {
 	@JvmField
 	val wisdom = ToggleModuleSetting("wisdom", "Wisdom", defaultValue = false)
 
-	private val colorSection = SectionModuleSetting("color_section", "Colors")
-
 	@JvmField
 	val powerColor = ColorModuleSetting("power_color", "Power", 0xAA0000, visibleIf = { power.value })
 
@@ -101,7 +101,8 @@ object BlessingDisplay {
 		supportsKeybind = false,
 		settings = listOf(
 			shownSection, power, time, stone, life, wisdom,
-			colorSection, powerColor, timeColor, stoneColor, lifeColor, wisdomColor,
+			PanelModuleSetting("color_panel", "Colors", "The colour each blessing is written in.")
+				.withMore(powerColor, timeColor, stoneColor, lifeColor, wisdomColor),
 		),
 	)
 

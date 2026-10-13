@@ -69,7 +69,8 @@ object CroesusHelper {
 	@JvmField
 	val minKeyProfit = SliderModuleSetting(
 		id = "min_key_profit",
-		label = "Key profit (thousands)",
+		label = "Key profit",
+		unit = "k",
 		defaultValue = 200.0,
 		min = 100.0,
 		max = 500.0,
@@ -268,8 +269,7 @@ object CroesusHelper {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(OverviewElement)
-		Hud.register(ChestElement)
+		Hud.register(ProfitElement)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ ->
 			dungeonChests.clear()
 			costMemory.keys.removeIf { it.startsWith("dungeon|") }
@@ -643,12 +643,12 @@ object CroesusHelper {
 		if (!profitHud.value || !ItemPrices.loaded) return
 
 		if (chest != null) {
-			drawBeside(context, accessor, ChestElement, chestLines(openChestTitle, chest))
+			drawBeside(context, accessor, ProfitElement, chestLines(openChestTitle, chest))
 			return
 		}
 		val shown = runChests.filter { !it.opened }
 		if (shown.isEmpty()) return
-		val placed = drawBeside(context, accessor, OverviewElement, overviewLines(shown))
+		val placed = drawBeside(context, accessor, ProfitElement, overviewLines(shown))
 		// The row under the mouse, past the heading, shows that chest's contents.
 		val row = placed.rowAt(mouseX, mouseY) ?: return
 		val hovered = shown.getOrNull(row - 1) ?: return
@@ -722,12 +722,14 @@ object CroesusHelper {
 		}
 	}
 
-	private object OverviewElement : ListElement("croesus_overview", "Croesus Profit Overlay") {
+	/**
+	 * The one profit list: the run's chests at Croesus, or the breakdown of the
+	 * chest that is open. Only one is ever on screen, so they share a place;
+	 * two elements meant placing the same list twice. Keeps the overview's id,
+	 * so where it was placed is where both now go.
+	 */
+	private object ProfitElement : ListElement("croesus_overview", "Croesus Profit") {
 		override fun sample(): List<Component> = overviewLines(SAMPLE_CHESTS)
-	}
-
-	private object ChestElement : ListElement("croesus_profit", "Chest Profit") {
-		override fun sample(): List<Component> = chestLines("Obsidian", SAMPLE_CHESTS.last())
 	}
 
 	private val SAMPLE_CHESTS: List<Chest> by lazy {

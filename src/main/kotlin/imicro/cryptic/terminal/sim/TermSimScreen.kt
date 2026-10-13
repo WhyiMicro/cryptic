@@ -152,6 +152,9 @@ abstract class TermSimScreen(
 	}
 
 	protected fun playClickSound() {
+		// The simulator's stand-in for Hypixel's sound gives way to a chosen
+		// one, which the click itself has already played.
+		if (imicro.cryptic.feature.TerminalSolver.replacesClickSound) return
 		Minecraft.getInstance().soundManager.play(
 			SimpleSoundInstance.forUI(SoundEvents.EXPERIENCE_ORB_PICKUP, 1f, 1f),
 		)

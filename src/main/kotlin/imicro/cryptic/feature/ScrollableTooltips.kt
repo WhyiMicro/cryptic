@@ -46,7 +46,8 @@ object ScrollableTooltips {
 	@JvmField
 	val scale = SliderModuleSetting(
 		id = "scale",
-		label = "Tooltip scale (%)",
+		label = "Tooltip scale",
+		unit = "%",
 		defaultValue = 100.0,
 		min = 30.0,
 		max = 150.0,

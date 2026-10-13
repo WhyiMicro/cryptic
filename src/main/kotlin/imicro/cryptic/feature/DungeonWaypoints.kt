@@ -20,6 +20,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.render.WorldRender
@@ -295,7 +296,7 @@ object DungeonWaypoints {
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(styleSection, style, fillOpacity, lineWidth, throughWalls, labels, labelScale, secretSection, secrets, hideFound) +
+		settings = listOf(styleSection, style.withMore(fillOpacity, lineWidth), throughWalls, labels.withMore(labelScale), secretSection, secrets, hideFound) +
 			SecretType.entries.flatMap { listOf(it.show, it.color) } +
 			listOf(customSection, custom) + CustomType.entries.flatMap { listOf(it.show, it.color) } +
 			listOf(editorSection, editMode, editKey, placeType, floating, useBlockSize, size),
@@ -363,6 +364,16 @@ object DungeonWaypoints {
 	val needsDungeon: Boolean get() = module.enabled
 
 	/** The room being stood in, once it is known which way it is turned. */
+	/**
+	 * Whether every secret in [room] has been found, by anybody: its checkmark
+	 * gone green on the map, or its secret count full.
+	 */
+	private fun roomSecretsDone(room: DungeonRoom): Boolean {
+		if (room.state == DungeonRoom.State.GREEN) return true
+		val total = room.data?.secrets ?: return false
+		return total > 0 && room.foundSecrets >= total
+	}
+
 	private fun room(): DungeonRoom? {
 		if (!module.enabled || !DungeonLocation.inDungeon || DungeonRun.inBoss) return null
 		val level = Minecraft.getInstance().level ?: return null
@@ -485,7 +496,13 @@ object DungeonWaypoints {
 		val client = Minecraft.getInstance()
 		val level = client.level ?: return
 
-		if (secrets.value) {
+		// A room Hypixel calls finished has nothing left to find. A secret only
+		// leaves on its own when this client sees it taken — your click, an item
+		// picked up near you, a bat dying near its spot — so one a teammate took,
+		// or a bat that flew off to die, stayed drawn after the room was done.
+		val roomDone = hideFound.value && roomSecretsDone(room)
+
+		if (secrets.value && !roomDone) {
 			for ((type, at) in secretsIn(room)) {
 				if (!type.show.value) continue
 				if (hideFound.value && at in found) continue
@@ -498,7 +515,8 @@ object DungeonWaypoints {
 				val kind = waypoint.kind
 				if (!kind.show.value) continue
 				when (kind) {
-					CustomType.SECRET, CustomType.ETHERWARP -> if (at in found) continue
+					CustomType.SECRET -> if (at in found || roomDone) continue
+					CustomType.ETHERWARP -> if (at in found) continue
 					CustomType.BREAKER -> if (level.getBlockState(at).isAir) continue
 					CustomType.NORMAL, CustomType.START -> Unit
 				}

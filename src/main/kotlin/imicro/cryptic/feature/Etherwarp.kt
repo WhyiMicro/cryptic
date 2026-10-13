@@ -5,9 +5,11 @@ import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.MultiSelectModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.CrypticRenderPipelines
 import imicro.cryptic.render.WorldRender
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
@@ -141,7 +143,7 @@ object Etherwarp {
 		id = "fake_zpew",
 		label = "Etherwarp",
 		defaultValue = false,
-		description = "Puts your view at the landing spot as you click an etherwarp.",
+		description = "Puts your view at the landing spot as you click an etherwarp. Can't be on while Smooth teleport glides etherwarps.",
 	)
 
 	@JvmField
@@ -184,6 +186,67 @@ object Etherwarp {
 		description = "The same for the teleport on a Hyperion, Valkyrie, Astraea or Scylla.",
 	)
 
+	// ---- Smooth teleport -------------------------------------------------
+
+	@JvmField
+	val smoothTeleport = ToggleModuleSetting(
+		id = "smooth_teleport",
+		label = "Smooth teleport",
+		defaultValue = false,
+		description = "Glides the camera from where a teleport started to where it landed, instead of snapping, as Skyblocker's Smooth AOTE does. Only the view moves.",
+	)
+
+	@JvmField
+	val smoothKinds = MultiSelectModuleSetting(
+		id = "smooth_items",
+		label = "Smooth these",
+		options = SmoothTeleport.KINDS,
+		defaultSelected = setOf(SmoothTeleport.INSTANT, SmoothTeleport.ETHER, SmoothTeleport.IMPACT),
+		description = "Instant Transmission: Aspect of the End or Void. Etherwarp: a merged Aspect while sneaking, or the Etherwarp Conduit. " +
+			"Wither Impact: Hyperion, Astraea, Scylla, Valkyrie, Necron's Blade. Sinrecall: Sinseeker Scythe. Weird Transmission: Aspect of the Leech. A kind can't be ticked while its Fake zpew switch is on.",
+		visibleIf = { smoothTeleport.value },
+	)
+
+	@JvmField
+	val smoothPredictive = ToggleModuleSetting(
+		id = "smooth_predictive",
+		label = "Predictive",
+		defaultValue = true,
+		description = "Starts gliding the moment you click, towards where the teleport will land, timed to your ping. Off, the glide waits for the server and starts from there.",
+		visibleIf = { smoothTeleport.value },
+	)
+
+	@JvmField
+	val smoothThirdPerson = ToggleModuleSetting(
+		id = "smooth_third_person",
+		label = "In third person",
+		defaultValue = true,
+		description = "Glides in third person too. Off, teleports only glide in first person.",
+		visibleIf = { smoothTeleport.value },
+	)
+
+	@JvmField
+	val smoothOutsideDungeons = ToggleModuleSetting(
+		id = "smooth_disable_in_dungeons",
+		label = "Disable in dungeons",
+		defaultValue = false,
+		description = "Teleports snap in the Catacombs, as they do without this, and glide everywhere else.",
+		visibleIf = { smoothTeleport.value },
+	)
+
+	@JvmField
+	val smoothTime = SliderModuleSetting(
+		id = "smooth_lag",
+		label = "Smoothing time",
+		unit = "ms",
+		defaultValue = 100.0,
+		min = 0.0,
+		max = 500.0,
+		step = 5.0,
+		description = "How long the glide takes: Skyblocker's Maximum Added Lag. Lower is faster, and 0 turns it off. The teleport itself is never held up.",
+		visibleIf = { smoothTeleport.value },
+	)
+
 	/** True while any of the six is on, which is when the three timing settings mean anything. */
 	private fun predicts(): Boolean =
 		fakeZpew.value || fakeZpewTransmission.value || fakeZpewImpact.value ||
@@ -193,11 +256,12 @@ object Etherwarp {
 	val resyncTimeout = SliderModuleSetting(
 		id = "resync_timeout",
 		label = "Resync timeout",
+		unit = "ms",
 		defaultValue = 500.0,
 		min = 300.0,
 		max = 1000.0,
 		step = 50.0,
-		description = "How long a prediction is believed.",
+		description = "How long a prediction is believed. Also used by no rotate.",
 		visibleIf = { predicts() },
 	)
 
@@ -214,6 +278,7 @@ object Etherwarp {
 	val maxLagWait = SliderModuleSetting(
 		id = "max_lag_wait",
 		label = "Max lag wait",
+		unit = "ms",
 		defaultValue = 3000.0,
 		min = 500.0,
 		max = 8000.0,
@@ -277,22 +342,14 @@ object Etherwarp {
 		category = ModuleCategory.GENERAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		// Grouped by the question each answers: whether the overlay shows and
-		// what shape it takes, what it is painted in, and what you hear.
+		// One switch a row on the card, with what tunes it in the switch's "⋯"
+		// panel: the overlay's shape and colours, the timing every prediction
+		// shares, the glide, and the sound.
 		settings = listOf(
 			SectionModuleSetting("overlay_section", "Overlay"),
-			overlay,
-			mode,
-			lineWidth,
-			fullBlock,
-			phase,
-			showFail,
-			SectionModuleSetting("colors_section", "Colors"),
-			outlineColor,
-			fillColor,
-			invalidOutlineColor,
-			invalidFillColor,
-			SectionModuleSetting("zero_ping_section", "Fake zpew"),
+			overlay.withMore(mode, lineWidth, fullBlock, phase, outlineColor, fillColor),
+			showFail.withMore(invalidOutlineColor, invalidFillColor),
+			SectionModuleSetting("zero_ping_section", "Fake zpew").withMore(resyncTimeout, waitOutLag, maxLagWait),
 			fakeZpew,
 			fakeZpewTransmission,
 			fakeZpewImpact,
@@ -300,16 +357,11 @@ object Etherwarp {
 			noRotate,
 			noRotateTransmission,
 			noRotateImpact,
-			SectionModuleSetting("prediction_section", "Prediction", visibleIf = { predicts() }),
-			resyncTimeout,
-			waitOutLag,
-			maxLagWait,
+			SectionModuleSetting("smooth_section", "Smooth teleport"),
+			smoothTeleport.withMore(smoothPredictive, smoothThirdPerson, smoothOutsideDungeons, smoothTime),
+			smoothKinds,
 			SectionModuleSetting("sound_section", "Sound"),
-			customSound,
-			sound,
-			volume,
-			pitch,
-			previewSound,
+			customSound.withMore(sound, volume, pitch, previewSound),
 		),
 	)
 
@@ -324,11 +376,13 @@ object Etherwarp {
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::renderOverlay)
 		EtherwarpZeroPing.initialize()
+		SmoothTeleport.initialize()
 	}
 
 	/** True while the zero-ping halves need to know which dungeon floor this is. */
 	val needsFloorTracking: Boolean
-		get() = EtherwarpZeroPing.needsFloorTracking
+		get() = EtherwarpZeroPing.needsFloorTracking ||
+			(module.enabled && smoothTeleport.value && (smoothOutsideDungeons.value || smoothPredictive.value))
 
 	/**
 	 * Called by the client packet mixin. Returns true when Hypixel's teleport

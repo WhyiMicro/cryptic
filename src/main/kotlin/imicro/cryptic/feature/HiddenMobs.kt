@@ -6,6 +6,7 @@ import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.BoxColors
 import net.minecraft.client.player.AbstractClientPlayer
 import net.minecraft.world.entity.Entity
@@ -130,12 +131,8 @@ object HiddenMobs {
 		shadowAssassins,
 		stealthyMobs,
 		highlightSection,
-		highlightFels,
-		felColor,
-		felOutlineColor,
-		highlightShadowAssassins,
-		shadowAssassinColor,
-		shadowAssassinOutlineColor,
+		highlightFels.withMore(felColor, felOutlineColor),
+		highlightShadowAssassins.withMore(shadowAssassinColor, shadowAssassinOutlineColor),
 	)
 
 	@JvmField

@@ -1,6 +1,7 @@
 package imicro.cryptic.mixin;
 
 import imicro.cryptic.feature.CroesusHelper;
+import imicro.cryptic.feature.ExperimentSolver;
 import imicro.cryptic.feature.InvincibilityTimer;
 import imicro.cryptic.feature.LoadoutManager;
 import imicro.cryptic.feature.SlotBinds;
@@ -51,6 +52,11 @@ public abstract class AbstractContainerScreenMixin {
      */
     @Inject(method = "slotClicked", at = @At("HEAD"), cancellable = true)
     private void cryptic$clickTerminalSlot(Slot slot, int slotId, int button, ContainerInput input, CallbackInfo info) {
+        // While an experiment plays itself, your own clicks stay out of it.
+        if (ExperimentSolver.blocksManualClicks()) {
+            info.cancel();
+            return;
+        }
         CroesusHelper.onSlotClicked(slotId);
         LoadoutManager.onSlotClicked(slotId, button, input);
         if (TerminalSolver.handleSlotClick(slotId, button, input)) info.cancel();

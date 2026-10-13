@@ -12,6 +12,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.CrypticRenderPipelines
 import imicro.cryptic.render.WorldRender
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
@@ -239,7 +240,8 @@ object DeviceSolver {
 	@JvmField
 	val simonLagMillis = SliderModuleSetting(
 		id = "simon_lag_millis",
-		label = "Lag threshold (ms)",
+		label = "Lag threshold",
+		unit = "ms",
 		defaultValue = 300.0,
 		min = 100.0,
 		max = 1000.0,
@@ -380,16 +382,17 @@ object DeviceSolver {
 		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
-			arrowSection, arrowAlign, arrowColorStyle, arrowTextColor,
-			arrowBlockWrongClicks, arrowInvertSneak,
-			lightsSection, lightsOn, lightsFill, lightsOutline,
-			simonSection, simonSays, simonStyle,
-			simonFirstColor, simonSecondColor, simonThirdColor,
-			simonBlockWrong, simonBlockWrongStart, simonMaxStartClicks, simonLagGuard, simonLagMillis, simonAnnounceProgress, simonBreakAlert,
-			sharpSection, sharpShooter, i4Style, i4Terminator,
-			i4TargetColor, i4ShowPrediction, i4PredictionColor, i4DoneColor, i4Announce,
+			arrowSection, arrowAlign.withMore(arrowColorStyle, arrowTextColor),
+			arrowBlockWrongClicks.withMore(arrowInvertSneak),
+			lightsSection, lightsOn.withMore(lightsFill, lightsOutline),
+			simonSection, simonSays.withMore(simonStyle, simonFirstColor, simonSecondColor, simonThirdColor),
+			simonBlockWrong, simonBlockWrongStart.withMore(simonMaxStartClicks), simonLagGuard.withMore(simonLagMillis),
+			simonAnnounceProgress, simonBreakAlert,
+			sharpSection, sharpShooter.withMore(i4Style, i4TargetColor, i4DoneColor), i4Terminator,
+			i4ShowPrediction.withMore(i4PredictionColor), i4Announce,
 			drawingSection, lineWidth, throughWalls,
 		),
+
 	)
 
 	val arrowAlignEnabled: Boolean get() = module.enabled && arrowAlign.value

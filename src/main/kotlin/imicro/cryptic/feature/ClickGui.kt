@@ -60,6 +60,20 @@ object ClickGui {
 	)
 
 	@JvmField
+	val rememberSearch = ToggleModuleSetting(
+		id = "remember_search",
+		label = "Remember search",
+		defaultValue = false,
+		description = "Keeps what you typed in the search when it is closed with Escape or the menu is shut, and puts it back the next time.",
+	)
+
+	/** The search as it was left, while [rememberSearch] is on. For this session. */
+	var rememberedSearch: String = ""
+
+	/** Whether the search was open when the menu was last shut, so it opens that way again. */
+	var searchWasOpen: Boolean = false
+
+	@JvmField
 	val editHud = ButtonModuleSetting(
 		id = "edit_hud",
 		label = "Edit HUD",
@@ -82,7 +96,7 @@ object ClickGui {
 		supportsToggle = false,
 		supportsKeybind = true,
 		keybind = guiKeybind,
-		settings = listOf(accentColor, sorting, leftClickToggles, editHud),
+		settings = listOf(accentColor, sorting, leftClickToggles, rememberSearch, editHud),
 	)
 
 	/** Dear ImGui packs colors as ABGR. */

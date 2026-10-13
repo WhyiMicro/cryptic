@@ -12,6 +12,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.CrypticRenderPipelines
 import imicro.cryptic.render.WorldRender
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
@@ -81,8 +82,6 @@ object DoorHighlight {
 		defaultValue = true,
 		description = "Marks the fairy room, and its wither door from next door.",
 	)
-
-	private val colorsSection = SectionModuleSetting("colors_section", "Colours")
 
 	@JvmField
 	val lockedOutline = ColorModuleSetting(
@@ -221,15 +220,16 @@ object DoorHighlight {
 		category = ModuleCategory.DUNGEON,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(doorsSection, showLocked, showUnlocked, showNormal, hideUseless, showFairy) +
-			listOf(
-				colorsSection,
-				lockedOutline, lockedFill,
-				unlockedOutline, unlockedFill,
-				normalOutline, normalFill,
-				fairyOutline, fairyFill,
-			) +
-			listOf(drawingSection, lineWidth, fillThroughWalls, reset),
+		// Each kind of door carries its own two colours in its "⋯".
+		settings = listOf(
+			doorsSection,
+			showLocked.withMore(lockedOutline, lockedFill),
+			showUnlocked.withMore(unlockedOutline, unlockedFill),
+			showNormal.withMore(normalOutline, normalFill),
+			hideUseless,
+			showFairy.withMore(fairyOutline, fairyFill),
+			drawingSection, lineWidth, fillThroughWalls, reset,
+		),
 	)
 
 	/** Keys in the party's hands, which is what makes a locked door openable. */

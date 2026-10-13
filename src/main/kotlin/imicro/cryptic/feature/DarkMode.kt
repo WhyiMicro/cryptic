@@ -22,7 +22,8 @@ object DarkMode {
 	@JvmField
 	val opacity = SliderModuleSetting(
 		id = "opacity",
-		label = "Opacity (%)",
+		label = "Opacity",
+		unit = "%",
 		defaultValue = 25.0,
 		min = 1.0,
 		max = 80.0,

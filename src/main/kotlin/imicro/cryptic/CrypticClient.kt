@@ -47,6 +47,7 @@ import imicro.cryptic.feature.CarryManager
 import imicro.cryptic.feature.KeybindManager
 import imicro.cryptic.feature.AliasManager
 import imicro.cryptic.feature.SoundVolumes
+import imicro.cryptic.feature.SmoothTeleport
 import imicro.cryptic.feature.UpdateChecker
 import imicro.cryptic.feature.CrosshairEditor
 import imicro.cryptic.feature.DoorFix
@@ -194,21 +195,6 @@ object CrypticClient : ClientModInitializer {
 	val slotBindKey = KeyMappingHelper.registerKeyMapping(
 		KeyMapping(
 			"key.${Cryptic.MOD_ID}.slot_bind",
-			InputConstants.Type.KEYSYM,
-			InputConstants.UNKNOWN.value,
-			keyCategory,
-		),
-	)
-
-	/**
-	 * Unbound out of the box, like the others.
-	 *
-	 * It sends a command, so a key that is also used for something else would
-	 * warp somebody away mid-task — which one to give up is theirs to decide.
-	 */
-	val nucleusWarpKey = KeyMappingHelper.registerKeyMapping(
-		KeyMapping(
-			"key.${Cryptic.MOD_ID}.nucleus_warp",
 			InputConstants.Type.KEYSYM,
 			InputConstants.UNKNOWN.value,
 			keyCategory,
@@ -1046,6 +1032,7 @@ object CrypticClient : ClientModInitializer {
 				SlotBinds.module.enabled || NucleusQol.module.enabled || CarryManager.module.enabled ||
 					LoadoutManager.needsSkyblock ||
 					KeybindManager.needsSkyblock ||
+					SmoothTeleport.predictive ||
 					DungeonWarpCooldown.module.enabled,
 			)
 			Zoom.tick(client)
@@ -1089,7 +1076,7 @@ object CrypticClient : ClientModInitializer {
 				TerminalEsp.module.enabled || TerminalOrder.module.enabled ||
 					DeviceSolver.needsPhaseTracking || F7Qol.module.enabled || MelodyHud.wanted ||
 					NoItemPlace.module.enabled ||
-					SpiritLeapOverlay.needsFloor7 || ILoveGlass.needsPhase || KeybindManager.needsPhase,
+					SpiritLeapOverlay.needsFloor7 || ILoveGlass.needsPhase || KeybindManager.needsPhase || SmoothTeleport.predictive,
 			)
 			// What the section has already had done to it, which only matters
 			// to whoever is drawing labels over the things still to do.
@@ -1104,8 +1091,10 @@ object CrypticClient : ClientModInitializer {
 			PuzzleSolver.tick(client)
 			MageBeam.tick(client)
 			RenderOptimizer.tick(client)
+			SmoothTeleport.tick()
 			CroesusHelper.tick(client)
 			LoadoutManager.tick(client)
+			NucleusQol.tick(client)
 			GyroHelper.tick(client)
 			BossTimings.tick(client)
 			DungeonScore.tick(client)
@@ -1150,10 +1139,6 @@ object CrypticClient : ClientModInitializer {
 			ServerStats.tick(client)
 			// Last, so it sees the menus as every module above has left them.
 			InventoryWatch.tick(client)
-
-			while (nucleusWarpKey.consumeClick()) {
-				NucleusQol.onWarpKey(client)
-			}
 
 			while (carryManagerKey.consumeClick()) {
 				if (CarryManager.module.enabled) CarryScreen.request()

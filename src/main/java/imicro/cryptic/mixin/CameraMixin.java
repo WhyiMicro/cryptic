@@ -1,7 +1,9 @@
 package imicro.cryptic.mixin;
 
+import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import imicro.cryptic.feature.CameraTweaks;
 import imicro.cryptic.feature.EtherwarpZeroPing;
+import imicro.cryptic.feature.SmoothTeleport;
 import imicro.cryptic.feature.Zoom;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -98,6 +100,18 @@ public abstract class CameraMixin {
         args.set(0, destination.x);
         args.set(1, destination.y);
         args.set(2, destination.z);
+    }
+
+    /**
+     * Where the camera is, for Etherwarp's Smooth teleport: Skyblocker's hook,
+     * on the position as it is read, so it covers third person and everything
+     * drawn relative to the camera. A return value changed, not a call taken
+     * over, so Skyblocker's own Smooth AOTE and this can both be installed.
+     */
+    @ModifyReturnValue(method = "position", at = @At("RETURN"))
+    private Vec3 cryptic$smoothTeleport(Vec3 original) {
+        Vec3 glided = SmoothTeleport.cameraPosition(original);
+        return glided != null ? glided : original;
     }
 
     @Inject(method = "calculateHudFov", at = @At("RETURN"), cancellable = true)

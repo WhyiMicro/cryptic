@@ -2,6 +2,7 @@ package imicro.cryptic.mixin;
 
 import imicro.cryptic.dungeon.BossTimings;
 import imicro.cryptic.feature.BetterChat;
+import imicro.cryptic.feature.TerminalSolver;
 import imicro.cryptic.dungeon.DungeonRun;
 import imicro.cryptic.dungeon.DungeonStats;
 import imicro.cryptic.dungeon.map.DungeonMapReader;
@@ -19,6 +20,7 @@ import imicro.cryptic.feature.LividSolver;
 import imicro.cryptic.feature.F7Qol;
 import imicro.cryptic.feature.Etherwarp;
 import imicro.cryptic.feature.EtherwarpZeroPing;
+import imicro.cryptic.feature.SmoothTeleport;
 import imicro.cryptic.feature.MageBeam;
 import imicro.cryptic.feature.MelodyHud;
 import imicro.cryptic.feature.PartyFeatures;
@@ -93,6 +95,8 @@ public abstract class ClientPacketListenerMixin {
         SpringBootsHelper.onSound(packet);
         GyroHelper.onSound(packet);
         if (Etherwarp.replaceTeleportSound(packet)) info.cancel();
+        // Hypixel's terminal click sound, while a chosen one is playing instead.
+        if (TerminalSolver.eatsServerSound(packet)) info.cancel();
     }
 
     /**
@@ -106,6 +110,7 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = "handleMovePlayer", at = @At("HEAD"))
     private void cryptic$beforeTeleport(ClientboundPlayerPositionPacket packet, CallbackInfo info) {
         EtherwarpZeroPing.beforeServerTeleport();
+        SmoothTeleport.beforeServerTeleport();
         // Before the move is applied, not after. A teleport onto an exact half
         // block is the maze throwing you about, and the solver needs to know
         // which pad threw you - which is the one you are standing on right now
@@ -116,6 +121,7 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = "handleMovePlayer", at = @At("RETURN"))
     private void cryptic$afterTeleport(ClientboundPlayerPositionPacket packet, CallbackInfo info) {
         EtherwarpZeroPing.afterServerTeleport();
+        SmoothTeleport.afterServerTeleport();
         DungeonWaypoints.onTeleport();
     }
 
@@ -445,9 +451,13 @@ public abstract class ClientPacketListenerMixin {
         AutoGfs.onSystemChat(packet.content(), packet.overlay());
         DungeonWaypoints.onSystemChat(packet.content(), packet.overlay());
         LividSolver.onSystemChat(packet.content(), packet.overlay());
+        TerminalSolver.onSystemChat(packet.content(), packet.overlay());
         // Last, once everything above has read it: Better Chat keeps a line
         // out of the chat window, never out of the mod.
-        if (BetterChat.hidesChat(packet.content(), packet.overlay())) info.cancel();
+        if (BetterChat.hidesChat(packet.content(), packet.overlay())
+                || AutoRequeue.hidesChat(packet.content(), packet.overlay())) {
+            info.cancel();
+        }
     }
 
     /**

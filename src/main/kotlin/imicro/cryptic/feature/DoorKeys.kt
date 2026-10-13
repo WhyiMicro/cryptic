@@ -12,6 +12,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.BoxColors
 import imicro.cryptic.render.CrypticRenderPipelines
 import imicro.cryptic.render.WorldRender
@@ -213,8 +214,12 @@ object DoorKeys {
 		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(soundSection, pickupSound, volume) +
-			listOf(highlightSection, mode, witherKey, witherColor, witherOutlineColor,
-				bloodKey, bloodColor, bloodOutlineColor, lineWidth, throughWalls) +
+			listOf(
+				highlightSection, mode,
+				witherKey.withMore(witherColor, witherOutlineColor),
+				bloodKey.withMore(bloodColor, bloodOutlineColor),
+				lineWidth, throughWalls,
+			) +
 			listOf(tracersSection, tracers, tracerWidth, reset),
 	)
 

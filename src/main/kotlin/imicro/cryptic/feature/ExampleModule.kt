@@ -5,12 +5,14 @@ import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.KeybindModuleSetting
 import imicro.cryptic.gui.Module
+import imicro.cryptic.gui.MultiSelectModuleSetting
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.RangeModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import net.minecraft.client.Minecraft
@@ -53,6 +55,42 @@ object ExampleModule {
 		defaultValue = false,
 		description = "A setting can hide itself until another one makes it relevant.",
 		visibleIf = { toggle.value },
+	)
+
+	@JvmField
+	val moreToggle = ToggleModuleSetting(
+		id = "more_toggle",
+		label = "With a panel",
+		defaultValue = true,
+		description = "The dots beside it open the settings that tune it, in a panel over the card, so the card stays short.",
+	)
+
+	@JvmField
+	val moreSlider = SliderModuleSetting(
+		id = "more_slider",
+		label = "Strength",
+		unit = "%",
+		defaultValue = 75.0,
+		min = 0.0,
+		max = 100.0,
+		step = 5.0,
+		description = "A row in a panel works like one on the card. The unit is shown in the box, never typed.",
+	)
+
+	@JvmField
+	val moreChoice = DropdownModuleSetting(
+		id = "more_choice",
+		label = "Style",
+		options = listOf("Soft", "Sharp", "Both"),
+		description = "A dropdown in a panel opens past the panel's edge when it has to.",
+	)
+
+	@JvmField
+	val moreColor = ColorModuleSetting(
+		id = "more_color",
+		label = "Tint",
+		defaultRgb = 0xFFAA55,
+		description = "So does a colour picker.",
 	)
 
 	// ---- Numbers ---------------------------------------------------------
@@ -166,6 +204,15 @@ object ExampleModule {
 	)
 
 	@JvmField
+	val multiSelect = MultiSelectModuleSetting(
+		id = "multi_select",
+		label = "Pick any",
+		options = listOf("Apples", "Pears", "Cherries", "Plums"),
+		defaultSelected = setOf("Apples", "Cherries"),
+		description = "A list where any number of options can be ticked. It stays open while you tick, and its box names what is ticked.",
+	)
+
+	@JvmField
 	val module = Module(
 		id = "example_module",
 		name = "Example Module",
@@ -174,9 +221,9 @@ object ExampleModule {
 		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
-			switchSection, toggle, dependent,
+			switchSection, toggle, dependent, moreToggle.withMore(moreSlider, moreChoice, moreColor),
 			numberSection, wholeSlider, decimalSlider, range,
-			choiceSection, dropdown, dropdownExtra, text, keybind, button,
+			choiceSection, dropdown, dropdownExtra, multiSelect, text, keybind, button,
 			colorSection, color, alphaColor,
 		),
 	)

@@ -15,6 +15,7 @@ import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.CrypticRenderPipelines
 import imicro.cryptic.render.WorldRender
 import imicro.cryptic.skyblock.SkyblockLocation
@@ -233,9 +234,15 @@ object CarryManager {
 		hasDemoSettings = false,
 		supportsKeybind = true,
 		keybind = openKeybind,
-		settings = listOf(manager, voidgloomSection, highlightBoss, highlightStyle) +
-			listOf(outlineColor, fillColor, lineWidth, phase, tracer, tracerColor) +
-			listOf(alertSpawn, spawnTitle, announceProgress, progressMessage, reset),
+		settings = listOf(
+			manager,
+			voidgloomSection,
+			highlightBoss.withMore(highlightStyle, outlineColor, fillColor, lineWidth, phase),
+			tracer.withMore(tracerColor),
+			alertSpawn.withMore(spawnTitle),
+			announceProgress.withMore(progressMessage),
+			reset,
+		),
 	)
 
 	/** Boss entity id to the carry it belongs to, and when it was first seen. */

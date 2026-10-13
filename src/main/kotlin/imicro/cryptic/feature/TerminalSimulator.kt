@@ -22,7 +22,8 @@ object TerminalSimulator {
 	@JvmField
 	val ping = SliderModuleSetting(
 		id = "ping",
-		label = "Ping (ms)",
+		label = "Ping",
+		unit = "ms",
 		defaultValue = 0.0,
 		min = 0.0,
 		max = 500.0,

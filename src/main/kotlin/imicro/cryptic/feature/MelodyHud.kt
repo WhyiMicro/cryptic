@@ -149,7 +149,8 @@ object MelodyHud {
 	@JvmField
 	val seconds = SliderModuleSetting(
 		id = "melody_hud_seconds",
-		label = "Stay (seconds)",
+		label = "Stay",
+		unit = "s",
 		defaultValue = 5.0,
 		min = 1.0,
 		max = 15.0,

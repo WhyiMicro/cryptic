@@ -12,6 +12,7 @@ import imicro.cryptic.gui.RangeModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.mixin.ContainerScreenAccessor
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -162,7 +163,7 @@ object ExperimentSolver {
 		supportsKeybind = false,
 		settings = listOf(nextColor, laterColor, showOrder) +
 			listOf(autoSection, autoClick, clickDelay) +
-			listOf(runSection, runTable, focus, renews, serums, superpairsByHand, buyExperience, guardianReminder),
+			listOf(runSection, runTable.withMore(focus, renews, serums, buyExperience, guardianReminder), superpairsByHand),
 	)
 
 	/** True while the table should be played for books rather than for levels. */
@@ -211,6 +212,23 @@ object ExperimentSolver {
 				)
 			}
 		}
+	}
+
+	/**
+	 * Whether a click of your own in the open experiment should be dropped.
+	 *
+	 * OdinClient's rule (BSD 3-Clause, Copyright (c) 2026 Starred): while the
+	 * game is playing itself, nothing you click reaches it. The sequence is
+	 * counted from this module's own clicks — the board never says how far in
+	 * it is — so one stray click, or a hotbar number pressed over a slot, sends
+	 * a click it did not count, and either fails the round or leaves it a step
+	 * out for the rest of the game. Superpairs left to you is yours to click.
+	 */
+	@JvmStatic
+	fun blocksManualClicks(): Boolean {
+		if (!module.enabled || !autoClick.value) return false
+		val handler = ExperimentTracker.current ?: return false
+		return !(superpairsByHand.value && handler.game == ExperimentRules.Game.SUPERPAIRS)
 	}
 
 	/**

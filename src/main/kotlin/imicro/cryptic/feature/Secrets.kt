@@ -13,6 +13,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.render.WorldRender
@@ -193,7 +194,8 @@ object Secrets {
 	@JvmField
 	val highlightTime = SliderModuleSetting(
 		id = "highlight_time",
-		label = "Highlight time (ms)",
+		label = "Highlight time",
+		unit = "ms",
 		defaultValue = 2000.0,
 		min = 500.0,
 		max = 5000.0,
@@ -324,20 +326,12 @@ object Secrets {
 			skullHitbox,
 			mushroomHitbox,
 			clickedSection,
-			highlightClicked,
-			highlightTime,
-			clickedStyle,
-			clickedFillColor,
-			clickedOutlineColor,
-			lockedFillColor,
-			lockedOutlineColor,
-			clickedPhase,
+			highlightClicked.withMore(
+				highlightTime, clickedStyle, clickedFillColor, clickedOutlineColor,
+				lockedFillColor, lockedOutlineColor, clickedPhase,
+			),
 			soundSection,
-			secretSound,
-			sound,
-			volume,
-			pitch,
-			previewSound,
+			secretSound.withMore(sound, volume, pitch, previewSound),
 		),
 	)
 

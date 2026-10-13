@@ -8,6 +8,7 @@ import imicro.cryptic.gui.ModuleRegistry
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
+import imicro.cryptic.gui.MultiSelectModuleSetting
 import imicro.cryptic.gui.KeybindModuleSetting
 import imicro.cryptic.gui.RangeModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
@@ -319,6 +320,7 @@ object ConfigManager {
                     is RangeModuleSetting -> hash.mix(setting.lower.toRawBits()).mix(setting.upper.toRawBits())
                     is ColorModuleSetting -> hash.mix(setting.argb.toLong())
                     is DropdownModuleSetting -> hash.mix(setting.selectedIndex.toLong())
+                    is MultiSelectModuleSetting -> hash.mix(setting.encode().hashCode().toLong())
                     is TextModuleSetting -> hash.mix(setting.value.hashCode().toLong())
                     is KeybindModuleSetting -> hash.mix(setting.keyCode.toLong())
                     is SlotMapModuleSetting -> hash.mix(setting.encode().hashCode().toLong())
@@ -425,6 +427,7 @@ object ConfigManager {
                         })
                         is ColorModuleSetting -> settings.addProperty(setting.id, setting.hex)
                         is DropdownModuleSetting -> settings.addProperty(setting.id, setting.selected)
+                        is MultiSelectModuleSetting -> settings.addProperty(setting.id, setting.encode())
                         is TextModuleSetting -> settings.addProperty(setting.id, setting.value)
                         is KeybindModuleSetting -> settings.addProperty(setting.id, setting.keyCode)
                         is SlotMapModuleSetting -> settings.addProperty(setting.id, setting.encode())
@@ -483,6 +486,7 @@ object ConfigManager {
                         }
                         is ColorModuleSetting -> settings.string(setting.id)?.let(setting::setHex)
                         is DropdownModuleSetting -> settings.string(setting.id)?.let(setting::select)
+                        is MultiSelectModuleSetting -> settings.string(setting.id)?.let(setting::decode)
                         is TextModuleSetting -> settings.string(setting.id)?.let { setting.value = it }
                         is KeybindModuleSetting -> settings.int(setting.id)?.let { setting.keyCode = it }
                         is SlotMapModuleSetting -> settings.string(setting.id)?.let(setting::decode)

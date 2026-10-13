@@ -18,6 +18,12 @@ object FontAwesomeIcons {
     /** A caret pointing down, for a dropdown that is shut. */
     const val CARET_DOWN = "\uF0D7"
 
+    /** The open-the-list chevron on a dropdown's box. */
+    const val CHEVRON_DOWN = "\uF078"
+
+    /** Three dots beside a row: more settings for it, in a floating panel. */
+    const val ELLIPSIS = "\uF141"
+
     /** The crosshair editor's tools. */
     const val PENCIL = "\uF303"
     const val FILL = "\uF576"

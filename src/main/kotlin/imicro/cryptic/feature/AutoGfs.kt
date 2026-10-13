@@ -63,7 +63,8 @@ object AutoGfs {
 	@JvmField
 	val delay = SliderModuleSetting(
 		id = "delay",
-		label = "Check every (seconds)",
+		label = "Check every",
+		unit = "s",
 		defaultValue = 20.0,
 		min = 5.0,
 		max = 60.0,

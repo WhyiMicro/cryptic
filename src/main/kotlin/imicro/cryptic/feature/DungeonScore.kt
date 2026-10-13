@@ -12,6 +12,7 @@ import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
@@ -186,8 +187,7 @@ object DungeonScore {
 		placement,
 		paulMode,
 		bossSection,
-		showInBoss,
-		minimalInBoss,
+		showInBoss.withMore(minimalInBoss),
 		showAtEnd,
 	)
 

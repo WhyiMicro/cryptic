@@ -59,6 +59,26 @@ object WitherCloakEffect {
 		step = 0.1,
 	)
 
+	/** How big each shield is: its width and its height together, so it keeps its shape. */
+	private val shieldSize = SliderModuleSetting(
+		id = "shield_size",
+		label = "Shield Size",
+		defaultValue = 1.0,
+		min = 0.25,
+		max = 3.0,
+		step = 0.05,
+	)
+
+	/** How far above your feet the ring sits, in blocks. Below zero sinks it. */
+	private val shieldHeight = SliderModuleSetting(
+		id = "shield_height",
+		label = "Shield Height",
+		defaultValue = 0.0,
+		min = -2.0,
+		max = 3.0,
+		step = 0.1,
+	)
+
 	@JvmField
 	val dungeonsOnly = ToggleModuleSetting(
 		id = "dungeons_only",
@@ -88,7 +108,7 @@ object WitherCloakEffect {
 		category = ModuleCategory.VISUAL,
 		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(shieldCount, shieldSpeed, shieldDistance, dungeonsOnly),
+		settings = listOf(shieldCount, shieldSpeed, shieldDistance, shieldSize, shieldHeight, dungeonsOnly),
 	)
 
 	private var initialized = false
@@ -226,6 +246,8 @@ object WitherCloakEffect {
 			count = shieldCount.value.roundToInt().coerceIn(0, 20),
 			speed = shieldSpeed.value.coerceIn(-20.0, 20.0),
 			distance = shieldDistance.value.coerceIn(0.0, 3.0),
+			size = shieldSize.value.coerceIn(0.25, 3.0),
+			height = shieldHeight.value.coerceIn(-2.0, 3.0),
 		)
 	}
 
@@ -243,34 +265,36 @@ object WitherCloakEffect {
 			val baseAngle = (((System.currentTimeMillis() / 30.0) * snapshot.speed * -0.5) % 360.0) * DEGREES_TO_RADIANS
 			val angleStep = (2.0 * PI) / snapshot.count
 			for (index in 0 until snapshot.count) {
-				drawShield(consumer, pose, baseAngle + angleStep * index, snapshot.distance)
+				drawShield(consumer, pose, baseAngle + angleStep * index, snapshot.distance, snapshot.size, snapshot.height)
 			}
 		}
 		poseStack.popPose()
 	}
 
-	private fun drawShield(consumer: VertexConsumer, pose: PoseStack.Pose, angle: Double, distance: Double) {
+	private fun drawShield(consumer: VertexConsumer, pose: PoseStack.Pose, angle: Double, distance: Double, size: Double, lift: Double) {
 		val radialX = sin(angle)
 		val radialZ = cos(angle)
 		val tangentX = cos(angle)
 		val tangentZ = -sin(angle)
 		val centerX = radialX * distance
 		val centerZ = radialZ * distance
-		val halfWidth = SHIELD_WIDTH / 2.0
+		val halfWidth = SHIELD_WIDTH * size / 2.0
+		val bottom = lift
+		val top = lift + SHIELD_HEIGHT * size
 		val leftX = centerX - tangentX * halfWidth
 		val leftZ = centerZ - tangentZ * halfWidth
 		val rightX = centerX + tangentX * halfWidth
 		val rightZ = centerZ + tangentZ * halfWidth
-		vertex(consumer, pose, leftX, 0.0, leftZ, 0f, 1f, radialX, radialZ)
-		vertex(consumer, pose, rightX, 0.0, rightZ, 1f, 1f, radialX, radialZ)
-		vertex(consumer, pose, rightX, SHIELD_HEIGHT, rightZ, 1f, 0f, radialX, radialZ)
-		vertex(consumer, pose, leftX, SHIELD_HEIGHT, leftZ, 0f, 0f, radialX, radialZ)
+		vertex(consumer, pose, leftX, bottom, leftZ, 0f, 1f, radialX, radialZ)
+		vertex(consumer, pose, rightX, bottom, rightZ, 1f, 1f, radialX, radialZ)
+		vertex(consumer, pose, rightX, top, rightZ, 1f, 0f, radialX, radialZ)
+		vertex(consumer, pose, leftX, top, leftZ, 0f, 0f, radialX, radialZ)
 
 		// The image must remain visible from both sides while it orbits the camera.
-		vertex(consumer, pose, rightX, 0.0, rightZ, 1f, 1f, -radialX, -radialZ)
-		vertex(consumer, pose, leftX, 0.0, leftZ, 0f, 1f, -radialX, -radialZ)
-		vertex(consumer, pose, leftX, SHIELD_HEIGHT, leftZ, 0f, 0f, -radialX, -radialZ)
-		vertex(consumer, pose, rightX, SHIELD_HEIGHT, rightZ, 1f, 0f, -radialX, -radialZ)
+		vertex(consumer, pose, rightX, bottom, rightZ, 1f, 1f, -radialX, -radialZ)
+		vertex(consumer, pose, leftX, bottom, leftZ, 0f, 1f, -radialX, -radialZ)
+		vertex(consumer, pose, leftX, top, leftZ, 0f, 0f, -radialX, -radialZ)
+		vertex(consumer, pose, rightX, top, rightZ, 1f, 0f, -radialX, -radialZ)
 	}
 
 	private fun vertex(
@@ -313,6 +337,8 @@ object WitherCloakEffect {
 		val count: Int,
 		val speed: Double,
 		val distance: Double,
+		val size: Double,
+		val height: Double,
 	)
 
 	private val TEXTURE = Cryptic.id("textures/effect/wither_cloak_shield.png")

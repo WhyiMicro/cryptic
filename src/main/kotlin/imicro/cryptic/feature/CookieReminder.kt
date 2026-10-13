@@ -34,7 +34,8 @@ object CookieReminder {
 	@JvmField
 	val warnMinutes = SliderModuleSetting(
 		id = "warn_minutes",
-		label = "Warn ahead (minutes)",
+		label = "Warn ahead",
+		unit = "min",
 		defaultValue = 10.0,
 		min = 0.0,
 		max = 60.0,

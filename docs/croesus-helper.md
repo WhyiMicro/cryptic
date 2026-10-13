@@ -42,16 +42,16 @@ session: a chest opened before the game was restarted shows without its cost.
 **Profit in the chest** writes the profit beside a chest's title when you open
 it, at Croesus or in the boss room after a run.
 
-**Profit overlays** are SkyHanni's two lists, drawn the way SkyHanni draws them:
+**Profit overlay** is SkyHanni's two lists, drawn the way SkyHanni draws them,
+in one place. Only one is ever on screen, so they share a single HUD element,
+**Croesus Profit**:
 
-- **Croesus Profit Overlay**, over a run's screen: every chest not yet opened
-  with its profit. Hover a chest for what is in it, its cost and its profit
-  before the cost.
-- **Chest Profit**, over a chest, at Croesus or in the boss room after a run:
-  its total revenue and each item, its total cost and each part of it, and the
-  profit. In a dungeon it ends with **All Chest Profits**, every chest you have
-  opened there.
+- Over a run's screen: every chest not yet opened with its profit. Hover a
+  chest for what is in it, its cost and its profit before the cost.
+- Over a chest, at Croesus or in the boss room after a run: its total revenue
+  and each item, its total cost and each part of it, and the profit. In a
+  dungeon it ends with **All Chest Profits**, every chest you have opened there.
 
-Both are only drawn over a chest screen. Place each with `/cryptic hud`. If
-where you put one would be under the chest window, it is drawn beside the
-window instead, smaller if it has to be.
+It is only drawn over a chest screen. Place it with `/cryptic hud`. If where
+you put it would be under the chest window, it is drawn beside the window
+instead, smaller if it has to be.

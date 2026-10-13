@@ -128,7 +128,7 @@ object EtherwarpZeroPing {
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> pending.clear() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> pending.clear() }
 		// Mana is only ever written on the action bar.
-		ClientReceiveMessageEvents.GAME.register { message, overlay -> if (overlay && armed) readMana(message.string) }
+		ClientReceiveMessageEvents.GAME.register { message, overlay -> if (overlay && (armed || SmoothTeleport.predictive)) readMana(message.string) }
 	}
 
 	/** True while either half wants to know which dungeon floor this is. */
@@ -160,8 +160,12 @@ object EtherwarpZeroPing {
 	}
 
 	/** True when the bar is known and too empty; an unknown bar is given the benefit of the doubt. */
-	private fun outOfMana(): Boolean =
+	internal fun outOfMana(): Boolean =
 		System.currentTimeMillis() - manaSeenAt < MANA_STALE_MILLIS && maxMana > 0 && mana < maxMana * MANA_NEEDED
+
+	/** Whether [stack] teleports at all, whichever way it is used. */
+	private fun holdsTeleportItem(stack: ItemStack): Boolean =
+		classify(stack, sneaking = false) != null || classify(stack, sneaking = true) != null
 
 	/**
 	 * Which teleport a right click with [stack] is, and how far it goes.
@@ -169,7 +173,7 @@ object EtherwarpZeroPing {
 	 * The same item is two of them: a merged Aspect etherwarps while you sneak
 	 * and transmits while you do not.
 	 */
-	private fun classify(stack: ItemStack, sneaking: Boolean): Pair<Kind, Double>? {
+	internal fun classify(stack: ItemStack, sneaking: Boolean): Pair<Kind, Double>? {
 		if (stack.isEmpty) return null
 		val id = SkyblockItem.id(stack)
 		val data = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag()
@@ -330,7 +334,15 @@ object EtherwarpZeroPing {
 		val player = client.player ?: return
 
 		val ours = pending.removeFirstOrNull()
-		restoreRotation = ours != null && Etherwarp.module.enabled && keepsRotation(ours.kind)
+		// Only with a teleport item in hand as the teleport lands: an Aspect of
+		// the End or Void, or a wither blade carrying Wither Impact. A prediction
+		// is made from a click, but the server's teleport arrives a round trip
+		// later, and if the hand has changed by then — or the teleport is some
+		// other one entirely, a pad or a push, while you hold a pickaxe — the
+		// rotation is the server's. A head that ignores a teleport with no
+		// teleporting item in hand is the kind of thing a check could look for.
+		restoreRotation = ours != null && Etherwarp.module.enabled && keepsRotation(ours.kind) &&
+			holdsTeleportItem(player.mainHandItem)
 		if (!restoreRotation) return
 
 		savedYRot = player.yRot

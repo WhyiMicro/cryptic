@@ -11,6 +11,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.BoxColors
 import imicro.cryptic.render.WorldRender
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
@@ -335,30 +336,17 @@ object Highlight {
 		supportsKeybind = false,
 		settings = listOf(
 			hideNonStarNames,
-			highlightStarred,
-			starGlow,
-			starStyle,
-			starPhase,
-			starColor,
-			starOutlineColor,
-			specialSection,
+			highlightStarred.withMore(starGlow, starStyle, starPhase, starColor, starOutlineColor),
+			// The look every special mob shares sits behind the heading's "⋯",
+			// since it belongs to no one switch under it.
+			specialSection.withMore(specialGlow, specialStyle, specialPhase, specialColor, specialOutlineColor, specialTracers),
 			highlightBats,
 			highlightMimic,
-			highlightMimicChest,
-			mimicChestColor,
+			highlightMimicChest.withMore(mimicChestColor),
 			highlightPrince,
-			specialGlow,
-			specialStyle,
-			specialPhase,
-			specialColor,
-			specialOutlineColor,
-			specialTracers,
 			lineWidth,
 			portalSection,
-			colorPortal,
-			belowSColor,
-			sColor,
-			sPlusColor,
+			colorPortal.withMore(belowSColor, sColor, sPlusColor),
 		),
 	)
 

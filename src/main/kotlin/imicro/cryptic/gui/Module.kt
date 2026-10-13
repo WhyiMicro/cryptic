@@ -35,6 +35,9 @@ class WidgetIds(prefix: String) {
 
 	/** Identifies the popup opened by a color swatch. */
 	val picker = "##${prefix}_picker"
+
+	/** Identifies the "⋯" that opens the row's panel of further settings. */
+	val more = "##more_$prefix"
 }
 
 /** Pre-built identifiers for the controls a module card owns itself. */
@@ -87,8 +90,16 @@ class Module(
 	val range: RangeSetting = RangeSetting("Range", 25.0, 75.0, 0.0, 100.0),
 	val dropdown: DropdownSetting = DropdownSetting("Mode", listOf("Default", "Subtle", "Detailed")),
 	val keybind: KeybindSetting = KeybindSetting(),
-	val settings: List<ModuleSetting> = emptyList(),
+	settings: List<ModuleSetting> = emptyList(),
 ) {
+	/**
+	 * Every setting the module has, the ones tucked into a "⋯" panel included,
+	 * each straight after the row whose panel holds it. Profiles, resets and
+	 * the menu all walk this one list; the menu skips a setting with a
+	 * [ModuleSetting.parent] when it lays out the card.
+	 */
+	val settings: List<ModuleSetting> = settings.flatMap { listOf(it) + it.more }.distinct()
+
 	val hasSettings: Boolean get() = hasDemoSettings || settings.isNotEmpty()
 
 	/** True when [source] is this module's own dropdown or one of its settings. */
@@ -140,6 +151,15 @@ interface DropdownSource {
 	/** Dear ImGui identifiers for the closed control and each option row. */
 	val buttonId: String
 	val optionIds: List<String>
+
+	/** Whether several options can be ticked at once, which keeps the list open while they are. */
+	val multiple: Boolean get() = false
+
+	/** Whether [index] is shown ticked in the open list. */
+	fun isChecked(index: Int): Boolean = index == selectedIndex
+
+	/** An option was clicked in the open list. */
+	fun pick(index: Int) { selectedIndex = index }
 }
 
 class DropdownSetting(
@@ -214,13 +234,52 @@ sealed class ModuleSetting(
 		widgetIds = WidgetIds("${module.id}_$id")
 	}
 
-	fun isVisible() = visibleIf()
+	open fun isVisible() = visibleIf()
 
 	/**
 	 * Whether this setting gets a row of its own. A colour drawn beside its
 	 * toggle does not: it is part of that toggle's row.
 	 */
 	open val hasOwnRow: Boolean get() = true
+
+	/**
+	 * The settings that open in a floating panel from the "⋯" beside this row,
+	 * rather than lengthening the card. Set with [withMore].
+	 */
+	var more: List<ModuleSetting> = emptyList()
+		private set
+
+	/** The row whose "⋯" panel this setting lives in, or null for a row on the card. */
+	var parent: ModuleSetting? = null
+		private set
+
+	/** A row on the card itself, as opposed to one inside a panel. */
+	val onCard: Boolean get() = hasOwnRow && parent == null
+
+	/** Whether the "⋯" has anything to show right now. */
+	fun hasVisibleMore(): Boolean {
+		val children = more
+		for (index in children.indices) {
+			if (children[index].hasOwnRow && children[index].isVisible()) return true
+		}
+		return false
+	}
+
+	internal fun adopt(children: List<ModuleSetting>) {
+		more = children
+		children.forEach { it.parent = this }
+	}
+}
+
+/**
+ * Moves [children] off the card and into a floating panel opened by the "⋯"
+ * beside this row: the settings that fine-tune this one, which are wanted
+ * once and then never again. Returns the row itself, so it reads in place in
+ * a module's list of settings.
+ */
+fun <T : ModuleSetting> T.withMore(vararg children: ModuleSetting): T {
+	adopt(children.toList())
+	return this
 }
 
 class ToggleModuleSetting(
@@ -247,19 +306,44 @@ class SliderModuleSetting(
 	val step: Double,
 	val description: String = "",
 	visibleIf: () -> Boolean = { true },
+	/** Shown after the number in the value box ("ms", "%", "°"), never typed. */
+	val unit: String = "",
 ): ModuleSetting(id, label, visibleIf) {
-	private val valueLabel = NumberLabel { raw ->
+	private fun format(raw: Double): String =
 		if (step >= 1.0) {
 			raw.roundToInt().toString()
 		} else {
 			String.format(Locale.ROOT, "%.2f", raw).trimEnd('0').trimEnd('.')
 		}
+
+	private val valueLabel = NumberLabel(::format)
+	private val boxLabel = NumberLabel { raw -> withUnit(format(raw)) }
+
+	private fun withUnit(number: String): String = when {
+		unit.isEmpty() -> number
+		// A one-letter unit or a sign sits against its number ("5s", "90%");
+		// a word does not ("100 ms").
+		unit.length == 1 -> number + unit
+		else -> "$number $unit"
 	}
 
 	var value: Double = defaultValue
 
 	/** The value as the menu shows it, formatted only when the value changes. */
 	val displayValue: String get() = valueLabel.of(value)
+
+	/** The value with its unit, as the box beside the slider shows it. */
+	val boxValue: String get() = boxLabel.of(value)
+
+	/**
+	 * The widest the box's text can get, so the box keeps one size while the
+	 * slider is dragged instead of growing and shrinking under the cursor.
+	 */
+	val widestBoxValue: String by lazy {
+		listOf(min, max, min + step, max - step, defaultValue)
+			.map { withUnit(format(it)) }
+			.maxBy { it.length }
+	}
 
 	fun reset() { value = defaultValue }
 }
@@ -297,6 +381,11 @@ class RangeModuleSetting(
 
 	val displayLower: String get() = lowerLabel.of(lower)
 	val displayUpper: String get() = upperLabel.of(upper)
+
+	/** The widest either end can get, so both boxes keep one size while dragged. */
+	val widestValue: String by lazy {
+		listOf(min, max, min + step, max - step).map(format).maxBy { it.length }
+	}
 
 	/**
 	 * Each end is separately editable, so each needs identifiers of its own.
@@ -491,6 +580,84 @@ class DropdownModuleSetting(
 }
 
 /**
+ * A list of options, any number of which can be ticked.
+ *
+ * Drawn as a dropdown whose box names everything ticked ("Head, Chest, …"),
+ * opening to the whole list with a tick beside each chosen option; clicking
+ * one ticks or unticks it and leaves the list open. Saved as the ticked
+ * options' labels rather than their positions, as dropdowns are, so adding or
+ * reordering options keeps everybody's choices.
+ */
+class MultiSelectModuleSetting(
+	id: String,
+	label: String,
+	override val options: List<String>,
+	/** The options ticked to begin with. Every one, unless said otherwise. */
+	defaultSelected: Set<String> = options.toSet(),
+	val description: String = "",
+	visibleIf: () -> Boolean = { true },
+): ModuleSetting(id, label, visibleIf), DropdownSource {
+	private val defaultIndices: Set<Int> = options.indices.filter { options[it] in defaultSelected }.toSet()
+
+	/** Which options are ticked, by their place in [options]. */
+	var ticked: Set<Int> = defaultIndices
+		private set(value) {
+			field = value
+			summary = null
+		}
+
+	private var summary: String? = null
+
+	fun isSelected(option: String): Boolean = options.indexOf(option).let { it >= 0 && it in ticked }
+
+	fun isSelected(index: Int): Boolean = index in ticked
+
+	fun toggle(index: Int) {
+		if (index !in options.indices) return
+		ticked = if (index in ticked) ticked - index else ticked + index
+	}
+
+	/** No single option is "the" selection, so none is singled out. */
+	override var selectedIndex: Int
+		get() = -1
+		set(_) {}
+
+	/** The ticked options in list order, built once per change rather than per frame. */
+	override val selected: String get() = summary ?: when {
+		ticked.isEmpty() -> "None"
+		ticked.size == options.size -> "All"
+		else -> options.filterIndexed { index, _ -> index in ticked }.joinToString(", ")
+	}.also { summary = it }
+
+	override val buttonId: String get() = widgetIds.control
+
+	override val multiple: Boolean get() = true
+
+	override fun isChecked(index: Int): Boolean = index in ticked
+
+	override fun pick(index: Int) = toggle(index)
+
+	/** One row per option, each with its own clickable id. */
+	override val optionIds: List<String> by lazy {
+		List(options.size) { "##multi_${widgetIds.editorKey}_$it" }
+	}
+
+	/** The ticked labels, joined, for the profile. */
+	fun encode(): String = options.filterIndexed { index, _ -> index in ticked }.joinToString(SEPARATOR)
+
+	fun decode(text: String) {
+		val labels = if (text.isEmpty()) emptySet() else text.split(SEPARATOR).toSet()
+		ticked = options.indices.filter { options[it] in labels }.toSet()
+	}
+
+	fun reset() { ticked = defaultIndices }
+
+	private companion object {
+		const val SEPARATOR = "|"
+	}
+}
+
+/**
  * A set of slot-to-slot bindings, one set per named profile.
  *
  * The only setting here the menu does not draw. What it holds is made in the
@@ -534,6 +701,22 @@ class SlotMapModuleSetting(
 			}
 		}
 	}
+}
+
+/**
+ * A row that is only a way into a "⋯" panel: a label, and the dots at the
+ * right-hand end. For a long tail of settings that belong together but are
+ * set once and left — a card's dozen colours — so they leave the card without
+ * leaving the module. Clicking anywhere on the row opens the panel. Holds
+ * nothing itself, and is hidden while nothing in its panel would show.
+ */
+class PanelModuleSetting(
+	id: String,
+	label: String,
+	val description: String = "",
+	visibleIf: () -> Boolean = { true },
+): ModuleSetting(id, label, visibleIf) {
+	override fun isVisible(): Boolean = visibleIf() && hasVisibleMore()
 }
 
 class ButtonModuleSetting(

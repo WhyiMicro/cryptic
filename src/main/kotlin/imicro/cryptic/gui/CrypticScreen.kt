@@ -6,6 +6,7 @@ import imgui.ImGui
 import imgui.flag.ImGuiCol
 import imgui.flag.ImGuiInputTextFlags
 import imgui.flag.ImGuiMouseButton
+import imgui.flag.ImGuiPopupFlags
 import imgui.flag.ImGuiStyleVar
 import imgui.flag.ImGuiWindowFlags
 import imgui.type.ImString
@@ -65,6 +66,32 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
     private var fittedSize = 0f
     private var fittedWidth = 0f
     private var openDropdown: DropdownSource? = null
+
+    /**
+     * The row whose "⋯" panel is open, and the card it belongs to.
+     *
+     * The panel hangs from the row, so it is placed from where the row was
+     * drawn this frame: [moreAnchorSeen] says the row was drawn at all, and a
+     * panel whose row has scrolled away, folded shut or left with its tab is
+     * closed rather than left floating over something else.
+     */
+    private var openMore: ModuleSetting? = null
+    private var openMoreModule: Module? = null
+    private var moreAnchorSeen = false
+    private var moreAnchorX = 0f
+    private var moreAnchorTop = 0f
+    private var moreAnchorBottom = 0f
+    private var moreAnchorWidth = 0f
+    private var moreProgress = 0f
+
+    /** Where the panel was last drawn, so the cards under it can stand aside next frame. */
+    private val moreRect = FloatArray(4)
+    private var pointerOverMore = false
+    private var drawingMore = false
+    private var moreDotsClicked = false
+
+    /** Labels trimmed to the room their row leaves, remade only when that room changes. */
+    private val fittedLabels = HashMap<Any, Pair<Long, String>>()
     private var draggingLowerRangeHandle = true
 
     /** The same, for a range that belongs to a setting rather than a demo card. */
@@ -149,6 +176,18 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             editingNumericId = null
             numericBuffer.clear()
             return true
+        }
+
+        // Escape shuts a floating list or panel before it shuts the menu.
+        if (event.key() == InputConstants.KEY_ESCAPE && awaitingSettingKey == null && awaitingKeybind == null) {
+            if (openDropdown != null) {
+                openDropdown = null
+                return true
+            }
+            if (openMore != null) {
+                closeMore()
+                return true
+            }
         }
 
         if (renamingProfile != null && event.key() == InputConstants.KEY_ESCAPE) {
@@ -278,7 +317,27 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
 
     override fun isPauseScreen() = false
 
+    /** Whether the remembered search has been put back yet; init runs again on every resize. */
+    private var searchRestored = false
+
+    override fun init() {
+        super.init()
+        if (searchRestored) return
+        searchRestored = true
+        // Shut last time with the search open: it opens again, with what was in it.
+        if (ClickGui.rememberSearch.value && ClickGui.searchWasOpen) openSearch()
+    }
+
+    /** Keeps the search as it stands, for the next time, while Remember search is on. */
+    private fun rememberSearchText() {
+        if (!ClickGui.rememberSearch.value) return
+        if (searchOpen) ClickGui.rememberedSearch = searchBuffer.get()
+    }
+
     override fun removed() {
+        // Shut with the search open: the text, and that it was open, both kept.
+        rememberSearchText()
+        ClickGui.searchWasOpen = ClickGui.rememberSearch.value && searchOpen
         ImGuiRuntime.releaseInput()
         ConfigManager.flush()
         super.removed()
@@ -503,7 +562,8 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
 
     private fun openSearch() {
         searchOpen = true
-        searchBuffer.clear()
+        // Remembered, the search comes back as it was left; otherwise it starts empty.
+        if (ClickGui.rememberSearch.value) searchBuffer.set(ClickGui.rememberedSearch) else searchBuffer.clear()
         searchFocusRequested = true
         awaitingKeybind = null
         awaitingSettingKey = null
@@ -513,6 +573,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
     }
 
     private fun closeSearch() {
+        rememberSearchText()
         searchOpen = false
         scrollOffset = 0f
         searchFocusRequested = false
@@ -564,6 +625,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
                 contentInteractive && tabContentProgress > 0.9f,
             )
             contentAlpha = 1f
+            closeMore()
             return
         }
 
@@ -592,6 +654,15 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
 
         advanceSectionAnimations(visibleModules, dt)
 
+        // An open panel sits over the cards, so the cards stand aside wherever
+        // it covers them: no clicks, no hover, no tooltips through it. Last
+        // frame's outline is the one there is when the cards are drawn.
+        pointerOverMore = openMore != null &&
+            ImGui.isMouseHoveringRect(moreRect[0], moreRect[1], moreRect[2], moreRect[3], false)
+        val cardsInteractive = contentInteractive && !pointerOverMore
+        moreAnchorSeen = false
+        moreDotsClicked = false
+
         visibleModules.forEachIndexed { index, module ->
             val column = index % 2
             val expandedHeight = expandedModuleHeight(module)
@@ -611,12 +682,18 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             val cardHeight = dp(COLLAPSED_HEIGHT + (expandedHeight - COLLAPSED_HEIGHT) * ease(progress), scale)
             val x = panelX + column * (cardWidth + columnGap) + entranceOffset
             val y = columnY[column]
-            drawModule(draw, module, x, y, cardWidth, cardHeight, scale, dt, progress, contentInteractive)?.let {
+            drawModule(draw, module, x, y, cardWidth, cardHeight, scale, dt, progress, cardsInteractive)?.let {
                 dropdownOverlay = it
             }
             columnY[column] += cardHeight + cardGap
         }
         ImGui.popClipRect()
+
+        // A row scrolled out from under its panel takes the panel with it.
+        if (openMore != null && (moreAnchorBottom < contentTop + offsetY || moreAnchorTop > contentBottom)) {
+            moreAnchorSeen = false
+        }
+        drawMorePanel(draw, displayHeight, scale, dt, contentInteractive)?.let { dropdownOverlay = it }
 
         // Measured after laying out, because a card's height depends on whether
         // it is open and on how far its opening animation has got.
@@ -1188,6 +1265,23 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         if (module.owns(openDropdown)) openDropdown = null
     }
 
+    /** How tall one setting's row is, before scaling. A heading's includes the gap above it. */
+    private fun rowHeight(setting: ModuleSetting): Float = when (setting) {
+        is SliderModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
+        is RangeModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
+        is ToggleModuleSetting -> CUSTOM_TOGGLE_ROW_HEIGHT
+        is ButtonModuleSetting -> CUSTOM_BUTTON_ROW_HEIGHT
+        is ColorModuleSetting -> CUSTOM_COLOR_ROW_HEIGHT
+        is DropdownModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
+        is MultiSelectModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
+        is KeybindModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
+        is TextModuleSetting -> CUSTOM_TEXT_ROW_HEIGHT
+        // Made by pointing at slots in the inventory, so it has no row.
+        is SlotMapModuleSetting -> 0f
+        is PanelModuleSetting -> CUSTOM_TOGGLE_ROW_HEIGHT
+        is SectionModuleSetting -> CUSTOM_SECTION_GAP + CUSTOM_SECTION_HEIGHT
+    }
+
     private fun expandedModuleHeight(module: Module): Float {
         val settings = module.settings
         if (settings.isEmpty()) return EXPANDED_HEIGHT
@@ -1203,7 +1297,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
 
         for (index in settings.indices) {
             val setting = settings[index]
-            if (!setting.isVisible() || !setting.hasOwnRow) continue
+            if (!setting.isVisible() || !setting.onCard) continue
 
             if (setting is SectionModuleSetting) {
                 rows += groupRows * group.let { if (it == null) 1f else ease(openness(module, it)) }
@@ -1213,21 +1307,9 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
 
             val isFirst = firstVisible
             firstVisible = false
-            val height = when (setting) {
-                is SliderModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
-                is RangeModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
-                is ToggleModuleSetting -> CUSTOM_TOGGLE_ROW_HEIGHT
-                is ButtonModuleSetting -> CUSTOM_BUTTON_ROW_HEIGHT
-                is ColorModuleSetting -> CUSTOM_COLOR_ROW_HEIGHT
-                is DropdownModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
-                is TextModuleSetting -> CUSTOM_TEXT_ROW_HEIGHT
-                is KeybindModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
-                // Made by pointing at slots in the inventory, so it has no row.
-                is SlotMapModuleSetting -> 0f
-                // The first heading takes the place of the implicit one, so it
-                // is the later ones that add height.
-                is SectionModuleSetting -> if (isFirst) 0f else CUSTOM_SECTION_GAP + CUSTOM_SECTION_HEIGHT
-            }
+            // The first heading takes the place of the implicit one, so it is
+            // the later ones that add height.
+            val height = if (setting is SectionModuleSetting && isFirst) 0f else rowHeight(setting)
 
             // A heading is part of the card whatever its group is doing; the
             // rows under it are the part that folds away.
@@ -1250,7 +1332,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         expanded: Boolean,
     ): DropdownOverlay? {
         val settingsY = cardY + dp(CUSTOM_SETTINGS_Y, scale)
-        val firstSetting = module.settings.firstOrNull { it.isVisible() && it.hasOwnRow }
+        val firstSetting = module.settings.firstOrNull { it.isVisible() && it.onCard }
         // A module that names its own first group gets that name instead of the
         // implicit one, rather than both.
         val leadingSection = firstSetting as? SectionModuleSetting
@@ -1270,7 +1352,6 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         // A group's rows are drawn inside a window that grows and shrinks with
         // it: the rows keep their own positions and the window cuts them off,
         // which is what makes a fold look like a fold rather than a redraw.
-        var group: SectionModuleSetting? = leadingSection
         var groupOpen = if (leadingSection == null) 1f else ease(openness(module, leadingSection))
         var groupTop = rowY
         var groupHeight = dp(groupHeightOf(module, leadingSection), scale)
@@ -1303,11 +1384,10 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         val settings = module.settings
         for (index in settings.indices) {
             val setting = settings[index]
-            if (!setting.isVisible() || !setting.hasOwnRow) continue
+            if (!setting.isVisible() || !setting.onCard) continue
 
             if (setting is SectionModuleSetting && setting !== leadingSection) {
                 closeGroup()
-                group = setting
                 groupOpen = ease(openness(module, setting))
             }
 
@@ -1315,125 +1395,22 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             if (setting !is SectionModuleSetting && groupOpen <= 0.01f) continue
 
             val rowTop = rowY
-            when (setting) {
-                is SliderModuleSetting -> {
-                    drawCustomSlider(draw, setting, cardX, rowY, cardWidth, scale, interactive)
-                    rowY += dp(CUSTOM_SLIDER_ROW_HEIGHT, scale)
-                }
-                is RangeModuleSetting -> {
-                    drawCustomRange(draw, setting, cardX, rowY, cardWidth, scale, interactive)
-                    rowY += dp(CUSTOM_SLIDER_ROW_HEIGHT, scale)
-                }
-                is ToggleModuleSetting -> {
-                    drawText(draw, setting.label, cardX + dp(14f, scale), rowY + dp(3f, scale), TEXT, dp(9.5f, scale))
-                    drawSettingToggle(
-                        draw,
-                        setting,
-                        cardX + cardWidth - dp(45f, scale),
-                        rowY + dp(1f, scale),
-                        scale,
-                        dt,
-                        interactive,
-                    )
-                    // A colour paired with this toggle sits just left of the switch,
-                    // which is what saves it a row of its own.
-                    setting.inlineColor?.let { color ->
-                        val size = dp(COLOR_SWATCH_SIZE, scale)
-                        drawColorSwatch(
-                            draw,
-                            color,
-                            cardX + cardWidth - dp(45f, scale) - dp(8f, scale) - size,
-                            rowY + dp(1f, scale),
-                            size,
-                            scale,
-                            interactive,
-                        )
-                    }
-                    rowY += dp(CUSTOM_TOGGLE_ROW_HEIGHT, scale)
-                }
-                is ButtonModuleSetting -> {
-                    val buttonX = cardX + dp(SLIDER_X, scale)
-                    val buttonY = rowY + dp(1f, scale)
-                    val buttonWidth = cardWidth - dp(SLIDER_X + 14f, scale)
-                    val buttonHeight = dp(20f, scale)
-                    outlinedPill(draw, buttonX, buttonY, buttonWidth, buttonHeight, scale)
-                    val clicked = interactive && hit(setting.widgetIds.control, buttonX, buttonY, buttonWidth, buttonHeight)
-                    val hovered = interactive && ImGui.isItemHovered()
-                    drawCenteredText(
-                        draw,
-                        setting.label,
-                        buttonX,
-                        buttonY,
-                        buttonWidth,
-                        buttonHeight,
-                        if (hovered) TEXT else MUTED_TEXT,
-                        dp(9.5f, scale),
-                    )
-                    if (clicked) setting.action()
-                    rowY += dp(CUSTOM_BUTTON_ROW_HEIGHT, scale)
-                }
-                is ColorModuleSetting -> {
-                    drawColorSetting(draw, setting, cardX, rowY, cardWidth, scale, interactive)
-                    rowY += dp(CUSTOM_COLOR_ROW_HEIGHT, scale)
-                }
-                is DropdownModuleSetting -> {
-                    val boxX = cardX + dp(SLIDER_X, scale)
-                    val boxY = rowY + dp(1f, scale)
-                    val boxWidth = cardWidth - dp(SLIDER_X + 14f, scale)
-                    drawText(draw, setting.label, cardX + dp(14f, scale), rowY + dp(5f, scale), TEXT, dp(9.5f, scale))
-                    val hovered = drawDropdownControl(draw, setting, boxX, boxY, boxWidth, scale, interactive)
-                    dropdownOverlayFor(setting, boxX, boxY, boxWidth, scale, dt, expanded, hovered)?.let {
-                        overlay = it
-                    }
-                    rowY += dp(CUSTOM_DROPDOWN_ROW_HEIGHT, scale)
-                }
-                is TextModuleSetting -> {
-                    drawTextSetting(draw, setting, cardX, rowY, cardWidth, scale, interactive)
-                    rowY += dp(CUSTOM_TEXT_ROW_HEIGHT, scale)
-                }
-                is KeybindModuleSetting -> {
-                    // The same badge a module's own bind is drawn as, on the
-                    // right of the row: lit while bound or waiting for a key.
-                    drawText(draw, setting.label, cardX + dp(14f, scale), rowY + dp(5f, scale), TEXT, dp(9.5f, scale))
-                    val smallSize = dp(8f, scale)
-                    val capturing = awaitingSettingKey === setting
-                    val lit = capturing || setting.bound
-                    val badgeText = if (capturing) "..." else setting.keyName
-                    val badgeWidth = maxOf(dp(KEYBIND_MIN_WIDTH, scale), textWidth(badgeText, smallSize) + dp(12f, scale))
-                    val badgeHeight = dp(14f, scale)
-                    val badgeX = cardX + cardWidth - dp(14f, scale) - badgeWidth
-                    val badgeY = rowY + dp(4f, scale)
-                    if (interactive && hit(setting.widgetIds.control, badgeX, badgeY, badgeWidth, badgeHeight)) {
-                        awaitingSettingKey = setting
-                        awaitingKeybind = null
-                    }
-                    drawKeyBadge(draw, badgeText, badgeX, badgeY, badgeWidth, badgeHeight, lit, scale)
-                    rowY += dp(CUSTOM_DROPDOWN_ROW_HEIGHT, scale)
-                }
-                // Nothing to draw: the binds are made in the inventory.
-                is SlotMapModuleSetting -> Unit
-                is SectionModuleSetting -> {
-                    // The leading heading was already drawn above the rows.
-                    if (setting !== leadingSection) {
-                        rowY += dp(CUSTOM_SECTION_GAP, scale)
-                        drawSectionHeading(
-                            draw,
-                            setting.label,
-                            cardX,
-                            rowY,
-                            cardWidth,
-                            scale,
-                            module,
-                            setting,
-                            interactive,
-                        )
-                        rowY += dp(CUSTOM_SECTION_HEIGHT, scale)
+            if (setting is SectionModuleSetting) {
+                // The leading heading was already drawn above the rows.
+                if (setting !== leadingSection) {
+                    rowY += dp(CUSTOM_SECTION_GAP, scale)
+                    drawSectionHeading(draw, setting.label, cardX, rowY, cardWidth, scale, module, setting, interactive)
+                    rowY += dp(CUSTOM_SECTION_HEIGHT, scale)
 
-                        groupTop = rowY
-                        groupHeight = dp(groupHeightOf(module, setting), scale)
-                        openGroup()
-                    }
+                    groupTop = rowY
+                    groupHeight = dp(groupHeightOf(module, setting), scale)
+                    openGroup()
                 }
+            } else {
+                drawSettingRow(draw, module, setting, cardX, rowY, cardWidth, scale, dt, interactive, expanded)?.let {
+                    overlay = it
+                }
+                rowY += dp(rowHeight(setting), scale)
             }
 
             // Whatever the row turned out to be, the cursor resting anywhere
@@ -1441,6 +1418,308 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             noteTooltip(setting, cardX, rowTop, cardWidth, rowY - rowTop)
         }
         closeGroup()
+        return overlay
+    }
+
+    /**
+     * One setting's row, on a card or in a "⋯" panel: the label on the left
+     * and the control on the right, with the "⋯" between them when the row
+     * has more settings of its own. Hands back the dropdown list to draw over
+     * everything, when this row's is open.
+     */
+    private fun drawSettingRow(
+        draw: ImDrawList,
+        module: Module,
+        setting: ModuleSetting,
+        x: Float,
+        rowY: Float,
+        width: Float,
+        scale: Float,
+        dt: Float,
+        interactive: Boolean,
+        expanded: Boolean,
+    ): DropdownOverlay? {
+        val labelX = x + dp(14f, scale)
+        val labelSize = dp(9.5f, scale)
+        val controlX = x + dp(SLIDER_X, scale)
+        val rowBottom = rowY + dp(rowHeight(setting), scale)
+        val dotsRoom = if (setting.parent == null && setting.hasVisibleMore()) dp(MORE_DOTS_WIDTH + 4f, scale) else 0f
+        // Room for a label that ends where a control starting at the shared
+        // column begins, less the "⋯" when there is one.
+        val columnLabelRoom = controlX - labelX - dp(8f, scale) - dotsRoom
+        var overlay: DropdownOverlay? = null
+
+        fun dots(controlLeft: Float, centerY: Float) =
+            drawMoreDots(draw, module, setting, controlLeft, centerY, x, rowY, rowBottom, width, scale, interactive)
+
+        when (setting) {
+            is SliderModuleSetting -> {
+                val centerY = rowY + dp(SLIDER_CENTER_Y, scale)
+                drawText(draw, fitLabel(setting, setting.label, labelSize, columnLabelRoom), labelX, centerY - textHeight(setting.label, labelSize) / 2f, TEXT, labelSize)
+                drawCustomSlider(draw, setting, x, centerY, width, scale, interactive)
+                dots(controlX - dp(SLIDER_HANDLE_RADIUS, scale), centerY)
+            }
+            is RangeModuleSetting -> {
+                val centerY = rowY + dp(SLIDER_CENTER_Y, scale)
+                drawText(draw, fitLabel(setting, setting.label, labelSize, columnLabelRoom), labelX, centerY - textHeight(setting.label, labelSize) / 2f, TEXT, labelSize)
+                drawCustomRange(draw, setting, x, centerY, width, scale, interactive)
+                dots(controlX - dp(SLIDER_HANDLE_RADIUS, scale), centerY)
+            }
+            is ToggleModuleSetting -> {
+                drawText(draw, setting.label, labelX, rowY + dp(3f, scale), TEXT, labelSize)
+                val switchX = x + width - dp(45f, scale)
+                drawSettingToggle(draw, setting, switchX, rowY + dp(1f, scale), scale, dt, interactive)
+                // A colour paired with this toggle sits just left of the switch,
+                // which is what saves it a row of its own.
+                var controlLeft = switchX
+                setting.inlineColor?.let { color ->
+                    val size = dp(COLOR_SWATCH_SIZE, scale)
+                    controlLeft = switchX - dp(8f, scale) - size
+                    drawColorSwatch(draw, color, controlLeft, rowY + dp(1f, scale), size, scale, interactive)
+                }
+                dots(controlLeft, rowY + dp(8.5f, scale))
+            }
+            is ButtonModuleSetting -> {
+                val buttonY = rowY + dp(1f, scale)
+                val buttonWidth = width - dp(SLIDER_X + 14f, scale)
+                val buttonHeight = dp(20f, scale)
+                val clicked = interactive && hit(setting.widgetIds.control, controlX, buttonY, buttonWidth, buttonHeight)
+                val hovered = interactive && ImGui.isItemHovered()
+                drawField(draw, controlX, buttonY, buttonWidth, buttonHeight, scale, hovered)
+                drawCenteredText(
+                    draw,
+                    setting.label,
+                    controlX,
+                    buttonY,
+                    buttonWidth,
+                    buttonHeight,
+                    if (hovered) TEXT else MUTED_TEXT,
+                    labelSize,
+                )
+                if (clicked) setting.action()
+                dots(controlX, buttonY + buttonHeight / 2f)
+            }
+            is ColorModuleSetting -> {
+                drawText(draw, setting.label, labelX, rowY + dp(3f, scale), TEXT, labelSize)
+                val size = dp(COLOR_SWATCH_SIZE, scale)
+                val swatchX = x + width - dp(14f, scale) - size
+                drawColorSwatch(draw, setting, swatchX, rowY + dp(1f, scale), size, scale, interactive)
+                dots(swatchX, rowY + dp(1f, scale) + size / 2f)
+            }
+            is DropdownModuleSetting, is MultiSelectModuleSetting -> {
+                val source = setting as DropdownSource
+                val boxY = rowY + dp(1f, scale)
+                val boxWidth = width - dp(SLIDER_X + 14f, scale)
+                drawText(draw, fitLabel(setting, setting.label, labelSize, columnLabelRoom), labelX, rowY + dp(5f, scale), TEXT, labelSize)
+                drawDropdownControl(draw, source, controlX, boxY, boxWidth, scale, interactive)
+                overlay = dropdownOverlayFor(source, controlX, boxY, boxWidth, scale, dt, expanded, false)
+                dots(controlX, boxY + dp(10f, scale))
+            }
+            is TextModuleSetting -> {
+                drawTextSetting(draw, setting, x, rowY, width, scale, interactive)
+                dots(x + width - dp(10f, scale), rowY + dp(6f, scale))
+            }
+            is KeybindModuleSetting -> {
+                // The same badge a module's own bind is drawn as, on the
+                // right of the row: lit while bound or waiting for a key.
+                drawText(draw, setting.label, labelX, rowY + dp(5f, scale), TEXT, labelSize)
+                val smallSize = dp(8f, scale)
+                val capturing = awaitingSettingKey === setting
+                val lit = capturing || setting.bound
+                val badgeText = if (capturing) "..." else setting.keyName
+                val badgeWidth = maxOf(dp(KEYBIND_MIN_WIDTH, scale), textWidth(badgeText, smallSize) + dp(12f, scale))
+                val badgeHeight = dp(14f, scale)
+                val badgeX = x + width - dp(14f, scale) - badgeWidth
+                val badgeY = rowY + dp(4f, scale)
+                if (interactive && hit(setting.widgetIds.control, badgeX, badgeY, badgeWidth, badgeHeight)) {
+                    awaitingSettingKey = setting
+                    awaitingKeybind = null
+                }
+                drawKeyBadge(draw, badgeText, badgeX, badgeY, badgeWidth, badgeHeight, lit, scale)
+                dots(badgeX, badgeY + badgeHeight / 2f)
+            }
+            is PanelModuleSetting -> {
+                // The whole row opens the panel, not only the dots at its end:
+                // the row is there for nothing else. Submitted before the dots,
+                // which then take their own click as usual.
+                val rowHeight = rowBottom - rowY
+                val clicked = interactive && hit(setting.widgetIds.control, x, rowY, width, rowHeight)
+                if (clicked) toggleMore(module, setting)
+                drawText(draw, setting.label, labelX, rowY + dp(3f, scale), TEXT, labelSize)
+                dots(x + width - dp(10f, scale), rowY + dp(8.5f, scale))
+            }
+            // Nothing to draw: the binds are made in the inventory.
+            is SlotMapModuleSetting -> Unit
+            // Headings are laid out by the card, which owns their folding.
+            is SectionModuleSetting -> Unit
+        }
+        return overlay
+    }
+
+    /**
+     * The "⋯" beside a row that has more settings, just left of its control.
+     * Clicking it opens those settings in a panel under the row, and clicking
+     * it again closes the panel.
+     *
+     * The row's place is noted here every frame its panel is open, which is
+     * what the panel is hung from.
+     */
+    private fun drawMoreDots(
+        draw: ImDrawList,
+        module: Module,
+        setting: ModuleSetting,
+        controlLeft: Float,
+        centerY: Float,
+        rowX: Float,
+        rowTop: Float,
+        rowBottom: Float,
+        rowWidth: Float,
+        scale: Float,
+        interactive: Boolean,
+    ) {
+        if (setting.parent != null || !setting.hasVisibleMore()) return
+
+        val boxWidth = dp(MORE_DOTS_WIDTH, scale)
+        val boxHeight = dp(13f, scale)
+        val boxX = controlLeft - dp(4f, scale) - boxWidth
+        val boxY = centerY - boxHeight / 2f
+        val clicked = interactive && hit(setting.widgetIds.more, boxX, boxY, boxWidth, boxHeight)
+        val hovered = interactive && ImGui.isItemHovered()
+        if (clicked) toggleMore(module, setting)
+
+        // Noted after the click is handled, so the frame that opens the panel
+        // already knows where it hangs; noted before, the panel found no row
+        // under it on that frame and shut itself again at once.
+        val open = openMore === setting
+        if (open) {
+            moreAnchorSeen = true
+            moreAnchorX = rowX
+            moreAnchorTop = rowTop
+            moreAnchorBottom = rowBottom
+            moreAnchorWidth = rowWidth
+        }
+
+        if (hovered || open) draw.addRectFilled(boxX, boxY, boxX + boxWidth, boxY + boxHeight, contentColor(FIELD), dp(4f, scale))
+        val color = when {
+            open -> ACCENT
+            hovered -> TEXT
+            else -> MUTED_TEXT
+        }
+        drawCenteredText(draw, FontAwesomeIcons.ELLIPSIS, boxX, boxY, boxWidth, boxHeight, color, dp(10f, scale))
+    }
+
+    private fun toggleMore(module: Module, setting: ModuleSetting) {
+        moreDotsClicked = true
+        if (openMore === setting) {
+            closeMore()
+        } else {
+            openMore = setting
+            openMoreModule = module
+            moreProgress = 0f
+            openDropdown = null
+        }
+    }
+
+    private fun closeMore() {
+        val parent = openMore
+        if (parent != null && parent.more.any { it === openDropdown }) openDropdown = null
+        openMore = null
+        openMoreModule = null
+        moreProgress = 0f
+        moreRect.fill(0f)
+    }
+
+    /**
+     * The open "⋯" panel: the row's extra settings in a floating card of their
+     * own, hung under the row (or over it, when there is no room below) and
+     * drawn over the cards around it.
+     *
+     * A click anywhere outside it closes it, unless the click is going to
+     * something the panel opened itself — a dropdown list or a colour picker,
+     * either of which can reach past the panel's edge.
+     */
+    private fun drawMorePanel(draw: ImDrawList, displayHeight: Float, scale: Float, dt: Float, interactive: Boolean): DropdownOverlay? {
+        val parent = openMore ?: return null
+        val module = openMoreModule
+        if (module == null || !moreAnchorSeen) {
+            closeMore()
+            return null
+        }
+
+        val outsideClick = interactive &&
+            ImGui.isMouseClicked(ImGuiMouseButton.Left) &&
+            !moreDotsClicked &&
+            !ImGui.isMouseHoveringRect(moreRect[0], moreRect[1], moreRect[2], moreRect[3], false) &&
+            // Nor on the row it hangs from: its dots shut it on the release, and
+            // shutting it here on the press would let that release open it again.
+            !ImGui.isMouseHoveringRect(moreAnchorX, moreAnchorTop, moreAnchorX + moreAnchorWidth, moreAnchorBottom, false) &&
+            parent.more.none { it === openDropdown } &&
+            !ImGui.isPopupOpen("", ImGuiPopupFlags.AnyPopupId)
+        if (outsideClick) {
+            closeMore()
+            return null
+        }
+
+        moreProgress = animate(moreProgress, 1f, DROPDOWN_ANIMATION_SPEED, dt)
+        val reveal = easeOutCubic(moreProgress)
+
+        val padding = dp(MORE_PADDING, scale)
+        val headerHeight = dp(CUSTOM_SECTION_HEIGHT, scale)
+        var rowsHeight = 0f
+        val children = parent.more
+        for (index in children.indices) {
+            val child = children[index]
+            if (child.hasOwnRow && child.isVisible()) rowsHeight += dp(rowHeight(child), scale)
+        }
+        val width = moreAnchorWidth
+        val height = padding + headerHeight + rowsHeight + padding * 0.5f
+        val x = moreAnchorX
+        // Close enough to the row to cover the top of the one under it.
+        val gap = dp(1f, scale)
+        val below = moreAnchorBottom + gap
+        val flipped = below + height > displayHeight - dp(8f, scale)
+        val restingY = if (flipped) (moreAnchorTop - gap - height).coerceAtLeast(dp(8f, scale)) else below
+        // Slides the last few pixels out of the row it hangs from as it fades in.
+        val y = restingY + dp(6f, scale) * (1f - reveal) * if (flipped) 1f else -1f
+
+        moreRect[0] = x
+        moreRect[1] = y
+        moreRect[2] = x + width
+        moreRect[3] = y + height
+
+        val previousAlpha = contentAlpha
+        contentAlpha = previousAlpha * reveal
+        drawingMore = true
+
+        // A soft shadow, then the panel: a shade lighter than the cards, so it
+        // reads as lifted off them rather than as another card.
+        val radius = dp(10f, scale)
+        for (step in 1..MORE_SHADOW_STEPS) {
+            val spread = dp(step * 1.5f, scale)
+            draw.addRectFilled(x - spread, y - spread + dp(2f, scale), x + width + spread, y + height + spread + dp(2f, scale), contentColor(MORE_SHADOW), radius + spread)
+        }
+        draw.addRectFilled(x, y, x + width, y + height, contentColor(MORE_SURFACE), radius)
+        draw.addRect(x, y, x + width, y + height, contentColor(FIELD_BORDER), radius, 0, dp(1f, scale))
+
+        // Claims the whole panel first, so a click on its empty parts lands on
+        // the panel rather than on whatever card control lies beneath it.
+        val rowsInteractive = interactive && reveal > 0.9f
+        if (interactive) hit("##more_panel", x, y, width, height)
+
+        drawSectionHeading(draw, parent.label, x, y + padding, width, scale)
+        var rowY = y + padding + headerHeight
+        var overlay: DropdownOverlay? = null
+        for (index in children.indices) {
+            val child = children[index]
+            if (!child.hasOwnRow || !child.isVisible()) continue
+            drawSettingRow(draw, module, child, x, rowY, width, scale, dt, rowsInteractive, true)?.let { overlay = it }
+            val rowHeight = dp(rowHeight(child), scale)
+            noteTooltip(child, x, rowY, width, rowHeight)
+            rowY += rowHeight
+        }
+
+        drawingMore = false
+        contentAlpha = previousAlpha
         return overlay
     }
 
@@ -1455,7 +1734,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         var total = 0f
         var inGroup = section == null
         for (setting in module.settings) {
-            if (!setting.isVisible() || !setting.hasOwnRow) continue
+            if (!setting.isVisible() || !setting.onCard) continue
             if (setting is SectionModuleSetting) {
                 if (setting === section) {
                     inGroup = true
@@ -1465,19 +1744,17 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
                 continue
             }
             if (!inGroup) continue
-            total += when (setting) {
-                is SliderModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
-                is RangeModuleSetting -> CUSTOM_SLIDER_ROW_HEIGHT
-                is ToggleModuleSetting -> CUSTOM_TOGGLE_ROW_HEIGHT
-                is ButtonModuleSetting -> CUSTOM_BUTTON_ROW_HEIGHT
-                is ColorModuleSetting -> CUSTOM_COLOR_ROW_HEIGHT
-                is DropdownModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
-                is TextModuleSetting -> CUSTOM_TEXT_ROW_HEIGHT
-                is KeybindModuleSetting -> CUSTOM_DROPDOWN_ROW_HEIGHT
-                else -> 0f
-            }
+            total += rowHeight(setting)
         }
         return total
+    }
+
+    /** [text] trimmed with an ellipsis to [maxWidth], kept until the room or the text changes. */
+    private fun fitLabel(key: Any, text: String, size: Float, maxWidth: Float): String {
+        val room = (maxWidth.toRawBits().toLong() shl 32) or (size.toRawBits().toLong() and 0xFFFFFFFFL)
+        val cached = fittedLabels[key]
+        if (cached != null && cached.first == room) return cached.second
+        return ellipsize(text, size, maxWidth).also { fittedLabels[key] = room to it }
     }
 
     /**
@@ -1523,6 +1800,25 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         }
 
         drawText(draw, label, textX, rowY, if (hovered) TEXT else MUTED_TEXT, fontSize)
+
+        // A group can carry a "⋯" too, for settings that tune the whole group
+        // rather than one row of it. Submitted after the heading's own target,
+        // so the dots take their click before the fold does.
+        if (foldable) {
+            drawMoreDots(
+                draw,
+                module,
+                section,
+                rightX - dp(CARET_SIZE + 4f, scale),
+                rowY + fontSize / 2f,
+                cardX,
+                rowY - dp(2f, scale),
+                rowY + fontSize + dp(5f, scale),
+                cardWidth,
+                scale,
+                interactive,
+            )
+        }
 
         if (foldable) {
             // Font Awesome's caret, drawn rather than written: the icon font
@@ -1687,6 +1983,8 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             roundCorners(draw, x, y, x + size, y + size, radius, contentColor(SURFACE))
         }
         draw.addRectFilled(x, y, x + size, y + size, contentColor(setting.abgr), radius)
+        // A faint edge, so a colour as dark as the card behind it is still a swatch.
+        draw.addRect(x, y, x + size, y + size, contentColor(SWATCH_EDGE), radius, 0, dp(1f, scale))
         // A faint lift on hover, which is all a control this small needs.
         if (hovered) draw.addRectFilled(x, y, x + size, y + size, contentColor(0x30FFFFFF), radius)
 
@@ -1921,38 +2219,39 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         ImGui.popStyleColor(6)
     }
 
+    /**
+     * A slider: the track from the shared control column to the value box at
+     * the right-hand end of the row. The box is the place to type a number
+     * rather than drag to it, and it stays one width — the widest the value
+     * can be — so the track does not change length under the cursor.
+     */
     private fun drawCustomSlider(
         draw: ImDrawList,
         setting: SliderModuleSetting,
-        cardX: Float,
-        rowY: Float,
-        cardWidth: Float,
+        rowX: Float,
+        centerY: Float,
+        rowWidth: Float,
         scale: Float,
         interactive: Boolean,
     ) {
-        val barX = cardX + dp(SLIDER_X, scale)
-        val barY = rowY + dp(9f, scale)
-        val barWidth = cardWidth - dp(SLIDER_X + 14f, scale)
-        val trackHeight = dp(4f, scale)
-        val progress = ((setting.value - setting.min) / (setting.max - setting.min)).toFloat().coerceIn(0f, 1f)
-
-        drawEditableSliderValue(
-            draw = draw,
-            ids = setting.widgetIds,
-            labelText = setting.labelWithColon,
-            value = setting.displayValue,
-            x = cardX + dp(14f, scale),
-            y = rowY + dp(3f, scale),
-            scale = scale,
-            interactive = interactive,
-        ) { entered ->
+        val boxSize = dp(VALUE_BOX_FONT, scale)
+        val boxWidth = valueBoxWidth(setting.widestBoxValue, boxSize, scale)
+        val boxHeight = dp(VALUE_BOX_HEIGHT, scale)
+        val boxX = rowX + rowWidth - dp(14f, scale) - boxWidth
+        drawValueBox(draw, setting.widgetIds, setting.boxValue, setting.displayValue, boxX, centerY - boxHeight / 2f, boxWidth, boxHeight, scale, interactive) { entered ->
             setting.value = snapSliderValue(entered, setting.min, setting.max, setting.step)
         }
+
+        val barX = rowX + dp(SLIDER_X, scale)
+        val barWidth = boxX - dp(VALUE_BOX_GAP, scale) - barX
+        val trackHeight = dp(SLIDER_TRACK_HEIGHT, scale)
+        val barY = centerY - trackHeight / 2f
+        val progress = ((setting.value - setting.min) / (setting.max - setting.min)).toFloat().coerceIn(0f, 1f)
         draw.addRectFilled(barX, barY, barX + barWidth, barY + trackHeight, contentColor(TRACK), trackHeight / 2f)
         draw.addRectFilled(barX, barY, barX + barWidth * progress, barY + trackHeight, contentColor(ACCENT), trackHeight / 2f)
-        drawSliderHandle(draw, barX + barWidth * progress, barY + trackHeight / 2f, scale)
+        drawSliderHandle(draw, barX + barWidth * progress, centerY, scale)
 
-        hit(setting.widgetIds.control, barX, barY - dp(5f, scale), barWidth, dp(14f, scale))
+        hit(setting.widgetIds.control, barX - dp(4f, scale), centerY - dp(7f, scale), barWidth + dp(8f, scale), dp(14f, scale))
         if (interactive && ImGui.isItemActive()) {
             val ratio = ((ImGui.getMousePosX() - barX) / barWidth).coerceIn(0f, 1f)
             val raw = setting.min + (setting.max - setting.min) * ratio
@@ -1962,7 +2261,7 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
 
     /**
      * A slider with two handles, laid out on the same row a single slider gets
-     * so the two read as the same kind of control.
+     * so the two read as the same kind of control, with a box for each end.
      *
      * Which handle a drag grabs is decided once, when the drag starts, from
      * whichever end the press was nearer: deciding it per frame would let the
@@ -1971,35 +2270,39 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
     private fun drawCustomRange(
         draw: ImDrawList,
         setting: RangeModuleSetting,
-        cardX: Float,
-        rowY: Float,
-        cardWidth: Float,
+        rowX: Float,
+        centerY: Float,
+        rowWidth: Float,
         scale: Float,
         interactive: Boolean,
     ) {
-        val barX = cardX + dp(SLIDER_X, scale)
-        val barY = rowY + dp(9f, scale)
-        val barWidth = cardWidth - dp(SLIDER_X + 14f, scale)
-        val trackHeight = dp(4f, scale)
+        val boxSize = dp(VALUE_BOX_FONT, scale)
+        val boxWidth = valueBoxWidth(setting.widestValue, boxSize, scale)
+        val boxHeight = dp(VALUE_BOX_HEIGHT, scale)
+        val boxY = centerY - boxHeight / 2f
+        val upperX = rowX + rowWidth - dp(14f, scale) - boxWidth
+        val lowerX = upperX - dp(4f, scale) - boxWidth
+        drawValueBox(draw, setting.lowerIds, setting.displayLower, setting.displayLower, lowerX, boxY, boxWidth, boxHeight, scale, interactive) { entered ->
+            setting.lower = snapSliderValue(entered, setting.min, setting.upper, setting.step)
+        }
+        drawValueBox(draw, setting.upperIds, setting.displayUpper, setting.displayUpper, upperX, boxY, boxWidth, boxHeight, scale, interactive) { entered ->
+            setting.upper = snapSliderValue(entered, setting.lower, setting.max, setting.step)
+        }
+
+        val barX = rowX + dp(SLIDER_X, scale)
+        val barWidth = lowerX - dp(VALUE_BOX_GAP, scale) - barX
+        val trackHeight = dp(SLIDER_TRACK_HEIGHT, scale)
+        val barY = centerY - trackHeight / 2f
         val span = setting.max - setting.min
         val lower = ((setting.lower - setting.min) / span).toFloat().coerceIn(0f, 1f)
         val upper = ((setting.upper - setting.min) / span).toFloat().coerceIn(0f, 1f)
 
-        drawEditableRangeTokens(draw, setting, cardX + dp(14f, scale), rowY + dp(3f, scale), scale, interactive)
-
         draw.addRectFilled(barX, barY, barX + barWidth, barY + trackHeight, contentColor(TRACK), trackHeight / 2f)
-        draw.addRectFilled(
-            barX + barWidth * lower,
-            barY,
-            barX + barWidth * upper,
-            barY + trackHeight,
-            contentColor(ACCENT),
-            trackHeight / 2f,
-        )
-        drawSliderHandle(draw, barX + barWidth * lower, barY + trackHeight / 2f, scale)
-        drawSliderHandle(draw, barX + barWidth * upper, barY + trackHeight / 2f, scale)
+        draw.addRectFilled(barX + barWidth * lower, barY, barX + barWidth * upper, barY + trackHeight, contentColor(ACCENT), trackHeight / 2f)
+        drawSliderHandle(draw, barX + barWidth * lower, centerY, scale)
+        drawSliderHandle(draw, barX + barWidth * upper, centerY, scale)
 
-        hit(setting.widgetIds.control, barX, barY - dp(5f, scale), barWidth, dp(14f, scale))
+        hit(setting.widgetIds.control, barX - dp(4f, scale), centerY - dp(7f, scale), barWidth + dp(8f, scale), dp(14f, scale))
         if (interactive && ImGui.isItemActivated()) {
             val value = settingRangeValueAt(setting, ImGui.getMousePosX(), barX, barWidth)
             draggingLowerSettingHandle = abs(value - setting.lower) <= abs(value - setting.upper)
@@ -2011,6 +2314,100 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
             } else {
                 setting.upper = snapSliderValue(raw, setting.lower, setting.max, setting.step)
             }
+        }
+    }
+
+    private fun valueBoxWidth(widest: String, size: Float, scale: Float): Float =
+        maxOf(textWidth(widest, size) + dp(14f, scale), dp(VALUE_BOX_MIN_WIDTH, scale))
+
+    /**
+     * A small rounded box holding a number, the same box a dropdown is drawn
+     * in. Clicking it turns it into a text field over the same spot — with
+     * selection, arrows and the clipboard — and Enter or clicking away puts
+     * the number in. [shown] can carry a unit; [editText] is the bare number
+     * the field starts from.
+     */
+    private fun drawValueBox(
+        draw: ImDrawList,
+        ids: WidgetIds,
+        shown: String,
+        editText: String,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        scale: Float,
+        interactive: Boolean,
+        onCommit: (Double) -> Unit,
+    ) {
+        val fontSize = dp(VALUE_BOX_FONT, scale)
+        if (editingNumericId != ids.editorKey) {
+            val clicked = interactive && hit(ids.editorHit, x, y, width, height)
+            val hovered = interactive && ImGui.isItemHovered()
+            drawField(draw, x, y, width, height, scale, hovered)
+            drawCenteredText(draw, shown, x, y, width, height, TEXT, fontSize)
+            if (clicked) {
+                editingNumericId = ids.editorKey
+                numericBuffer.set(editText)
+                numericFocusRequested = true
+            }
+            return
+        }
+        drawNumericEditor(ids, x, y, width, height, fontSize, scale, onCommit)
+    }
+
+    /** A field's box: a shade off the card, with a thin edge that lightens under the cursor. */
+    private fun drawField(draw: ImDrawList, x: Float, y: Float, width: Float, height: Float, scale: Float, highlighted: Boolean) {
+        val radius = dp(FIELD_ROUNDING, scale)
+        draw.addRectFilled(x, y, x + width, y + height, contentColor(FIELD), radius)
+        draw.addRect(x, y, x + width, y + height, contentColor(if (highlighted) FIELD_BORDER_HOVER else FIELD_BORDER), radius, 0, dp(1f, scale))
+    }
+
+    /** The text field a number is typed into, laid exactly over the box it replaces. */
+    private fun drawNumericEditor(
+        ids: WidgetIds,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        fontSize: Float,
+        scale: Float,
+        onCommit: (Double) -> Unit,
+    ) {
+        ImGui.setCursorScreenPos(x, y)
+        ImGui.setNextItemWidth(width)
+        ImGui.pushStyleColor(ImGuiCol.Text, contentColor(TEXT))
+        ImGui.pushStyleColor(ImGuiCol.FrameBg, contentColor(FIELD))
+        ImGui.pushStyleColor(ImGuiCol.FrameBgHovered, contentColor(FIELD))
+        ImGui.pushStyleColor(ImGuiCol.FrameBgActive, contentColor(FIELD))
+        ImGui.pushStyleColor(ImGuiCol.Border, contentColor(ACCENT))
+        ImGui.pushStyleColor(ImGuiCol.TextSelectedBg, contentColor(ACCENT_DARK))
+        ImGui.pushStyleColor(ImGuiCol.InputTextCursor, contentColor(ACCENT))
+        ImGui.pushStyleVar(ImGuiStyleVar.FrameRounding, dp(FIELD_ROUNDING, scale))
+        ImGui.pushStyleVar(ImGuiStyleVar.FrameBorderSize, dp(1f, scale))
+        pushFieldFont(fontSize, height, dp(5f, scale))
+        if (numericFocusRequested) {
+            ImGui.setKeyboardFocusHere()
+            numericFocusRequested = false
+        }
+        val submitted = ImGui.inputText(
+            ids.editorInput,
+            numericBuffer,
+            ImGuiInputTextFlags.CharsDecimal or
+                ImGuiInputTextFlags.AutoSelectAll or
+                ImGuiInputTextFlags.EnterReturnsTrue,
+        )
+        val deactivated = ImGui.isItemDeactivated()
+        popFieldFont()
+        ImGui.popStyleVar(2)
+        ImGui.popStyleColor(7)
+
+        if (submitted || deactivated) {
+            numericBuffer.get().trim().replace(',', '.').toDoubleOrNull()
+                ?.takeIf(Double::isFinite)
+                ?.let(onCommit)
+            editingNumericId = null
+            numericBuffer.clear()
         }
     }
 
@@ -2318,8 +2715,10 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
     }
 
     /**
-     * Draws the closed dropdown control and reports whether it is hovered, which
-     * the popup needs so its own button half keeps the same highlight.
+     * Draws the closed dropdown: its choice on the left, trimmed to fit, and a
+     * chevron on the right, in the same box a number is typed into. A list
+     * that allows several names everything ticked. Reports whether it is
+     * hovered.
      */
     private fun drawDropdownControl(
         draw: ImDrawList,
@@ -2331,24 +2730,35 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         interactive: Boolean,
     ): Boolean {
         val height = dp(20f, scale)
-        outlinedPill(draw, x, y, width, height, scale)
         val clicked = interactive && hit(source.buttonId, x, y, width, height)
         val hovered = interactive && ImGui.isItemHovered()
         if (clicked) {
             openDropdown = if (openDropdown === source) null else source
         }
-        val textColor = when {
-            openDropdown === source -> ACCENT
-            hovered -> TEXT
-            else -> MUTED_TEXT
-        }
-        drawCenteredText(draw, source.selected, x, y, width, height, textColor, dp(10f, scale))
+        val open = openDropdown === source
+        drawField(draw, x, y, width, height, scale, hovered || open)
+
+        val fontSize = dp(9.5f, scale)
+        val padding = dp(7f, scale)
+        val chevronSize = dp(7f, scale)
+        val chevronWidth = textWidth(FontAwesomeIcons.CHEVRON_DOWN, chevronSize)
+        val textRoom = width - padding * 2f - chevronWidth - dp(5f, scale)
+        val text = fitLabel(source, source.selected, fontSize, textRoom)
+        drawText(draw, text, x + padding, y + (height - textHeight(text, fontSize)) / 2f, if (open || hovered) TEXT else MUTED_TEXT, fontSize)
+        drawText(
+            draw,
+            FontAwesomeIcons.CHEVRON_DOWN,
+            x + width - padding - chevronWidth,
+            y + (height - textHeight(FontAwesomeIcons.CHEVRON_DOWN, chevronSize)) / 2f,
+            if (open) ACCENT else MUTED_TEXT,
+            chevronSize,
+        )
         return hovered
     }
 
     /**
      * Advances one dropdown's open/close animation and, while it is visible,
-     * hands back the popup for the caller to draw over the finished cards.
+     * hands back the list for the caller to draw over the finished cards.
      */
     private fun dropdownOverlayFor(
         source: DropdownSource,
@@ -2372,108 +2782,91 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         return DropdownOverlay(source, x, y, width, scale, progress, buttonHovered)
     }
 
+    /**
+     * A dropdown's list, in a box of its own just under the closed control
+     * (or just over it, near the bottom of the window). Every option is
+     * listed, the chosen ones in the accent colour with a tick. Picking one
+     * from a single-choice list closes it; a list that allows several stays
+     * open while they are ticked.
+     */
     private fun drawDropdownOverlay(draw: ImDrawList, overlay: DropdownOverlay, guiInteractive: Boolean) {
         val source = overlay.source
         val scale = overlay.scale
-        val popupX = overlay.x
-        val popupY = overlay.y
-        val popupWidth = overlay.width
+        val x = overlay.x
+        val width = overlay.width
         val buttonHeight = dp(20f, scale)
-        val rowHeight = dp(18f, scale)
+        val rowHeight = dp(DROPDOWN_ROW_HEIGHT, scale)
+        val padding = dp(3f, scale)
         val options = source.options
-        val selectedIndex = source.selectedIndex
-        val optionsHeight = rowHeight * (options.size - 1).coerceAtLeast(0)
         val reveal = easeOutCubic(overlay.progress)
-        val popupHeight = buttonHeight + optionsHeight * reveal
+        val fullHeight = rowHeight * options.size + padding * 2f
+        val height = fullHeight * reveal
 
         // A dropdown near the bottom of the window would open past it, and a
-        // card is not scrolled by a popup floating over it, so the options go
+        // card is not scrolled by a list floating over it, so the options go
         // above the control instead. The control itself does not move.
-        val flipped = popupY + popupHeight > ImGui.getIO().displaySizeY - dp(8f, scale)
-        val popupTop = if (flipped) popupY + buttonHeight - popupHeight else popupY
-        val buttonTop = if (flipped) popupTop + popupHeight - buttonHeight else popupTop
-        val rowsTop = if (flipped) popupTop else popupTop + buttonHeight
+        val gap = dp(3f, scale)
+        val flipped = overlay.y + buttonHeight + gap + fullHeight > ImGui.getIO().displaySizeY - dp(8f, scale)
+        val top = if (flipped) overlay.y - gap - height else overlay.y + buttonHeight + gap
 
-        draw.pushClipRect(popupX, popupTop, popupX + popupWidth, popupTop + popupHeight, true)
-        draw.addRectFilled(popupX, popupTop, popupX + popupWidth, popupTop + popupHeight, contentColor(TRACK), dp(8f, scale))
-        val border = dp(2f, scale)
-        draw.addRectFilled(
-            popupX + border,
-            popupTop + border,
-            popupX + popupWidth - border,
-            popupTop + popupHeight - border,
-            contentColor(SURFACE),
-            dp(6f, scale),
-        )
-
-        val buttonColor = when {
-            openDropdown === source -> ACCENT
-            overlay.buttonHovered -> TEXT
-            else -> MUTED_TEXT
+        val previousAlpha = contentAlpha
+        contentAlpha = previousAlpha * overlay.progress
+        val radius = dp(FIELD_ROUNDING, scale)
+        for (step in 1..MORE_SHADOW_STEPS) {
+            val spread = dp(step * 1.2f, scale)
+            draw.addRectFilled(x - spread, top - spread + dp(2f, scale), x + width + spread, top + height + spread + dp(2f, scale), contentColor(MORE_SHADOW), radius + spread)
         }
-        drawCenteredText(draw, source.selected, popupX, buttonTop, popupWidth, buttonHeight, buttonColor, dp(10f, scale))
-        draw.addRectFilled(
-            popupX + border,
-            if (flipped) buttonTop else buttonTop + buttonHeight - dp(1f, scale),
-            popupX + popupWidth - border,
-            if (flipped) buttonTop + dp(1f, scale) else buttonTop + buttonHeight,
-            contentColor(TRACK),
-        )
+        draw.addRectFilled(x, top, x + width, top + height, contentColor(MORE_SURFACE), radius)
+        draw.addRect(x, top, x + width, top + height, contentColor(FIELD_BORDER), radius, 0, dp(1f, scale))
+        draw.pushClipRect(x, top, x + width, top + height, true)
 
-        // Walked by index: the popup is redrawn every frame, so pairing each
-        // option with its position must not allocate a list to do it.
-        var rowIndex = 0
+        // The region is claimed for the whole opening animation, so a row the
+        // list has already covered cannot be clicked through it, but an option
+        // only takes effect once the list is really open.
+        val claiming = guiInteractive && openDropdown === source
+        if (claiming) hit("##dropdown_list", x, top, width, height)
+
+        val fontSize = dp(9.5f, scale)
+        val tickSize = dp(7.5f, scale)
+        val rowsTop = if (flipped) top + height - fullHeight + padding else top + padding
         for (index in options.indices) {
-            if (index == selectedIndex) continue
-            val option = options[index]
-            val rowY = rowsTop + rowHeight * rowIndex
-            // The region is claimed for the whole opening animation, so a row
-            // the popup has already covered cannot be clicked through it, but
-            // the option only takes effect once the popup is really open.
-            val claiming = guiInteractive && openDropdown === source
-            val pressed = claiming && hit(
-                source.optionIds[index],
-                popupX + border,
-                rowY,
-                popupWidth - border * 2f,
-                rowHeight,
-            )
+            val rowY = rowsTop + rowHeight * index
+            val pressed = claiming && hit(source.optionIds[index], x + padding, rowY, width - padding * 2f, rowHeight)
             val hovered = claiming && ImGui.isItemHovered()
             if (pressed && overlay.progress > 0.9f) {
-                source.selectedIndex = index
-                openDropdown = null
+                source.pick(index)
+                if (!source.multiple) openDropdown = null
             }
-            if (rowIndex > 0) {
-                draw.addRectFilled(
-                    popupX + border,
-                    rowY,
-                    popupX + popupWidth - border,
-                    rowY + dp(1f, scale),
-                    contentColor(TRACK, overlay.progress),
-                )
+            val checked = source.isChecked(index)
+            if (hovered) {
+                draw.addRectFilled(x + padding, rowY, x + width - padding, rowY + rowHeight, contentColor(FIELD_HOVER), dp(4f, scale))
             }
-            val optionColor = when {
-                index == source.selectedIndex -> ACCENT
+            val color = when {
+                checked -> ACCENT
                 hovered -> TEXT
                 else -> MUTED_TEXT
             }
-            drawCenteredText(
-                draw,
-                option,
-                popupX,
-                rowY,
-                popupWidth,
-                rowHeight,
-                fadeColor(optionColor, overlay.progress),
-                dp(10f, scale),
-            )
-            rowIndex++
+            val tickRoom = dp(16f, scale)
+            val text = fitLabel(source.optionIds[index], options[index], fontSize, width - dp(8f, scale) - tickRoom)
+            drawText(draw, text, x + dp(8f, scale), rowY + (rowHeight - textHeight(text, fontSize)) / 2f, color, fontSize)
+            if (checked) {
+                val tickWidth = textWidth(FontAwesomeIcons.CHECK, tickSize)
+                drawText(
+                    draw,
+                    FontAwesomeIcons.CHECK,
+                    x + width - dp(8f, scale) - tickWidth,
+                    rowY + (rowHeight - textHeight(FontAwesomeIcons.CHECK, tickSize)) / 2f,
+                    ACCENT,
+                    tickSize,
+                )
+            }
         }
         draw.popClipRect()
+        contentAlpha = previousAlpha
     }
 
     private fun drawSliderHandle(draw: ImDrawList, x: Float, y: Float, scale: Float) {
-        draw.addCircleFilled(x, y, dp(6f, scale), contentColor(KNOB_ON), 32)
+        draw.addCircleFilled(x, y, dp(SLIDER_HANDLE_RADIUS, scale), contentColor(KNOB_ON), 32)
     }
 
     /**
@@ -2582,12 +2975,16 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         is TextModuleSetting -> setting.description
         is KeybindModuleSetting -> setting.description
         is DropdownModuleSetting -> setting.description
+        is MultiSelectModuleSetting -> setting.description
+        is PanelModuleSetting -> setting.description
         else -> ""
     }
 
     /** Remembers the row under the cursor, to be explained at the end of the frame. */
     private fun noteTooltip(setting: ModuleSetting, x: Float, y: Float, width: Float, height: Float) {
         if (!Tooltips.showing || height <= 0f) return
+        // A card row under an open panel is not the one being pointed at.
+        if (pointerOverMore && !drawingMore) return
         val tip = tipFor(setting)
         if (tip.isEmpty()) return
 
@@ -2696,6 +3093,8 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
     }
 
     private fun textWidth(text: String, size: Float): Float = ImGuiRuntime.textWidth(text, size)
+
+    private fun textHeight(text: String, size: Float): Float = ImGuiRuntime.textHeight(text, size)
 
     private fun rangeValueAt(module: Module, mouseX: Float, barX: Float, barWidth: Float): Double {
         val ratio = ((mouseX - barX) / barWidth).coerceIn(0f, 1f)
@@ -2838,6 +3237,25 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         /** Half the width of a colour bar's handle. */
         const val BAR_HANDLE_HALF_WIDTH = 5f
         const val CUSTOM_DROPDOWN_ROW_HEIGHT = 25f
+        /** Where a slider row's track, label and value box are centred, from the top of the row. */
+        const val SLIDER_CENTER_Y = 10.5f
+        const val SLIDER_TRACK_HEIGHT = 4f
+        const val SLIDER_HANDLE_RADIUS = 6f
+
+        /** The box a slider's number sits in, at the right-hand end of its row. */
+        const val VALUE_BOX_HEIGHT = 16f
+        const val VALUE_BOX_FONT = 9f
+        const val VALUE_BOX_MIN_WIDTH = 30f
+        const val VALUE_BOX_GAP = 10f
+        const val FIELD_ROUNDING = 5f
+
+        /** One option in an open dropdown list. */
+        const val DROPDOWN_ROW_HEIGHT = 17f
+
+        /** The "⋯" beside a row with more settings, and the panel they open in. */
+        const val MORE_DOTS_WIDTH = 15f
+        const val MORE_PADDING = 9f
+        const val MORE_SHADOW_STEPS = 4
         const val TEXT_LABEL_HEIGHT = 14f
         const val TEXT_FIELD_HEIGHT = 20f
         const val TEXT_FIELD_FONT = 10f
@@ -2866,6 +3284,17 @@ class CrypticScreen : Screen(Component.literal("Cryptic")), ImGuiScreen {
         const val SURFACE_ACTIVE = 0xFF464646.toInt()
         const val SURFACE_RAISED = 0xFF3F3F3F.toInt()
         const val RENAME_FIELD = 0xFF1D1D1D.toInt()
+
+        // A value box and a dropdown: a shade off the card, with a thin edge.
+        const val FIELD = 0xFF1D1D1D.toInt()
+        const val FIELD_BORDER = 0xFF2E2E2E.toInt()
+        const val FIELD_BORDER_HOVER = 0xFF484848.toInt()
+        const val FIELD_HOVER = 0xFF2A2A2A.toInt()
+
+        // Floating panels and lists: lifted off the cards by a shade and a shadow.
+        const val MORE_SURFACE = 0xFF191919.toInt()
+        const val MORE_SHADOW = 0x1A000000
+        const val SWATCH_EDGE = 0x30FFFFFF
         const val DISABLED_BORDER = 0xFF2B2B2B.toInt()
         const val DIVIDER = 0xFF2B2B2B.toInt()
         const val DISABLED_TEXT = 0xFF666666.toInt()

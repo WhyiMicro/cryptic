@@ -75,7 +75,8 @@ object PerformanceHud {
 	@JvmField
 	val pingInterval = SliderModuleSetting(
 		id = "ping_interval",
-		label = "Ping update (seconds)",
+		label = "Ping update",
+		unit = "s",
 		defaultValue = 2.0,
 		min = 1.0,
 		max = 10.0,

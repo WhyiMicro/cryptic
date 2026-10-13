@@ -50,6 +50,46 @@ object AutoRequeue {
 	 */
 	private const val COMMAND_GAP_MILLIS = 1_500L
 
+	/** How long the party list, asked for only when the leader is unknown, may take to answer. */
+	private const val LIST_TIMEOUT_MILLIS = 4_000L
+
+	/** What the party list is made of, so its answer can be kept out of chat. */
+	private val listLines = listOf(
+		Regex("""^-{5,}$"""),
+		Regex("""^Party Members \(\d+\)$"""),
+		Regex("""^Party (?:Leader|Moderators|Members): """),
+		Regex("""^You are not currently in a party\.$"""),
+	)
+
+	/** When the party list was asked for, or 0 while no answer is awaited. */
+	private var listAskedAt = 0L
+
+	/** Whether the list has been asked for this run already, so it is asked once at most. */
+	private var askedThisRun = false
+
+	/** Until when an answering party list is kept out of chat, and whether its heading has been seen. */
+	@Volatile
+	private var hideListUntil = 0L
+	private var hideSawHeading = false
+
+	/**
+	 * Whether a chat message is the answer to the party list this module asked
+	 * for, which is kept out of chat. Asked after every other part of Cryptic has
+	 * read it, so the leader it names is still taken.
+	 */
+	@JvmStatic
+	fun hidesChat(message: Component, overlay: Boolean): Boolean {
+		if (overlay || hideListUntil == 0L || System.currentTimeMillis() > hideListUntil) return false
+		val lines = message.string.split('\n').map { it.replace(FORMATTING, "").trim() }.filter { it.isNotEmpty() }
+		if (lines.isEmpty() || !lines.all { line -> listLines.any { it.containsMatchIn(line) } }) return false
+		val heading = lines.any { listLines[1].matches(it) || listLines[3].matches(it) }
+		val rule = lines.any { listLines[0].matches(it) }
+		// The closing rule, after the heading, is the end of it.
+		if (heading) hideSawHeading = true
+		if (hideSawHeading && rule && (lines.size > 1 || !heading)) hideListUntil = 0L
+		return true
+	}
+
 	/** A full party, which is what Check party wants to see. */
 	private const val PARTY_SIZE = 5
 
@@ -68,6 +108,8 @@ object AutoRequeue {
 		Regex("""^$RANK(\w{1,16}) has been removed from the party\."""),
 		Regex("""^$RANK(\w{1,16}) was removed from your party because they disconnected"""),
 		Regex("""^Kicked $RANK(\w{1,16}) because they were offline"""),
+		// The leader leaving is only ever said as the party changing hands.
+		Regex("""^The party was transferred to $RANK\w{1,16} because $RANK(\w{1,16}) left"""),
 	)
 	private val partyGone = listOf(
 		Regex("""^You left the party"""),
@@ -82,7 +124,8 @@ object AutoRequeue {
 	@JvmField
 	val delay = SliderModuleSetting(
 		id = "delay",
-		label = "Delay (seconds)",
+		label = "Delay",
+		unit = "s",
 		defaultValue = 5.0,
 		min = 0.0,
 		max = 30.0,
@@ -209,6 +252,8 @@ object AutoRequeue {
 			downtimeAtEnd.clear()
 			leftDuringRun.clear()
 			teamSeen = 0
+			askedThisRun = false
+			listAskedAt = 0L
 			requeueAt = 0L
 			readyUntil = 0L
 		}
@@ -223,6 +268,25 @@ object AutoRequeue {
 		}
 
 		val now = System.currentTimeMillis()
+		// The party list asked for because the leader was not known.
+		if (listAskedAt != 0L) {
+			val answered = PartyFeatures.listedAt >= listAskedAt
+			val noParty = PartyFeatures.noPartyAt >= listAskedAt
+			when {
+				answered -> {
+					listAskedAt = 0L
+					decide()
+				}
+				noParty -> {
+					listAskedAt = 0L
+					note("Not requeueing: you are not in a party.")
+				}
+				now - listAskedAt > LIST_TIMEOUT_MILLIS -> {
+					listAskedAt = 0L
+					note("Not requeueing: the party list never answered, so who leads is not known.")
+				}
+			}
+		}
 		if (readyUntil != 0L && now > readyUntil) {
 			readyUntil = 0L
 			needsDowntime.clear()
@@ -247,7 +311,17 @@ object AutoRequeue {
 	private fun decide() {
 		val leader = PartyFeatures.leaderName()
 		if (leader == null && !DebugOverrides.previewPartyCommands) {
-			note("Not requeueing: who leads the party is not known. It is read from chat when a run starts.")
+			// Chat did not say — a run joined part way, or a reconnect — so it is
+			// asked once, and the decision waits for the answer.
+			if (listAskedAt == 0L && !askedThisRun) {
+				askedThisRun = true
+				listAskedAt = System.currentTimeMillis()
+				hideListUntil = listAskedAt + LIST_TIMEOUT_MILLIS + 1_000L
+				hideSawHeading = false
+				send(Minecraft.getInstance(), "pl")
+				return
+			}
+			note("Not requeueing: who leads the party is not known.")
 			return
 		}
 		if (!leading()) {
@@ -399,7 +473,11 @@ object AutoRequeue {
 
 	/** Somebody left the party, or it ended. Either way nobody is queued and nobody is waited for. */
 	private fun onLeft(name: String?) {
-		if (name != null) leftDuringRun += name
+		if (name != null) {
+			leftDuringRun += name
+			// Somebody who has gone is not on a break: they are why there is no queue.
+			needsDowntime.remove(name)
+		}
 		val wasWaiting = requeueAt != 0L || readyUntil != 0L
 		requeueAt = 0L
 		readyUntil = 0L

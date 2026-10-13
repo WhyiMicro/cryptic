@@ -9,6 +9,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.WorldRender
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
@@ -219,24 +220,17 @@ object MageBeam {
 		phase,
 		fade,
 		hideSheep,
-		sheepHitbox,
-		sheepHitboxStyle,
-		sheepHitboxColor,
-		sheepHitboxFill,
+		sheepHitbox.withMore(sheepHitboxStyle, sheepHitboxColor, sheepHitboxFill),
 		hideParticles,
 		markerSection,
-		endMarker,
-		markerOnHit,
-		markerSize,
-		markerColor,
+		endMarker.withMore(markerOnHit, markerSize, markerColor),
 		colorSection,
 		color,
-		gradient,
-		farColor,
+		gradient.withMore(farColor),
 	)
 
 	private val reset = ButtonModuleSetting("reset", "Reset", action = {
-		configurable.forEach {
+		module.settings.forEach {
 			when (it) {
 				is ToggleModuleSetting -> it.reset()
 				is SliderModuleSetting -> it.reset()
@@ -248,7 +242,7 @@ object MageBeam {
 	})
 
 	@JvmField
-	val module = Module(
+	val module: Module = Module(
 		id = "mage_beam",
 		name = "Mage Beam",
 		description = "Draws the mage beam as a line",

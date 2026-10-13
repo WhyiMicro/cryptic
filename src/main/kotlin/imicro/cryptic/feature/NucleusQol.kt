@@ -1,11 +1,9 @@
 package imicro.cryptic.feature
 
-import com.mojang.blaze3d.platform.InputConstants
-import imicro.cryptic.CrypticClient
 import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
-import imicro.cryptic.gui.KeybindSetting
+import imicro.cryptic.gui.KeybindModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
@@ -17,7 +15,6 @@ import imicro.cryptic.skyblock.SkyblockLocation
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
-import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
 
@@ -107,20 +104,16 @@ object NucleusQol {
 		description = "Draws the waypoints through the walls.",
 	)
 
-	/** The module card's bind button, pointed at the real key mapping. */
-	private val warpKey = KeybindSetting(
-		currentKeyName = {
-			if (CrypticClient.nucleusWarpKey.isUnbound) {
-				"None"
-			} else {
-				CrypticClient.nucleusWarpKey.translatedKeyMessage.string.uppercase()
-			}
-		},
-		onKeyChanged = { key ->
-			CrypticClient.nucleusWarpKey.setKey(key ?: InputConstants.UNKNOWN)
-			KeyMapping.resetMapping()
-			Minecraft.getInstance().options.save()
-		},
+	/**
+	 * Unbound out of the box. It sends a command, so a key that is also used
+	 * for something else would warp somebody away mid-task — which one to give
+	 * up is theirs to decide.
+	 */
+	@JvmField
+	val warpKey = KeybindModuleSetting(
+		id = "warp_key",
+		label = "Warp to Nucleus",
+		description = "Warps you to the Nucleus while you are in the Crystal Hollows.",
 	)
 
 	@JvmField
@@ -130,10 +123,8 @@ object NucleusQol {
 		description = "Nucleus warp key and waypoints",
 		category = ModuleCategory.GENERAL,
 		hasDemoSettings = false,
-		supportsKeybind = true,
-		keybind = warpKey,
 		settings = listOf(
-			waypointsSection, calculate, clear, mode, fillColor, outlineColor, lineWidth, phase,
+			warpKey, waypointsSection, calculate, clear, mode, fillColor, outlineColor, lineWidth, phase,
 		),
 	)
 
@@ -154,17 +145,24 @@ object NucleusQol {
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> waypoints = emptyList() }
 	}
 
+	/** Whether the warp key was down last tick, so a held key warps once. */
+	private var warpKeyDown = false
+
 	/**
-	 * The bound key was pressed in-game.
+	 * Warps on the tick the key goes down, with no menu open.
 	 *
 	 * Silent everywhere but the Hollows. A key that does nothing where it makes
-	 * no sense needs no explanation — the key is bound to something whose name
-	 * says where it works, and a notification every time it is pressed for some
-	 * other reason is noise.
+	 * no sense needs no explanation — the setting's name says where it works,
+	 * and a notification every time it is pressed for some other reason is noise.
 	 */
-	fun onWarpKey(client: Minecraft) {
-		if (!module.enabled || !SkyblockLocation.inCrystalHollows) return
-		client.connection?.sendCommand("warp nucleus")
+	fun tick(client: Minecraft) {
+		if (!module.enabled) {
+			warpKeyDown = false
+			return
+		}
+		val down = client.gui.screen() == null && warpKey.isDown(client.window)
+		if (down && !warpKeyDown && SkyblockLocation.inCrystalHollows) client.connection?.sendCommand("warp nucleus")
+		warpKeyDown = down
 	}
 
 	private fun calculate() {

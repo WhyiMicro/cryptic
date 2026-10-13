@@ -170,6 +170,9 @@ abstract class TerminalHandler(val type: TerminalType) {
 		everClicked = true
 		if (TerminalSolver.clickPrediction.value) simulateClick(slotIndex, sent)
 		TerminalDebug.clicked(this, slotIndex, sent, sent = true)
+		// Only for a click that is actually sent: a dropped click makes no sound,
+		// which is how a blocked one is told from a missed one.
+		if (TerminalSolver.replacesClickSound) TerminalSolver.playClickSound()
 
 		val client = Minecraft.getInstance()
 		val screen = client.gui.screen() as? AbstractContainerScreen<*> ?: return

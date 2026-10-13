@@ -7,8 +7,10 @@ import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.ImGuiRuntime
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.PanelModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.withMore
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.inventory.ContainerScreen
 import kotlin.math.roundToInt
@@ -124,8 +126,6 @@ object Toasts {
 		step = 0.1,
 	)
 
-	private val colorsSection = SectionModuleSetting("colors_section", "Colours")
-
 	@JvmField
 	val backgroundColor = ColorModuleSetting(
 		id = "background_color",
@@ -184,8 +184,10 @@ object Toasts {
 		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
-			position, seconds, scale, test,
-			colorsSection, backgroundColor, badgeColor, sourceColor, messageColor, errorColor,
+			position, seconds, scale,
+			PanelModuleSetting("color_panel", "Colors", "What a notification is drawn in: its background, the badge, and the text.")
+				.withMore(backgroundColor, badgeColor, sourceColor, messageColor, errorColor),
+			test,
 		),
 	)
 
