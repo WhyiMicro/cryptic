@@ -39,6 +39,18 @@ object EquippedPet {
 	}
 
 	/**
+	 * Whether the tab list has the Pet widget at all, under its "Pet:" heading.
+	 * Without it, [name] answers null whatever pet is out.
+	 */
+	fun widgetShown(): Boolean {
+		val connection = Minecraft.getInstance().connection ?: return false
+		return connection.onlinePlayers.any {
+			val row = it.tabListDisplayName?.string?.replace(formattingPattern, "")?.trim() ?: return@any false
+			row.startsWith("Pet:") || PET_ROW.containsMatchIn(row)
+		}
+	}
+
+	/**
 	 * Whether the pet that is out is definitely not [wanted].
 	 *
 	 * Three answers collapsed into two on purpose: "a different pet is out" is

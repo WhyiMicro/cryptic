@@ -680,6 +680,7 @@ object ModuleRegistry {
 		imicro.cryptic.feature.DungeonWarpCooldown.module,
 		imicro.cryptic.feature.ILoveGlass.module,
 		imicro.cryptic.feature.CookieReminder.module,
+		imicro.cryptic.feature.DailyRewards.module,
 		imicro.cryptic.feature.SmartTickTimer.module,
 		imicro.cryptic.feature.ArrowFix.module,
 		imicro.cryptic.feature.ArrowHitSound.module,

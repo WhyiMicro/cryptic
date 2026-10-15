@@ -1,6 +1,7 @@
 package imicro.cryptic.mixin;
 
 import imicro.cryptic.feature.ArrowHitSound;
+import imicro.cryptic.feature.NucleusQol;
 import imicro.cryptic.feature.SoundVolumes;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.SoundEngine;
@@ -16,6 +17,11 @@ public abstract class SoundManagerMixin {
     @Inject(method = "play", at = @At("HEAD"), cancellable = true)
     private void cryptic$replaceArrowHit(SoundInstance instance, CallbackInfoReturnable<SoundEngine.PlayResult> cir) {
         if (ArrowHitSound.intercept(instance)) {
+            cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
+            return;
+        }
+        // Treasure chest sounds Nucleus QoL was asked to mute.
+        if (NucleusQol.mutes(instance)) {
             cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
             return;
         }

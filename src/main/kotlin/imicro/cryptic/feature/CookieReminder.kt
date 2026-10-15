@@ -6,21 +6,21 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.skyblock.BoosterCookie
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.minecraft.client.Minecraft
+import net.minecraft.network.chat.Component
 
 /**
  * Says when there is no booster cookie running, and when there is about to be.
  *
- * What makes this worth a notification rather than a HUD element is that the
- * answer is almost always "yes, for another two days", and a number saying so
- * is furniture. The two moments that matter are the cookie running out and the
- * cookie being about to, and both of them are worth interrupting somebody over:
- * dying without one costs coins.
+ * Three moments are worth interrupting somebody over, since dying without a
+ * cookie costs coins: arriving in a lobby with none, a cookie running low, and
+ * its last minute. The last minute is Hypixel's own "Booster Cookie expires in
+ * 60s", and gets a notification that counts the minute down and stays up until
+ * the cookie is gone, when one saying so takes its place.
  *
- * Nothing here fires twice for the same cookie. The reminder arms itself again
- * only when a cookie has been *seen running* since the last one, so hopping
- * between servers — which SkyBlock does constantly, and which each looks like
- * joining afresh — cannot turn one reminder into ten.
+ * Every lobby is checked once the tab list has arrived, so a missing cookie is
+ * said again on each server hop rather than once and then forgotten.
  */
 object CookieReminder {
 	private const val SOURCE = "Booster Cookie"
@@ -30,6 +30,9 @@ object CookieReminder {
 	 * minutes, so two seconds is already far finer than the thing being read.
 	 */
 	private const val POLL_TICKS = 40
+
+	/** The countdown notification's id, so it can be taken down when the cookie goes. */
+	private const val COUNTDOWN = "cookie_countdown"
 
 	@JvmField
 	val warnMinutes = SliderModuleSetting(
@@ -48,7 +51,15 @@ object CookieReminder {
 		id = "announce_expired",
 		label = "Say when there is none",
 		defaultValue = true,
-		description = "One on joining without a cookie, one when it ends.",
+		description = "On each lobby you join without a cookie, and when one runs out.",
+	)
+
+	@JvmField
+	val countdown = ToggleModuleSetting(
+		id = "countdown",
+		label = "Last minute countdown",
+		defaultValue = true,
+		description = "When Hypixel says the cookie has 60 seconds left, a notification counts them down until it runs out.",
 	)
 
 	@JvmField
@@ -59,7 +70,7 @@ object CookieReminder {
 		min = 5.0,
 		max = 60.0,
 		step = 5.0,
-		description = "How long the notification stays up.",
+		description = "How long the other notifications stay up.",
 	)
 
 	private val check = ButtonModuleSetting("check", "Check now", action = { requestCheck() })
@@ -111,20 +122,71 @@ object CookieReminder {
 		description = "Warns before a cookie ends",
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
-		settings = listOf(announceExpired, warnMinutes, seconds, check),
+		settings = listOf(announceExpired, warnMinutes, countdown, seconds, check),
 	)
+
+	private var initialized = false
+
+	fun initialize() {
+		if (initialized) return
+		initialized = true
+		// A new lobby is checked again once its tab list is in.
+		ClientPlayConnectionEvents.JOIN.register { _, _, _ ->
+			checkLobby = true
+			ticksUntilPoll = 0
+		}
+	}
 
 	private var ticksUntilPoll = 0
 
-	/**
-	 * What has already been said about the cookie that is running now.
-	 *
-	 * Both are cleared by a cookie being seen with time left on it, which is
-	 * what makes the next one's warnings arrive: nothing else re-arms them, and
-	 * in particular a server hop does not.
-	 */
+	/** Set on joining a lobby, until its tab list has been read once. */
+	private var checkLobby = true
+
+	/** The warning for the cookie running now has been given; a cookie seen above the line again re-arms it. */
 	private var saidExpiring = false
-	private var saidGone = false
+
+	/** When the counted-down last minute ends, or 0 when none is being counted. */
+	private var countdownEnds = 0L
+
+	/** Whether the last reading had a cookie running, so one ending without the chat line is still said. */
+	private var wasActive = false
+
+	/** "Booster Cookie expires in 60s", and the 10, 5, 4 ... after it. */
+	private val EXPIRES_IN = Regex("""^Booster Cookie expires in (\d+)s$""")
+
+	private val FORMATTING = Regex("§.")
+
+	/**
+	 * Hypixel's own countdown, read from the chat packet. Whichever of its lines
+	 * comes first starts the notification, so one that was missed — joining a
+	 * lobby with ten seconds left — still gets the rest.
+	 */
+	@JvmStatic
+	fun onSystemChat(content: Component, overlay: Boolean) {
+		if (overlay || !module.enabled) return
+		val text = content.string.replace(FORMATTING, "").trim()
+		val now = System.currentTimeMillis()
+
+		EXPIRES_IN.matchEntire(text)?.let { match ->
+			saidExpiring = true
+			if (!countdown.value || countdownEnds > now) return
+			val left = match.groupValues[1].toLongOrNull() ?: return
+			countdownEnds = now + left * 1000
+			Toasts.ask(SOURCE, COUNTDOWN, life = left.toDouble(), keys = emptyMap(), color = Toasts.Colors.COOKIE) {
+				val secondsLeft = ((countdownEnds - System.currentTimeMillis() + 999) / 1000).coerceAtLeast(0)
+				if (countdownEnds == 0L) "§cRan out" else "Runs out in §f${secondsLeft}s"
+			}
+			return
+		}
+
+		if (text == "Booster Cookie has expired!") {
+			countdownEnds = 0L
+			Toasts.dismiss(COUNTDOWN)
+			if (announceExpired.value) {
+				Toasts.show(SOURCE, "§cNo active booster cookie§7, be careful", life = seconds.value, color = Toasts.Colors.COOKIE)
+			}
+		}
+	}
 
 	fun tick(client: Minecraft) {
 		if (!module.enabled) {
@@ -151,19 +213,22 @@ object CookieReminder {
 			is BoosterCookie.Reading.Unknown -> Unit
 
 			is BoosterCookie.Reading.Inactive -> {
-				if (saidGone) return
-				saidGone = true
-				// Whatever the advance warning would have said next, it is too
-				// late to say it.
+				// A new lobby, or a cookie seen running that has since stopped.
+				val ended = wasActive
+				wasActive = false
+				if (!checkLobby && !ended) return
+				checkLobby = false
 				saidExpiring = true
+				// The countdown has said its piece, and the expired line its own.
+				if (System.currentTimeMillis() < countdownEnds + 5_000) return
 				if (announceExpired.value) {
-					Toasts.show(SOURCE, "§cNo active booster cookie", life = seconds.value, color = Toasts.Colors.COOKIE)
+					Toasts.show(SOURCE, "§cNo active booster cookie§7, be careful", life = seconds.value, color = Toasts.Colors.COOKIE)
 				}
 			}
 
 			is BoosterCookie.Reading.Active -> {
-				saidGone = false
-
+				wasActive = true
+				checkLobby = false
 				val minutes = reading.minutesLeft
 				val window = warnMinutes.value.toLong()
 				if (minutes == null || window <= 0 || minutes > window) {
@@ -179,15 +244,6 @@ object CookieReminder {
 			}
 		}
 	}
-
-	/** Forgets what has been said, so the next poll speaks up again. */
-	fun forget() {
-		saidExpiring = false
-		saidGone = false
-		ticksUntilPoll = 0
-		awaitingCheck = false
-	}
-
 
 	/** Whole minutes as something readable, since an hour of them is not. */
 	private fun describe(minutes: Long): String = when {

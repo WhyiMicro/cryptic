@@ -49,6 +49,7 @@ import imicro.cryptic.feature.NoItemPlace
 import imicro.cryptic.feature.SbKick
 import imicro.cryptic.feature.TimeChanger
 import imicro.cryptic.feature.CookieReminder
+import imicro.cryptic.feature.DailyRewards
 import imicro.cryptic.feature.LagDetector
 import imicro.cryptic.feature.NucleusQol
 import imicro.cryptic.feature.SmartTickTimer
@@ -270,6 +271,8 @@ object CrypticClient : ClientModInitializer {
 		PuzzleSolver.initialize()
 		MageBeam.initialize()
 		NucleusQol.initialize()
+		CookieReminder.initialize()
+		DailyRewards.initialize()
 		// The new menu's shapes are drawn by pipelines registered before the shaders load.
 		imicro.cryptic.render.RoundRect.touch()
 		BlockOverlay.initialize()
@@ -586,6 +589,71 @@ object CrypticClient : ClientModInitializer {
 											},
 									),
 							)
+							.then(
+								// The daily reward can only be claimed once a day, so the
+								// picker, the reminder and the day can all be tried here.
+								ClientCommands.literal("reward")
+									.then(ClientCommands.literal("sample").executes {
+										DailyRewards.requestOpen(DailyRewards.sampleOffer())
+										1
+									})
+									.then(ClientCommands.literal("ad").executes {
+										DailyRewards.requestOpen(DailyRewards.sampleOffer(adSeconds = 10))
+										1
+									})
+									.then(
+										ClientCommands.literal("streak").then(
+											ClientCommands.argument("days", IntegerArgumentType.integer(0, 999)).executes { context ->
+												DailyRewards.requestOpen(DailyRewards.sampleOffer(streak = IntegerArgumentType.getInteger(context, "days")))
+												1
+											},
+										),
+									)
+									.then(ClientCommands.literal("error").executes {
+										// A link that does not exist, to see the failure screen.
+										DailyRewards.openLink("CRYPTIC0")
+										1
+									})
+									.then(ClientCommands.literal("remind").executes {
+										DailyRewards.remind()
+										1
+									})
+									.then(ClientCommands.literal("reset").executes { context ->
+										DailyRewards.forgetToday()
+										context.source.sendFeedback(Component.literal("Forgot today's claim: the reminder will come back."))
+										1
+									})
+									.then(ClientCommands.literal("status").executes { context ->
+										DailyRewards.describeStatus().forEach { context.source.sendFeedback(Component.literal(it)) }
+										1
+									})
+									.executes { context ->
+										DailyRewards.describeStatus().forEach { context.source.sendFeedback(Component.literal(it)) }
+										1
+									},
+							)
+							.then(ClientCommands.literal("block").executes { context ->
+								// The block under the crosshair in full, barriers included.
+								imicro.cryptic.debug.BlockInfo.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("sounds").executes { context ->
+								// Which sound Hypixel plays for something can only be heard in a lobby.
+								imicro.cryptic.debug.SoundLog.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("barriers").executes { context ->
+								// Where a crystal's room of barriers is, in each part of
+								// the Hollows, can only be seen from inside a lobby.
+								NucleusQol.describeBarriers().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
 							.then(ClientCommands.literal("crystals").executes { context ->
 								// How a crystal waiting to be picked up looks is
 								// only known from inside a lobby that has one.
@@ -902,6 +970,11 @@ object CrypticClient : ClientModInitializer {
 					})
 					.then(ClientCommands.literal("sounds").executes {
 						imicro.cryptic.gui.menu.MenuScreen.request(SoundVolumes.module)
+						1
+					})
+					.then(ClientCommands.literal("reward").executes {
+						// The last daily reward read, reopened. Deferred past the chat screen.
+						DailyRewards.reopen()
 						1
 					})
 					.then(ClientCommands.literal("update").executes {

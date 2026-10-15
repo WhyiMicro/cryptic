@@ -105,6 +105,12 @@ Several features are ported from other mods, whose licences travel with them:
   carry tracker, and the armour stands a slayer boss carries its owner and tier
   on. The Keybinds Manager: a binding's keys, its command and its conditions
   (where it works, islands, floors, classes, phases), and its categories. Licence in [`licenses/Athen-LICENSE.txt`](licenses/Athen-LICENSE.txt).
+- **[DailyRewards](https://github.com/Cqseur/DailyRewards)** (LGPL-3.0, Cqseur) —
+  Daily Rewards: following Hypixel's reward link, reading the three cards, the
+  streak and the security token off the page, the names it gives each reward
+  and game, the claim request, and Hypixel's day turning at midnight in New
+  York. The picker screen is Cryptic's own. Licence in
+  [`licenses/DailyRewards-LICENSE.txt`](licenses/DailyRewards-LICENSE.txt).
 - **[RSM](https://github.com/rs-mod/rsm)** (BSD 3-Clause, Copyright (c) 2026
   rice.who) — Spirit Leap Overlay's two rotate fixes, from its Leap Rotate Fix:
   arriving from a leap facing the way the teammate does, and being put into a
@@ -179,7 +185,11 @@ community's, as published in Stella's terminal data. They are facts about the
 boss room and a party's convention about who goes where, not code or artwork,
 and nothing else of Stella's is in Cryptic.
 
-Six more mods were read rather than ported — no code of theirs is in Cryptic:
+Seven more mods were read rather than ported — no code of theirs is in Cryptic:
+**[RewardClaim](https://github.com/meowdding/RewardClaim)** (all rights
+reserved, ThatGravyBoat), for how the daily reward picker should behave —
+closing Hypixel's book while it opens, and waiting out Hypixel's ad before a
+card can be claimed;
 **[Essential](https://essential.gg)**, for the look and feel of the notifications —
 their size, colours, timer bar and how they slide, stack and are dismissed;
 **[Debugify](https://github.com/isXander/Debugify)** (LGPL-3.0), for the

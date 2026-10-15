@@ -86,7 +86,13 @@ class ModulePage(val module: Module) {
 	private var maxScroll = 0f
 
 	/** Where this module's page was left, the last time it closed this session. */
-	private class Place(val showingManager: Boolean, val settingsScroll: Float, val managerScroll: Float)
+	private class Place(
+		val showingManager: Boolean,
+		val settingsScroll: Float,
+		val managerScroll: Float,
+		/** Rows left expanded, kept while the menu was closed on this page. */
+		val expanded: Set<ModuleSetting>,
+	)
 
 	init {
 		remembered[module.id]?.let { place ->
@@ -95,13 +101,14 @@ class ModulePage(val module: Module) {
 			managerScroll = place.managerScroll
 			scrollTarget = if (showingManager) managerScroll else settingsScroll
 			scroll = scrollTarget
+			expanded += place.expanded
 		}
 	}
 
 	/** Keeps where the page is scrolled to, so it opens there again. */
-	private fun remember() {
+	private fun remember(keepExpanded: Boolean) {
 		if (showingManager) managerScroll = scrollTarget else settingsScroll = scrollTarget
-		remembered[module.id] = Place(showingManager, settingsScroll, managerScroll)
+		remembered[module.id] = Place(showingManager, settingsScroll, managerScroll, if (keepExpanded) expanded.toSet() else emptySet())
 	}
 
 	private var editing: Edit? = null
@@ -297,11 +304,15 @@ class ModulePage(val module: Module) {
 		startEditing(Edit.Hex(setting), selectAll = true)
 	}
 
-	/** The page is going away: what was typed goes in, and the manager saves. */
-	fun onClose() {
+	/**
+	 * The page is going away: what was typed goes in, and the manager saves.
+	 * [keepExpanded] is true when the whole menu closed on this page, which
+	 * reopens on it as it was; leaving the module folds its rows back up.
+	 */
+	fun onClose(keepExpanded: Boolean = true) {
 		commitEditing()
 		manager?.onClose()
-		remember()
+		remember(keepExpanded)
 	}
 
 	fun keyReleased(event: KeyEvent): Boolean = showingManager && manager?.keyReleased(event) == true

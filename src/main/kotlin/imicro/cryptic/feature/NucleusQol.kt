@@ -1,5 +1,6 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.experiment.EquippedPet
 import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
@@ -10,8 +11,6 @@ import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
-import imicro.cryptic.hud.Hud
-import imicro.cryptic.hud.HudElement
 import imicro.cryptic.render.CrypticRenderPipelines
 import imicro.cryptic.render.WorldRender
 import imicro.cryptic.skyblock.SkyblockItem
@@ -20,14 +19,15 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.core.BlockPos
+import net.minecraft.core.component.DataComponents
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket
-import net.minecraft.network.protocol.game.ClientboundSoundPacket
+import net.minecraft.client.resources.sounds.SoundInstance
 import net.minecraft.sounds.SoundEvent
 import net.minecraft.sounds.SoundEvents
+import net.minecraft.world.entity.Display
 import net.minecraft.world.entity.EquipmentSlot
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
@@ -76,6 +76,7 @@ object NucleusQol {
 	private const val LINES_NONE = 2
 
 	private const val NUCLEUS = "Crystal Nucleus"
+	private const val MINES_OF_DIVAN = "Mines of Divan"
 
 	/**
 	 * Where each waypoint sits relative to the block the player is standing in,
@@ -193,22 +194,117 @@ object NucleusQol {
 		visibleIf = anyCrystals,
 	)
 
-	private val treasureSection = SectionModuleSetting("treasure_section", "Treasure")
+	private val treasureSection = SectionModuleSetting("treasure_section", "Mines of Divan")
 
 	@JvmField
 	val metalDetector = ToggleModuleSetting(
 		id = "metal_detector",
 		label = "Metal Detector solver",
 		defaultValue = true,
-		description = "Works out where the Mines of Divan treasure is from the Metal Detector's distance. Stand still in a couple of places until one spot is left.",
+		description = "In the Mines of Divan, works out where the treasure is from the Metal Detector's distance. Stand still in a couple of places until one spot is left.",
 	)
+
+	@JvmField
+	val detectorMode = DropdownModuleSetting(
+		id = "detector_mode",
+		label = "Mode",
+		options = listOf("Outline", "Fill", "Fill + Outline"),
+		defaultIndex = 2,
+	)
+
+	@JvmField
+	val detectorFill = ColorModuleSetting(
+		id = "detector_fill",
+		label = "Fill",
+		defaultRgb = 0xFF5555,
+		supportsAlpha = true,
+		defaultAlpha = 0x60,
+		visibleIf = { detectorMode.selectedIndex != MODE_OUTLINE },
+	)
+
+	@JvmField
+	val detectorOutline = ColorModuleSetting(
+		id = "detector_outline",
+		label = "Outline",
+		defaultRgb = 0xFFAA00,
+		supportsAlpha = true,
+		defaultAlpha = 0xFF,
+		visibleIf = { detectorMode.selectedIndex != MODE_FILL },
+	)
+
+	@JvmField
+	val detectorPhase = ToggleModuleSetting(
+		id = "detector_phase",
+		label = "Phase",
+		defaultValue = true,
+		description = "Draws the treasure through the walls.",
+	)
+
+	@JvmField
+	val detectorTracer = ToggleModuleSetting(
+		id = "detector_tracer",
+		label = "Tracer",
+		defaultValue = true,
+		description = "A line from your crosshair to the treasure.",
+	)
+
+	@JvmField
+	val detectorTracerColor = ColorModuleSetting(
+		id = "detector_tracer_color",
+		label = "Tracer colour",
+		defaultRgb = 0xFFFFFF,
+		supportsAlpha = true,
+		defaultAlpha = 0xFF,
+		inlineWith = detectorTracer,
+	)
+
+	@JvmField
+	val detectorLabel = ToggleModuleSetting(
+		id = "detector_label",
+		label = "Distance label",
+		defaultValue = true,
+	)
+
+	@JvmField
+	val moleReminder = ToggleModuleSetting(
+		id = "mole_reminder",
+		label = "Mole pet reminder",
+		defaultValue = true,
+		description = "Reminds you to equip your Mole pet when you walk into the Mines of Divan without it. Needs the pet widget in your tab list.",
+	)
+
+	@JvmField
+	val allToolsAlert = ToggleModuleSetting(
+		id = "all_tools_alert",
+		label = "All tools alert",
+		defaultValue = true,
+		description = "A toast once you have all four Keepers' tools, counting the ones that went to your stash.",
+	)
+
+	@JvmField
+	val fullInventoryAlert = ToggleModuleSetting(
+		id = "full_inventory_alert",
+		label = "Full inventory alert",
+		defaultValue = true,
+		description = "A toast when your inventory is full while you hunt with the Metal Detector, since tools then go to your stash.",
+	)
+
+	private val chestsSection = SectionModuleSetting("chests_section", "Treasure chests")
 
 	@JvmField
 	val treasureChests = ToggleModuleSetting(
 		id = "treasure_chests",
 		label = "Treasure chest helper",
 		defaultValue = true,
-		description = "Highlights the treasure chests mining uncovers with the time they have left, lines them up, and marks the spot to click for each lock.",
+		description = "Highlights the treasure chests mining uncovers with the time they have left, until you lockpick them.",
+	)
+
+	@JvmField
+	val chestMode = DropdownModuleSetting(
+		id = "chest_mode",
+		label = "Mode",
+		options = listOf("Outline", "Fill", "Fill + Outline"),
+		defaultIndex = 2,
 	)
 
 	@JvmField
@@ -216,17 +312,47 @@ object NucleusQol {
 		id = "chest_time_colors",
 		label = "Colour by time left",
 		defaultValue = true,
-		description = "Fades each chest from green to red as it runs out of time.",
+		description = "Fades each chest from green to red as it runs out of time, in place of the colours below.",
 	)
 
 	@JvmField
-	val chestColor = ColorModuleSetting(
-		id = "chest_color",
-		label = "Chest colour",
+	val chestFill = ColorModuleSetting(
+		id = "chest_fill",
+		label = "Fill",
 		defaultRgb = 0x55FF55,
 		supportsAlpha = true,
-		defaultAlpha = 0x80,
-		visibleIf = { !chestTimeColors.value },
+		defaultAlpha = 0x60,
+		visibleIf = { !chestTimeColors.value && chestMode.selectedIndex != MODE_OUTLINE },
+	)
+
+	@JvmField
+	val chestOutline = ColorModuleSetting(
+		id = "chest_outline",
+		label = "Outline",
+		defaultRgb = 0x55FF55,
+		supportsAlpha = true,
+		defaultAlpha = 0xFF,
+		visibleIf = { !chestTimeColors.value && chestMode.selectedIndex != MODE_FILL },
+	)
+
+	/** How opaque the fill is while it is coloured by time. */
+	@JvmField
+	val chestTimeFillAlpha = SliderModuleSetting(
+		id = "chest_time_fill_alpha",
+		label = "Fill opacity",
+		defaultValue = 40.0,
+		min = 0.0,
+		max = 100.0,
+		step = 5.0,
+		visibleIf = { chestTimeColors.value && chestMode.selectedIndex != MODE_OUTLINE },
+	)
+
+	@JvmField
+	val chestPhase = ToggleModuleSetting(
+		id = "chest_phase",
+		label = "Phase",
+		defaultValue = true,
+		description = "Draws the chests through the walls.",
 	)
 
 	@JvmField
@@ -239,7 +365,7 @@ object NucleusQol {
 	@JvmField
 	val chestLines = DropdownModuleSetting(
 		id = "chest_lines",
-		label = "Lines",
+		label = "Tracer",
 		options = listOf("Oldest first", "Nearest first", "None"),
 		defaultIndex = LINES_OLDEST,
 	)
@@ -300,11 +426,17 @@ object NucleusQol {
 			waypointsSection, calculate, clear, mode, fillColor, outlineColor, lineWidth, phase,
 			crystalsSection, crystalSlots, crystalPickups, crystalStyle,
 			amberColor, amethystColor, topazColor, jadeColor, sapphireColor,
-			treasureSection, metalDetector,
-			treasureChests.withMore(
-				chestTimeColors, chestColor, chestTimer, chestLines, chestLineCount,
-				lockHelper, muteChestFound, muteChestOpen,
+			treasureSection,
+			metalDetector.withMore(
+				detectorMode, detectorFill, detectorOutline, detectorPhase, detectorTracer, detectorTracerColor, detectorLabel,
 			),
+			moleReminder, allToolsAlert, fullInventoryAlert,
+			chestsSection,
+			treasureChests.withMore(
+				chestMode, chestTimeColors, chestFill, chestOutline, chestTimeFillAlpha, chestPhase,
+				chestTimer, chestLines, chestLineCount,
+			),
+			lockHelper, muteChestFound, muteChestOpen,
 		),
 	)
 
@@ -319,7 +451,6 @@ object NucleusQol {
 
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
-		Hud.register(ChestTimerElement())
 		// Waypoints are measured from a spot in one lobby. Every server hop is a
 		// different lobby, where the same numbers mark nothing — and the same
 		// goes for the mines, the treasure and the chests.
@@ -334,7 +465,14 @@ object NucleusQol {
 		minesBase = null
 		lastBaseSearch = 0L
 		predicted = emptyList()
-		ignoredTreasure = null
+		keeperCenter = null
+		inMines = false
+		crystalSpaces.clear()
+		lastAreaScan = 0L
+		toolBucket.clear()
+		saidInventoryFull = false
+		lastReading = -1.0
+		lastReadingPos = null
 		chests.clear()
 		minedBlocks.clear()
 		doubtfulChests.clear()
@@ -364,12 +502,13 @@ object NucleusQol {
 		warpKeyDown = down
 
 		if (!SkyblockLocation.inCrystalHollows) return
-		tickTreasure(client)
 		tickChests(client)
 
 		if (ticksUntilScan-- > 0) return
 		ticksUntilScan = 10
 		inNucleus = isInNucleus(client)
+		updateInMines(client)
+		scanArea(client)
 		pickups = if (crystalPickups.value && !inNucleus) findPickups(client) else emptyList()
 	}
 
@@ -432,12 +571,27 @@ object NucleusQol {
 		return Crystal.entries.firstOrNull { it.title == name }
 	}
 
+	/**
+	 * The crystal an item shows, if any. Hypixel draws its crystals with its
+	 * resource pack's model, `hypixel_skyblock:item/uncategorized/jade_crystal`,
+	 * on plain paper, so the model is the surest sign; the SkyBlock id and the
+	 * name are kept for anything shown the older way.
+	 */
 	private fun crystalOf(stack: ItemStack): Crystal? {
 		if (stack.isEmpty) return null
+		stack.get(DataComponents.ITEM_MODEL)?.path?.let { model ->
+			val file = model.substringAfterLast('/')
+			if (file.endsWith("_crystal")) {
+				Crystal.entries.firstOrNull { it.name.equals(file.removeSuffix("_crystal"), ignoreCase = true) }?.let { return it }
+			}
+		}
 		val id = SkyblockItem.id(stack)
 		if (id.endsWith("_CRYSTAL")) Crystal.entries.firstOrNull { it.name == id.removeSuffix("_CRYSTAL") }?.let { return it }
 		return crystalIn(stack.hoverName.string)
 	}
+
+	/** An armour stand's slots, head first, since a crystal shown on a stand is usually worn. */
+	private val STAND_SLOTS = listOf(EquipmentSlot.HEAD, EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND, EquipmentSlot.CHEST)
 
 	/** A crystal lying about somewhere to be picked up, and the box drawn on it. */
 	private class Pickup(val crystal: Crystal, val box: AABB)
@@ -448,9 +602,9 @@ object NucleusQol {
 
 	/**
 	 * Crystals near enough to see. No mod that was looked at for this tracks a
-	 * crystal before it is picked up, so this looks for one the general way:
-	 * a crystal head on a stand, a stand whose name is a crystal's, or a
-	 * crystal item on the ground. `/cryptic debug crystals` lists what is
+	 * crystal before it is picked up, so this looks wherever Hypixel can show
+	 * an item: worn or held by a stand, in an item display, or on the ground —
+	 * and at a stand named after one. `/cryptic debug crystals` lists what is
 	 * around if Hypixel shows them some other way.
 	 */
 	private fun findPickups(client: Minecraft): List<Pickup> {
@@ -461,14 +615,25 @@ object NucleusQol {
 			if (entity.distanceToSqr(player) > PICKUP_RANGE * PICKUP_RANGE) continue
 			when (entity) {
 				is ArmorStand -> {
-					val head = crystalOf(entity.getItemBySlot(EquipmentSlot.HEAD))
-					if (head != null) {
-						val eye = entity.getEyePosition()
-						found += Pickup(head, AABB(eye.x - 0.4, eye.y - 0.55, eye.z - 0.4, eye.x + 0.4, eye.y + 0.25, eye.z + 0.4))
+					val worn = STAND_SLOTS.firstNotNullOfOrNull { slot -> crystalOf(entity.getItemBySlot(slot))?.let { slot to it } }
+					if (worn != null) {
+						val (slot, crystal) = worn
+						val box = if (slot == EquipmentSlot.HEAD) {
+							val eye = entity.getEyePosition()
+							AABB(eye.x - 0.4, eye.y - 0.55, eye.z - 0.4, eye.x + 0.4, eye.y + 0.25, eye.z + 0.4)
+						} else {
+							entity.boundingBox.inflate(0.2)
+						}
+						found += Pickup(crystal, box)
 						continue
 					}
 					val named = entity.customName?.let { crystalIn(it.string) } ?: continue
 					found += Pickup(named, AABB(entity.x - 0.5, entity.y - 1.0, entity.z - 0.5, entity.x + 0.5, entity.y, entity.z + 0.5))
+				}
+				is Display.ItemDisplay -> {
+					val crystal = crystalOf(entity.itemStack) ?: continue
+					// A display has no size of its own; a block around where it stands.
+					found += Pickup(crystal, AABB(entity.x - 0.5, entity.y - 0.5, entity.z - 0.5, entity.x + 0.5, entity.y + 0.5, entity.z + 0.5))
 				}
 				is ItemEntity -> {
 					val item = crystalOf(entity.item) ?: continue
@@ -479,15 +644,24 @@ object NucleusQol {
 		return found
 	}
 
+	/** What an item is, for the debug list: its name, SkyBlock id and model. */
+	private fun describeItem(stack: ItemStack): String {
+		if (stack.isEmpty) return "-"
+		val model = stack.get(DataComponents.ITEM_MODEL)?.toString() ?: "-"
+		return "${stack.hoverName.string.replace(FORMATTING, "")} ${SkyblockItem.id(stack)} model $model"
+	}
+
 	/** For `/cryptic debug crystals`: every stand and item near you, in case a crystal is being missed. */
 	fun describeCrystals(): List<String> {
 		val client = Minecraft.getInstance()
 		val level = client.level ?: return listOf("Not in a world")
 		val player = client.player ?: return listOf("Not in a world")
 		val lines = mutableListOf(
-			"Crystal Hollows: ${SkyblockLocation.inCrystalHollows}, in the nucleus: $inNucleus, " +
-				"zone: ${SkyblockLocation.zone() ?: "unknown"}, highlighted: ${pickups.size}",
-			"Mines of Divan base: ${minesBase?.toShortString() ?: "not found"}, treasure guesses: ${predicted.size}, chests: ${chests.size}",
+			"Crystal Hollows: ${SkyblockLocation.inCrystalHollows}. ${placeDescription()}",
+			"Crystals boxed: ${pickups.size} items, crystal spaces: " +
+				(crystalSpaces.keys.joinToString { it.title }.ifEmpty { "none yet" }),
+			"Mines of Divan base: ${minesBase?.toShortString() ?: "not found"}, Keepers: ${keeperCenter?.toShortString() ?: "not seen"}, " +
+				"treasure guesses: ${predicted.size}, tools: ${toolBucket.size}/${TOOLS.size}, chests: ${chests.size}",
 		)
 		for (entity in level.entitiesForRendering()) {
 			if (entity.distanceToSqr(player) > 32.0 * 32.0) continue
@@ -497,12 +671,207 @@ object NucleusQol {
 					val head = entity.getItemBySlot(EquipmentSlot.HEAD)
 					val texture = SkyblockItem.skullTexture(head)?.let { " tex ${it.take(24)}…" } ?: ""
 					val name = entity.customName?.string?.replace(FORMATTING, "") ?: "-"
-					val headName = if (head.isEmpty) "-" else "${head.hoverName.string.replace(FORMATTING, "")} ${SkyblockItem.id(head)}"
-					lines += "stand $pos \"$name\" head: $headName$texture"
+					val hand = entity.getItemBySlot(EquipmentSlot.MAINHAND)
+					lines += "stand $pos \"$name\" head: ${describeItem(head)}$texture" +
+						if (hand.isEmpty) "" else ", hand: ${describeItem(hand)}"
 				}
-				is ItemEntity -> lines += "item $pos ${entity.item.hoverName.string.replace(FORMATTING, "")} ${SkyblockItem.id(entity.item)}"
+				is Display.ItemDisplay -> lines += "display $pos ${describeItem(entity.itemStack)}"
+				is ItemEntity -> lines += "item $pos ${describeItem(entity.item)}"
 			}
 		}
+		return lines
+	}
+
+	// --- Crystal barriers -------------------------------------------------
+
+	/**
+	 * Each crystal's own part of the Hollows, as the sidebar names it. A
+	 * crystal waiting to be picked up stands in a little room of barrier
+	 * blocks, the way the Jade crystal stands on the Mines of Divan's pedestal.
+	 */
+	private val CRYSTAL_ZONES = mapOf(
+		MINES_OF_DIVAN to Crystal.JADE,
+		"Goblin Queen's Den" to Crystal.AMBER,
+		"Jungle Temple" to Crystal.AMETHYST,
+		"Lost Precursor City" to Crystal.SAPPHIRE,
+		"Khazad-dûm" to Crystal.TOPAZ,
+	)
+
+	/**
+	 * A crystal's space: 11 blocks across, 13 high and 11 deep, filled with
+	 * barriers. While the crystal is there, part of it is the crystal's glass
+	 * instead, which splits the barriers up — so the space is followed through
+	 * both, and then drawn at its full size whatever was found of it.
+	 */
+	private const val CRYSTAL_WIDTH = 11
+	private const val CRYSTAL_HEIGHT = 13
+
+	/** How far from where it started the search may go: a little past a crystal's own size. */
+	private const val ROOM_REACH = 14
+
+	/** No crystal's space holds more blocks than this. */
+	private const val MAX_ROOM_BLOCKS = CRYSTAL_WIDTH * CRYSTAL_HEIGHT * CRYSTAL_WIDTH + 200
+
+	/** How many blocks, glass included, one search may look at before giving up. */
+	private const val MAX_ROOM_VISITS = 8_000
+
+	/** Barriers and glass joined face to face, the box around them, and how many there were. */
+	class BarrierCluster(val box: AABB, val blocks: Int, val crystal: AABB?)
+
+	/** A barrier, or any glass a crystal is built from. */
+	private fun isRoomBlock(state: BlockState): Boolean =
+		state.`is`(Blocks.BARRIER) || net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.block).path.contains("glass")
+
+	/**
+	 * Everything joined to [start] through barriers and glass, kept within
+	 * [ROOM_REACH] of it, and the crystal's space it makes up when it is
+	 * about that size: null for the crystal when it is a wall or a scrap.
+	 */
+	private fun barrierCluster(level: net.minecraft.world.level.Level, start: BlockPos, seen: MutableSet<BlockPos> = HashSet()): BarrierCluster {
+		val queue = ArrayDeque<BlockPos>()
+		queue += start
+		seen += start
+		// Measured by the barriers alone: glass is crossed to reach every part of
+		// the space, but glass beside it — a window, a gemstone — is not the space.
+		var minX = start.x; var minY = start.y; var minZ = start.z
+		var maxX = start.x; var maxY = start.y; var maxZ = start.z
+		var count = 0
+		var visited = 0
+		var overflow = false
+		while (queue.isNotEmpty()) {
+			val pos = queue.removeFirst()
+			if (++visited > MAX_ROOM_VISITS) break
+			if (level.getBlockState(pos).`is`(Blocks.BARRIER)) {
+				if (++count > MAX_ROOM_BLOCKS) {
+					overflow = true
+					break
+				}
+				minX = minOf(minX, pos.x); minY = minOf(minY, pos.y); minZ = minOf(minZ, pos.z)
+				maxX = maxOf(maxX, pos.x); maxY = maxOf(maxY, pos.y); maxZ = maxOf(maxZ, pos.z)
+			}
+			for (direction in net.minecraft.core.Direction.entries) {
+				val next = pos.relative(direction)
+				if (next in seen) continue
+				if (Math.abs(next.x - start.x) > ROOM_REACH || Math.abs(next.y - start.y) > ROOM_REACH ||
+					Math.abs(next.z - start.z) > ROOM_REACH) continue
+				if (!isRoomBlock(level.getBlockState(next))) continue
+				seen += next
+				queue += next
+			}
+		}
+		val box = AABB(minX.toDouble(), minY.toDouble(), minZ.toDouble(), maxX + 1.0, maxY + 1.0, maxZ + 1.0)
+		return BarrierCluster(box.inflate(0.002), count, if (overflow) null else crystalSpace(box))
+	}
+
+	/**
+	 * The crystal's whole space, when [found] is close enough to its size to be
+	 * one: a couple of blocks short for a corner the search could not reach, or
+	 * a little over where glass outside it touched. Centred on what was found.
+	 */
+	private fun crystalSpace(found: AABB): AABB? {
+		fun near(size: Double, wanted: Int) = size >= wanted - 3 && size <= wanted + 2
+		if (!near(found.xsize, CRYSTAL_WIDTH) || !near(found.ysize, CRYSTAL_HEIGHT) || !near(found.zsize, CRYSTAL_WIDTH)) return null
+		val minX = Math.round(found.center.x - CRYSTAL_WIDTH / 2.0).toDouble()
+		val minY = Math.round(found.center.y - CRYSTAL_HEIGHT / 2.0).toDouble()
+		val minZ = Math.round(found.center.z - CRYSTAL_WIDTH / 2.0).toDouble()
+		return AABB(minX, minY, minZ, minX + CRYSTAL_WIDTH, minY + CRYSTAL_HEIGHT, minZ + CRYSTAL_WIDTH).inflate(0.002)
+	}
+
+	/** Every cluster of barriers within [radius] blocks across and [height] up and down of you. */
+	private fun barrierClusters(client: Minecraft, radius: Int, height: Int): List<BarrierCluster> {
+		val level = client.level ?: return emptyList()
+		val origin = client.player?.blockPosition() ?: return emptyList()
+		val seen = HashSet<BlockPos>()
+		val found = mutableListOf<BarrierCluster>()
+		val probe = BlockPos.MutableBlockPos()
+		for (dx in -radius..radius) for (dy in -height..height) for (dz in -radius..radius) {
+			probe.set(origin.x + dx, origin.y + dy, origin.z + dz)
+			if (probe in seen || !level.getBlockState(probe).`is`(Blocks.BARRIER)) continue
+			found += barrierCluster(level, probe.immutable(), seen)
+		}
+		return found
+	}
+
+	/**
+	 * Each crystal's space once it has been found, for the rest of the lobby:
+	 * the Hollows are built once per lobby, and a crystal taken leaves its
+	 * space where it was.
+	 */
+	private val crystalSpaces = HashMap<Crystal, AABB>()
+
+	private var lastAreaScan = 0L
+
+	/** How often the barriers around you are looked through again, until the crystal's space is found. */
+	private const val AREA_SCAN_MS = 5_000L
+
+	/** The crystal whose part of the Hollows you are in, if any. */
+	private fun currentCrystalArea(): Crystal? = if (inMines) Crystal.JADE else CRYSTAL_ZONES[SkyblockLocation.zone()]
+
+	/**
+	 * In a crystal's part of the Hollows, its space among the barriers near you.
+	 * Looked for every few seconds until it turns up, then kept.
+	 */
+	private fun scanArea(client: Minecraft) {
+		if (!crystalPickups.value || inNucleus) return
+		val crystal = currentCrystalArea() ?: return
+		if (crystal in crystalSpaces) return
+		val now = System.currentTimeMillis()
+		if (now - lastAreaScan < AREA_SCAN_MS) return
+		lastAreaScan = now
+		val player = client.player ?: return
+		barrierClusters(client, 48, 32)
+			.mapNotNull { it.crystal }
+			.minByOrNull { it.center.distanceToSqr(player.position()) }
+			?.let { crystalSpaces[crystal] = it }
+	}
+
+	/** Clusters `/cryptic debug barriers` is showing, and until when. */
+	private var debugBarriers: List<AABB> = emptyList()
+	private var debugBarriersUntil = 0L
+
+	private fun describeBox(b: AABB): String =
+		"${b.xsize.roundToInt()}x${b.ysize.roundToInt()}x${b.zsize.roundToInt()} from ${b.minX.roundToInt()} ${b.minY.roundToInt()} ${b.minZ.roundToInt()} " +
+			"to ${b.maxX.roundToInt() - 1} ${b.maxY.roundToInt() - 1} ${b.maxZ.roundToInt() - 1}"
+
+	/** For `/cryptic debug block`: the barriers and glass [pos] is joined to, and whether they make a crystal's space. */
+	fun describeBarrierAt(pos: BlockPos): List<String> {
+		val level = Minecraft.getInstance().level ?: return emptyList()
+		val cluster = barrierCluster(level, pos)
+		debugBarriers = listOfNotNull(cluster.crystal ?: cluster.box)
+		debugBarriersUntil = System.currentTimeMillis() + 60_000
+		return listOf(
+			"Barriers and glass joined to it: ${if (cluster.crystal == null && cluster.blocks > MAX_ROOM_BLOCKS) "over $MAX_ROOM_BLOCKS" else cluster.blocks} blocks, ${describeBox(cluster.box)}",
+			cluster.crystal?.let { "A crystal's space: ${describeBox(it)} (outlined for 60s)" }
+				?: "Not a crystal's space (${CRYSTAL_WIDTH}x${CRYSTAL_HEIGHT}x$CRYSTAL_WIDTH)",
+		)
+	}
+
+	/** Which crystal's part of the Hollows you are in, by name, or "none". */
+	private fun placeDescription(): String {
+		val zone = SkyblockLocation.zone()
+		val crystal = currentCrystalArea()
+		return "Place: ${zone ?: "unknown"}" +
+			(crystal?.let { " (the ${it.title} crystal's area)" } ?: " (no crystal here)") +
+			", in the nucleus: $inNucleus, in the Mines of Divan: $inMines"
+	}
+
+	/** For `/cryptic debug barriers`: every barrier cluster near you, outlined for a minute and listed. */
+	fun describeBarriers(): List<String> {
+		val client = Minecraft.getInstance()
+		val player = client.player ?: return listOf("Not in a world")
+		val clusters = barrierClusters(client, 48, 32).sortedBy { it.box.center.distanceToSqr(player.position()) }
+		debugBarriers = clusters.map { it.crystal ?: it.box }
+		debugBarriersUntil = System.currentTimeMillis() + 60_000
+		val lines = mutableListOf(
+			"Zone: ${SkyblockLocation.zone() ?: "unknown"}, ${clusters.size} barrier clusters within 48 blocks (outlined for 60s, nearest first):",
+		)
+		clusters.take(15).forEachIndexed { index, cluster ->
+			lines += "${index + 1}. ${cluster.blocks} blocks, ${describeBox(cluster.box)}, " +
+				"${"%.0f".format(Math.sqrt(cluster.box.center.distanceToSqr(player.position())))}m away" +
+				if (cluster.crystal != null) ", a crystal's space" else ""
+		}
+		lines += "Crystal spaces found this lobby: " +
+			(crystalSpaces.entries.joinToString { "${it.key.title} at ${describeBox(it.value)}" }.ifEmpty { "none" })
 		return lines
 	}
 
@@ -532,45 +901,80 @@ object NucleusQol {
 	/** Looking for the mines' middle again sooner than this would scan a million blocks for nothing. */
 	private const val BASE_SEARCH_COOLDOWN_MS = 15_000L
 
-	private var minesBase: BlockPos? = null
-	private var lastBaseSearch = 0L
-	private var baseMissingToasted = false
+	/** The Mines of Divan reach about 50 blocks out from their middle; a little more for the walls. */
+	private const val MINES_REACH = 60.0
 
-	/** Where the treasure could be. One left is the answer. */
+	private val KEEPER = Regex("""^Keeper of (Diamond|Lapis|Emerald|Gold)$""")
+
+	/** From each Keeper to the middle of the mines, as Skyblocker has them. */
+	private val KEEPER_OFFSETS = mapOf(
+		"Diamond" to BlockPos(33, 0, 3),
+		"Lapis" to BlockPos(-33, 0, -3),
+		"Emerald" to BlockPos(-3, 0, 33),
+		"Gold" to BlockPos(3, 0, -33),
+	)
+
+	/** The corner of the barriers around the Jade pedestal, which the chest offsets are measured from. */
+	private var minesBase: BlockPos? = null
+
+	/** The middle of the mines as the Keepers place it, known before the base has been searched for. */
+	private var keeperCenter: BlockPos? = null
+
+	private var lastBaseSearch = 0L
+
+	/** Whether you are in the Mines of Divan, which is the only place the solver works. */
+	private var inMines = false
+
+	/** Where the treasure could be. One left is the answer, and is kept for the lobby until it is dug up. */
 	private var predicted: List<BlockPos> = emptyList()
 
-	/** A treasure walked up to and dug, so the next reading does not point back at it. */
-	private var ignoredTreasure: BlockPos? = null
+	/** The last reading, and where you stood for it: a reading counts once it repeats with you standing still. */
+	private var lastReading = -1.0
+	private var lastReadingPos: Vec3? = null
+
+	/** The detector rounds to a tenth; a little more allows for where on the block you stand. */
+	private const val READING_TOLERANCE = 0.15
+
+	private fun fits(chest: BlockPos, position: Vec3, distance: Double): Boolean {
+		val measured = position.distanceTo(Vec3(chest.x.toDouble(), chest.y + 1.0, chest.z.toDouble()))
+		return Math.abs(measured - distance) < READING_TOLERANCE
+	}
 
 	/**
-	 * The action bar, from either packet Hypixel sends it in. Every reading is
-	 * checked against all the places the treasure can be, rounded as the
-	 * detector rounds — no reading needs to agree with the one before.
+	 * The action bar, from either packet Hypixel sends it in.
+	 *
+	 * A reading is only used once it has come twice with you standing still,
+	 * as Skyblocker does: the bar lags behind you while you walk, and a stale
+	 * distance is how a wrong spot got singled out and kept. Each still reading
+	 * narrows the guesses left from the last one, checked against SkyHanni's
+	 * places, and an answer a later reading disagrees with is thrown out and
+	 * worked out again.
 	 */
 	@JvmStatic
 	fun onActionBar(text: Component) {
-		if (!module.enabled || !metalDetector.value || !SkyblockLocation.inCrystalHollows) return
-		if (predicted.size == 1) return
+		if (!module.enabled || !SkyblockLocation.inCrystalHollows || !inMines) return
 		val player = Minecraft.getInstance().player ?: return
 		val distance = TREASURE.find(text.string.replace(FORMATTING, ""))?.groupValues?.get(1)?.toDoubleOrNull() ?: return
+		checkTools(player)
+		if (!metalDetector.value) return
+
+		val position = player.position()
+		val still = distance == lastReading && lastReadingPos?.let { it.distanceToSqr(position) < 0.0025 } == true
+		lastReading = distance
+		lastReadingPos = position
+		if (!still) return
 
 		if (minesBase == null) findMinesBase()
 		val base = minesBase ?: return
 
+		// Narrow what is left; start over when nothing is, or the answer no longer agrees.
 		val before = predicted.size
-		val position = player.position()
-		predicted = CHEST_OFFSETS
-			.map { base.subtract(it) }
-			.filter { it != ignoredTreasure }
-			.filter { chest ->
-				val measured = position.distanceTo(Vec3(chest.x.toDouble(), chest.y + 1.0, chest.z.toDouble()))
-				(measured * 10).roundToInt() == (distance * 10).roundToInt()
-			}
-
-		if (predicted.size == 1) {
-			Toasts.show(SOURCE, "Found the treasure", color = Toasts.Colors.MINING)
-		} else if (predicted.size != before && predicted.size > 1) {
-			Toasts.show(SOURCE, "§f${predicted.size} §7places it could be, stand still somewhere else", color = Toasts.Colors.MINING)
+		val narrowed = predicted.filter { fits(it, position, distance) }
+		predicted = narrowed.ifEmpty {
+			CHEST_OFFSETS.map { base.subtract(it) }.filter { fits(it, position, distance) }
+		}
+		if (predicted.size > 1 && predicted.size != before) {
+			Toasts.show(SOURCE, "§f${predicted.size} §7possible locations, move a little to find the right one", color = Toasts.Colors.MINING)
 		}
 	}
 
@@ -583,29 +987,137 @@ object NucleusQol {
 		}
 		if (!module.enabled || !SkyblockLocation.inCrystalHollows) return
 		val text = content.string.replace(FORMATTING, "").trim()
-		// The treasure dug up, so the next reading is a new one.
-		if (TREASURE_FOUND.matches(text)) predicted = emptyList()
-		if (treasureChests.value && text == "You uncovered a treasure chest!") chestConfirmed()
+		TREASURE_FOUND.matchEntire(text)?.let { found ->
+			// The treasure dug up, so the next reading is a new one. Until then it
+			// stays marked, however close you get or however often you leave.
+			predicted = emptyList()
+			// A tool goes in the bucket wherever it ended up, inventory or stash.
+			TOOLS.entries.firstOrNull { found.value.contains(it.value) }?.let { addTool(it.key) }
+		}
+		if (tracksChests && !inMines) {
+			if (text == "You uncovered a treasure chest!") chestConfirmed()
+			// Hypixel leaves a picked chest standing, so it is let go of here.
+			if (text == "CHEST LOCKPICKED" || text == "This chest has already been looted.") chestLooted()
+		}
 	}
 
-	/** Clears a found treasure once you are on top of it, and forgets it once you have walked away. */
-	private fun tickTreasure(client: Minecraft) {
+	// --- Tools ------------------------------------------------------------
+
+	/** The four Keepers' tools, by SkyBlock id, and the name the found message gives each. */
+	private val TOOLS = mapOf(
+		"DWARVEN_LAPIS_SWORD" to "Scavenged Lapis Sword",
+		"DWARVEN_EMERALD_HAMMER" to "Scavenged Emerald Hammer",
+		"DWARVEN_GOLD_HAMMER" to "Scavenged Golden Hammer",
+		"DWARVEN_DIAMOND_AXE" to "Scavenged Diamond Axe",
+	)
+
+	private const val METAL_DETECTOR = "DWARVEN_METAL_DETECTOR"
+
+	/**
+	 * The tools you have for this visit to the mines, one of each at most. It
+	 * starts with what is in your inventory as you walk in, takes every tool
+	 * the chat says you found — whether it went to the inventory or the stash —
+	 * and is emptied when you leave.
+	 */
+	private val toolBucket = HashSet<String>()
+
+	private var saidInventoryFull = false
+
+	/** Fills the bucket from the inventory, on walking into the mines. */
+	private fun fillBucketFromInventory(player: net.minecraft.world.entity.player.Player) {
+		toolBucket.clear()
+		for (slot in 0 until 36) {
+			val id = SkyblockItem.id(player.inventory.getItem(slot))
+			if (id in TOOLS) toolBucket += id
+		}
+	}
+
+	private fun addTool(id: String) {
+		if (!inMines || !toolBucket.add(id)) return
+		if (allToolsAlert.value && toolBucket.size == TOOLS.size) {
+			Toasts.show(SOURCE, "§aAll tools found", color = Toasts.Colors.MINING)
+		}
+	}
+
+	/**
+	 * A warning while the inventory is full, since whatever is dug up next goes
+	 * to the stash. Only while the Metal Detector is in your hand.
+	 */
+	private fun checkTools(player: net.minecraft.world.entity.player.Player) {
+		if (!fullInventoryAlert.value || SkyblockItem.id(player.mainHandItem) != METAL_DETECTOR) return
+		val free = (0 until 36).any { player.inventory.getItem(it).isEmpty }
+		if (!free && !saidInventoryFull) {
+			saidInventoryFull = true
+			Toasts.show(SOURCE, "§cInventory full§7, tools you find will go to your stash", color = Toasts.Colors.MINING)
+		} else if (free) {
+			saidInventoryFull = false
+		}
+	}
+
+	/**
+	 * Whether you are in the Mines of Divan: near the middle the Keepers or the
+	 * Jade pedestal give, or on a sidebar that says so. The treasure is only
+	 * drawn here, and kept while you are away.
+	 */
+	private fun updateInMines(client: Minecraft) {
 		val player = client.player ?: return
-		val only = predicted.singleOrNull()
-		if (only != null) {
-			if (player.distanceToSqr(Vec3.atLowerCornerOf(only)) <= 25) {
-				ignoredTreasure = only
-				predicted = emptyList()
+		findKeeperCenter(client)
+		fun near(center: BlockPos?) = center != null &&
+			Math.abs(player.x - center.x) <= MINES_REACH && Math.abs(player.z - center.z) <= MINES_REACH
+		val now = near(minesBase) || near(keeperCenter) || SkyblockLocation.zone() == MINES_OF_DIVAN
+		if (now && !inMines) {
+			inMines = true
+			fillBucketFromInventory(player)
+			onEnterMines()
+		}
+		// The bucket is per visit: tools given to the Keepers are gone next time.
+		if (!now && inMines) toolBucket.clear()
+		inMines = now
+	}
+
+	/** The Keepers' nametags, each a known step from the middle of the mines. Skyblocker's way in. */
+	private fun findKeeperCenter(client: Minecraft) {
+		if (keeperCenter != null) return
+		val level = client.level ?: return
+		val player = client.player ?: return
+		for (entity in level.entitiesForRendering()) {
+			if (entity !is ArmorStand || !entity.hasCustomName()) continue
+			if (entity.distanceToSqr(player) > 150.0 * 150.0) continue
+			val keeper = KEEPER.matchEntire(entity.name.string.replace(FORMATTING, "").trim()) ?: continue
+			val offset = KEEPER_OFFSETS[keeper.groupValues[1]] ?: continue
+			keeperCenter = entity.blockPosition().offset(offset)
+			return
+		}
+	}
+
+	/**
+	 * Walking into the mines: the Mole reminder, and the Jade pedestal looked
+	 * for so its crystal can be boxed. The pet is read from the tab list's Pet
+	 * widget, which not everybody shows.
+	 */
+	private fun onEnterMines() {
+		if (minesBase == null && crystalPickups.value) findMinesBase()
+		if (!moleReminder.value) return
+		val pet = EquippedPet.name()
+		when {
+			pet != null && pet.contains("Mole", ignoreCase = true) -> Unit
+			pet != null -> {
+				Toasts.show(SOURCE, "Equip your §6Mole §7pet, §f$pet §7is out", color = Toasts.Colors.MINING)
+				Minecraft.getInstance().gui.hud.setTitle(Component.literal("§6Mole pet!"))
 			}
-		} else if (predicted.isEmpty()) {
-			ignoredTreasure?.let { if (player.distanceToSqr(Vec3.atLowerCornerOf(it)) > 100) ignoredTreasure = null }
+			EquippedPet.widgetShown() -> {
+				Toasts.show(SOURCE, "No pet out, equip your §6Mole", color = Toasts.Colors.MINING)
+				Minecraft.getInstance().gui.hud.setTitle(Component.literal("§6Mole pet!"))
+			}
+			else -> Toasts.show(SOURCE, "Can't read your pet from the tab list. Add the §fPet §7widget with §f/widget", true)
 		}
 	}
 
 	/**
 	 * The middle of the mines: quartz stairs under a barrier 13 blocks above,
 	 * which is the Jade crystal's pedestal, then the barriers followed out to
-	 * their far corner. SkyHanni's search.
+	 * their far corner. SkyHanni's search. The barriers themselves are where
+	 * the Jade crystal stands.
 	 */
 	private fun findMinesBase() {
 		val now = System.currentTimeMillis()
@@ -634,12 +1146,8 @@ object NucleusQol {
 				}
 			}
 			minesBase = corner
-			baseMissingToasted = false
+			barrierCluster(level, above.immutable()).crystal?.let { crystalSpaces[Crystal.JADE] = it }
 			return
-		}
-		if (!baseMissingToasted) {
-			baseMissingToasted = true
-			Toasts.show(SOURCE, "Get closer to the middle of the Mines of Divan", true)
 		}
 	}
 
@@ -681,7 +1189,8 @@ object NucleusQol {
 	 */
 	@JvmStatic
 	fun onBlockChanged(pos: BlockPos, oldState: BlockState, newState: BlockState) {
-		if (!module.enabled || !treasureChests.value || !SkyblockLocation.inCrystalHollows) return
+		// The Metal Detector's treasure is a chest too; in the mines it is the only kind.
+		if (!module.enabled || !tracksChests || !SkyblockLocation.inCrystalHollows || inMines) return
 		val player = Minecraft.getInstance().player ?: return
 		if (pos.distToCenterSqr(player.position()) > MAX_CHEST_DISTANCE * MAX_CHEST_DISTANCE) return
 		val now = System.currentTimeMillis()
@@ -706,6 +1215,25 @@ object NucleusQol {
 				currentLockCount = 0
 			}
 		}
+	}
+
+	/** Whether chests are being followed at all: for their highlight, or for the lock pick helper. */
+	private val tracksChests: Boolean get() = treasureChests.value || lockHelper.value
+
+	/**
+	 * "CHEST LOCKPICKED": the chest you are looking at, or else the nearest
+	 * one within reach, is done with. Hypixel leaves it standing a while.
+	 */
+	private fun chestLooted() {
+		val player = Minecraft.getInstance().player ?: return
+		val target = (Minecraft.getInstance().hitResult as? BlockHitResult)?.blockPos
+		val looted = target?.takeIf { it in chests }
+			?: chests.keys.filter { it.distToCenterSqr(player.position()) <= 36.0 }
+				.minByOrNull { it.distToCenterSqr(player.position()) }
+			?: return
+		chests.remove(looted)
+		currentLockCount = 0
+		activeParticles.clear()
 	}
 
 	/** Chests that appeared without a sign they were yours, held a second in case one follows. */
@@ -755,7 +1283,7 @@ object NucleusQol {
 	@JvmStatic
 	fun onParticle(packet: ClientboundLevelParticlesPacket) {
 		if (!Minecraft.getInstance().isSameThread) return
-		if (!module.enabled || !treasureChests.value || !lockHelper.value || chests.isEmpty()) return
+		if (!module.enabled || !lockHelper.value || chests.isEmpty()) return
 		if (packet.particle.type == ParticleTypes.CRIT) {
 			activeParticles[Vec3(packet.x, packet.y, packet.z)] = System.currentTimeMillis()
 		}
@@ -765,35 +1293,38 @@ object NucleusQol {
 
 	/**
 	 * A chest found, a lock picked, a wrong click, or a chest opening, each told
-	 * by its sound. True when the sound is muted.
-	 *
-	 * The first pass is on the network thread and can only look at the packet;
-	 * a muted sound never reaches the second, so the found sound is noted on
-	 * both. Everything that reads the player waits for the client thread.
+	 * by its sound, from either packet: Hypixel plays some sounds at a place
+	 * and some on an entity. Only the client thread's pass, since the player is
+	 * read; muting happens later, where the game plays the sound ([mutes]).
 	 */
 	@JvmStatic
-	fun onSound(packet: ClientboundSoundPacket): Boolean {
-		if (!module.enabled || !treasureChests.value || !SkyblockLocation.inCrystalHollows) return false
-		val sound = packet.sound.value()
-		val plain = packet.pitch == 1f && packet.volume == 1f
-		if (sound.isSound(SoundEvents.PLAYER_LEVELUP) && plain) {
-			lastFoundSound = System.currentTimeMillis()
-			// The held chests are the client thread's to touch; when this is the
-			// network's pass and the sound is muted, the chat line still follows.
-			if (Minecraft.getInstance().isSameThread) chestConfirmed()
-			return muteChestFound.value
-		}
-		val muted = sound.isSound(SoundEvents.CHEST_OPEN) && plain && muteChestOpen.value
-
+	fun onSound(sound: SoundEvent, pitch: Float, volume: Float) {
 		val client = Minecraft.getInstance()
-		if (client.isSameThread || muted) {
-			try {
-				onLockSound(client, sound, packet.pitch)
-			} catch (_: Exception) {
-				// A packet handler that throws disconnects you. Not over a lock.
+		if (!client.isSameThread) return
+		if (!module.enabled || !tracksChests || !SkyblockLocation.inCrystalHollows) return
+		try {
+			if (sound.isSound(SoundEvents.PLAYER_LEVELUP) && pitch == 1f && volume == 1f) {
+				chestConfirmed()
+				return
 			}
+			onLockSound(client, sound, pitch)
+		} catch (_: Exception) {
+			// A packet handler that throws disconnects you. Not over a lock.
 		}
-		return muted
+	}
+
+	/**
+	 * Whether a sound about to play is one of the treasure chest sounds being
+	 * muted. Asked by the sound manager, so it catches every way the sound
+	 * arrived. The found sound is a level-up and the open one a chest, which
+	 * in the Crystal Hollows are near enough always the treasure's.
+	 */
+	@JvmStatic
+	fun mutes(instance: SoundInstance): Boolean {
+		if (!module.enabled || !SkyblockLocation.inCrystalHollows) return false
+		val id = instance.identifier
+		return (muteChestFound.value && id == SoundEvents.PLAYER_LEVELUP.location()) ||
+			(muteChestOpen.value && id == SoundEvents.CHEST_OPEN.location())
 	}
 
 	private fun onLockSound(client: Minecraft, sound: SoundEvent, pitch: Float) {
@@ -831,7 +1362,11 @@ object NucleusQol {
 		return (0xFF shl 24) or (red shl 16) or (green shl 8)
 	}
 
-	private fun secondsLeft(msLeft: Long) = "${((msLeft + 999) / 1000).coerceAtLeast(0)}s"
+	/** The tracer's colour: the time fade, or the outline colour when that is off. */
+	private fun lineColor(msLeft: Long): Int =
+		if (chestTimeColors.value) timeColor(msLeft) else chestOutline.argb or (0xFF shl 24)
+
+	private fun secondsLeft(msLeft: Long) ="${((msLeft + 999) / 1000).coerceAtLeast(0)}s"
 
 	/** The chests the line runs through, in the order it runs. */
 	private fun lineOrder(player: Vec3): List<Map.Entry<BlockPos, Long>> {
@@ -898,12 +1433,29 @@ object NucleusQol {
 		}
 		if (crystalPickups.value) {
 			for (pickup in pickups) box(pickup.box, pickup.crystal)
+			for ((crystal, space) in crystalSpaces) box(space, crystal)
+		}
+		if (System.currentTimeMillis() < debugBarriersUntil) {
+			for (cluster in debugBarriers) {
+				WorldRender.drawBox(
+					poseStack = context.poseStack(),
+					collector = context.submitNodeCollector(),
+					minX = cluster.minX, minY = cluster.minY, minZ = cluster.minZ,
+					maxX = cluster.maxX, maxY = cluster.maxY, maxZ = cluster.maxZ,
+					outlineArgb = 0xFFFFFFFF.toInt(),
+					fillArgb = 0,
+					outline = true,
+					fill = false,
+					phase = true,
+					lineWidth = 2f,
+				)
+			}
 		}
 	}
 
-	/** SkyHanni's look: a red block through walls, a gold edge, a line from the crosshair and the distance. */
+	/** SkyHanni's look by default: a red block through walls, a gold edge, a line from the crosshair and the distance. */
 	private fun renderMetalDetector(context: LevelRenderContext) {
-		if (!metalDetector.value || predicted.isEmpty()) return
+		if (!metalDetector.value || !inMines || predicted.isEmpty()) return
 		val poseStack = context.poseStack()
 		val collector = context.submitNodeCollector()
 		val orientation = Minecraft.getInstance().gameRenderer.mainCamera().rotation()
@@ -914,52 +1466,74 @@ object NucleusQol {
 				poseStack = poseStack,
 				collector = collector,
 				pos = pos,
-				outlineArgb = 0xFFFFAA00.toInt(),
-				fillArgb = 0x60FF5555,
-				outline = true,
-				fill = true,
-				phase = true,
+				outlineArgb = detectorOutline.argb,
+				fillArgb = detectorFill.argb,
+				outline = detectorMode.selectedIndex != MODE_FILL,
+				fill = detectorMode.selectedIndex != MODE_OUTLINE,
+				phase = detectorPhase.value,
 				lineWidth = 2f,
 				fullBlock = true,
 			)
-			WorldRender.drawTracer(poseStack, collector, pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, 0xFFFFFFFF.toInt(), 3f, true)
-			val distance = eye.distanceTo(Vec3.atCenterOf(pos))
-			WorldRender.drawText(
-				poseStack = poseStack,
-				collector = collector,
-				orientation = orientation,
-				text = Component.literal("Treasure: §e${"%.1f".format(distance)}m"),
-				x = pos.x + 0.5,
-				y = pos.y + 1.5,
-				z = pos.z + 0.5,
-				scale = (distance / 12.0).coerceIn(1.0, 4.0).toFloat(),
-				seeThrough = true,
-				centered = true,
-			)
+			if (detectorTracer.value) {
+				WorldRender.drawTracer(poseStack, collector, pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, detectorTracerColor.argb, 3f, true)
+			}
+			if (detectorLabel.value) {
+				val distance = eye.distanceTo(Vec3.atCenterOf(pos))
+				WorldRender.drawText(
+					poseStack = poseStack,
+					collector = collector,
+					orientation = orientation,
+					text = Component.literal("Treasure: §e${"%.1f".format(distance)}m"),
+					x = pos.x + 0.5,
+					y = pos.y + 1.5,
+					z = pos.z + 0.5,
+					scale = (distance / 12.0).coerceIn(1.0, 4.0).toFloat(),
+					seeThrough = true,
+					centered = true,
+				)
+			}
 		}
 	}
 
 	private fun renderChests(context: LevelRenderContext) {
-		if (!treasureChests.value || chests.isEmpty()) return
+		if (chests.isEmpty() || inMines) return
 		val poseStack = context.poseStack()
 		val collector = context.submitNodeCollector()
 		val client = Minecraft.getInstance()
-		val player = client.player ?: return
 		val orientation = client.gameRenderer.mainCamera().rotation()
+		if (treasureChests.value) renderChestHighlights(poseStack, collector, orientation)
+		if (lockHelper.value) renderLock(poseStack, collector, orientation)
+	}
+
+	private fun renderChestHighlights(
+		poseStack: com.mojang.blaze3d.vertex.PoseStack,
+		collector: net.minecraft.client.renderer.SubmitNodeCollector,
+		orientation: org.joml.Quaternionf,
+	) {
+		val player = Minecraft.getInstance().player ?: return
 		val now = System.currentTimeMillis()
+		val fillAlpha = (chestTimeFillAlpha.value / 100.0 * 255).roundToInt().coerceIn(0, 255)
 
 		for ((chest, despawn) in chests) {
 			val left = despawn - now
-			val color = if (chestTimeColors.value) (timeColor(left) and 0xFFFFFF) or 0x80000000.toInt() else chestColor.argb
+			val outlineArgb: Int
+			val fillArgb: Int
+			if (chestTimeColors.value) {
+				outlineArgb = timeColor(left)
+				fillArgb = (timeColor(left) and 0xFFFFFF) or (fillAlpha shl 24)
+			} else {
+				outlineArgb = chestOutline.argb
+				fillArgb = chestFill.argb
+			}
 			WorldRender.drawBlock(
 				poseStack = poseStack,
 				collector = collector,
 				pos = chest,
-				outlineArgb = color or (0xFF shl 24),
-				fillArgb = color,
-				outline = true,
-				fill = true,
-				phase = true,
+				outlineArgb = outlineArgb,
+				fillArgb = fillArgb,
+				outline = chestMode.selectedIndex != MODE_FILL,
+				fill = chestMode.selectedIndex != MODE_OUTLINE,
+				phase = chestPhase.value,
 				lineWidth = 2f,
 				fullBlock = true,
 			)
@@ -984,13 +1558,11 @@ object NucleusQol {
 
 		val line = lineOrder(player.position())
 		line.firstOrNull()?.let { (first, despawn) ->
-			WorldRender.drawTracer(poseStack, collector, first.x + 0.5, first.y + 0.5, first.z + 0.5, timeColor(despawn - now), 3f, false)
+			WorldRender.drawTracer(poseStack, collector, first.x + 0.5, first.y + 0.5, first.z + 0.5, lineColor(despawn - now), 3f, chestPhase.value)
 		}
 		for ((from, to) in line.zipWithNext()) {
-			WorldRender.drawLine(poseStack, collector, listOf(Vec3.atCenterOf(from.key), Vec3.atCenterOf(to.key)), timeColor(from.value - now), 3f, false)
+			WorldRender.drawLine(poseStack, collector, listOf(Vec3.atCenterOf(from.key), Vec3.atCenterOf(to.key)), lineColor(from.value - now), 3f, chestPhase.value)
 		}
-
-		if (lockHelper.value) renderLock(poseStack, collector, orientation)
 	}
 
 	/** Skyblocker's: the middle of the chest's sparks is the next lock, and the count of locks done. */
@@ -1038,32 +1610,6 @@ object NucleusQol {
 				argb = argb,
 				centered = true,
 			)
-		}
-	}
-
-	/** SkyHanni's Powder Chest Timer display: the soonest to go, and how many there are. */
-	private class ChestTimerElement : HudElement("treasure_chest_timer", "Treasure Chests", 0.45, 0.35) {
-		private val font get() = Minecraft.getInstance().font
-
-		override val width: Int = 110
-		override val height: Int = 10
-
-		override fun isVisible(): Boolean =
-			module.enabled && treasureChests.value && SkyblockLocation.inCrystalHollows && chests.isNotEmpty()
-
-		override fun showInEditor(): Boolean = module.enabled && treasureChests.value
-
-		override fun render(context: GuiGraphicsExtractor) {
-			val soonest = chests.values.minOrNull() ?: return
-			draw(context, soonest - System.currentTimeMillis(), chests.size)
-		}
-
-		override fun renderExample(context: GuiGraphicsExtractor) = draw(context, 42_000, 3)
-
-		private fun draw(context: GuiGraphicsExtractor, msLeft: Long, count: Int) {
-			val text = Component.literal(secondsLeft(msLeft)).withColor(timeColor(msLeft) and 0xFFFFFF)
-				.append(Component.literal(" §8(§e$count §b${if (count == 1) "chest" else "chests"}§8)"))
-			context.text(font, text, 0, 1, 0xFFFFFFFF.toInt())
 		}
 	}
 }

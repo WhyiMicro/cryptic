@@ -25,6 +25,8 @@ import imicro.cryptic.feature.SmoothTeleport;
 import imicro.cryptic.feature.MageBeam;
 import imicro.cryptic.feature.MelodyHud;
 import imicro.cryptic.feature.NucleusQol;
+import imicro.cryptic.feature.CookieReminder;
+import imicro.cryptic.feature.DailyRewards;
 import imicro.cryptic.feature.PartyFeatures;
 import imicro.cryptic.feature.PuzzleSolver;
 import imicro.cryptic.feature.RenderOptimizer;
@@ -34,6 +36,7 @@ import imicro.cryptic.feature.Secrets;
 import imicro.cryptic.feature.SmartTickTimer;
 import imicro.cryptic.feature.SpringBootsHelper;
 import imicro.cryptic.debug.InventoryWatch;
+import imicro.cryptic.debug.SoundLog;
 import imicro.cryptic.skyblock.ServerStats;
 import imicro.cryptic.feature.TimeChanger;
 import imicro.cryptic.terminal.Terminals;
@@ -63,6 +66,7 @@ import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTimePacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
+import net.minecraft.network.protocol.game.ClientboundSoundEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
 import net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket;
 import net.minecraft.network.protocol.ping.ClientboundPongResponsePacket;
@@ -97,14 +101,22 @@ public abstract class ClientPacketListenerMixin {
         // The Spring Boots charge is a note that climbs in pitch, and nothing else.
         SpringBootsHelper.onSound(packet);
         GyroHelper.onSound(packet);
-        // Crystal Hollows treasure chests, whose sounds can be muted.
-        if (NucleusQol.onSound(packet)) {
-            info.cancel();
-            return;
-        }
+        // Crystal Hollows treasure chests: found, lock picked, opened.
+        NucleusQol.onSound(packet.getSound().value(), packet.getPitch(), packet.getVolume());
+        SoundLog.note(packet.getSound().value(), packet.getPitch(), packet.getVolume(), false);
         if (Etherwarp.replaceTeleportSound(packet)) info.cancel();
         // Hypixel's terminal click sound, while a chosen one is playing instead.
         if (TerminalSolver.eatsServerSound(packet)) info.cancel();
+    }
+
+    /**
+     * A sound played on an entity rather than at a place, which is how Hypixel
+     * sends some of its own — the treasure chests' among them.
+     */
+    @Inject(method = "handleSoundEntityEvent", at = @At("HEAD"))
+    private void cryptic$noteEntitySound(ClientboundSoundEntityPacket packet, CallbackInfo info) {
+        NucleusQol.onSound(packet.getSound().value(), packet.getPitch(), packet.getVolume());
+        SoundLog.note(packet.getSound().value(), packet.getPitch(), packet.getVolume(), true);
     }
 
     /**
@@ -467,6 +479,8 @@ public abstract class ClientPacketListenerMixin {
         TerminalSolver.onSystemChat(packet.content(), packet.overlay());
         SpiritLeapOverlay.onSystemChat(packet.content(), packet.overlay());
         NucleusQol.onSystemChat(packet.content(), packet.overlay());
+        CookieReminder.onSystemChat(packet.content(), packet.overlay());
+        DailyRewards.onSystemChat(packet.content(), packet.overlay());
         // Last, once everything above has read it: Better Chat keeps a line
         // out of the chat window, never out of the mod.
         if (BetterChat.hidesChat(packet.content(), packet.overlay())

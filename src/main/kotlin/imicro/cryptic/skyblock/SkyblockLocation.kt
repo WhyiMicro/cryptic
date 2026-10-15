@@ -85,21 +85,50 @@ object SkyblockLocation {
 
 	/**
 	 * The part of the island you are in, as the sidebar's location line names
-	 * it — "Mines of Divan", "Crystal Nucleus" — or null without one. Hypixel
-	 * marks that line with ⏣ (ф in the Rift). Read when asked.
+	 * it — "Mines of Divan", "Crystal Nucleus" — or null without one. Read when
+	 * asked.
 	 */
 	fun zone(): String? {
 		DebugOverrides.hollowsZone?.let { return it }
 		val scoreboard = Minecraft.getInstance().level?.scoreboard ?: return null
 		val objective = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR) ?: return null
-		for (entry in scoreboard.listPlayerScores(objective)) {
-			val team = scoreboard.getPlayersTeam(entry.owner())
-			val line = PlayerTeam.formatNameForTeam(team, entry.ownerName()).string.replace(formattingPattern, "").trim()
-			val marker = line.indexOfFirst { it == '⏣' || it == 'ф' }
-			if (marker >= 0) return line.substring(marker + 1).filter { it.code < 0x2000 || it.isLetter() }.trim()
-		}
-		return null
+		// Top to bottom, as the sidebar shows them: highest score first.
+		val lines = scoreboard.listPlayerScores(objective)
+			.sortedByDescending { it.value() }
+			.map { entry ->
+				val team = scoreboard.getPlayersTeam(entry.owner())
+				PlayerTeam.formatNameForTeam(team, entry.ownerName()).string.replace(formattingPattern, "").trim()
+			}
+		return zoneFrom(lines, area)
 	}
+
+	/** The zone named by sidebar [lines], top to bottom, on the island [island]. */
+	fun zoneFrom(lines: List<String>, island: String?): String? {
+		// Hypixel's area icon is a glyph from its resource pack, U+E067 (U+E020 in
+		// the Rift), on the line that names where you are — Skyblocker's way of
+		// reading it.
+		lines.firstOrNull { line -> line.any { it == AREA_ICON || it == RIFT_AREA_ICON } }?.let { line ->
+			return clean(line.replace(AREA_ICON.toString(), "").replace(RIFT_AREA_ICON.toString(), ""))
+		}
+		val index = lines.indexOfFirst { line -> line.any { it == '⏣' || it == 'ф' } }
+		if (index < 0) return null
+		val marked = clean(lines[index].substringAfter('⏣').substringAfter('ф'))
+		// Hypixel now writes the island on that line and the part of it you are
+		// in on the next, behind an icon of its own: "⏣ Crystal Hollows", then
+		// "Mines of Divan". The next line is the zone then, when it has one.
+		if (marked == island) {
+			val next = lines.getOrNull(index + 1)?.let(::clean)
+			if (!next.isNullOrEmpty() && next.first().isLetter()) return next
+		}
+		return marked
+	}
+
+	private const val AREA_ICON = '\uE067'
+	private const val RIFT_AREA_ICON = '\uE020'
+
+	/** A sidebar line without its icons and the odd glyphs Hypixel pads lines with. */
+	private fun clean(line: String): String =
+		line.filter { it.code < 0x2000 || it.isLetter() }.trim().trimStart { !it.isLetterOrDigit() }.trim()
 
 	private fun clear() {
 		onSkyblock = false

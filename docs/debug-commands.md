@@ -108,8 +108,10 @@ outside the Crystal Hollows, so when one of them does nothing this says whether
 the place was misread. The scan only runs while one of those two modules is on,
 so with both off it reports nothing. Within the Hollows Nucleus QoL goes by
 where you stand rather than the zone: the crystal slots show inside the square
-from 462 to 564 on x and z, and the Metal Detector finds the Mines of Divan from
-the blocks around you.
+from 462 to 564 on x and z, and you count as in the Mines of Divan within 60
+blocks of its middle, found from the Keepers' nametags or the Jade pedestal (or
+when the sidebar says so). The Metal Detector solver and the Mole pet reminder
+only work there.
 
 ```
 /cryptic debug hollows <zone>
@@ -120,15 +122,74 @@ Nucleus", "Mines of Divan" and so on — so Nucleus QoL can be checked anywhere.
 The same zone again turns it off.
 
 ```
+/cryptic debug reward [sample | ad | streak <days> | error | remind | reset | status]
+```
+
+The daily reward can only be claimed once a day, so everything around it can be
+tried here instead:
+
+- **sample** opens the picker with three made-up cards. Claiming one does
+  nothing but say what it would have claimed.
+- **ad** is the same with a 10-second ad to wait out, as when Hypixel's cannot
+  be skipped.
+- **streak `<days>`** shows the sample with that streak, to see the bar fill.
+- **error** follows a reward link that does not exist, for the failure screen.
+- **remind** shows the "not claimed yet" reminder now.
+- **reset** forgets today's claim, so the reminder comes back.
+- **status** (or nothing) says what day Hypixel is on, whether today's reward was
+  claimed through Cryptic, when the next one comes in your own time, whether you
+  are on Hypixel, and the last few rewards claimed.
+
+`/cryptic reward` (not under debug) reopens the last reward read, if it was
+closed before claiming.
+
+```
+/cryptic debug block
+```
+
+Everything about the block under your crosshair (or under your feet when you are
+not looking at one): its position and distance, its id, every property of its
+state, its block entity, the face you are looking at, the light above it, and
+the island and zone you are in. Barriers are invisible but can still be looked
+at, and for one this also gives the whole room of barriers it belongs to, its
+size and corners, and outlines it for a minute.
+
+```
+/cryptic debug sounds
+```
+
+The last 20 sounds the server played, newest first: each one's id, pitch and
+volume, how long ago, and whether it was played on an entity. Muting a sound
+needs its exact id, so run this straight after hearing it.
+
+```
+/cryptic debug barriers
+```
+
+Outlines every cluster of barrier blocks within 48 blocks in white for a minute,
+and lists the nearest fifteen: how many blocks, their size, where they start and
+how far away they are.
+
+Every crystal outside the nucleus sits in a space of barriers 11 blocks across,
+13 high and 11 deep, part of which is the crystal's glass while it is there.
+Nucleus QoL follows barriers and glass together, measures the barriers, and
+takes anything within a couple of blocks of that size as a crystal's space,
+drawn at exactly 11 × 13 × 11. It looks in the Mines of Divan, Goblin Queen's
+Den, the Jungle Temple, the Lost Precursor City and Khazad-dûm, and remembers
+each space it finds until you change lobby. A cluster that makes up a crystal's
+space says so here.
+
+```
 /cryptic debug crystals
 ```
 
-Prints what Nucleus QoL has worked out — whether you are in the Hollows and the
-nucleus, where it found the middle of the Mines of Divan, how many places the
-treasure could be and how many treasure chests it is timing — then every armour
-stand and dropped item within 32 blocks: its name, what it wears on its head
-(name, SkyBlock id and the start of the skull texture), and how many crystals
-Nucleus QoL is highlighting.
+Prints what Nucleus QoL has worked out — whether you are in the Hollows, the
+nucleus and the Mines of Divan, where it found the mines' middle, how many
+places the treasure could be and how many treasure chests it is following —
+then every armour stand, item display and dropped item within 32 blocks: its
+name, and for each item its name, SkyBlock id and model (Hypixel's crystals use
+the model `hypixel_skyblock:item/uncategorized/<crystal>_crystal`), plus the
+start of a head's skull texture.
 
 No mod Cryptic borrows from finds a crystal before it is picked up, so Nucleus
 QoL looks for one by name, by SkyBlock id and on stands' heads. Standing next to

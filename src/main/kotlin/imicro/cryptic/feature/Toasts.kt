@@ -231,6 +231,7 @@ object Toasts {
 		const val TELEPORT = 0xFFAA55FF.toInt()
 		const val MINING = 0xFF55FFFF.toInt()
 		const val GOOD = 0xFF55FF55.toInt()
+		const val REWARD = 0xFFE0B551.toInt()
 
 		/** Cryptic itself — its settings and profiles — in your accent colour. */
 		val CRYPTIC: Int get() = imicro.cryptic.gui.menu.MenuStyle.accent()

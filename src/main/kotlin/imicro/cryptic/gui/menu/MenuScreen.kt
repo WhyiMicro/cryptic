@@ -79,7 +79,8 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 	 */
 	private var page: ModulePage? = lastPage?.let { id -> ModuleRegistry.byId[id]?.let(::ModulePage) }
 		set(value) {
-			if (field !== value) field?.onClose()
+			// Leaving a module, rather than closing the menu on it, folds its rows up.
+			if (field !== value) field?.onClose(keepExpanded = false)
 			field = value
 			lastPage = value?.module?.id
 			hover.remove(BACK)
@@ -432,7 +433,8 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		}
 
 		if (current != null) {
-			if (button == 0 && backBox.contains(mx, my)) {
+			// Back, or the mouse's own back button, as in a browser.
+			if ((button == 0 && backBox.contains(mx, my)) || button == GLFW.GLFW_MOUSE_BUTTON_4) {
 				page = null
 				return true
 			}

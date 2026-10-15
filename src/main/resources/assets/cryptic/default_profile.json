@@ -829,6 +829,20 @@
         "seconds": 30.0
       }
     },
+    "daily_rewards": {
+      "enabled": true,
+      "settings": {
+        "auto_open": true,
+        "hide_book": true,
+        "reveal": "One at a time",
+        "highlight_best": true,
+        "sounds": true,
+        "close_on_claim": true,
+        "reminder": true,
+        "remind_once": true,
+        "reminder_minutes": 30.0
+      }
+    },
     "smart_tick_timer": {
       "enabled": false,
       "settings": {

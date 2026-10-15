@@ -20,6 +20,7 @@ object ModuleIcons {
 		"auto_sprint" to "\uf70c", // person-running
 		"better_chat" to "\uf086", // comments
 		"cookie_reminder" to "\uf564", // cookie-bite
+		"daily_rewards" to "\uf06b", // gift
 		"experiment_solver" to "\uf0c3", // flask
 		"gyro_helper" to "\uf76f", // tornado
 		"lag_detector" to "\uf233", // server
