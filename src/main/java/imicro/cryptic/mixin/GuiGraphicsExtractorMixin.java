@@ -7,6 +7,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent;
 import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipPositioner;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.resources.Identifier;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
@@ -50,6 +51,25 @@ public abstract class GuiGraphicsExtractorMixin {
         CallbackInfo info
     ) {
         if (CrosshairEditor.hidesSprite(location)) info.cancel();
+    }
+
+    /** The crosshair drawn from the atlas sprite itself, as a mod that draws its own reaches it. */
+    @Inject(
+        method = "blitSprite(Lcom/mojang/blaze3d/pipeline/RenderPipeline;Lnet/minecraft/client/renderer/texture/TextureAtlasSprite;IIIII)V",
+        at = @At("HEAD"),
+        cancellable = true
+    )
+    private void cryptic$hideVanillaCrosshairSprite(
+        RenderPipeline pipeline,
+        TextureAtlasSprite sprite,
+        int x,
+        int y,
+        int width,
+        int height,
+        int color,
+        CallbackInfo info
+    ) {
+        if (CrosshairEditor.hidesSprite(sprite)) info.cancel();
     }
 
     @Inject(method = "tooltip", at = @At("HEAD"))

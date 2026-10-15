@@ -216,10 +216,13 @@ object DailyRewards {
 					return@execute
 				}
 				lastOffer = offer
-				if (screen != null && Minecraft.getInstance().gui.screen() === screen) {
-					screen.show(offer)
-				} else {
-					Toasts.show(SOURCE, "Your daily reward is ready, §f/cryptic reward §7opens it", color = Toasts.Colors.REWARD)
+				val client = Minecraft.getInstance()
+				when {
+					screen != null && client.gui.screen() === screen -> screen.show(offer)
+					// Something replaced the picker before the cards arrived — a
+					// menu Hypixel opened, say. Open it again, unless you closed it.
+					screen != null && !screen.closedByUser -> client.gui.setScreen(RewardScreen.ready(offer))
+					else -> Toasts.show(SOURCE, "Your daily reward is ready, §f/cryptic reward §7opens it", color = Toasts.Colors.REWARD)
 				}
 			}
 		}
@@ -230,8 +233,18 @@ object DailyRewards {
 	 * is opening. Asked by the screen setter.
 	 */
 	@JvmStatic
-	fun blocksScreen(screen: Screen?): Boolean =
-		module.enabled && hideBook.value && screen is BookViewScreen && System.currentTimeMillis() - linkAt < 5_000
+	fun blocksScreen(screen: Screen?): Boolean {
+		if (!module.enabled || System.currentTimeMillis() - linkAt >= OPENING_WINDOW_MS) return false
+		if (hideBook.value && screen is BookViewScreen) return true
+		// Clicking claim in the Delivery Man's menu makes Hypixel close that menu
+		// just after the link, which would close the picker in its place. Only
+		// the picker closing itself, from Escape or its ×, gets through.
+		val current = Minecraft.getInstance().gui.screen()
+		return screen == null && current is RewardScreen && !current.closedByUser
+	}
+
+	/** How long after the link Hypixel's own screen changes are kept off the picker. */
+	private const val OPENING_WINDOW_MS = 5_000L
 
 	private fun show(screen: Screen) {
 		Minecraft.getInstance().gui.setScreen(screen)

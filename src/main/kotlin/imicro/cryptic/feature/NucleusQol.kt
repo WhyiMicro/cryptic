@@ -426,6 +426,7 @@ object NucleusQol {
 			waypointsSection, calculate, clear, mode, fillColor, outlineColor, lineWidth, phase,
 			crystalsSection, crystalSlots, crystalPickups, crystalStyle,
 			amberColor, amethystColor, topazColor, jadeColor, sapphireColor,
+		) + HollowsMap.settings + listOf(
 			treasureSection,
 			metalDetector.withMore(
 				detectorMode, detectorFill, detectorOutline, detectorPhase, detectorTracer, detectorTracerColor, detectorLabel,
@@ -451,6 +452,8 @@ object NucleusQol {
 
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
+		HollowsMap.initialize()
+		CrystalStatus.initialize()
 		// Waypoints are measured from a spot in one lobby. Every server hop is a
 		// different lobby, where the same numbers mark nothing — and the same
 		// goes for the mines, the treasure and the chests.
@@ -503,6 +506,8 @@ object NucleusQol {
 
 		if (!SkyblockLocation.inCrystalHollows) return
 		tickChests(client)
+		HollowsMap.tick(client)
+		CrystalStatus.tick(client)
 
 		if (ticksUntilScan-- > 0) return
 		ticksUntilScan = 10
@@ -658,6 +663,7 @@ object NucleusQol {
 		val player = client.player ?: return listOf("Not in a world")
 		val lines = mutableListOf(
 			"Crystal Hollows: ${SkyblockLocation.inCrystalHollows}. ${placeDescription()}",
+			CrystalStatus.describe(),
 			"Crystals boxed: ${pickups.size} items, crystal spaces: " +
 				(crystalSpaces.keys.joinToString { it.title }.ifEmpty { "none yet" }),
 			"Mines of Divan base: ${minesBase?.toShortString() ?: "not found"}, Keepers: ${keeperCenter?.toShortString() ?: "not seen"}, " +
@@ -679,7 +685,7 @@ object NucleusQol {
 				is ItemEntity -> lines += "item $pos ${describeItem(entity.item)}"
 			}
 		}
-		return lines
+		return lines + HollowsMap.describe()
 	}
 
 	// --- Crystal barriers -------------------------------------------------
@@ -986,6 +992,7 @@ object NucleusQol {
 			return
 		}
 		if (!module.enabled || !SkyblockLocation.inCrystalHollows) return
+		HollowsMap.onSystemChat(content, false)
 		val text = content.string.replace(FORMATTING, "").trim()
 		TREASURE_FOUND.matchEntire(text)?.let { found ->
 			// The treasure dug up, so the next reading is a new one. Until then it

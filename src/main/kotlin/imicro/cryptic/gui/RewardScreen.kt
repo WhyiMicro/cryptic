@@ -91,6 +91,15 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 
 	override fun isPauseScreen() = false
 
+	/** Set when you close the picker yourself, which is the only close let through while it opens. */
+	var closedByUser = false
+		private set
+
+	override fun onClose() {
+		closedByUser = true
+		super.onClose()
+	}
+
 	/** "Close menu on reward claim", once "Claimed" has had a moment on screen. */
 	override fun tick() {
 		super.tick()

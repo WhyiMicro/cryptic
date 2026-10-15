@@ -172,8 +172,16 @@ object CrosshairEditor {
 		description = "Vanilla hides the crosshair behind you and in front of you.",
 	)
 
+	@JvmField
+	val hideDefault = ToggleModuleSetting(
+		id = "hide_default",
+		label = "Hide the default crosshair",
+		defaultValue = true,
+		description = "Hides Minecraft's crosshair, or the one your resource pack gives it, so only yours is drawn.",
+	)
+
 	private val configurable = listOf(
-		gridSize, blendMode, scale, opacity, outline, outlineColor, targetTint, targetColor, thirdPerson,
+		gridSize, blendMode, scale, opacity, outline, outlineColor, targetTint, targetColor, thirdPerson, hideDefault,
 	)
 
 	/** The module card's bind button, pointed at the real key mapping. */
@@ -202,7 +210,7 @@ object CrosshairEditor {
 		keybind = openKeybind,
 		settings = listOf(gridSize, pixels) + palette +
 			listOf(lookSection, blendMode, scale, opacity, outline, outlineColor, targetTint, targetColor) +
-			listOf(whenSection, thirdPerson),
+			listOf(whenSection, hideDefault, thirdPerson),
 	)
 
 	val usesVanillaBlending: Boolean get() = blendMode.selectedIndex == BLEND_VANILLA
@@ -328,7 +336,15 @@ object CrosshairEditor {
 	 * the name is only compared while the module is on.
 	 */
 	@JvmStatic
-	fun hidesSprite(location: Identifier): Boolean = module.enabled && location == VANILLA_CROSSHAIR
+	fun hidesSprite(location: Identifier): Boolean = module.enabled && hideDefault.value && location == VANILLA_CROSSHAIR
+
+	/**
+	 * The same, for a sprite drawn straight from the atlas rather than by name,
+	 * which is how a mod that draws the crosshair itself reaches it.
+	 */
+	@JvmStatic
+	fun hidesSprite(sprite: net.minecraft.client.renderer.texture.TextureAtlasSprite): Boolean =
+		module.enabled && hideDefault.value && sprite.contents().name() == VANILLA_CROSSHAIR
 
 	/**
 	 * How many real screen pixels one cell is: Scale times the GUI scale,

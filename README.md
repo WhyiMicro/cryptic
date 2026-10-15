@@ -161,7 +161,14 @@ Several features are ported from other mods, whose licences travel with them:
   started — your model following in third person, and its table of which items
   teleport and how. Nucleus QoL's lock pick helper, which marks a treasure
   chest's next lock from its sparks and counts the locks from the sounds.
-  Licence in [`licenses/Skyblocker-LICENSE.txt`](licenses/Skyblocker-LICENSE.txt).
+  Nucleus QoL's Crystal Hollows map, from its Crystals HUD: the map picture
+  (`hollows_map.png`), where on it a block lands, and the player marker; and
+  the places on it, from its CrystalsLocationsManager — found from the sidebar
+  as you walk in, pinned down by a line only said there, picked up from
+  coordinates in chat, and in its colours. The Missing Crystals reading follows
+  the tab list lines Skyblocker reads. Cryptic does not connect to Skyblocker's
+  server; with Skyblocker installed, the places it knows are read from it in
+  game. Licence in [`licenses/Skyblocker-LICENSE.txt`](licenses/Skyblocker-LICENSE.txt).
 - **[SkyHanni](https://github.com/hannibal002/SkyHanni)** (LGPL-2.1) — most of
   Nucleus QoL: the crystal slots, the five boxes in the Crystal Nucleus and their
   colours; the Metal Detector solver, which finds the middle of the Mines of
