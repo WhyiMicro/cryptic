@@ -1,5 +1,6 @@
 package imicro.cryptic.skyblock
 
+import imicro.cryptic.debug.DebugOverrides
 import net.minecraft.client.Minecraft
 import net.minecraft.world.scores.DisplaySlot
 import net.minecraft.world.scores.PlayerTeam
@@ -37,7 +38,8 @@ object SkyblockLocation {
 	var area: String? = null
 		private set
 
-	val inCrystalHollows: Boolean get() = onSkyblock && area == "Crystal Hollows"
+	val inCrystalHollows: Boolean
+		get() = (onSkyblock && area == "Crystal Hollows") || DebugOverrides.hollowsZone != null
 
 	fun tick(client: Minecraft, active: Boolean) {
 		if (!active || client.level == null) {
@@ -81,6 +83,24 @@ object SkyblockLocation {
 		return null
 	}
 
+	/**
+	 * The part of the island you are in, as the sidebar's location line names
+	 * it — "Mines of Divan", "Crystal Nucleus" — or null without one. Hypixel
+	 * marks that line with ⏣ (ф in the Rift). Read when asked.
+	 */
+	fun zone(): String? {
+		DebugOverrides.hollowsZone?.let { return it }
+		val scoreboard = Minecraft.getInstance().level?.scoreboard ?: return null
+		val objective = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR) ?: return null
+		for (entry in scoreboard.listPlayerScores(objective)) {
+			val team = scoreboard.getPlayersTeam(entry.owner())
+			val line = PlayerTeam.formatNameForTeam(team, entry.ownerName()).string.replace(formattingPattern, "").trim()
+			val marker = line.indexOfFirst { it == '⏣' || it == 'ф' }
+			if (marker >= 0) return line.substring(marker + 1).filter { it.code < 0x2000 || it.isLetter() }.trim()
+		}
+		return null
+	}
+
 	private fun clear() {
 		onSkyblock = false
 		area = null
@@ -93,6 +113,7 @@ object SkyblockLocation {
 		return listOf(
 			"Sidebar objective: ${objective?.name ?: "none"}",
 			"On SkyBlock: $onSkyblock, area: ${area ?: "unknown"}, Crystal Hollows: $inCrystalHollows",
+			"Zone: ${zone() ?: "unknown"}",
 		)
 	}
 }

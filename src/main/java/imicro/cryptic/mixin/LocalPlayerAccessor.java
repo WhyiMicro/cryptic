@@ -32,4 +32,11 @@ public interface LocalPlayerAccessor {
 
     @Accessor("xRotLast")
     float cryptic$serverXRot();
+
+    /** What the client believes it last told the server, so a rotation it sets itself is not sent on. */
+    @Accessor("yRotLast")
+    void cryptic$setServerYRot(float yRot);
+
+    @Accessor("xRotLast")
+    void cryptic$setServerXRot(float xRot);
 }

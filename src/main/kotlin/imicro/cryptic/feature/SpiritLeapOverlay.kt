@@ -1,9 +1,12 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.debug.DebugOverrides
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonTeam
 import imicro.cryptic.dungeon.DungeonTeam.DungeonClass
 import imicro.cryptic.dungeon.Floor7
+import imicro.cryptic.dungeon.map.DungeonMapReader
+import imicro.cryptic.mixin.LocalPlayerAccessor
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.KeybindModuleSetting
@@ -14,6 +17,7 @@ import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import com.mojang.blaze3d.platform.InputConstants
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
@@ -25,7 +29,10 @@ import net.minecraft.client.gui.components.PlayerFaceExtractor
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
+import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket
 import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.PositionMoveRotation
+import net.minecraft.world.entity.Relative
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.entity.player.PlayerSkin
 import net.minecraft.world.inventory.ContainerInput
@@ -43,8 +50,12 @@ import net.minecraft.world.phys.Vec3
  * are filled by one of Odin's sortings, and can be pressed by key as well, per
  * corner or per class.
  *
- * Its leap announcement is left out: Cryptic's Leap Message module already
- * says who you leapt to, and two of them would say it twice.
+ * Its leap announcement is left out in favour of the Announce section's, which
+ * is Blade Addons' Leap Message folded in.
+ *
+ * The rotate fix is RSM's Leap Rotate Fix (BSD 3-Clause, Copyright (c) 2026,
+ * rice.who): after a leap you face the way the teammate does, and on being
+ * put into a boss room you face into it.
  *
  * The leap count is Blade Addons' (CC0, BladeMasterGabe, who credits valley):
  * on an early-enter spot in Floor 7, how many of the party have made it there.
@@ -84,6 +95,22 @@ object SpiritLeapOverlay {
 		label = "On key release",
 		defaultValue = false,
 		description = "Leaps when the click is let go rather than when it is pressed.",
+	)
+
+	@JvmField
+	val rotateFix = ToggleModuleSetting(
+		id = "rotate_fix",
+		label = "Leap rotate fix",
+		defaultValue = true,
+		description = "After a leap, faces you the way the teammate you leapt to is facing, instead of wherever you were looking.",
+	)
+
+	@JvmField
+	val bossRotateFix = ToggleModuleSetting(
+		id = "boss_rotate_fix",
+		label = "Boss enter rotate fix",
+		defaultValue = true,
+		description = "When you are put into a boss room, faces you into it, level, instead of wherever you were looking.",
 	)
 
 	@JvmField
@@ -219,10 +246,43 @@ object SpiritLeapOverlay {
 		visibleIf = { leapCount.value },
 	)
 
+	// ---- Announcing the leap ---------------------------------------------
+
+	private val announceSection = SectionModuleSetting("announce_section", "Announce")
+
+	private const val PLAYER_TOKEN = "<player>"
+
+	/**
+	 * Says in party chat who you leaped to. Leap Message's job, folded in here
+	 * because it is about the same leap: ported from Blade Addons (MIT), and
+	 * triggered by Hypixel's "You have teleported to Steve!", the one sign of a
+	 * leap the client gets.
+	 */
+	@JvmField
+	val announceLeap = ToggleModuleSetting(
+		id = "announce_leap",
+		label = "Announce leaps",
+		defaultValue = false,
+		description = "Tells your party who you leaped to.",
+	)
+
+	@JvmField
+	val leapMessage = TextModuleSetting(
+		id = "leap_message",
+		label = "Message",
+		defaultValue = "Leaped to $PLAYER_TOKEN!",
+		maxLength = 200,
+		hint = "Leaped to $PLAYER_TOKEN!",
+		description = "$PLAYER_TOKEN becomes who you leaped to.",
+		visibleIf = { announceLeap.value },
+	)
+
 	private val configurable: List<ModuleSetting> = listOf(
 		sorting,
 		customOrder,
 		onRelease,
+		rotateFix,
+		bossRotateFix,
 		onlyClasses,
 		colorStyle,
 		backgroundColor,
@@ -236,21 +296,25 @@ object SpiritLeapOverlay {
 		leapCount,
 		assumeCore,
 		assumeSplitEe2,
+		announceSection,
+		announceLeap.withMore(leapMessage),
 	)
 
 	@JvmField
 	val module = Module(
 		id = "spirit_leap_overlay",
 		name = "Spirit Leap Overlay",
-		description = "Replaces the Spirit Leap menu with four corners",
+		description = "A four-corner Spirit Leap",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = configurable,
 	)
 
 	/** Whether Floor 7's phase tracking is needed, which only the leap count wants. */
 	val needsFloor7: Boolean get() = module.enabled && leapCount.value
+
+	/** Whether the floor is needed at all: the leap count, and which boss room you are being put into. */
+	val needsDungeon: Boolean get() = module.enabled && (leapCount.value || bossRotateFix.value)
 
 	private var initialized = false
 
@@ -260,6 +324,55 @@ object SpiritLeapOverlay {
 
 		Hud.register(LeapCountElement())
 		ClientTickEvents.END_CLIENT_TICK.register(::tickLeapCount)
+	}
+
+	/** A chat packet, on the client thread, before any mod has hidden it. */
+	@JvmStatic
+	fun onSystemChat(message: Component, overlay: Boolean) {
+		if (!overlay) onGameMessage(message.string)
+	}
+
+	/** Hypixel's confirmation of a leap, e.g. "You have teleported to Steve!". */
+	private val leapPattern = Regex("^You have teleported to (.*)!$")
+
+	/**
+	 * Hypixel rate-limits commands, and a second announcement for one leap would
+	 * only earn a cooldown error, so repeats inside this window are dropped.
+	 */
+	private const val REPEAT_WINDOW_MS = 3_000L
+
+	private var lastTarget = ""
+	private var lastSentAt = 0L
+
+	private fun onGameMessage(text: String) {
+		if (!module.enabled || !announceLeap.value) return
+		// No location check: only the Infinileap says this, and Hypixel refuses
+		// to let it be used outside a dungeon.
+		val target = leapPattern.find(text.replace(FORMATTING, "").trim())?.groupValues?.get(1) ?: return
+
+		val now = System.currentTimeMillis()
+		if (target == lastTarget && now - lastSentAt < REPEAT_WINDOW_MS) return
+		lastTarget = target
+		lastSentAt = now
+
+		val body = leapMessage.value.replace(PLAYER_TOKEN, target).trim()
+		if (body.isEmpty()) return
+		// Hypixel rejects a command line over 256 characters outright.
+		val command = "pc $body".take(255)
+
+		// Previewed, the line is shown instead of sent, which is the only way to
+		// read it back without a party to send it to.
+		if (DebugOverrides.previewLeapMessage) {
+			Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(Component.literal("Leap announcement would send: /$command"))
+			return
+		}
+		Minecraft.getInstance().connection?.sendCommand(command)
+	}
+
+	/** Runs one announcement as if [target] had just been leaped to. */
+	fun simulateLeap(target: String) {
+		lastTarget = ""
+		onGameMessage("You have teleported to $target!")
 	}
 
 	// ---- The menu -----------------------------------------------------------
@@ -523,8 +636,107 @@ object SpiritLeapOverlay {
 
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return
+		noteLeapFacing(mate.name)
 		client.gameMode?.handleContainerInput(chest.menu.containerId, slot, 0, ContainerInput.PICKUP, player)
 		say("§7Teleporting to §f${mate.name}§7.")
+	}
+
+	/** How long after the click a teleport still counts as the leap. RSM's default. */
+	private const val ROTATE_TIMEOUT_TICKS = 10
+
+	/** The way the teammate just leapt to was facing, as (pitch, yaw), until the leap lands. */
+	private var leapFacing: Pair<Float, Float>? = null
+	private var leapClickedAt = 0L
+
+	/** Whether [leapFacing] is a boss room's rather than a teammate's, so the right toggle is asked. */
+	private var facingFromBoss = false
+
+	private fun noteLeapFacing(name: String) {
+		if (!rotateFix.value) return
+		val client = Minecraft.getInstance()
+		val level = client.level ?: return
+		leapFacing = facingOf(name) ?: return
+		leapClickedAt = level.gameTime
+		facingFromBoss = false
+	}
+
+	/**
+	 * Where each floor's boss fight puts you, and the way into the room from
+	 * there, as RSM has them. Floor and Master Mode share a room.
+	 */
+	private val BOSS_ENTRANCES = mapOf(
+		1 to (Vec3(-42.5, 71.5, 34.5) to 180f),
+		2 to (Vec3(-7.5, 69.5, -28.5) to 0f),
+		3 to (Vec3(1.5, 69.5, -27.55) to 0f),
+		4 to (Vec3(5.5, 69.5, -20.5) to 0f),
+		5 to (Vec3(5.5, 69.5, 0.5) to 0f),
+		7 to (Vec3(73.5, 221.5, 14.5) to 0f),
+	)
+
+	/**
+	 * A teleport about to be applied. When it lands exactly on the floor's
+	 * boss entrance, the room's facing is waiting for [afterServerTeleport].
+	 * Only on the client thread's pass, since the player is read.
+	 */
+	@JvmStatic
+	fun beforeServerTeleport(packet: ClientboundPlayerPositionPacket) {
+		val client = Minecraft.getInstance()
+		if (!client.isSameThread || !module.enabled || !bossRotateFix.value || !DungeonLocation.inDungeon) return
+		val player = client.player ?: return
+		val level = client.level ?: return
+		val (entrance, yaw) = BOSS_ENTRANCES[DungeonLocation.floor] ?: return
+		val landing = PositionMoveRotation.calculateAbsolute(PositionMoveRotation.of(player), packet.change(), packet.relatives())
+		if (landing.position() != entrance) return
+		leapFacing = 0f to yaw
+		leapClickedAt = level.gameTime
+		facingFromBoss = true
+	}
+
+	/**
+	 * Where [name] is looking: from the world when they are loaded, otherwise
+	 * level and the way their map marker points. The map pairs markers with
+	 * living teammates in tab order, as the dungeon map does.
+	 */
+	private fun facingOf(name: String): Pair<Float, Float>? {
+		val client = Minecraft.getInstance()
+		client.level?.players()?.firstOrNull { it.name.string == name }?.let { return it.xRot to it.yRot }
+		val self = client.player?.name?.string
+		val living = DungeonTeam.classes.keys.filter { it != self && it !in DungeonTeam.dead }
+		val marker = DungeonMapReader.markers.getOrNull(living.indexOf(name)) ?: return null
+		return 0f to marker.yaw
+	}
+
+	/**
+	 * The leap landing. Hypixel's leap teleport leaves your rotation as it
+	 * was, so you arrive looking wherever you were looking before; this turns
+	 * you the way your teammate faces instead. Only a teleport that arrives
+	 * soon after the click and changes nothing about the rotation is taken
+	 * for the leap — anything else is the server turning you on purpose.
+	 */
+	@JvmStatic
+	fun afterServerTeleport(packet: ClientboundPlayerPositionPacket) {
+		val facing = leapFacing ?: return
+		leapFacing = null
+		val client = Minecraft.getInstance()
+		val player = client.player ?: return
+		val level = client.level ?: return
+		val enabled = if (facingFromBoss) bossRotateFix.value else rotateFix.value
+		if (!module.enabled || !enabled || level.gameTime - leapClickedAt > ROTATE_TIMEOUT_TICKS) return
+
+		val relatives = packet.relatives()
+		val change = packet.change()
+		if (Relative.X_ROT !in relatives || Relative.Y_ROT !in relatives) return
+		if (change.xRot() != 0f || change.yRot() != 0f) return
+
+		val (xRot, yRot) = facing
+		player.xRot = xRot
+		player.yRot = yRot
+		player.xRotO = xRot
+		player.yRotO = yRot
+		// As RSM does: the client takes the new rotation as already sent, so
+		// turning on the spot is not reported on its own.
+		(player as LocalPlayerAccessor).`cryptic$setServerXRot`(xRot)
+		(player as LocalPlayerAccessor).`cryptic$setServerYRot`(yRot)
 	}
 
 	private fun say(text: String) {

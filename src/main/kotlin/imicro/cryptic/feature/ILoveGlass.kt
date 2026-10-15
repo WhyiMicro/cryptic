@@ -75,9 +75,8 @@ object ILoveGlass {
 	val module = Module(
 		id = "i_love_glass",
 		name = "I love glass",
-		description = "See through dungeon doors and Storm's pillars",
+		description = "See through doors, pillars",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(doors, diorite),
 	)

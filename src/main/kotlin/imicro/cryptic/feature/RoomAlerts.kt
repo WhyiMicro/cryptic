@@ -7,7 +7,9 @@ import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.minecraft.client.Minecraft
@@ -59,6 +61,26 @@ object RoomAlerts {
 		defaultValue = true,
 	)
 
+	private val clearedText = TextModuleSetting(
+		id = "cleared_text",
+		label = "Title",
+		defaultValue = "Cleared",
+		maxLength = 100,
+		hint = "Cleared",
+		description = "What the title says. & colour codes work.",
+		visibleIf = { alertCleared.value },
+	)
+
+	private val secretsText = TextModuleSetting(
+		id = "secrets_text",
+		label = "Title",
+		defaultValue = "Secrets Done!",
+		maxLength = 100,
+		hint = "Secrets Done!",
+		description = "What the title says. & colour codes work.",
+		visibleIf = { alertSecrets.value },
+	)
+
 	private val soundSection = SectionModuleSetting("sound_section", "Sound")
 
 	@JvmField
@@ -91,14 +113,12 @@ object RoomAlerts {
 	val module = Module(
 		id = "room_alerts",
 		name = "Alerts",
-		description = "Titles and party messages for a run",
+		description = "Titles and calls for a run",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(titlesSection, alertCleared, alertSecrets) +
+		settings = listOf(titlesSection, alertCleared.withMore(clearedText), alertSecrets.withMore(secretsText)) +
 			DungeonScore.titleSettings +
 			listOf(announcementsSection) + DungeonScore.announcementSettings +
-			DungeonScore.customSettings +
 			listOf(soundSection, playSound, volume),
 	)
 
@@ -164,8 +184,8 @@ object RoomAlerts {
 
 		val client = Minecraft.getInstance()
 		when (room.state) {
-			DungeonRoom.State.CLEARED -> if (alertCleared.value) announce(client, "Cleared", false)
-			DungeonRoom.State.GREEN -> if (alertSecrets.value) announce(client, "Secrets Done!", true)
+			DungeonRoom.State.CLEARED -> if (alertCleared.value) announce(client, clearedText.value, false)
+			DungeonRoom.State.GREEN -> if (alertSecrets.value) announce(client, secretsText.value, true)
 			else -> Unit
 		}
 	}
@@ -189,7 +209,7 @@ object RoomAlerts {
 		if (message.isEmpty()) return
 
 		client.gui.hud.setTimes(FADE_IN_TICKS, STAY_TICKS, FADE_OUT_TICKS)
-		client.gui.hud.setTitle(Component.literal(if (done) "§a$message" else message))
+		client.gui.hud.setTitle(Component.literal(DungeonScore.colored(message, if (done) "§a" else "")))
 
 		playAlertSound(client)
 	}
@@ -202,6 +222,6 @@ object RoomAlerts {
 
 	/** Shows the cleared title, for `/cryptic debug roomalerts`. */
 	fun preview(client: Minecraft) {
-		announce(client, "Cleared", false)
+		announce(client, clearedText.value, false)
 	}
 }

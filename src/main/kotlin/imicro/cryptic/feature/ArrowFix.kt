@@ -38,9 +38,8 @@ object ArrowFix {
 	val module = Module(
 		id = "arrow_fix",
 		name = "Arrow Fix",
-		description = "Stops shortbows drawing back",
+		description = "Shortbows never draw back",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 	)
 

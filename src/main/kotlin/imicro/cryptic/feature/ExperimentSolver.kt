@@ -157,9 +157,8 @@ object ExperimentSolver {
 	val module = Module(
 		id = "experiment_solver",
 		name = "Experiment Solver",
-		description = "Solves and plays the Experimentation Table",
+		description = "Solves your experiments",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(nextColor, laterColor, showOrder) +
 			listOf(autoSection, autoClick, clickDelay) +

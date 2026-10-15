@@ -104,9 +104,8 @@ object Zoom {
 	val module = Module(
 		id = "zoom",
 		name = "Zoom",
-		description = "Zooms the view while a key is held",
+		description = "Zooms while a key is held",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = true,
 		keybind = zoomKeybind,
 		settings = listOf(initialZoom, transition, scrollZoom, cinematicCamera, affectHandFov),

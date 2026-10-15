@@ -15,9 +15,7 @@ import imicro.cryptic.render.WorldRender
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
-import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.network.protocol.game.ClientboundSoundPacket
-import net.minecraft.sounds.SoundEvent
 import net.minecraft.sounds.SoundEvents
 
 /**
@@ -298,9 +296,11 @@ object Etherwarp {
 	val sound = DropdownModuleSetting(
 		id = "sound",
 		label = "Sound",
-		options = soundOptions.map { it.first },
+		options = SoundChoices.labels,
 		visibleIf = { customSound.value },
 	)
+
+	private val customSoundId = SoundChoices.customField("custom_sound_id", sound) { customSound.value }
 
 	@JvmField
 	val volume = SliderModuleSetting(
@@ -338,9 +338,8 @@ object Etherwarp {
 		name = "Etherwarp Customization",
 		// Etherwarp lives on an item rather than in dungeons, so the module sits
 		// under General even though dungeons are where it is used most.
-		description = "Etherwarp overlay, fake zpew and no rotate",
+		description = "Overlay, zpew and no rotate",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		// One switch a row on the card, with what tunes it in the switch's "⋯"
 		// panel: the overlay's shape and colours, the timing every prediction
@@ -361,7 +360,7 @@ object Etherwarp {
 			smoothTeleport.withMore(smoothPredictive, smoothThirdPerson, smoothOutsideDungeons, smoothTime),
 			smoothKinds,
 			SectionModuleSetting("sound_section", "Sound"),
-			customSound.withMore(sound, volume, pitch, previewSound),
+			customSound.withMore(sound, customSoundId, volume, pitch, previewSound),
 		),
 	)
 
@@ -459,12 +458,6 @@ object Etherwarp {
 	}
 
 	private fun playCustomSound() {
-		val client = Minecraft.getInstance()
-		client.soundManager.play(
-			SimpleSoundInstance.forUI(selectedSound(), pitch.value.toFloat(), volume.value.toFloat()),
-		)
+		SoundChoices.play(sound.selectedIndex, volume.value.toFloat(), pitch.value.toFloat(), customSoundId.value)
 	}
-
-	private fun selectedSound(): SoundEvent =
-		soundOptions[sound.selectedIndex.coerceIn(soundOptions.indices)].second
 }

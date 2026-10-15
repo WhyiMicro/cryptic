@@ -4,9 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants
 import imicro.cryptic.CrypticClient
 import imicro.cryptic.crosshair.CrosshairGrid
 import imicro.cryptic.crosshair.CrosshairPreset
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
-import imicro.cryptic.gui.CrosshairScreen
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.KeybindSetting
 import imicro.cryptic.gui.Module
@@ -54,8 +52,6 @@ object CrosshairEditor {
 	 */
 	private const val VANILLA_WIDTH = 15
 	private const val VANILLA_CENTRE = 7
-
-	private val editor = ButtonModuleSetting("editor", "Open editor", action = { CrosshairScreen.request() })
 
 	@JvmField
 	val gridSize = DropdownModuleSetting(
@@ -202,10 +198,9 @@ object CrosshairEditor {
 		name = "Crosshair Editor",
 		description = "Draw your own crosshair",
 		category = ModuleCategory.MISC,
-		hasDemoSettings = false,
 		supportsKeybind = true,
 		keybind = openKeybind,
-		settings = listOf(editor, gridSize, pixels) + palette +
+		settings = listOf(gridSize, pixels) + palette +
 			listOf(lookSection, blendMode, scale, opacity, outline, outlineColor, targetTint, targetColor) +
 			listOf(whenSection, thirdPerson),
 	)
@@ -336,11 +331,19 @@ object CrosshairEditor {
 	fun hidesSprite(location: Identifier): Boolean = module.enabled && location == VANILLA_CROSSHAIR
 
 	/**
+	 * How many real screen pixels one cell is: Scale times the GUI scale,
+	 * rounded to a whole number so every cell is the same size.
+	 */
+	fun cellPixels(guiScale: Int): Int = (guiScale * scale.value).roundToInt().coerceAtLeast(1)
+
+	/**
 	 * Draws the crosshair, from the point vanilla would have drawn its own.
 	 *
-	 * Filled cell by cell in the GUI's own coordinates, scaled about the centre
-	 * cell — so at scale 1 every cell is exactly one pixel of vanilla's sprite,
-	 * and the result is as sharp as vanilla is.
+	 * Drawn in real screen pixels rather than scaled GUI ones, with every cell
+	 * a whole number of them. Scaling the GUI by 1.25 instead puts cell edges
+	 * between pixels, and each one then rounds its own way: some cells a pixel
+	 * wider than the next, which reads as blur. At scale 1 a cell is exactly
+	 * one pixel of vanilla's sprite, on the same spot.
 	 */
 	@JvmStatic
 	fun draw(graphics: GuiGraphicsExtractor) {
@@ -350,29 +353,32 @@ object CrosshairEditor {
 		rebuildRuns(grid)
 
 		val client = Minecraft.getInstance()
+		val guiScale = client.window.guiScale.coerceAtLeast(1)
 		val anchorX = (graphics.guiWidth() - VANILLA_WIDTH) / 2 + VANILLA_CENTRE
 		val anchorY = (graphics.guiHeight() - VANILLA_WIDTH) / 2 + VANILLA_CENTRE
 		val c = grid.centre
+		val cell = cellPixels(guiScale)
+		// The centre cell centred on the centre of vanilla's middle pixel.
+		val left = ((anchorX + 0.5f) * guiScale - cell / 2f).roundToInt() - c * cell
+		val top = ((anchorY + 0.5f) * guiScale - cell / 2f).roundToInt() - c * cell
 
 		val pose = graphics.pose()
 		pose.pushMatrix()
-		pose.translate(anchorX.toFloat(), anchorY.toFloat())
-		val cell = scale.value.toFloat()
-		pose.scale(cell, cell)
+		pose.scale(1f / guiScale, 1f / guiScale)
 
 		if (usesVanillaBlending) {
 			// White through the inverting pipeline is exactly vanilla's own
 			// crosshair: every painted cell becomes the negative of what is
 			// behind it.
 			forEachRun(runs) { y, x0, x1, _ ->
-				graphics.fill(RenderPipelines.GUI_INVERT, x0 - c, y - c, x1 - c + 1, y - c + 1, WHITE)
+				graphics.fill(RenderPipelines.GUI_INVERT, left + x0 * cell, top + y * cell, left + (x1 + 1) * cell, top + (y + 1) * cell, WHITE)
 			}
 		} else {
 			if (outline.value) {
 				val outlineArgb = outlineColor.argb
 				// The outline grid is offset by one to have room for a border.
 				forEachRun(outlineRuns) { y, x0, x1, _ ->
-					graphics.fill(x0 - c - 1, y - c - 1, x1 - c, y - c, outlineArgb)
+					graphics.fill(left + (x0 - 1) * cell, top + (y - 1) * cell, left + x1 * cell, top + y * cell, outlineArgb)
 				}
 			}
 
@@ -380,7 +386,7 @@ object CrosshairEditor {
 			val fade = opacity.value.toFloat()
 			forEachRun(runs) { y, x0, x1, index ->
 				val argb = if (targeting) targetColor.argb else colorOf(index)
-				graphics.fill(x0 - c, y - c, x1 - c + 1, y - c + 1, withOpacity(argb, fade))
+				graphics.fill(left + x0 * cell, top + y * cell, left + (x1 + 1) * cell, top + (y + 1) * cell, withOpacity(argb, fade))
 			}
 		}
 

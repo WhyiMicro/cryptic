@@ -97,13 +97,6 @@ object SmartTickTimer {
 	private val floor7Section = SectionModuleSetting("floor7_section", "F7/M7")
 
 	@JvmField
-	val necronTimer = ToggleModuleSetting(
-		id = "necron_timer",
-		label = "Necron drop timer",
-		description = "Three seconds from Necron's last words until he drops down to you.",
-	)
-
-	@JvmField
 	val goldorStartTimer = ToggleModuleSetting(
 		id = "goldor_start_timer",
 		label = "Goldor start timer",
@@ -156,14 +149,13 @@ object SmartTickTimer {
 	val module = Module(
 		id = "smart_tick_timer",
 		name = "Smart Tick Timer",
-		description = "Every run countdown in one element",
+		description = "All run countdowns in one",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(displaySection, inTicks, showUnit, showPrefix) +
 			listOf(generalSection, secretsTimer) +
 			listOf(
-				floor7Section, necronTimer, goldorStartTimer, goldorCoreTimer,
+				floor7Section, goldorStartTimer, goldorCoreTimer,
 				stormPadTimer, stormPyTimer, stormTickTimer, lightningTimer, fireFreezeTimer,
 			),
 	)
@@ -175,7 +167,6 @@ object SmartTickTimer {
 	 * counts *up*, because what it measures is how far into the phase the fight
 	 * has got rather than how long is left of anything.
 	 */
-	private var necronTicks = -1
 	private var goldorStartTicks = -1
 	private var goldorCoreTicks = -1
 	private var padTicks = -1
@@ -189,9 +180,6 @@ object SmartTickTimer {
 
 	/** How long the PY count was when it started, for its colours. */
 	private var pyMax = Timing.PY.ticks
-
-	/** How long the Necron count was when it started, for its colours. */
-	private var necronMax = Timing.NECRON.ticks
 
 	/**
 	 * Ticks left of the current second, for the secret spawn timer.
@@ -226,7 +214,6 @@ object SmartTickTimer {
 	}
 
 	fun forget() {
-		necronTicks = -1
 		goldorStartTicks = -1
 		goldorCoreTicks = -1
 		padTicks = -1
@@ -246,16 +233,6 @@ object SmartTickTimer {
 
 	private fun onMessage(line: String) {
 		if (!module.enabled) return
-
-		// The Necron drop, counted from Goldor's last words and set again on
-		// every line between them and Necron's: started early so there is time
-		// to read it, and finished on the line it is really timed from.
-		BossTimings.NECRON_LEAD_IN[line]?.let { lead ->
-			val ticks = lead + Timing.NECRON.ticks
-			if (necronTicks < 0) necronMax = ticks
-			necronTicks = ticks
-			return
-		}
 
 		when {
 			goldorPattern.matches(line) -> goldorCoreTicks = Timing.GOLDOR_CORE.ticks
@@ -333,7 +310,6 @@ object SmartTickTimer {
 		if (padTicks == 0) padTicks = 20
 		if (padTicks >= 0) padTicks--
 		if (pyTicks >= 0) pyTicks--
-		if (necronTicks >= 0) necronTicks--
 		if (lightningTicks >= 0) lightningTicks--
 		if (fireFreezeTicks >= 0) fireFreezeTicks--
 		if (stormTicks >= 0) stormTicks++
@@ -351,7 +327,7 @@ object SmartTickTimer {
 		"Server ticks counted: $serverTicks (last ${ServerTicks.sinceLastTick ?: "never"}ms ago)",
 		"In a dungeon: ${DungeonLocation.inDungeon}, floor ${DungeonLocation.floor}, " +
 			"started ${DungeonRun.started}, opened rooms ${DungeonStats.openedRooms}, boss ${DungeonRun.inBoss}",
-		"Necron $necronTicks, Start $goldorStartTicks, Core $goldorCoreTicks",
+		"Start $goldorStartTicks, Core $goldorCoreTicks",
 		"Pad $padTicks, PY $pyTicks (fired $pyTriggered), Storm $stormTicks",
 		"Secret spawn: $secretSpawnTicks, shown ${secretSpawnShown()}",
 		"Rows switched on: ${enabledRows().size}, running: ${liveRows().size}",
@@ -388,7 +364,6 @@ object SmartTickTimer {
 	 */
 	private fun enabledRows(): List<Row> {
 		val rows = mutableListOf<Row>()
-		if (necronTimer.value) rows += Row("§4Necron:", necronTicks, necronMax)
 		if (goldorStartTimer.value) rows += Row("§aStart:", goldorStartTicks, Timing.GOLDOR_START.ticks)
 		if (goldorCoreTimer.value) rows += Row("§7Core:", goldorCoreTicks, Timing.GOLDOR_CORE.ticks)
 		if (stormPadTimer.value) rows += Row("§bPad:", padTicks, 20)

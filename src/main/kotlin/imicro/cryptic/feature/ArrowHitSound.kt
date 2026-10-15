@@ -48,9 +48,11 @@ object ArrowHitSound {
 	val sound = DropdownModuleSetting(
 		id = "sound",
 		label = "Sound",
-		options = soundOptions.map { it.first },
+		options = soundOptions.map { it.first } + SoundChoices.CUSTOM,
 		visibleIf = { !silence.value },
 	)
+
+	private val customSound = SoundChoices.customField("custom_sound", sound) { !silence.value }
 
 	@JvmField
 	val volume = SliderModuleSetting(
@@ -81,7 +83,7 @@ object ArrowHitSound {
 		visibleIf = { !silence.value },
 	)
 
-	private val configurable = listOf(silence, sound, volume, pitch)
+	private val configurable = listOf(silence, sound, customSound, volume, pitch)
 
 	@JvmField
 	val module = Module(
@@ -89,9 +91,8 @@ object ArrowHitSound {
 		name = "Arrow Hit Sound",
 		description = "A louder arrow hit sound",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(silence, sound, volume, pitch, preview),
+		settings = listOf(silence, sound, customSound, volume, pitch, preview),
 	)
 
 	/**
@@ -104,16 +105,25 @@ object ArrowHitSound {
 	fun intercept(instance: SoundInstance): Boolean {
 		if (!module.enabled) return false
 		if (instance.identifier != SoundEvents.ARROW_HIT_PLAYER.location) return false
-		if (!silence.value) play()
+		if (silence.value) return true
+		// A custom sound set to the hit sound itself is that sound, left to play:
+		// playing it from here would come straight back through here.
+		val replacement = selected() ?: return true
+		if (replacement.location == SoundEvents.ARROW_HIT_PLAYER.location) return false
+		play()
 		return true
 	}
 
 	private fun play() {
+		val replacement = selected() ?: return
+		if (replacement.location == SoundEvents.ARROW_HIT_PLAYER.location) return
 		Minecraft.getInstance().soundManager.play(
-			SimpleSoundInstance.forUI(selected(), pitch.value.toFloat(), volume.value.toFloat()),
+			SimpleSoundInstance.forUI(replacement, pitch.value.toFloat(), volume.value.toFloat()),
 		)
 	}
 
-	private fun selected(): SoundEvent =
-		soundOptions[sound.selectedIndex.coerceIn(soundOptions.indices)].second
+	/** The sound chosen, or null when Custom holds no sound id. */
+	private fun selected(): SoundEvent? =
+		if (sound.selected == SoundChoices.CUSTOM) SoundChoices.custom(customSound.value)
+		else soundOptions[sound.selectedIndex.coerceIn(soundOptions.indices)].second
 }

@@ -5,7 +5,6 @@ import imicro.cryptic.CrypticClient
 import imicro.cryptic.carry.Carry
 import imicro.cryptic.carry.CarryStore
 import imicro.cryptic.gui.ButtonModuleSetting
-import imicro.cryptic.gui.CarryScreen
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.KeybindSetting
@@ -73,8 +72,6 @@ object CarryManager {
 	private const val FADE_IN_TICKS = 0
 	private const val STAY_TICKS = 25
 	private const val FADE_OUT_TICKS = 10
-
-	private val manager = ButtonModuleSetting("manager", "Open manager", action = { CarryScreen.request() })
 
 	private val voidgloomSection = SectionModuleSetting("voidgloom_section", "Voidgloom Seraph")
 
@@ -229,13 +226,11 @@ object CarryManager {
 	val module = Module(
 		id = "carry_manager",
 		name = "Carry Manager",
-		description = "Tracks the slayer carries you run",
+		description = "Tracks your slayer carries",
 		category = ModuleCategory.MISC,
-		hasDemoSettings = false,
 		supportsKeybind = true,
 		keybind = openKeybind,
 		settings = listOf(
-			manager,
 			voidgloomSection,
 			highlightBoss.withMore(highlightStyle, outlineColor, fillColor, lineWidth, phase),
 			tracer.withMore(tracerColor),
@@ -437,7 +432,7 @@ object CarryManager {
 
 		val client = Minecraft.getInstance()
 		val counter = "${carry.done}/${carry.ordered}"
-		Toasts.show("Carry Manager", "${carry.name} $counter")
+		Toasts.show("", "§d${carry.name} §e${carry.done}§7/§e${carry.ordered}", head = carry.name)
 
 		if (announceProgress.value) {
 			val message = progressMessage.value
@@ -453,7 +448,7 @@ object CarryManager {
 			// No title for this one. A title is for something you have to react
 			// to inside a second, and a finished carry is the opposite — it is
 			// the thing you stop for, so it goes in a notification that waits.
-			Toasts.show("Carry Manager", "${carry.name}'s carry is done", false, DONE_TOAST_SECONDS)
+			Toasts.show("", "§d${carry.name}§7's carry is §adone", life = DONE_TOAST_SECONDS, head = carry.name)
 			// Filed away on its own once the last boss is dead. The tick button
 			// in the window is still there for ending one early, which is the
 			// only case left that a person has to decide.

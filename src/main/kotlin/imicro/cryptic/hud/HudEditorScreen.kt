@@ -39,6 +39,10 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	private var snappedX = false
 	private var snappedY = false
 
+	/** How far the elements not being dragged have faded back, 0 to 1. */
+	private var dim = 0f
+	private var lastFrame = 0L
+
 	/**
 	 * Escape goes back where you came from.
 	 *
@@ -57,18 +61,33 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		lastMouseY = mouseY.toDouble()
 		context.fill(0, 0, width, height, BACKDROP)
 
+		val now = System.nanoTime()
+		val dt = if (lastFrame == 0L) 0f else ((now - lastFrame) / 1e9f).coerceIn(0f, 0.05f)
+		lastFrame = now
+		val target = if (dragged != null) 1f else 0f
+		dim = if (dt <= 0f) target else dim + (target - dim) * (1f - kotlin.math.exp(-DIM_SPEED * dt))
+
 		if (dragged != null) drawCentreCross(context)
 
-		for (element in Hud.elements) {
+		// The one being dragged goes last, so it sits above the veil over the rest.
+		val held = dragged
+		for (element in Hud.elements.filter { it !== held } + listOfNotNull(held)) {
 			if (!element.showInEditor()) continue
 			val bounds = boundsOf(element)
-			val hovered = element === dragged || bounds.contains(mouseX.toDouble(), mouseY.toDouble())
+			val hovered = element === dragged || (dragged == null && bounds.contains(mouseX.toDouble(), mouseY.toDouble()))
 
 			Hud.draw(context, element) { element.renderExample(context) }
-			outline(context, bounds, if (hovered) FRAME_HOVERED else FRAME)
+			// While one is moving the rest fade back, so where it lands among them is
+			// easy to see. Minecraft's GUI cannot fade an item, so this is a veil in
+			// the backdrop's colour laid over them rather than a real opacity.
+			val faded = if (element === held) 0f else dim
+			if (faded > 0.01f) {
+				context.fill(bounds.left, bounds.top, bounds.right, bounds.bottom, scaleAlpha(VEIL, faded))
+			}
+			outline(context, bounds, scaleAlpha(if (hovered) FRAME_HOVERED else FRAME, 1f - faded * 0.6f))
 
 			val label = "${element.name}  ${"%.2f".format(element.scale)}x"
-			context.centeredText(font, label, (bounds.left + bounds.right) / 2, bounds.top - font.lineHeight - 2, LABEL)
+			context.centeredText(font, label, (bounds.left + bounds.right) / 2, bounds.top - font.lineHeight - 2, scaleAlpha(LABEL, 1f - faded * 0.7f))
 		}
 
 		context.centeredText(font, HINT, width / 2, height - font.lineHeight - 6, LABEL)
@@ -214,6 +233,11 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		super.removed()
 	}
 
+	private fun scaleAlpha(color: Int, amount: Float): Int {
+		val a = ((color ushr 24) * amount.coerceIn(0f, 1f)).toInt()
+		return (color and 0x00FFFFFF) or (a shl 24)
+	}
+
 	/** A one-pixel border, so the frame shows an element's reach without hiding it. */
 	private fun outline(context: GuiGraphicsExtractor, bounds: Bounds, color: Int) {
 		context.fill(bounds.left, bounds.top, bounds.right, bounds.top + 1, color)
@@ -244,6 +268,10 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	private companion object {
 		const val HINT = "Drag to move  •  Arrows nudge  •  Scroll to resize  •  Right-click resets one  •  R resets all"
 		const val BACKDROP = 0xA0101010.toInt()
+
+		/** Laid over the elements not being dragged: the backdrop's colour, most of the way opaque. */
+		const val VEIL = 0xB4101010.toInt()
+		const val DIM_SPEED = 14f
 
 		/** How near the middle an element has to be dragged before it is taken. */
 		const val SNAP_DISTANCE = 6

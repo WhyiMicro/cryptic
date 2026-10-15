@@ -185,9 +185,8 @@ object RenderOptimizer {
 	val module = Module(
 		id = "render_optimizer",
 		name = "Render Optimizer",
-		description = "Stops drawing what a run does not need",
+		description = "Skips drawing run clutter",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			entitiesSection,

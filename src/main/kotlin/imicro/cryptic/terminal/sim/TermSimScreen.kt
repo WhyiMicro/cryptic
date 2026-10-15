@@ -114,6 +114,17 @@ abstract class TermSimScreen(
 	}
 
 	/**
+	 * Escape out of a terminal goes back to the simulator's menu, to pick the
+	 * next one; only Escape out of the menu itself leaves the simulator.
+	 */
+	override fun onClose() {
+		if (this is StartSim) return super.onClose()
+		pendingSlot = null
+		Terminals.closed()
+		Minecraft.getInstance().execute { StartSim().open(ping) }
+	}
+
+	/**
 	 * A click only lands once the round trip it stands for has gone by, and
 	 * only one is in flight at a time — clicking again while the server has yet
 	 * to answer is exactly what does not work in a real terminal.

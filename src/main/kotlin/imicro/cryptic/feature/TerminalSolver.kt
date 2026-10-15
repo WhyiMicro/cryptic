@@ -254,6 +254,8 @@ object TerminalSolver {
 		visibleIf = { clickSound.value },
 	)
 
+	private val customClickSound = SoundChoices.customField("custom_click_sound", clickSoundChoice) { clickSound.value }
+
 	@JvmField
 	val clickSoundVolume = SliderModuleSetting(
 		id = "click_sound_volume",
@@ -288,7 +290,7 @@ object TerminalSolver {
 
 	/** The chosen click sound, on the client thread. */
 	fun playClickSound() {
-		SoundChoices.play(clickSoundChoice.selectedIndex, clickSoundVolume.value.toFloat(), clickSoundPitch.value.toFloat())
+		SoundChoices.play(clickSoundChoice.selectedIndex, clickSoundVolume.value.toFloat(), clickSoundPitch.value.toFloat(), customClickSound.value)
 	}
 
 	/**
@@ -454,7 +456,6 @@ object TerminalSolver {
 		name = "Terminal Solver",
 		description = "Solves the Floor 7 terminals",
 		category = ModuleCategory.FLOOR_7,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			renderSection,
@@ -479,7 +480,7 @@ object TerminalSolver {
 			firstClickProtection,
 			accountForServerLag.withMore(lagProtectionTicks),
 			soundSection,
-			clickSound.withMore(clickSoundChoice, clickSoundVolume, clickSoundPitch, previewClickSound),
+			clickSound.withMore(clickSoundChoice, customClickSound, clickSoundVolume, clickSoundPitch, previewClickSound),
 		) + MelodyHud.settings,
 	)
 

@@ -4,8 +4,6 @@ import com.google.gson.GsonBuilder
 import com.mojang.brigadier.CommandDispatcher
 import com.mojang.brigadier.arguments.StringArgumentType
 import imicro.cryptic.Cryptic
-import imicro.cryptic.gui.AliasScreen
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback
@@ -44,17 +42,13 @@ object AliasManager {
 
 	val aliases = mutableListOf<Alias>()
 
-	private val open = ButtonModuleSetting("open", "Open manager", action = { AliasScreen.request() })
-
 	@JvmField
 	val module = Module(
 		id = "alias_manager",
 		name = "Alias Manager",
-		description = "Your own commands that run other commands",
+		description = "Shortcuts for commands",
 		category = ModuleCategory.MISC,
-		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(open),
 	)
 
 	/** A command waiting its turn: what to send, the client tick to send it on, and how deep in aliases it is. */

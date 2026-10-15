@@ -209,9 +209,8 @@ object DoorKeys {
 	val module = Module(
 		id = "door_keys",
 		name = "Door Keys",
-		description = "Highlights wither and blood keys",
+		description = "Highlights the door keys",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(soundSection, pickupSound, volume) +
 			listOf(

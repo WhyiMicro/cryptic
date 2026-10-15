@@ -95,9 +95,8 @@ object BlessingDisplay {
 	val module = Module(
 		id = "blessing_display",
 		name = "Blessing Display",
-		description = "Lists the run's blessings and their levels",
+		description = "The run's blessings on screen",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			shownSection, power, time, stone, life, wisdom,

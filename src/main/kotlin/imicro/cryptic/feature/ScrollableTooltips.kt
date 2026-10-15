@@ -70,9 +70,8 @@ object ScrollableTooltips {
 	val module = Module(
 		id = "scrollable_tooltips",
 		name = "Scrollable Tooltips",
-		description = "Scroll to move a tooltip, control-scroll to resize it",
+		description = "Scroll and resize tooltips",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(speed, scale, scaleSpeed),
 	)

@@ -150,6 +150,21 @@ object DebugOverrides {
 		return floor to master
 	}
 
+	/**
+	 * Stands in for the Crystal Hollows zone the sidebar would name, which also
+	 * makes Cryptic read you as in the Hollows. Null reads the real one.
+	 */
+	var hollowsZone: String? = null
+
+	/** The zones `/cryptic debug hollows` suggests. Anything else is taken as written. */
+	val hollowsZones: List<String> = listOf("Crystal Nucleus", "Mines of Divan", "Goblin Queen's Den", "Jungle Temple", "Khazad-dûm", "Lost Precursor City")
+
+	/** Sets [hollowsZone], or clears it when it is already that zone. Returns the zone now in force. */
+	fun toggleHollowsZone(zone: String): String? {
+		hollowsZone = if (hollowsZone.equals(zone, ignoreCase = true)) null else zone
+		return hollowsZone
+	}
+
 	/** The floors `/cryptic debug floor` accepts, for its suggestions. */
 	val floorNames: List<String> = listOf("E") + (1..7).map { "F$it" } + (1..7).map { "M$it" }
 

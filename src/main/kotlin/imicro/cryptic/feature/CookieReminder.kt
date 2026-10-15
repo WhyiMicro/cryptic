@@ -85,7 +85,7 @@ object CookieReminder {
 		awaitingCheck = true
 		checkWaitedFor = 0
 		if (answerCheck()) return
-		Toasts.show(SOURCE, "Waiting for the tab list...", false, seconds.value)
+		Toasts.show(SOURCE, "Waiting for the tab list...", life = seconds.value, color = Toasts.Colors.COOKIE)
 	}
 
 	/** Answers a pending check if the tab list can say anything yet. */
@@ -95,12 +95,12 @@ object CookieReminder {
 
 		awaitingCheck = false
 		val message = when (reading) {
-			is BoosterCookie.Reading.Inactive -> "No active booster cookie"
+			is BoosterCookie.Reading.Inactive -> "§cNo active booster cookie"
 			is BoosterCookie.Reading.Active ->
-				reading.minutesLeft?.let { "Cookie active, ${describe(it)} left" } ?: "Cookie active"
+				reading.minutesLeft?.let { "Active, §f${describe(it)} §7left" } ?: "Active"
 			else -> return true
 		}
-		Toasts.show(SOURCE, message, reading is BoosterCookie.Reading.Inactive, seconds.value)
+		Toasts.show(SOURCE, message, life = seconds.value, color = Toasts.Colors.COOKIE)
 		return true
 	}
 
@@ -108,9 +108,8 @@ object CookieReminder {
 	val module = Module(
 		id = "cookie_reminder",
 		name = "Booster Cookie Reminder",
-		description = "Warns before your cookie runs out",
+		description = "Warns before a cookie ends",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(announceExpired, warnMinutes, seconds, check),
 	)
@@ -139,7 +138,7 @@ object CookieReminder {
 			// in front of the button waiting for it.
 			if (!answerCheck() && ++checkWaitedFor > CHECK_PATIENCE) {
 				awaitingCheck = false
-				Toasts.show(SOURCE, "Still cannot see the tab list", true, seconds.value)
+				Toasts.show(SOURCE, "§cCan't see the tab list", life = seconds.value, color = Toasts.Colors.COOKIE)
 			}
 		}
 
@@ -158,7 +157,7 @@ object CookieReminder {
 				// late to say it.
 				saidExpiring = true
 				if (announceExpired.value) {
-					Toasts.show(SOURCE, "No active booster cookie", true, seconds.value)
+					Toasts.show(SOURCE, "§cNo active booster cookie", life = seconds.value, color = Toasts.Colors.COOKIE)
 				}
 			}
 
@@ -176,7 +175,7 @@ object CookieReminder {
 
 				if (saidExpiring) return
 				saidExpiring = true
-				Toasts.show(SOURCE, "Booster cookie runs out in ${describe(minutes)}", false, seconds.value)
+				Toasts.show(SOURCE, "Runs out in §f${describe(minutes)}", life = seconds.value, color = Toasts.Colors.COOKIE)
 			}
 		}
 	}

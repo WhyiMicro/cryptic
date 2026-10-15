@@ -35,23 +35,7 @@ data class ProfileEntry(
     val modifiedAt: Long,
     val active: Boolean,
     val builtIn: Boolean,
-) {
-    /**
-     * Dear ImGui addresses widgets by string, and the profile page redraws every
-     * card each frame, so a card's identifiers are built once with the entry.
-     */
-    val widgetIds = ProfileWidgetIds(path.fileName.toString())
-}
-
-/** Pre-built Dear ImGui identifiers for one profile card. */
-class ProfileWidgetIds(fileName: String) {
-    val card = "##profile_$fileName"
-    val rename = "##rename_$fileName"
-    val export = "##export_$fileName"
-    val import = "##import_$fileName"
-    val folder = "##folder_$fileName"
-    val delete = "##delete_$fileName"
-}
+)
 
 /** Human-readable local JSON plus portable, versioned Base64 profile strings. */
 object ConfigManager {
@@ -91,8 +75,12 @@ object ConfigManager {
             Files.createDirectories(profileDirectory)
             val defaultPath = profilePath(DEFAULT_PROFILE)
             val shipped = shippedDefault()
-            if (!Files.exists(defaultPath)) {
-                writeAtomically(defaultPath, shipped?.let(gson::toJson) ?: encodeCurrent(DEFAULT_PROFILE))
+            // The built-in profile is the jar's, and nothing saves over it, so it
+            // is brought up to date with each release: a copy written by an
+            // older jar would otherwise hand out that jar's defaults forever.
+            val shippedJson = shipped?.let(gson::toJson)
+            if (!Files.exists(defaultPath) || (shippedJson != null && Files.readString(defaultPath) != shippedJson)) {
+                writeAtomically(defaultPath, shippedJson ?: encodeCurrent(DEFAULT_PROFILE))
             }
 
             if (Files.exists(liveConfigPath)) {
@@ -306,12 +294,6 @@ object ConfigManager {
         for (index in modules.indices) {
             val module = modules[index]
             if (module.supportsToggle) hash = hash.mix(if (module.enabled) 1L else 0L)
-            if (module.hasDemoSettings) {
-                hash = hash.mix(module.slider.value.toRawBits())
-                hash = hash.mix(module.range.lower.toRawBits())
-                hash = hash.mix(module.range.upper.toRawBits())
-                hash = hash.mix(module.dropdown.selectedIndex.toLong())
-            }
             val settings = module.settings
             for (settingIndex in settings.indices) {
                 hash = when (val setting = settings[settingIndex]) {
@@ -407,14 +389,6 @@ object ConfigManager {
 
     private fun encodeModule(module: Module) = JsonObject().apply {
         if (module.supportsToggle) addProperty("enabled", module.enabled)
-        if (module.hasDemoSettings) {
-            add("slider", JsonObject().also { it.addProperty("value", module.slider.value) })
-            add("range", JsonObject().also {
-                it.addProperty("lower", module.range.lower)
-                it.addProperty("upper", module.range.upper)
-            })
-            add("dropdown", JsonObject().also { it.addProperty("selected", module.dropdown.selected) })
-        }
         if (module.settings.isNotEmpty()) {
             add("settings", JsonObject().also { settings ->
                 module.settings.forEach { setting ->
@@ -453,24 +427,6 @@ object ConfigManager {
         ModuleRegistry.byId.forEach { (id, module) ->
             val value = modules.objectOrNull(id) ?: return@forEach
             if (module.supportsToggle) value.boolean("enabled")?.let { module.enabled = it }
-            if (module.hasDemoSettings) {
-                value.objectOrNull("slider")?.double("value")?.let {
-                    module.slider.value = it.coerceIn(module.slider.min, module.slider.max)
-                }
-                value.objectOrNull("range")?.let { range ->
-                    val lower = range.double("lower")?.coerceIn(module.range.min, module.range.max)
-                        ?: module.range.lower
-                    val upper = range.double("upper")?.coerceIn(module.range.min, module.range.max)
-                        ?: module.range.upper
-                    module.range.lower = minOf(lower, upper)
-                    module.range.upper = maxOf(lower, upper)
-                }
-                value.objectOrNull("dropdown")?.string("selected")?.let { selected ->
-                    module.dropdown.options.indexOf(selected).takeIf { it >= 0 }?.let {
-                        module.dropdown.selectedIndex = it
-                    }
-                }
-            }
             value.objectOrNull("settings")?.let { settings ->
                 module.settings.forEach { setting ->
                     when (setting) {
@@ -516,6 +472,9 @@ object ConfigManager {
             RetiredModule("gate_highlight", enabledAs = "gate_highlight", prefix = "gate_", dropped = setOf("phase")),
             RetiredModule("wither_outline", enabledAs = "wither_outline", prefix = "wither_"),
         ),
+        "spirit_leap_overlay" to listOf(
+            RetiredModule("leap_message", enabledAs = "announce_leap", prefix = "leap_"),
+        ),
     )
 
     /**
@@ -528,9 +487,24 @@ object ConfigManager {
      */
     private fun mergeRetiredModules(modules: JsonObject) {
         RETIRED_MODULES.forEach { (target, retired) ->
-            if (modules.has(target)) return@forEach
             val present = retired.filter { modules.has(it.id) }
             if (present.isEmpty()) return@forEach
+
+            // Folded into a card the profile already has: what the old module
+            // said goes in only where the card says nothing yet, and the card's
+            // own switch is left as it is.
+            modules.objectOrNull(target)?.let { existing ->
+                val settings = existing.objectOrNull("settings") ?: JsonObject().also { existing.add("settings", it) }
+                present.forEach { old ->
+                    if (settings.has(old.enabledAs)) return@forEach
+                    val entry = modules.objectOrNull(old.id) ?: return@forEach
+                    settings.addProperty(old.enabledAs, entry.boolean("enabled") ?: false)
+                    entry.objectOrNull("settings")?.entrySet()?.forEach { (key, value) ->
+                        if (key !in old.dropped && !settings.has(old.prefix + key)) settings.add(old.prefix + key, value)
+                    }
+                }
+                return@forEach
+            }
 
             val settings = JsonObject()
             var anyEnabled = false

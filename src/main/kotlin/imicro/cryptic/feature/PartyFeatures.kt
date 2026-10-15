@@ -2,6 +2,7 @@ package imicro.cryptic.feature
 
 import imicro.cryptic.Cryptic
 import imicro.cryptic.debug.DebugOverrides
+import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.dungeon.DungeonTeam
 import imicro.cryptic.gui.Module
@@ -246,9 +247,8 @@ object PartyFeatures {
 	val module = Module(
 		id = "party_features",
 		name = "Party Features",
-		description = "Party chat commands and one-key invites",
+		description = "Party commands and invites",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			inviteSection, inviteToast, autoAccept, inviteSound,
@@ -422,12 +422,13 @@ object PartyFeatures {
 	private fun remindOfBreaks(client: Minecraft) {
 		if (!module.enabled || breaks.isEmpty()) return
 		val summary = breaks.entries.joinToString(", ") { (name, reason) -> "$name ($reason)" }
+		val toastSummary = breaks.entries.joinToString("§7, ") { (name, reason) -> "§f$name §8(§7$reason§8)" }
 		breaks.clear()
 
 		client.gui.hud.setTimes(0, 60, 10)
 		client.gui.hud.setTitle(Component.literal("§cDowntime"))
 		client.gui.hud.setSubtitle(Component.literal("§f$summary"))
-		Toasts.show(SOURCE, "Downtime: $summary", life = 10.0)
+		Toasts.show(SOURCE, "Downtime for $toastSummary", life = 10.0, color = Toasts.Colors.PARTY)
 		say("Downtime needed: $summary")
 	}
 
@@ -581,7 +582,7 @@ object PartyFeatures {
 
 	private fun raiseInvite(inviter: String, owner: String, accept: String) {
 		val client = Minecraft.getInstance()
-		val whose = if (owner == inviter) "their party" else "$owner's party"
+		val whose = if (owner == inviter) "their party" else "§f$owner§7's party"
 
 		if (inviteSound.value) {
 			client.soundManager.play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING.value(), 1.0f, 1.0f))
@@ -589,7 +590,7 @@ object PartyFeatures {
 
 		if (autoAccept.value) {
 			dispatch(client, accept)
-			Toasts.show(SOURCE, "Accepted $inviter's invite to $whose")
+			Toasts.show(SOURCE, "Joined §f$owner§7's party", color = Toasts.Colors.PARTY, head = inviter)
 			return
 		}
 
@@ -599,6 +600,9 @@ object PartyFeatures {
 			source = SOURCE,
 			id = id,
 			life = INVITE_SECONDS,
+			color = Toasts.Colors.PARTY,
+			head = inviter,
+			footer = "§a[Y] §fAccept   §c[N] §fIgnore",
 			keys = mapOf(
 				GLFW.GLFW_KEY_Y to {
 					pendingInvites -= id
@@ -608,7 +612,7 @@ object PartyFeatures {
 				// ignored simply runs out. So this only takes the notice away.
 				GLFW.GLFW_KEY_N to { pendingInvites -= id },
 			),
-		) { left -> "$inviter invited you to $whose. Y to accept, N to ignore (${left}s)" }
+		) { "§f$inviter §7invited you to $whose" }
 	}
 
 	/** Shows an invite from nobody, for `/cryptic debug partyinvite`. */
@@ -657,12 +661,19 @@ object PartyFeatures {
 			"ko", "kickoffline" -> if (kickOffline.value && mayLead()) send("party kickoffline")
 
 			"dt", "downtime" -> if (downtime.value) {
-				val reason = words.drop(1).joinToString(" ").take(40).ifBlank { "no reason given" }
-				breaks[sender] = reason
-				Toasts.show(SOURCE, "$sender wants a break after this run")
+				if (DungeonRun.ended || !DungeonLocation.inDungeon) {
+					// The run is over, so the break is wanted now: Auto Requeue
+					// stops its countdown for it. Kept, it would be announced
+					// again at the end of the run after.
+					Toasts.show(SOURCE, "§f$sender §7wants downtime now", color = Toasts.Colors.PARTY, head = sender)
+				} else {
+					val reason = words.drop(1).joinToString(" ").take(40).ifBlank { "no reason given" }
+					breaks[sender] = reason
+					Toasts.show(SOURCE, "§f$sender §7wants downtime after this run", color = Toasts.Colors.PARTY, head = sender)
+				}
 			}
 			"undt", "undowntime" -> if (downtime.value && breaks.remove(sender) != null) {
-				Toasts.show(SOURCE, "$sender no longer needs a break")
+				Toasts.show(SOURCE, "§f$sender §7no longer needs downtime", color = Toasts.Colors.PARTY, head = sender)
 			}
 
 			"coords", "cords", "co" ->

@@ -1,6 +1,8 @@
 package imicro.cryptic.render
 
+import com.mojang.blaze3d.pipeline.DepthStencilState
 import com.mojang.blaze3d.pipeline.RenderPipeline
+import com.mojang.blaze3d.platform.CompareOp
 import com.mojang.blaze3d.vertex.DefaultVertexFormat
 import com.mojang.blaze3d.PrimitiveTopology
 import imicro.cryptic.Cryptic
@@ -48,6 +50,28 @@ object CrypticRenderPipelines {
 		}.build(),
 	)
 
+	/**
+	 * Drawn only where something is in front: the depth test turned round, so
+	 * a box shows through walls and nowhere else. 26.x keeps depth reversed,
+	 * nearer being greater, so "behind" is less-than. Custom Block Highlight's
+	 * "Only Concealed" (GPL-3, Tektonikal).
+	 */
+	val FILLED_BEHIND: RenderPipeline = RenderPipelines.register(
+		RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET).apply {
+			withLocation(Cryptic.id("pipeline/filled_behind"))
+			withVertexBinding(0, DefaultVertexFormat.POSITION_COLOR)
+			withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+			withDepthStencilState(DepthStencilState(CompareOp.LESS_THAN, false))
+		}.build(),
+	)
+
+	val LINES_BEHIND: RenderPipeline = RenderPipelines.register(
+		RenderPipeline.builder(RenderPipelines.LINES_SNIPPET).apply {
+			withLocation(Cryptic.id("pipeline/lines_behind"))
+			withDepthStencilState(DepthStencilState(CompareOp.LESS_THAN, false))
+		}.build(),
+	)
+
 	/** Loads this object, and with it registers every pipeline above. */
 	fun touch() = Unit
 }
@@ -74,6 +98,16 @@ object CrypticRenderLayers {
 		RenderSetup.builder(CrypticRenderPipelines.LINES_THROUGH_WALLS).createRenderSetup(),
 	)
 
+	val FILLED_BEHIND: RenderType = RenderType.create(
+		"cryptic_filled_behind",
+		RenderSetup.builder(CrypticRenderPipelines.FILLED_BEHIND).createRenderSetup(),
+	)
+
+	val LINES_BEHIND: RenderType = RenderType.create(
+		"cryptic_lines_behind",
+		RenderSetup.builder(CrypticRenderPipelines.LINES_BEHIND).createRenderSetup(),
+	)
+
 	/**
 	 * Whether this is one of the layers that should be drawn last.
 	 *
@@ -82,7 +116,7 @@ object CrypticRenderLayers {
 	 */
 	@JvmStatic
 	fun drawsOverTerrain(type: RenderType): Boolean =
-		type === FILLED_THROUGH_WALLS || type === LINES_THROUGH_WALLS
+		type === FILLED_THROUGH_WALLS || type === LINES_THROUGH_WALLS || type === FILLED_BEHIND || type === LINES_BEHIND
 
 	/**
 	 * Set for the length of one text submit, when that text is Cryptic's and

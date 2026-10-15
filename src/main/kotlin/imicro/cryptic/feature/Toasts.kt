@@ -1,107 +1,82 @@
 package imicro.cryptic.feature
 
-import imgui.ImGui
 import imicro.cryptic.gui.ButtonModuleSetting
-import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
-import imicro.cryptic.gui.ImGuiRuntime
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
-import imicro.cryptic.gui.PanelModuleSetting
-import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
-import imicro.cryptic.gui.withMore
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.gui.components.PlayerFaceExtractor
 import net.minecraft.client.gui.screens.inventory.ContainerScreen
-import kotlin.math.roundToInt
-import kotlin.math.sqrt
+import net.minecraft.client.resources.sounds.SimpleSoundInstance
+import net.minecraft.network.chat.Component
+import net.minecraft.sounds.SoundEvents
+import net.minecraft.world.item.component.ResolvableProfile
+import kotlin.math.ceil
+import kotlin.math.pow
 
 /**
- * Cryptic's own notifications: a pill in a corner saying what just happened.
+ * Cryptic's own notifications, styled after Essential's.
  *
- * Two things separate this from the toast the menu used to draw for itself.
- * It says *who* is talking — the module's name in a badge, then what it has to
- * say — so a notification arriving while you are doing something else is
- * attributable at a glance. And it outlives the menu: a toast raised by a click
- * in the settings screen is still there after the screen is shut, because
- * closing a screen is not a reason to stop telling somebody what their click
- * did.
+ * A dark box in Minecraft's own font, the speaking module's name as its title
+ * and what it has to say underneath, with a thin bar along the bottom that
+ * fills as its time runs out. It slides in from the edge of the screen, and
+ * when it goes the ones stacked behind it close the gap. Resting the pointer on
+ * one pauses its bar; a click lets it finish at once; dragging it towards its
+ * edge throws it away.
  *
- * Drawn through Dear ImGui rather than through Minecraft's GUI layer. That is
- * the whole reason it looks like the mock-up: ImGui anti-aliases a rounded
- * rectangle, and Minecraft's `fill` cannot — a pill built out of hard-edged
- * fills has visibly stepped corners at any size. Its foreground draw list needs
- * no window and no input, so [ImGuiRuntime] runs a frame for these even with no
- * screen open.
+ * Only the look and the feel are Essential's: this is drawn through
+ * Minecraft's GUI renderer, at the layer vanilla's own toasts are drawn at, so
+ * it shows over any screen and on any graphics backend.
  */
 object Toasts {
 	/** Indices into [position]. */
 	private const val TOP_LEFT = 0
 	private const val TOP_RIGHT = 1
 	private const val BOTTOM_LEFT = 2
-	private const val BOTTOM_RIGHT = 3
 
-	/** How far the pill sits from the edges of the screen, in ImGui pixels. */
-	private const val MARGIN = 14f
+	// Measurements, in GUI pixels, before [scale].
+	private const val WIDTH = 175
+	private const val PADDING = 7
+	private const val BOTTOM_PADDING = 4
+	private const val TITLE_GAP = 6
+	private const val LINE_SPACING = 10
+	private const val TIMER_HEIGHT = 3
+	private const val EDGE = 5
+	private const val SPACING = 5
 
-	/** The pill's own padding, the badge's, and the gap between the two. */
-	private const val PADDING = 9f
+	/** A player's face, one line of text tall, and the gap after it: Essential's 8 and 5. */
+	private const val HEAD = 8
+	private const val HEAD_GAP = 5
 
-	/**
-	 * The inset at the pill's right-hand end, where the message ends.
-	 *
-	 * Larger than [PADDING] because what is inset there is flat text against a
-	 * half-circle, while what is inset on the left is the badge, which is a
-	 * rounded pill of its own and nests inside the curve at a smaller gap. Nine
-	 * pixels measured from the bounding box is nine pixels from a corner the
-	 * pill does not have, which is how the last letter ended up sitting in the
-	 * curve rather than inside it.
-	 */
-	private const val END_PADDING = 16f
-	private const val BADGE_PADDING = 9f
-	private const val GAP = 8f
+	// How long each move takes, in seconds, as Essential has them.
+	private const val SLIDE_SECONDS = 0.5f
+	private const val COLLAPSE_SECONDS = 0.25f
+	private const val FINISH_SECONDS = 1.25f
 
-	/**
-	 * How much of the pill's own padding sits above and below the badge text.
-	 *
-	 * Half of [PADDING], so that the badge is inset from the top and bottom of
-	 * the pill by exactly what it is inset from the left — the same relationship
-	 * the magnifying glass has to the search field, and the thing that was
-	 * visibly off before.
-	 */
-	private const val BADGE_VERTICAL = 4.5f
-
-	/** The gap between stacked toasts. */
-	private const val SPACING = 8f
-
-	/** How far a toast slides in from its own edge as it appears. */
-	private const val SLIDE = 16f
-
-	private const val FADE_SECONDS = 0.16
+	/** How far it has to be dragged, as a share of its width, to be thrown away. */
+	private const val THROW_SHARE = 0.25f
 
 	/** How many are shown at once before the oldest is dropped. */
-	private const val MAX_SHOWN = 4
+	private const val MAX_SHOWN = 5
 
-	/** The size the two pieces of text are drawn at, before [scale]. */
-	private const val SOURCE_SIZE = 15f
-	private const val MESSAGE_SIZE = 15f
-
-	/**
-	 * What the scale slider's 1 actually means.
-	 *
-	 * Everything above is written at the size the mock-up was drawn at, which is
-	 * bigger than a notification wants to be over a game. Folding the difference
-	 * in here rather than shrinking every number keeps the proportions readable
-	 * and lets the slider say 1 for the size that is actually wanted.
-	 */
-	private const val BASE_SCALE = 0.6f
+	// Essential's palette.
+	private const val BACKGROUND = 0xFF181818.toInt()
+	private const val BORDER = 0xFF303030.toInt()
+	private const val BORDER_HOVER = 0xFF757575.toInt()
+	private const val TIMER = 0xFF474747.toInt()
+	private const val TIMER_HOVER = 0xFF5C5C5C.toInt()
+	private const val TITLE = 0xFFE5E5E5.toInt()
+	private const val TITLE_ERROR = 0xFFCC2929.toInt()
+	private const val BODY = 0xFFBFBFBF.toInt()
 
 	@JvmField
 	val position = DropdownModuleSetting(
 		id = "position",
 		label = "Position",
 		options = listOf("Top left", "Top right", "Bottom left", "Bottom right"),
-		defaultIndex = BOTTOM_RIGHT,
+		defaultIndex = 3,
 		description = "Which corner notifications stack in.",
 	)
 
@@ -109,11 +84,12 @@ object Toasts {
 	val seconds = SliderModuleSetting(
 		id = "seconds",
 		label = "Seconds",
-		defaultValue = 3.0,
+		defaultValue = 4.0,
 		min = 1.0,
 		max = 10.0,
 		step = 0.5,
-		description = "How long one stays up.",
+		unit = "s",
+		description = "How long one stays up once it has slid in.",
 	)
 
 	@JvmField
@@ -122,56 +98,14 @@ object Toasts {
 		label = "Scale",
 		defaultValue = 1.0,
 		min = 0.5,
-		max = 3.0,
+		max = 2.0,
 		step = 0.1,
+		description = "Their size, where 1 is the size of the rest of your interface.",
 	)
 
-	@JvmField
-	val backgroundColor = ColorModuleSetting(
-		id = "background_color",
-		label = "Background",
-		defaultRgb = 0x141414,
-		supportsAlpha = true,
-		defaultAlpha = 0xF2,
-	)
-
-	@JvmField
-	val badgeColor = ColorModuleSetting(
-		id = "badge_color",
-		label = "Badge",
-		defaultRgb = 0x3F3F3F,
-		supportsAlpha = true,
-		defaultAlpha = 0xFF,
-	)
-
-	@JvmField
-	val sourceColor = ColorModuleSetting(
-		id = "source_color",
-		label = "Module name",
-		defaultRgb = 0xE4E4E4,
-	)
-
-	@JvmField
-	val messageColor = ColorModuleSetting(
-		id = "message_color",
-		label = "Message",
-		defaultRgb = 0xA4A4A4,
-	)
-
-	@JvmField
-	val errorColor = ColorModuleSetting(
-		id = "error_color",
-		label = "Message (problem)",
-		defaultRgb = 0xDF4A4F,
-		description = "The message's colour when the notification is reporting something that went wrong.",
-	)
-
-	/**
-	 * Raises one of each, so the shape and the colours can be seen while they are
-	 * being set rather than the next time something happens to say something.
-	 */
-	private val test = ButtonModuleSetting("test", "Show a test notification", action = {
-		show("Toast Notifications", "Toggled blah blah")
+	/** Raises one, so the look can be seen while it is being set. */
+	private val test = ButtonModuleSetting("test", "Show toast", action = {
+		show("Toast Notifications", "Click to dismiss, or §fdrag it away§7.", color = Colors.CRYPTIC)
 	})
 
 	@JvmField
@@ -181,152 +115,153 @@ object Toasts {
 		description = "Cryptic's own notifications",
 		category = ModuleCategory.MISC,
 		enabled = true,
-		hasDemoSettings = false,
-		supportsKeybind = false,
-		settings = listOf(
-			position, seconds, scale,
-			PanelModuleSetting("color_panel", "Colors", "What a notification is drawn in: its background, the badge, and the text.")
-				.withMore(backgroundColor, badgeColor, sourceColor, messageColor, errorColor),
-			test,
-		),
+		settings = listOf(position, seconds, scale, test),
 	)
 
+	private enum class Phase { IN, TIMER, FINISHING, OUT, COLLAPSE }
+
 	/**
-	 * One notification, and when it went up.
-	 *
-	 * [text] is asked every frame rather than fixed, so a notification that is
-	 * waiting on something can say how long it has left. [keys] is what makes
-	 * one a question: a key to an answer, tried while it is on screen.
-	 *
-	 * The four numbers at the bottom are where it was last drawn, in ImGui's
-	 * pixels, which is how a click finds the one it landed on.
+	 * One notification. [text] is asked every frame rather than fixed, so one
+	 * that is waiting on something can say how long it has left; [keys] is
+	 * what makes one a question, a key to an answer.
 	 */
 	private class Toast(
 		val source: String,
 		val text: (secondsLeft: Int) -> String,
 		val error: Boolean,
-		val startedAt: Long,
-		var life: Double,
+		val life: Float,
 		val id: String? = null,
 		val keys: Map<Int, () -> Unit> = emptyMap(),
+		/** The title's colour, which says at a glance what kind of notice it is. Errors stay red. */
+		val color: Int? = null,
+		/** A player whose face is drawn on the left, Essential's way. */
+		val head: String? = null,
+		/** A last line, centred: the keys a question answers to. */
+		val footer: String? = null,
 	) {
+		var phase = Phase.IN
+		var phaseTime = 0f
+
+		/** How much of its time has run, nought to one: the bar along the bottom. */
+		var timer = 0f
+		var finishFrom = 0f
+
+		/** How far it has been pushed back towards its edge, by a drag or on the way out. */
+		var slide = 0f
+		var drag = 0f
+
+		/** Where it was last drawn, in GUI pixels, for the pointer. */
 		var left = 0f
 		var top = 0f
 		var right = 0f
 		var bottom = 0f
+		var height = 0f
 
-		/**
-		 * Set once it has been answered or waved away. It is still on screen for
-		 * the moment it takes to fade, and a second press of the key in that
-		 * moment must not answer it a second time.
-		 */
+		/** Set once it has been answered or waved away, so it cannot be answered twice. */
 		var done = false
-			private set
 
-		fun secondsLeft(now: Long): Int =
-			(life - (now - startedAt) / 1_000_000_000.0).coerceAtLeast(0.0).let { kotlin.math.ceil(it).toInt() }
+		fun secondsLeft(): Int = ceil(life * (1f - timer)).toInt().coerceAtLeast(0)
 
-		/** Ends it now, fading out the way one that ran out of time does. */
-		fun dismiss(now: Long) {
+		fun finish() {
+			if (done) return
 			done = true
-			val elapsed = (now - startedAt) / 1_000_000_000.0
-			life = minOf(life, elapsed + FADE_SECONDS)
+			if (phase == Phase.IN || phase == Phase.TIMER) {
+				finishFrom = timer
+				phase = Phase.FINISHING
+				phaseTime = 0f
+			}
+		}
+
+		fun leave() {
+			done = true
+			if (phase != Phase.OUT && phase != Phase.COLLAPSE) {
+				phase = Phase.OUT
+				phaseTime = 0f
+			}
 		}
 	}
 
-	private val shown = ArrayDeque<Toast>()
+	private val shown = ArrayList<Toast>()
+	private var lastFrame = 0L
+
+	/** The toast being pressed on, and where the press began. */
+	private var pressed: Toast? = null
+	private var pressX = 0f
+	private var dragged = false
 
 	/**
-	 * Raises a notification.
-	 *
-	 * [source] is who is speaking — a module's name — and [message] is what it
-	 * has to say. Nothing here needs a screen to be open, which is the point.
-	 *
-	 * [life] overrides the configured duration, for the rare notification that
-	 * is worth more of somebody's attention than the rest — a reminder they are
-	 * about to lose something has to survive being walked away from.
+	 * Raises a notification. [source] is who is speaking, a module's name, and
+	 * [message] what it has to say. [life] overrides the configured time, for
+	 * the rare one worth more of somebody's attention.
 	 */
-	fun show(source: String, message: String, error: Boolean = false, life: Double = seconds.value) {
+	fun show(
+		source: String, message: String, error: Boolean = false, life: Double = seconds.value,
+		color: Int? = null, head: String? = null,
+	) {
 		if (!module.enabled) return
-		add(Toast(source, { message }, error, System.nanoTime(), life))
+		add(Toast(source, { message }, error, life.toFloat(), color = color, head = head))
 	}
 
 	/**
-	 * Raises a notification that asks something, and waits for a key.
-	 *
-	 * [keys] maps a GLFW key to what pressing it does; whichever is pressed
-	 * first answers the question and takes the notification down. [id] names it,
-	 * so the module that raised it can take it down itself when the question
-	 * stops being worth asking — and so asking the same thing twice replaces the
-	 * first rather than stacking under it.
+	 * Raises one that asks something and waits for a key. [keys] maps a GLFW
+	 * key to what pressing it does; [id] names it, so its module can take it
+	 * down, and so asking again replaces it rather than stacking a second.
+	 * [footer] is a centred last line, for saying which keys those are.
 	 */
 	fun ask(
-		source: String,
-		id: String,
-		life: Double,
-		keys: Map<Int, () -> Unit>,
+		source: String, id: String, life: Double, keys: Map<Int, () -> Unit>,
+		color: Int? = null, head: String? = null, footer: String? = null,
 		text: (secondsLeft: Int) -> String,
 	) {
 		if (!module.enabled) return
 		shown.removeAll { it.id == id }
-		add(Toast(source, text, false, System.nanoTime(), life, id, keys))
-	}
-
-	private fun add(toast: Toast) {
-		shown.addLast(toast)
-		// The oldest goes first, but a question outlives an announcement: four
-		// things being said in a row should not take a party invite down with
-		// them.
-		while (shown.size > MAX_SHOWN) {
-			val victim = shown.firstOrNull { it.keys.isEmpty() && it !== toast } ?: shown.first()
-			shown.remove(victim)
-		}
-	}
-
-	/** Takes down the notification raised under [id], if it is still up. */
-	fun dismiss(id: String) {
-		val now = System.nanoTime()
-		shown.forEach { if (it.id == id) it.dismiss(now) }
+		add(Toast(source, text, false, life.toFloat(), id, keys, color, head, footer))
 	}
 
 	/**
-	 * A key going down, offered to whichever question is on screen.
-	 *
-	 * The newest first, so that two invites answer in the order a person would
-	 * read them. True when a question took the key, which keeps it from also
-	 * doing whatever it is bound to.
+	 * The title colours, one per kind of notice, so which module is speaking
+	 * can be told before a word is read. Kept to a handful of Minecraft's own
+	 * colours, and only on the title: the body stays grey with the odd name or
+	 * number picked out in white.
 	 */
+	object Colors {
+		const val PARTY = 0xFF5555FF.toInt()
+		const val COOKIE = 0xFFF0A040.toInt()
+		const val INVENTORY = 0xFFFFFF55.toInt()
+		const val TELEPORT = 0xFFAA55FF.toInt()
+		const val MINING = 0xFF55FFFF.toInt()
+		const val GOOD = 0xFF55FF55.toInt()
+
+		/** Cryptic itself — its settings and profiles — in your accent colour. */
+		val CRYPTIC: Int get() = imicro.cryptic.gui.menu.MenuStyle.accent()
+	}
+
+	private fun add(toast: Toast) {
+		shown += toast
+		// The oldest goes first, but a question outlives an announcement.
+		while (shown.count { !it.done } > MAX_SHOWN) {
+			val victim = shown.firstOrNull { !it.done && it.keys.isEmpty() && it !== toast } ?: shown.first { !it.done }
+			victim.leave()
+		}
+	}
+
+	/** Takes down the one raised under [id], if it is still up. */
+	fun dismiss(id: String) {
+		shown.forEach { if (it.id == id) it.finish() }
+	}
+
+	/** A key going down, offered to the newest question on screen. True when one took it. */
 	fun handleKey(key: Int): Boolean {
 		if (!module.enabled) return false
-		val now = System.nanoTime()
 		val toast = shown.lastOrNull { key in it.keys && !it.done } ?: return false
-		toast.dismiss(now)
+		toast.finish()
 		toast.keys.getValue(key).invoke()
 		return true
 	}
 
 	/**
-	 * A click, in window pixels. A notification under it goes away.
-	 *
-	 * Only while the cursor is free — with a screen open — because there is no
-	 * cursor to click with otherwise. True when one was hit, so the click does
-	 * not also land on whatever the notification was covering.
-	 */
-	fun handleClick(x: Double, y: Double): Boolean {
-		if (!module.enabled) return false
-		val now = System.nanoTime()
-		val toast = shown.lastOrNull {
-			x >= it.left && x <= it.right && y >= it.top && y <= it.bottom && !it.done
-		} ?: return false
-		toast.dismiss(now)
-		return true
-	}
-
-	/**
-	 * A key going down anywhere in the game, from the keyboard itself.
-	 *
-	 * Only answered where a letter cannot be something being typed: out in the
-	 * world, or in a chest, which has no text box. A Y in the middle of a chat
+	 * A key from the keyboard itself, answered only where a letter cannot be
+	 * something being typed: out in the world, or in a chest. A Y in a chat
 	 * message must never accept a party invite.
 	 */
 	@JvmStatic
@@ -337,172 +272,231 @@ object Toasts {
 		return handleKey(key)
 	}
 
-	/** The left button going down, wherever the cursor is. See [handleClick]. */
+	/** The left button going down. A press on a notification is kept from whatever is under it. */
 	@JvmStatic
 	fun onMousePressed(): Boolean {
-		if (shown.isEmpty()) return false
-		val mouse = Minecraft.getInstance().mouseHandler
-		// A grabbed cursor is the crosshair, which is not pointing at anything
-		// on the screen.
-		if (mouse.isMouseGrabbed) return false
-		return handleClick(mouse.xpos(), mouse.ypos())
+		val (mx, my) = pointer() ?: return false
+		val toast = shown.lastOrNull { !it.done && mx >= it.left && mx < it.right && my >= it.top && my < it.bottom } ?: return false
+		pressed = toast
+		pressX = mx
+		dragged = false
+		return true
 	}
 
-	/**
-	 * Whether [ImGuiRuntime] should run a frame for these with no screen open.
-	 *
-	 * Asked every frame, so it is a size check and nothing else — the expiring
-	 * happens in the draw, which only runs when this has said yes.
-	 */
-	fun wantsDrawing(): Boolean = module.enabled && shown.isNotEmpty()
+	/** The left button coming up: a click lets it finish; a long enough drag throws it away. */
+	@JvmStatic
+	fun onMouseReleased(): Boolean {
+		val toast = pressed ?: return false
+		pressed = null
+		when {
+			!dragged -> {
+				Minecraft.getInstance().soundManager.play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1f))
+				toast.finish()
+			}
+			toast.drag >= WIDTH * THROW_SHARE -> toast.leave()
+		}
+		return true
+	}
 
-	/** Drops everything, for a session that is ending or a menu that broke. */
+	/** Where the pointer is in GUI pixels, or null while it is the crosshair. */
+	private fun pointer(): Pair<Float, Float>? {
+		val minecraft = Minecraft.getInstance()
+		if (minecraft.mouseHandler.isMouseGrabbed) return null
+		val window = minecraft.window
+		return minecraft.mouseHandler.getScaledXPos(window).toFloat() to minecraft.mouseHandler.getScaledYPos(window).toFloat()
+	}
+
 	fun clear() = shown.clear()
 
 	/**
-	 * Draws the stack onto ImGui's foreground list.
-	 *
-	 * The foreground list is above every ImGui window, so a toast raised by the
-	 * settings screen is drawn over it rather than behind it.
+	 * Draws the stack, from vanilla's toast layer (see `GuiMixin`), which is
+	 * above any screen and below nothing else.
 	 */
-	fun drawImGui() {
-		if (!module.enabled || shown.isEmpty()) return
-
+	@JvmStatic
+	fun extract(graphics: GuiGraphicsExtractor) {
 		val now = System.nanoTime()
-		shown.removeAll { (now - it.startedAt) / 1_000_000_000.0 >= it.life }
+		val dt = if (lastFrame == 0L) 0f else ((now - lastFrame) / 1e9f).coerceIn(0f, 0.1f)
+		lastFrame = now
 		if (shown.isEmpty()) return
+		if (!module.enabled) {
+			shown.clear()
+			return
+		}
 
-		val window = Minecraft.getInstance().window
-		val screenWidth = window.screenWidth.toFloat()
-		val screenHeight = window.screenHeight.toFloat()
+		val minecraft = Minecraft.getInstance()
+		val font = minecraft.font
+		val factor = scale.value.toFloat()
+		val screenWidth = minecraft.window.guiScaledWidth / factor
+		val screenHeight = minecraft.window.guiScaledHeight / factor
+		val corner = position.selectedIndex
+		val fromLeft = corner == TOP_LEFT || corner == BOTTOM_LEFT
+		val fromTop = corner == TOP_LEFT || corner == TOP_RIGHT
+		val pointer = pointer()?.let { (x, y) -> x / factor to y / factor }
 
-		// ImGui works in real screen pixels, where Minecraft's GUI works in
-		// scaled ones, so the player's GUI scale is folded in here — a toast
-		// should be the same size as the rest of their interface, not the same
-		// number of physical pixels.
-		val guiScale = (window.screenWidth / window.guiScaledWidth.coerceAtLeast(1).toFloat())
-			.coerceAtLeast(1f)
-		val factor = scale.value.toFloat() * BASE_SCALE * guiScale
+		// The pressed one follows the pointer away from the screen while held.
+		pressed?.let { toast ->
+			pointer?.let { (x, _) ->
+				val moved = (if (fromLeft) pressX / factor - x else x - pressX / factor).coerceAtLeast(0f)
+				if (moved > WIDTH * 0.02f) dragged = true
+				if (dragged) toast.drag = moved
+			}
+		}
 
-		val top = position.selectedIndex == TOP_LEFT || position.selectedIndex == TOP_RIGHT
-		val left = position.selectedIndex == TOP_LEFT || position.selectedIndex == BOTTOM_LEFT
+		val pose = graphics.pose()
+		pose.pushMatrix()
+		pose.scale(factor, factor)
 
-		// Newest nearest the edge it came from, so the one that just arrived is
-		// where the eye already is.
-		val order = if (top) shown.toList() else shown.toList().asReversed()
+		var stack = SPACING.toFloat()
+		// The oldest nearest the corner and newer ones stacked beyond it, as
+		// Essential does, so when the oldest leaves the rest close up behind it.
+		for (toast in shown.toList()) {
+			advance(toast, dt, pointer)
+			// Only a message that shares its row with the face is narrowed by it.
+			val titled = toast.source.isNotEmpty()
+			val textWidth = WIDTH - 2 - PADDING * 2 - (if (toast.head != null && !titled) HEAD + HEAD_GAP else 0)
+			val lines = font.split(Component.literal(toast.text(toast.secondsLeft())), textWidth)
+			val body = if (lines.isEmpty()) 0 else (lines.size - 1) * LINE_SPACING + 9
+			var content = if (titled) 9 + (if (body > 0) TITLE_GAP + body else 0) else maxOf(body, 9)
+			if (toast.footer != null) content += TITLE_GAP + 9
+			val full = 1 + PADDING + content + BOTTOM_PADDING + 1
+			val collapse = if (toast.phase == Phase.COLLAPSE) 1f - outExpo(toast.phaseTime / COLLAPSE_SECONDS) else 1f
+			toast.height = full.toFloat()
+			val taken = (full + SPACING) * collapse
 
-		var offset = 0f
-		for (toast in order) {
-			val height = draw(toast, now, screenWidth, screenHeight, factor, top, left, offset)
-			offset += height + SPACING * factor
+			val offscreen = WIDTH + EDGE.toFloat()
+			val travel = when (toast.phase) {
+				Phase.IN -> 1f - outExpo(toast.phaseTime / SLIDE_SECONDS)
+				Phase.OUT, Phase.COLLAPSE -> toast.slide
+				else -> 0f
+			}
+			val pushed = (travel * offscreen + toast.drag).coerceAtMost(offscreen)
+			val x = if (fromLeft) EDGE - pushed else screenWidth - EDGE - WIDTH + pushed
+			val y = if (fromTop) stack else screenHeight - stack - full
+
+			if (toast.phase != Phase.COLLAPSE) {
+				toast.left = x * factor
+				toast.top = y * factor
+				toast.right = (x + WIDTH) * factor
+				toast.bottom = (y + full) * factor
+				draw(graphics, toast, lines, x, y, full, pointer)
+			}
+			stack += taken
+		}
+		pose.popMatrix()
+		shown.removeAll { it.phase == Phase.COLLAPSE && it.phaseTime >= COLLAPSE_SECONDS }
+	}
+
+	/** Moves one notification on by a frame. */
+	private fun advance(toast: Toast, dt: Float, pointer: Pair<Float, Float>?) {
+		toast.phaseTime += dt
+		val hovered = pointer != null && pressed == null && toast.covers(pointer)
+		when (toast.phase) {
+			Phase.IN -> if (toast.phaseTime >= SLIDE_SECONDS) {
+				toast.phase = Phase.TIMER
+				toast.phaseTime = 0f
+			}
+			// The bar stands still while the pointer rests on it, as Essential's does.
+			Phase.TIMER -> {
+				if (!hovered && pressed !== toast) toast.timer += dt / toast.life
+				if (toast.timer >= 1f) {
+					toast.timer = 1f
+					toast.leave()
+				}
+			}
+			Phase.FINISHING -> {
+				val share = (toast.phaseTime / ((1f - toast.finishFrom) * FINISH_SECONDS).coerceAtLeast(0.05f)).coerceAtMost(1f)
+				toast.timer = toast.finishFrom + (1f - toast.finishFrom) * outExpo(share)
+				if (share >= 1f) {
+					toast.phase = Phase.OUT
+					toast.phaseTime = 0f
+				}
+			}
+			Phase.OUT -> {
+				toast.slide = inExpo((toast.phaseTime / SLIDE_SECONDS).coerceAtMost(1f))
+				if (toast.phaseTime >= SLIDE_SECONDS) {
+					toast.phase = Phase.COLLAPSE
+					toast.phaseTime = 0f
+				}
+			}
+			Phase.COLLAPSE -> Unit
+		}
+		// Let go short of throwing it: it springs back.
+		if (pressed !== toast && toast.drag > 0f && toast.phase != Phase.OUT && toast.phase != Phase.COLLAPSE) {
+			toast.drag = (toast.drag - dt * WIDTH * 4f).coerceAtLeast(0f)
 		}
 	}
 
-	/** Draws one pill and answers how tall it was, so the next can stack on it. */
+	private fun Toast.covers(pointer: Pair<Float, Float>): Boolean {
+		val factor = scale.value.toFloat()
+		val (x, y) = pointer
+		return x * factor >= left && x * factor < right && y * factor >= top && y * factor < bottom
+	}
+
 	private fun draw(
-		toast: Toast,
-		now: Long,
-		screenWidth: Float,
-		screenHeight: Float,
-		factor: Float,
-		top: Boolean,
-		left: Boolean,
-		offset: Float,
-	): Float {
-		val elapsed = (now - toast.startedAt) / 1_000_000_000.0
+		graphics: GuiGraphicsExtractor, toast: Toast, lines: List<net.minecraft.util.FormattedCharSequence>,
+		x: Float, y: Float, height: Int, pointer: Pair<Float, Float>?,
+	) {
+		val hovered = (pointer != null && toast.covers(pointer)) || pressed === toast
+		val pose = graphics.pose()
+		pose.pushMatrix()
+		pose.translate(x, y)
+		val font = Minecraft.getInstance().font
 
-		val sourceSize = SOURCE_SIZE * factor
-		val messageSize = MESSAGE_SIZE * factor
-		val padding = PADDING * factor
-		val badgePadding = BADGE_PADDING * factor
-		val gap = GAP * factor
+		// A one-pixel border, the body inside it, and the bar along the bottom of the body.
+		graphics.fill(0, 0, WIDTH, height, if (hovered) BORDER_HOVER else BORDER)
+		graphics.fill(1, 1, WIDTH - 1, height - 1, BACKGROUND)
+		val barWidth = ((WIDTH - 2) * toast.timer).toInt()
+		if (barWidth > 0) graphics.fill(1, height - 1 - TIMER_HEIGHT, 1 + barWidth, height - 1, if (hovered) TIMER_HOVER else TIMER)
 
-		val sourceWidth = ImGuiRuntime.textWidth(toast.source, sourceSize)
-		val message = toast.text(toast.secondsLeft(now))
-		val messageWidth = ImGuiRuntime.textWidth(message, messageSize)
-		val textHeight = ImGuiRuntime.textHeight(toast.source, sourceSize)
-
-		val badgeWidth = sourceWidth + badgePadding * 2
-		val badgeHeight = textHeight + BADGE_VERTICAL * factor * 2
-		// The badge is inset from the top and bottom by the same padding it is
-		// inset from the left, which is what makes it sit square in the pill.
-		val height = badgeHeight + padding * 2
-
-		// Plus however far the end cap has curved back in by the time it reaches
-		// the top and bottom of the text, which is the part a flat inset misses.
-		val radius = height / 2f
-		val halfText = textHeight / 2f
-		val capInset = radius - sqrt((radius * radius - halfText * halfText).coerceAtLeast(0f))
-		val endPadding = END_PADDING * factor + capInset
-
-		val width = padding + badgeWidth + gap + messageWidth + endPadding
-
-		// In and out at the ends of its life, and a nudge in from its own edge so
-		// it arrives rather than appearing.
-		val appearing = (elapsed / FADE_SECONDS).coerceIn(0.0, 1.0)
-		val leaving = ((toast.life - elapsed) / FADE_SECONDS).coerceIn(0.0, 1.0)
-		val opacity = minOf(appearing, leaving).toFloat()
-		val slide = SLIDE * factor * (1f - appearing.toFloat())
-
-		val margin = MARGIN * factor
-		val x = if (left) margin - slide else screenWidth - margin - width + slide
-		val y = if (top) margin + offset else screenHeight - margin - height - offset
-
-		// Where it is, for the click that wants it gone.
-		toast.left = x
-		toast.top = y
-		toast.right = x + width
-		toast.bottom = y + height
-
-		val list = ImGui.getForegroundDrawList()
-
-		// The pill: rounded to its own half-height, which is what makes it a
-		// pill rather than a rectangle with soft corners.
-		list.addRectFilled(x, y, x + width, y + height, abgr(backgroundColor.argb, opacity), height / 2f)
-
-		val badgeX = x + padding
-		val badgeY = y + (height - badgeHeight) / 2f
-		list.addRectFilled(
-			badgeX,
-			badgeY,
-			badgeX + badgeWidth,
-			badgeY + badgeHeight,
-			abgr(badgeColor.argb, opacity),
-			badgeHeight / 2f,
-		)
-
-		val textY = y + (height - textHeight) / 2f
-		list.addText(
-			ImGuiRuntime.font,
-			sourceSize.roundToInt(),
-			badgeX + badgePadding,
-			textY,
-			abgr(sourceColor.argb, opacity),
-			toast.source,
-		)
-		list.addText(
-			ImGuiRuntime.font,
-			messageSize.roundToInt(),
-			badgeX + badgeWidth + gap,
-			textY,
-			abgr(if (toast.error) errorColor.argb else messageColor.argb, opacity),
-			message,
-		)
-
-		return height
+		val left = 1 + PADDING
+		var textY = 1 + PADDING
+		// The face goes on the first row, Essential's way: beside the title, or
+		// beside the message when there is no title. Whatever shares its row is
+		// moved along to make room.
+		val headX = left
+		val faceWidth = if (toast.head != null) HEAD + HEAD_GAP else 0
+		toast.head?.let { name -> drawFace(graphics, name, headX, textY, HEAD) }
+		if (toast.source.isNotEmpty()) {
+			val titleColor = when {
+				toast.error -> TITLE_ERROR
+				else -> toast.color ?: TITLE
+			}
+			graphics.text(font, toast.source, left + faceWidth, textY, titleColor, true)
+			textY += 9 + TITLE_GAP
+		}
+		val bodyX = if (toast.source.isEmpty()) left + faceWidth else left
+		for (line in lines) {
+			graphics.text(font, line, bodyX, textY, BODY, true)
+			textY += LINE_SPACING
+		}
+		toast.footer?.let { footer ->
+			// Under the face as well as the text, centred on the whole notice.
+			val bottom = height - 1 - BOTTOM_PADDING - TIMER_HEIGHT - 9
+			graphics.centeredText(font, Component.literal(footer), WIDTH / 2, bottom, BODY)
+		}
+		pose.popMatrix()
 	}
 
 	/**
-	 * A colour in the order ImGui's draw lists want it, faded by [opacity].
-	 *
-	 * Dear ImGui packs a colour as ABGR where everything else here is ARGB, so
-	 * the two ends swap on the way in.
+	 * A player's face, hat layer and all. From the tab list when they are in
+	 * it, which is instant; otherwise looked up by name the way a player head
+	 * is, showing the default skin until it arrives.
 	 */
-	private fun abgr(argb: Int, opacity: Float): Int {
-		val alpha = (((argb ushr 24) and 0xFF) * opacity).toInt().coerceIn(0, 255)
-		val red = (argb ushr 16) and 0xFF
-		val green = (argb ushr 8) and 0xFF
-		val blue = argb and 0xFF
-		return (alpha shl 24) or (blue shl 16) or (green shl 8) or red
+	private fun drawFace(graphics: GuiGraphicsExtractor, name: String, x: Int, y: Int, size: Int) {
+		// A one-pixel black shadow down and to the right, as Essential gives its avatars.
+		graphics.fill(x + 1, y + 1, x + size + 1, y + size + 1, 0xFF000000.toInt())
+		val info = Minecraft.getInstance().connection?.getPlayerInfoIgnoreCase(name)
+		if (info != null) {
+			PlayerFaceExtractor.extractRenderState(graphics, info.skin, x, y, size)
+			return
+		}
+		val profile = profiles.getOrPut(name.lowercase()) { ResolvableProfile.createUnresolved(name) }
+		PlayerFaceExtractor.extractRenderState(graphics, profile, x, y, size)
 	}
+
+	/** Profiles being looked up by name, kept so each is only asked for once. */
+	private val profiles = HashMap<String, ResolvableProfile>()
+
+	private fun outExpo(t: Float): Float = if (t >= 1f) 1f else 1f - 2f.pow(-10f * t.coerceAtLeast(0f))
+	private fun inExpo(t: Float): Float = if (t <= 0f) 0f else 2f.pow(10f * t.coerceAtMost(1f) - 10f)
 }

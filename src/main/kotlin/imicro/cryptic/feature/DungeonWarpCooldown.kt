@@ -42,9 +42,8 @@ object DungeonWarpCooldown {
 	val module = Module(
 		id = "dungeon_warp_cooldown",
 		name = "Dungeon Warp Cooldown",
-		description = "Counts down until another dungeon can be entered",
+		description = "Time until the next dungeon",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 	)
 

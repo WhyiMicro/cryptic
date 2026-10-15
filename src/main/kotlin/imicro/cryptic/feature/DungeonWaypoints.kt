@@ -292,9 +292,8 @@ object DungeonWaypoints {
 	val module = Module(
 		id = "dungeon_waypoints",
 		name = "Dungeon Waypoints",
-		description = "Secret spots in every room, and your own. /cryptic dwp",
+		description = "Room secrets and your own",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(styleSection, style.withMore(fillOpacity, lineWidth), throughWalls, labels.withMore(labelScale), secretSection, secrets, hideFound) +
 			SecretType.entries.flatMap { listOf(it.show, it.color) } +

@@ -64,7 +64,6 @@ object LavaToWater {
 		name = "Lava to Water",
 		description = "Draws lava as water",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(colorTint, tintColor, hideFog),
 	)

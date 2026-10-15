@@ -98,9 +98,8 @@ object TerracottaTimer {
 	val module = Module(
 		id = "terracotta_timer",
 		name = "Terracotta Timer",
-		description = "Counts down each terracotta's respawn on F6/M6",
+		description = "F6 terracotta respawn timers",
 		category = ModuleCategory.FLOOR_7,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(dynamicColor, color, scale, phase),
 	)

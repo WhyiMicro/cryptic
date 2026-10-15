@@ -726,9 +726,8 @@ object PuzzleSolver {
 	val module: Module = Module(
 		id = "puzzle_solver",
 		name = "Puzzle Solver",
-		description = "Answers every Catacombs puzzle",
+		description = "Solves Catacombs puzzles",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = configurable + reset,
 	)

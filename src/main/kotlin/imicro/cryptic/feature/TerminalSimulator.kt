@@ -5,6 +5,7 @@ import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.terminal.TerminalRecords
 import imicro.cryptic.terminal.sim.StartSim
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
@@ -46,16 +47,27 @@ object TerminalSimulator {
 		action = { open() },
 	)
 
+	/** The simulator's own bests: Terminal Times keeps the ones from real runs, and resets those. */
+	@JvmField
+	val resetRecords = ButtonModuleSetting(
+		id = "reset_records",
+		label = "Reset PBs",
+		action = {
+			TerminalRecords.reset(simulated = true)
+			Toasts.show("Terminal Simulator", "Practice PBs cleared §8(in-run PBs kept)", color = Toasts.Colors.CRYPTIC)
+		},
+	)
+
 	@JvmField
 	val module = Module(
 		id = "terminal_simulator",
 		name = "Terminal Simulator",
-		description = "Practise the Floor 7 terminals anywhere",
+		description = "Practise the F7 terminals",
 		category = ModuleCategory.FLOOR_7,
-		hasDemoSettings = false,
 		supportsToggle = false,
 		supportsKeybind = false,
-		settings = listOf(ping, skipClickProtection, openSimulator),
+		settings = listOf(ping, skipClickProtection, openSimulator, resetRecords),
+		cardAction = { open() },
 	)
 
 	/**

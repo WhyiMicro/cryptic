@@ -1,6 +1,7 @@
 package imicro.cryptic.mixin;
 
 import imicro.cryptic.feature.ILoveGlass;
+import imicro.cryptic.feature.NucleusQol;
 import imicro.cryptic.feature.SpiritBear;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -32,7 +33,10 @@ public abstract class ClientLevelMixin {
     private BlockState cryptic$glaze(BlockPos pos, BlockState state, int flags, int limit) {
         // The block being replaced is still in the world here, which is what
         // lets Spirit Bear tell a lantern lighting from one going out.
-        SpiritBear.onBlockChanged(pos, ((ClientLevel) (Object) this).getBlockState(pos), state);
+        BlockState old = ((ClientLevel) (Object) this).getBlockState(pos);
+        SpiritBear.onBlockChanged(pos, old, state);
+        // A Crystal Hollows treasure chest appearing, or going once it is looted.
+        NucleusQol.onBlockChanged(pos, old, state);
         return ILoveGlass.substitute(pos, state);
     }
 }

@@ -361,9 +361,8 @@ object DungeonMap {
 	val module = Module(
 		id = "dungeon_map",
 		name = "Dungeon Map",
-		description = "Shows the dungeon map on your HUD",
+		description = "The dungeon map on screen",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			SectionModuleSetting("map_section", "Map"),

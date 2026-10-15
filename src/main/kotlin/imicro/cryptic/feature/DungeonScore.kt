@@ -128,34 +128,27 @@ object DungeonScore {
 		description = "A party message for every bat you kill.",
 	)
 
-	private val customSection = SectionModuleSetting("custom_section", "Customize")
-
-	@JvmField
-	val customMessages = ToggleModuleSetting(
-		id = "custom_messages",
-		label = "Custom wording",
-		description = "Writes the announcements yourself instead of using the wording below.",
-	)
-
-	@JvmField
-	val killMessage = TextModuleSetting(
-		id = "kill_message",
-		label = "Kill message",
-		defaultValue = "<mob> killed",
+	/**
+	 * What each alert says, under the alert itself: one field per title and
+	 * per announcement, shown while that alert is on. They used to share two
+	 * fields behind a "Custom wording" switch, which made the mimic and a
+	 * prince impossible to word apart.
+	 */
+	private fun wording(id: String, default: String, owner: ToggleModuleSetting, title: Boolean) = TextModuleSetting(
+		id = id,
+		label = if (title) "Title" else "Message",
+		defaultValue = default,
 		maxLength = 100,
-		description = "Sent for the mimic, a prince and a bat alike. <mob> becomes whichever it was.",
-		visibleIf = { customMessages.value },
+		hint = default,
+		description = if (title) "What the title says. & colour codes work." else "What is sent to party chat.",
+		visibleIf = { owner.value },
 	)
 
-	@JvmField
-	val scoreMessage = TextModuleSetting(
-		id = "score_message",
-		label = "Score message",
-		defaultValue = "<score> score",
-		maxLength = 100,
-		description = "Sent when the run crosses 270 and 300. <score> becomes the number it crossed.",
-		visibleIf = { customMessages.value },
-	)
+	private val announce270Text = wording("announce_270_text", "270 score", announce270, title = false)
+	private val announce300Text = wording("announce_300_text", "300 score", announce300, title = false)
+	private val announceMimicText = wording("announce_mimic_text", "Mimic killed", announceMimic, title = false)
+	private val announcePrinceText = wording("announce_prince_text", "Prince killed", announcePrince, title = false)
+	private val announceBatText = wording("announce_bat_text", "Bat killed", announceBat, title = false)
 
 	@JvmField
 	val title270 = ToggleModuleSetting(
@@ -172,6 +165,9 @@ object DungeonScore {
 		defaultValue = true,
 		description = "The same at 300.",
 	)
+
+	private val title270Text = wording("title_270_text", "270", title270, title = true)
+	private val title300Text = wording("title_300_text", "300", title300, title = true)
 
 	/**
 	 * The score's own settings, which [DungeonMap] lists.
@@ -201,22 +197,19 @@ object DungeonScore {
 	 * once.
 	 */
 	val announcementSettings: List<ModuleSetting> = listOf(
-		announceMimic,
-		announcePrince,
-		announceBat,
-		announce270,
-		announce300,
+		announceMimic.withMore(announceMimicText),
+		announcePrince.withMore(announcePrinceText),
+		announceBat.withMore(announceBatText),
+		announce270.withMore(announce270Text),
+		announce300.withMore(announce300Text),
 	)
 
 	/** The two titles the score puts on your own screen, listed under Titles. */
-	val titleSettings: List<ModuleSetting> = listOf(title270, title300)
-
-	/** The wording, which is one field for the kills and one for the scores. */
-	val customSettings: List<ModuleSetting> = listOf(customSection, customMessages, killMessage, scoreMessage)
+	val titleSettings: List<ModuleSetting> = listOf(title270.withMore(title270Text), title300.withMore(title300Text))
 
 	/** Everything above that a Reset button should put back. */
 	fun resetSettings() {
-		(scoreSettings + announcementSettings + titleSettings + customSettings).forEach {
+		(scoreSettings + announcementSettings + titleSettings).flatMap { listOf(it) + it.more }.forEach {
 			when (it) {
 				is ToggleModuleSetting -> it.reset()
 				is TextModuleSetting -> it.reset()
@@ -265,7 +258,7 @@ object DungeonScore {
 	fun onTeammateReached300() {
 		if (!RoomAlerts.module.enabled || !DungeonLocation.inDungeon || shown300Title) return
 		shown300Title = true
-		if (title300.value) showTitle(Minecraft.getInstance(), "§a300")
+		if (title300.value) showTitle(Minecraft.getInstance(), colored(title300Text.value, "§a"))
 	}
 
 	/**
@@ -281,16 +274,16 @@ object DungeonScore {
 
 		if (!sent270 && score >= 270) {
 			sent270 = true
-			if (announce270.value) announce(client, scoreWording(270))
-			if (title270.value) showTitle(client, "§e270")
+			if (announce270.value) announce(client, announce270Text.value)
+			if (title270.value) showTitle(client, colored(title270Text.value, "§e"))
 		}
 
 		if (!sent300 && score >= 300) {
 			sent300 = true
-			if (announce300.value) announce(client, scoreWording(300))
+			if (announce300.value) announce(client, announce300Text.value)
 			if (!shown300Title) {
 				shown300Title = true
-				if (title300.value) showTitle(client, "§a300")
+				if (title300.value) showTitle(client, colored(title300Text.value, "§a"))
 			}
 		}
 	}
@@ -320,13 +313,13 @@ object DungeonScore {
 	 */
 	fun onMimicKilled() {
 		if (!RoomAlerts.module.enabled || !announceMimic.value) return
-		announce(Minecraft.getInstance(), killWording("Mimic"))
+		announce(Minecraft.getInstance(), announceMimicText.value)
 	}
 
 	/** The same for a Prince, which Hypixel does announce but only to you. */
 	fun onPrinceKilled() {
 		if (!RoomAlerts.module.enabled || !announcePrince.value) return
-		announce(Minecraft.getInstance(), killWording("Prince"))
+		announce(Minecraft.getInstance(), announcePrinceText.value)
 	}
 
 	/**
@@ -335,26 +328,19 @@ object DungeonScore {
 	 */
 	fun onBatKilled() {
 		if (!RoomAlerts.module.enabled || !announceBat.value) return
-		announce(Minecraft.getInstance(), killWording("Bat"))
+		announce(Minecraft.getInstance(), announceBatText.value)
 	}
 
 	/**
-	 * What a kill is announced as.
-	 *
-	 * One wording for all three, because they are one kind of message: a mob
-	 * worth a bonus point is dead and the party cannot otherwise know. `<mob>`
-	 * is where the name goes.
+	 * A title as typed, with `&` colour codes turned into the game's own, and
+	 * [default] in front when it names no colour of its own.
 	 */
-	private fun killWording(mob: String): String {
-		val wording = if (customMessages.value) killMessage.value else killMessage.defaultValue
-		return wording.replace("<mob>", mob, ignoreCase = true)
+	fun colored(text: String, default: String): String {
+		val coded = text.replace(COLOR_CODE) { "§" + it.groupValues[1] }
+		return if (coded.startsWith("§")) coded else default + coded
 	}
 
-	/** The same for the two scores, where `<score>` is the number crossed. */
-	private fun scoreWording(score: Int): String {
-		val wording = if (customMessages.value) scoreMessage.value else scoreMessage.defaultValue
-		return wording.replace("<score>", score.toString(), ignoreCase = true)
-	}
+	private val COLOR_CODE = Regex("&([0-9a-fk-orA-FK-OR])")
 
 	private fun announce(client: Minecraft, text: String) {
 		val message = text.trim()

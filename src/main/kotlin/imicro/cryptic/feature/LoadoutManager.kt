@@ -100,7 +100,6 @@ object LoadoutManager {
 		name = "Loadout Manager",
 		description = "Keys for the loadout menu",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(openKey, closeOnSwap, pageSection, nextPage, previousPage, loadoutSection) + loadoutKeys,
 	)

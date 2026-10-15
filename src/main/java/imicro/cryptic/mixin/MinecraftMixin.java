@@ -11,7 +11,6 @@ import imicro.cryptic.feature.DeviceSolver;
 import imicro.cryptic.feature.BossWaypoints;
 import imicro.cryptic.feature.DungeonWaypoints;
 import imicro.cryptic.feature.PuzzleSolver;
-import imicro.cryptic.gui.ImGuiRuntime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
@@ -24,9 +23,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Two things that belong to the frame rather than the tick — drawing ImGui, and
- * running the Auto Clicker's press and release — and the one place a right
- * click can be stopped before it leaves.
+ * The Auto Clicker's press and release, which belong to the frame rather than
+ * the tick, and the one place a right click can be stopped before it leaves.
  */
 @Mixin(Minecraft.class)
 public abstract class MinecraftMixin {
@@ -160,25 +158,4 @@ public abstract class MinecraftMixin {
         AutoClicker.frame();
     }
 
-    /**
-     * Draws Cryptic's Dear ImGui windows over the finished frame.
-     *
-     * 26.2 replaced the old {@code blitToScreen} with a swapchain: the frame is
-     * copied into the surface by {@code blitFromTexture} and shown by
-     * {@code present}. On OpenGL those are a blit into the default framebuffer
-     * and {@code glfwSwapBuffers}, so the moment just before {@code present} is
-     * the same moment the old hook ran at — the whole frame is in the window's
-     * framebuffer and has not been shown yet.
-     *
-     * On Vulkan there is no OpenGL context for Dear ImGui's renderer to draw
-     * with, and {@link ImGuiRuntime} stands down rather than make a call that
-     * would take the process with it.
-     */
-    @Inject(
-        method = "renderFrame",
-        at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/GpuSurface;present()V")
-    )
-    private void cryptic$renderImGui(boolean renderLevel, CallbackInfo ci) {
-        ImGuiRuntime.INSTANCE.renderIfOpen();
-    }
 }

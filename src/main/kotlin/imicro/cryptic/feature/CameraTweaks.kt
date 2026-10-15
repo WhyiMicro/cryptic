@@ -152,9 +152,8 @@ object CameraTweaks {
 	val module = Module(
 		id = "camera",
 		name = "Camera",
-		description = "Camera distance, view and overlays",
+		description = "Camera distance and views",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(viewSection, fullbright, noFrontCamera, noCameraClip, customDistance, distance) +
 			listOf(fovSection, customFov, fov) +

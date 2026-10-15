@@ -177,7 +177,7 @@ object ExampleModule {
 	val button = ButtonModuleSetting(
 		id = "button",
 		label = "A button",
-		action = { Toasts.show(SOURCE, "The button was pressed") },
+		action = { Toasts.show(SOURCE, "The button was pressed", color = Toasts.Colors.CRYPTIC) },
 	)
 
 	// ---- Colours ---------------------------------------------------------
@@ -216,9 +216,8 @@ object ExampleModule {
 	val module = Module(
 		id = "example_module",
 		name = "Example Module",
-		description = "One of every control, wired to nothing",
+		description = "One of every control",
 		category = ModuleCategory.MISC,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			switchSection, toggle, dependent, moreToggle.withMore(moreSlider, moreChoice, moreColor),

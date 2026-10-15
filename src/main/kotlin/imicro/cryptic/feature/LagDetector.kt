@@ -60,9 +60,8 @@ object LagDetector {
 	val module = Module(
 		id = "lag_detector",
 		name = "Lag Detector",
-		description = "Times how long the server stalls",
+		description = "Times server stalls",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(threshold, textColor, dungeonsOnly),
 	)

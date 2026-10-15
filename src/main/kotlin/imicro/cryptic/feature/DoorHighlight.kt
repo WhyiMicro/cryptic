@@ -216,9 +216,8 @@ object DoorHighlight {
 	val module = Module(
 		id = "door_highlight",
 		name = "Door Highlight",
-		description = "Boxes the doors worth going through",
+		description = "Boxes the doors worth taking",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		// Each kind of door carries its own two colours in its "⋯".
 		settings = listOf(

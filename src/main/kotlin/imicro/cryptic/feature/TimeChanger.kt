@@ -66,9 +66,8 @@ object TimeChanger {
 	val module = Module(
 		id = "time_changer",
 		name = "Time Changer",
-		description = "Holds the sky at one time of day",
+		description = "Holds the sky at one time",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(usePreset, preset, ticks),
 	)

@@ -64,9 +64,8 @@ object PuzzleHud {
 	val module = Module(
 		id = "puzzle_hud",
 		name = "Puzzle HUD",
-		description = "Lists the floor's puzzles and their state",
+		description = "The floor's puzzle states",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(reveal, onlyBeforeStart),
 	)

@@ -24,17 +24,6 @@ dependencies {
 	implementation("net.fabricmc.fabric-api:fabric-api:${providers.gradleProperty("fabric_api_version").get()}")
     implementation("net.fabricmc:fabric-language-kotlin:${providers.gradleProperty("fabric_kotlin_version").get()}")
 
-	// Dear ImGui is embedded into Cryptic. The three native artifacts make the
-	// same mod jar work on Windows, Linux, and macOS without another mod install.
-	val imguiVersion = providers.gradleProperty("imgui_version").get()
-	implementation(include("io.github.spair:imgui-java-binding:$imguiVersion")!!)
-	val imguiLwjgl = dependencies.create("io.github.spair:imgui-java-lwjgl3:$imguiVersion") as ExternalModuleDependency
-	imguiLwjgl.exclude(mapOf("group" to "org.lwjgl")) // Minecraft already provides LWJGL.
-	implementation(imguiLwjgl)
-	include(imguiLwjgl)
-	implementation(include("io.github.spair:imgui-java-natives-windows:$imguiVersion")!!)
-	implementation(include("io.github.spair:imgui-java-natives-linux:$imguiVersion")!!)
-	implementation(include("io.github.spair:imgui-java-natives-macos:$imguiVersion")!!)
 }
 
 tasks.processResources {

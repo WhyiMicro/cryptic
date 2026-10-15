@@ -154,9 +154,8 @@ object SpringBootsHelper {
 	val module = Module(
 		id = "spring_boots_helper",
 		name = "Spring Boots Helper",
-		description = "Shows how high a charged jump will go",
+		description = "How high a jump will go",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			hudSection, showHud, hudMode,

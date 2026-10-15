@@ -19,9 +19,8 @@ object NoJumpDelay {
 	val module = Module(
 		id = "no_jump_delay",
 		name = "No Jump Delay",
-		description = "Jump again the moment you land",
+		description = "Jump again as you land",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 	)
 }

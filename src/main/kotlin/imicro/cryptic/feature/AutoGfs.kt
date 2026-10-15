@@ -137,9 +137,8 @@ object AutoGfs {
 	val module = Module(
 		id = "auto_gfs",
 		name = "Auto GFS",
-		description = "Refills dungeon items from your sacks",
+		description = "Refills items from your sacks",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			timingSection, atRunEnd, delay,

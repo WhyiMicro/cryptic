@@ -143,9 +143,8 @@ object TerminalEsp {
 	val module = Module(
 		id = "terminal_esp",
 		name = "Terminal ESP",
-		description = "Boxes the terminals left in your section",
+		description = "Boxes your section's terms",
 		category = ModuleCategory.FLOOR_7,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			mode, fillColor, outlineColor, drawingSection, lineWidth, throughWalls,

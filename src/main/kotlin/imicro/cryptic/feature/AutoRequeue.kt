@@ -171,9 +171,8 @@ object AutoRequeue {
 	val module = Module(
 		id = "auto_requeue",
 		name = "Auto Requeue",
-		description = "Queues the same floor again after a run",
+		description = "Requeues after a run",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(delay, command, checkParty, waitForReady, feedback),
 	)

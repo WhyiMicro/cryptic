@@ -1,6 +1,7 @@
 package imicro.cryptic.feature
 
 import imicro.cryptic.gui.ColorModuleSetting
+import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SliderModuleSetting
@@ -22,12 +23,25 @@ import net.minecraft.world.entity.projectile.arrow.AbstractArrow
  * Floor 7 device or working out why one went through something.
  */
 object ArrowHitboxes {
+	/** Indices into [style]. */
+	private const val STYLE_OUTLINE = 0
+	private const val STYLE_FILL = 1
+
+	@JvmField
+	val style = DropdownModuleSetting(
+		id = "style",
+		label = "Style",
+		options = listOf("Outline", "Fill", "Fill + Outline"),
+		defaultIndex = STYLE_OUTLINE,
+	)
+
 	@JvmField
 	val color = ColorModuleSetting(
 		id = "color",
 		label = "Outline",
 		defaultRgb = 0x55FF55,
 		supportsAlpha = true,
+		visibleIf = { style.selectedIndex != STYLE_FILL },
 	)
 
 	@JvmField
@@ -36,8 +50,8 @@ object ArrowHitboxes {
 		label = "Fill",
 		defaultRgb = 0x55FF55,
 		supportsAlpha = true,
-		defaultAlpha = 0,
-		description = "Off at zero alpha, which is how Athen draws it.",
+		defaultAlpha = 0x50,
+		visibleIf = { style.selectedIndex != STYLE_OUTLINE },
 	)
 
 	@JvmField
@@ -48,6 +62,7 @@ object ArrowHitboxes {
 		min = 1.0,
 		max = 10.0,
 		step = 0.5,
+		visibleIf = { style.selectedIndex != STYLE_FILL },
 	)
 
 	@JvmField
@@ -64,9 +79,8 @@ object ArrowHitboxes {
 		name = "Arrow Hitboxes",
 		description = "Outlines arrows in flight",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(color, fillColor, lineWidth, throughWalls),
+		settings = listOf(style, color, fillColor, lineWidth, throughWalls),
 	)
 
 	private var initialized = false
@@ -84,8 +98,8 @@ object ArrowHitboxes {
 		val client = Minecraft.getInstance()
 		val level = client.level ?: return
 
-		val outline = color.alpha > 0
-		val fill = fillColor.alpha > 0
+		val outline = style.selectedIndex != STYLE_FILL && color.alpha > 0
+		val fill = style.selectedIndex != STYLE_OUTLINE && fillColor.alpha > 0
 		if (!outline && !fill) return
 
 		val partialTick = client.deltaTracker.getGameTimeDeltaPartialTick(false)

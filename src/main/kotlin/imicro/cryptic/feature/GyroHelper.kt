@@ -146,9 +146,8 @@ object GyroHelper {
 	val module = Module(
 		id = "gyro_helper",
 		name = "Gyro Helper",
-		description = "Shows where a gyro lands and what it pulls",
+		description = "Where a gyro lands and pulls",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = configurable,
 	)

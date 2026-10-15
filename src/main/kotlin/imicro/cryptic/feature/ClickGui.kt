@@ -8,6 +8,7 @@ import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.KeybindSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.hud.Hud
 import net.minecraft.client.KeyMapping
@@ -70,8 +71,33 @@ object ClickGui {
 	/** The search as it was left, while [rememberSearch] is on. For this session. */
 	var rememberedSearch: String = ""
 
-	/** Whether the search was open when the menu was last shut, so it opens that way again. */
-	var searchWasOpen: Boolean = false
+	@JvmField
+	val backgroundBlur = ToggleModuleSetting(
+		id = "background_blur",
+		label = "Background blur",
+		defaultValue = true,
+		description = "Blurs the game behind the menu while it is open. Off, the game shows through, only dimmed.",
+	)
+
+	@JvmField
+	val blurStrength = SliderModuleSetting(
+		id = "blur_strength",
+		label = "Blur strength",
+		defaultValue = 5.0,
+		min = 1.0,
+		max = 10.0,
+		step = 1.0,
+		description = "How strongly the game is blurred behind the menu. Cryptic's own, so Minecraft's Menu Background Blur option can stay off.",
+		visibleIf = { backgroundBlur.value },
+	)
+
+	@JvmField
+	val rightClickEdits = ToggleModuleSetting(
+		id = "right_click_edits",
+		label = "Right-click to edit module",
+		defaultValue = true,
+		description = "Opens a module's settings when you right-click its card, as well as from its '⋮'.",
+	)
 
 	@JvmField
 	val editHud = ButtonModuleSetting(
@@ -92,27 +118,9 @@ object ClickGui {
 		name = "Click GUI",
 		description = "Customize Cryptic's interface",
 		category = ModuleCategory.MISC,
-		hasDemoSettings = false,
 		supportsToggle = false,
 		supportsKeybind = true,
 		keybind = guiKeybind,
-		settings = listOf(accentColor, sorting, leftClickToggles, rememberSearch, editHud),
+		settings = listOf(accentColor, backgroundBlur, blurStrength, sorting, leftClickToggles, rightClickEdits, rememberSearch, editHud),
 	)
-
-	/** Dear ImGui packs colors as ABGR. */
-	fun accentAbgr(alpha: Int = 0xFF): Int = rgbToAbgr(accentColor.rgb, alpha)
-
-	fun accentDarkAbgr(alpha: Int = 0xFF): Int {
-		val rgb = accentColor.rgb
-		val red = ((rgb ushr 16) and 0xFF) * 3 / 10
-		val green = ((rgb ushr 8) and 0xFF) * 3 / 10
-		val blue = (rgb and 0xFF) * 3 / 10
-		return rgbToAbgr((red shl 16) or (green shl 8) or blue, alpha)
-	}
-
-	private fun rgbToAbgr(rgb: Int, alpha: Int): Int =
-		((alpha and 0xFF) shl 24) or
-			((rgb and 0xFF) shl 16) or
-			(rgb and 0x00FF00) or
-			((rgb ushr 16) and 0xFF)
 }

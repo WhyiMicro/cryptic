@@ -39,9 +39,8 @@ object NoDebuff {
 	val module = Module(
 		id = "no_debuff",
 		name = "No Debuff",
-		description = "Removes blindness and nausea",
+		description = "No blindness or nausea",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = configurableSettings,
 	)

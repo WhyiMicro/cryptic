@@ -60,7 +60,6 @@ object BetterGlow {
 		name = "Better Glow",
 		description = "Tidies up glow outlines",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(fill, fillOpacity),
 	)

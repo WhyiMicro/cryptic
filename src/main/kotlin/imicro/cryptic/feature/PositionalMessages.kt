@@ -103,9 +103,8 @@ object PositionalMessages {
 	val module = Module(
 		id = "positional_messages",
 		name = "Positional Messages",
-		description = "Party messages when you reach a spot. /cryptic posmsg",
+		description = "Party messages at spots",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(onlyBoss, showPositions, height, showMessage, messageSize),
 	)

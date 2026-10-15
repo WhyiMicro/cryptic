@@ -176,9 +176,8 @@ object LividSolver {
 	val module = Module(
 		id = "livid_solver",
 		name = "Livid Solver",
-		description = "Floor 5: finds and boxes the real Livid",
+		description = "Finds the real Livid on F5",
 		category = ModuleCategory.FLOOR_7,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			style.withMore(highlightColor, fillColor),

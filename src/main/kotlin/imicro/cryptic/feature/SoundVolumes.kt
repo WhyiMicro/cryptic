@@ -3,10 +3,8 @@ package imicro.cryptic.feature
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import imicro.cryptic.Cryptic
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
-import imicro.cryptic.gui.SoundsScreen
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.resources.sounds.SoundInstance
 import java.nio.file.Files
@@ -27,17 +25,13 @@ import java.util.concurrent.ConcurrentHashMap
  * Kept in `config/cryptic/sound-volumes.json`, by sound id, in percent.
  */
 object SoundVolumes {
-	private val open = ButtonModuleSetting("open", "Open manager", action = { SoundsScreen.request() })
-
 	@JvmField
 	val module = Module(
 		id = "sound_manager",
 		name = "Sound Manager",
-		description = "Turn any sound up, down or off",
+		description = "Turn any sound up or down",
 		category = ModuleCategory.MISC,
-		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(open),
 	)
 
 	/** Percent by sound id. Read from the sound thread as well as the game's, so concurrent. */

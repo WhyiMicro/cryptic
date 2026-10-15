@@ -107,9 +107,8 @@ object SpiritBear {
 	val module = Module(
 		id = "spirit_bear",
 		name = "Spirit Bear",
-		description = "Floor 4: the bear's spawn, and highlights",
+		description = "F4 bear spawn and marks",
 		category = ModuleCategory.FLOOR_7,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			hud,

@@ -10,7 +10,13 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
+import imicro.cryptic.render.CrypticRenderPipelines
+import imicro.cryptic.render.WorldRender
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
+import net.minecraft.util.Mth
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.player.Player
 
@@ -122,6 +128,62 @@ object ClassColors {
 		visibleIf = { showNames.value },
 	)
 
+	private val boxesSection = SectionModuleSetting("boxes_section", "Boxes")
+
+	/** Indices into [boxStyle]. */
+	private const val STYLE_OUTLINE = 0
+	private const val STYLE_FILL = 1
+
+	@JvmField
+	val boxes = ToggleModuleSetting(
+		id = "boxes",
+		label = "Box teammates",
+		defaultValue = false,
+		description = "A box around each teammate, in their class colour.",
+	)
+
+	@JvmField
+	val boxStyle = DropdownModuleSetting(
+		id = "box_style",
+		label = "Style",
+		options = listOf("Outline", "Fill", "Fill + Outline"),
+		defaultIndex = STYLE_OUTLINE,
+		visibleIf = { boxes.value },
+	)
+
+	@JvmField
+	val boxPhase = ToggleModuleSetting(
+		id = "box_phase",
+		label = "Phase",
+		defaultValue = true,
+		description = "Shows the boxes through walls.",
+		visibleIf = { boxes.value },
+	)
+
+	@JvmField
+	val boxFillOpacity = SliderModuleSetting(
+		id = "box_fill_opacity",
+		label = "Fill opacity",
+		defaultValue = 0.3,
+		min = 0.05,
+		max = 1.0,
+		step = 0.05,
+		visibleIf = { boxes.value && boxStyle.selectedIndex != STYLE_OUTLINE },
+	)
+
+	@JvmField
+	val boxLineWidth = SliderModuleSetting(
+		id = "box_line_width",
+		label = "Thickness",
+		defaultValue = 2.0,
+		min = 1.0,
+		max = 10.0,
+		step = 0.5,
+		visibleIf = { boxes.value && boxStyle.selectedIndex != STYLE_FILL },
+	)
+
+	private val boxSettings = listOf(boxes.withMore(boxStyle, boxPhase, boxFillOpacity, boxLineWidth))
+
 	private val colorSettings = listOf(
 		disableGlow,
 		applyToSelf,
@@ -142,7 +204,7 @@ object ClassColors {
 		nameHeight,
 	)
 
-	private val configurableSettings = colorSettings + nameSettings
+	private val configurableSettings = colorSettings + nameSettings + boxSettings.flatMap { listOf(it) + it.more }
 
 	private val reset = ButtonModuleSetting("reset", "Reset", action = {
 		configurableSettings.forEach {
@@ -162,10 +224,58 @@ object ClassColors {
 		name = "Class Colors",
 		description = "Colours teammates by class",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(colorsSection) + colorSettings + namesSection + nameSettings + reset,
+		settings = listOf(colorsSection) + colorSettings + namesSection + nameSettings + boxesSection + boxSettings + reset,
 	)
+
+	private var initialized = false
+
+	fun initialize() {
+		if (initialized) return
+		initialized = true
+		CrypticRenderPipelines.touch()
+		LevelRenderEvents.COLLECT_SUBMITS.register(::renderBoxes)
+	}
+
+	/**
+	 * A box round each teammate, in their class's colour: the same colour the
+	 * glow and the name label use, so all three agree on who is who. Your own
+	 * box is left out — it would sit around the camera.
+	 */
+	private fun renderBoxes(context: LevelRenderContext) {
+		if (!module.enabled || !boxes.value || !DungeonTeam.inDungeons || DungeonTeam.classes.isEmpty()) return
+		val client = Minecraft.getInstance()
+		val level = client.level ?: return
+		val self = client.player
+		val partial = client.deltaTracker.getGameTimeDeltaPartialTick(false).toDouble()
+		val outline = boxStyle.selectedIndex != STYLE_FILL
+		val fill = boxStyle.selectedIndex != STYLE_OUTLINE
+		val fillAlpha = (boxFillOpacity.value * 255).toInt().coerceIn(0, 255) shl 24
+
+		for (player in level.players()) {
+			if (player === self || player.isInvisible) continue
+			val dungeonClass = DungeonTeam.classOf(player.name.string) ?: continue
+			val rgb = getClassColor(dungeonClass) and 0xFFFFFF
+			// Around where the player is drawn this frame, not where they were last tick.
+			val box = player.type.dimensions.makeBoundingBox(
+				Mth.lerp(partial, player.xOld, player.x),
+				Mth.lerp(partial, player.yOld, player.y),
+				Mth.lerp(partial, player.zOld, player.z),
+			)
+			WorldRender.drawBox(
+				poseStack = context.poseStack(),
+				collector = context.submitNodeCollector(),
+				minX = box.minX, minY = box.minY, minZ = box.minZ,
+				maxX = box.maxX, maxY = box.maxY, maxZ = box.maxZ,
+				outlineArgb = 0xFF000000.toInt() or rgb,
+				fillArgb = fillAlpha or rgb,
+				outline = outline,
+				fill = fill,
+				phase = boxPhase.value,
+				lineWidth = boxLineWidth.value.toFloat(),
+			)
+		}
+	}
 
 	/**
 	 * Called from Entity#getTeamColor for every entity in view, so the checks are

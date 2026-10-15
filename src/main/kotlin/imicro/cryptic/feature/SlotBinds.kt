@@ -144,9 +144,8 @@ object SlotBinds {
 	val module = Module(
 		id = "slot_binds",
 		name = "Slot Binds",
-		description = "Swap two slots with shift-click",
+		description = "Shift-click to swap slots",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = true,
 		keybind = bindKey,
 		settings = listOf(profile, save, dungeonsOnly, allowOutsideHotbar, lineDisplay, lineColor, lineWidth, binds),
@@ -195,7 +194,7 @@ object SlotBinds {
 		val target = binds.binds(chosen)
 		target.clear()
 		target.putAll(current)
-		say("Saved ${target.size / 2} binds to $chosen")
+		say("Saved §f${target.size / 2} §7binds to §f$chosen")
 	}
 
 	/**
@@ -245,7 +244,7 @@ object SlotBinds {
 			val other = current.remove(slot)
 			if (other != null) {
 				if (current[other] == slot) current.remove(other)
-				say("Unbound $slot from $other")
+				say("Unbound slot §f$slot §7from §f$other")
 			} else {
 				pending = slot
 			}
@@ -264,7 +263,7 @@ object SlotBinds {
 
 		current[started] = slot
 		current[slot] = started
-		say("Bound $started to $slot")
+		say("Bound slot §f$started §7to §f$slot")
 		return true
 	}
 
@@ -404,6 +403,6 @@ object SlotBinds {
 
 	/** Said as a notification rather than in chat, where it would scroll away. */
 	private fun say(message: String, error: Boolean = false) {
-		Toasts.show("Slot Binds", message, error)
+		Toasts.show("Slot Binds", message, error, color = Toasts.Colors.INVENTORY)
 	}
 }

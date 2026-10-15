@@ -2,6 +2,7 @@ package imicro.cryptic.mixin;
 
 import imicro.cryptic.dungeon.BossTimings;
 import imicro.cryptic.feature.BetterChat;
+import imicro.cryptic.feature.SpiritLeapOverlay;
 import imicro.cryptic.feature.TerminalSolver;
 import imicro.cryptic.dungeon.DungeonRun;
 import imicro.cryptic.dungeon.DungeonStats;
@@ -23,6 +24,7 @@ import imicro.cryptic.feature.EtherwarpZeroPing;
 import imicro.cryptic.feature.SmoothTeleport;
 import imicro.cryptic.feature.MageBeam;
 import imicro.cryptic.feature.MelodyHud;
+import imicro.cryptic.feature.NucleusQol;
 import imicro.cryptic.feature.PartyFeatures;
 import imicro.cryptic.feature.PuzzleSolver;
 import imicro.cryptic.feature.RenderOptimizer;
@@ -77,6 +79,7 @@ import java.util.Optional;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** Lets modules swallow a server sound so they can play their own instead. */
@@ -94,6 +97,11 @@ public abstract class ClientPacketListenerMixin {
         // The Spring Boots charge is a note that climbs in pitch, and nothing else.
         SpringBootsHelper.onSound(packet);
         GyroHelper.onSound(packet);
+        // Crystal Hollows treasure chests, whose sounds can be muted.
+        if (NucleusQol.onSound(packet)) {
+            info.cancel();
+            return;
+        }
         if (Etherwarp.replaceTeleportSound(packet)) info.cancel();
         // Hypixel's terminal click sound, while a chosen one is playing instead.
         if (TerminalSolver.eatsServerSound(packet)) info.cancel();
@@ -116,6 +124,8 @@ public abstract class ClientPacketListenerMixin {
         // which pad threw you - which is the one you are standing on right now
         // and will not be standing on a line later.
         PuzzleSolver.onTeleport(packet);
+        // Being put into a boss room, which the rotate fix turns you into.
+        SpiritLeapOverlay.beforeServerTeleport(packet);
     }
 
     @Inject(method = "handleMovePlayer", at = @At("RETURN"))
@@ -123,6 +133,8 @@ public abstract class ClientPacketListenerMixin {
         EtherwarpZeroPing.afterServerTeleport();
         SmoothTeleport.afterServerTeleport();
         DungeonWaypoints.onTeleport();
+        // Last, so nothing above puts the old rotation back over it.
+        SpiritLeapOverlay.afterServerTeleport(packet);
     }
 
     /**
@@ -232,6 +244,7 @@ public abstract class ClientPacketListenerMixin {
     private void cryptic$hideParticles(ClientboundLevelParticlesPacket packet, CallbackInfo info) {
         // The mage beam reads the particles it is drawn from before deciding
         // whether the game still needs them.
+        NucleusQol.onParticle(packet);
         if (MageBeam.onParticle(packet) || RenderOptimizer.blocksParticle(packet.getParticle())) info.cancel();
     }
 
@@ -452,12 +465,31 @@ public abstract class ClientPacketListenerMixin {
         DungeonWaypoints.onSystemChat(packet.content(), packet.overlay());
         LividSolver.onSystemChat(packet.content(), packet.overlay());
         TerminalSolver.onSystemChat(packet.content(), packet.overlay());
+        SpiritLeapOverlay.onSystemChat(packet.content(), packet.overlay());
+        NucleusQol.onSystemChat(packet.content(), packet.overlay());
         // Last, once everything above has read it: Better Chat keeps a line
         // out of the chat window, never out of the mod.
         if (BetterChat.hidesChat(packet.content(), packet.overlay())
                 || AutoRequeue.hidesChat(packet.content(), packet.overlay())) {
             info.cancel();
         }
+    }
+
+    /**
+     * The line as the chat window shows it: Better Chat's shortened channel
+     * names. Swapped only on the way into the window, after everything above
+     * has read the line as Hypixel sent it.
+     */
+    @ModifyArg(
+        method = "handleSystemChat",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/multiplayer/chat/ChatListener;handleSystemMessage(Lnet/minecraft/network/chat/Component;Z)V"
+        ),
+        index = 0
+    )
+    private Component cryptic$shownSystemChat(Component message) {
+        return BetterChat.shown(message);
     }
 
     /**
@@ -475,6 +507,7 @@ public abstract class ClientPacketListenerMixin {
     )
     private void cryptic$readActionBar(ClientboundSetActionBarTextPacket packet, CallbackInfo info) {
         GyroHelper.onActionBarPacket(packet.text());
+        NucleusQol.onActionBar(packet.text());
     }
 
     /**

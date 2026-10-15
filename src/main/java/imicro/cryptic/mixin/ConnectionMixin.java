@@ -2,6 +2,7 @@ package imicro.cryptic.mixin;
 
 import imicro.cryptic.device.SimonSays;
 import imicro.cryptic.feature.BloodCamp;
+import imicro.cryptic.feature.F7Qol;
 import imicro.cryptic.feature.InvincibilityTimer;
 import imicro.cryptic.feature.PuzzleSolver;
 import imicro.cryptic.feature.SmartTickTimer;
@@ -50,6 +51,7 @@ public abstract class ConnectionMixin {
         Terminals.INSTANCE.onServerTick();
         TerminalTimes.INSTANCE.onServerTick();
         TerracottaTimer.onServerTick();
+        F7Qol.onServerTick();
         ServerStats.onServerTick();
     }
 }

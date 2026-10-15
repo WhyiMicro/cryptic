@@ -1,6 +1,7 @@
 package imicro.cryptic.feature
 
 import imicro.cryptic.dungeon.DungeonLocation
+import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
@@ -136,9 +137,8 @@ object CroesusHelper {
 	val module = Module(
 		id = "croesus_helper",
 		name = "Croesus Helper",
-		description = "Which dungeon chests are worth opening, and what they make",
+		description = "Which chests are worth it",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			highlightRuns, highlightChests, minKeyProfit, includeEssence, profitInTitle, profitHud,
@@ -246,13 +246,11 @@ object CroesusHelper {
 		val name: String get() = (CHEST_COLORS[type] ?: "§f") + type
 	}
 
-	/** A run's chests, kept by its place in the list, with what it looked like then. */
-	private data class Run(val signature: String, val keyProfits: Map<String, Double>)
+	/** The run just clicked in the list, waiting for its screen to open: its place in [CroesusRuns], and its floor. */
+	private var pendingRun: Pair<Int, String>? = null
 
-	private val runs = HashMap<String, Run>()
-
-	/** The run just clicked in the list, waiting for its screen to open. */
-	private var pendingRun: Pair<String, String>? = null
+	/** Whether this dungeon's end has been written into [CroesusRuns] yet. */
+	private var endRecorded = false
 
 	/** The chests of the run screen open now, worked out once per tick. */
 	private var runChests: List<Chest> = emptyList()
@@ -283,6 +281,17 @@ object CroesusHelper {
 	// ---- Ticking ---------------------------------------------------------
 
 	fun tick(client: Minecraft) {
+		// Whether or not the module is on: the list has to follow Croesus's
+		// own, and a run left out would shift every run after it.
+		if (DungeonRun.ended && DungeonLocation.inDungeon) {
+			if (!endRecorded && DungeonLocation.floor > 0) {
+				CroesusRuns.onRunFinished((if (DungeonLocation.masterMode) "M" else "F") + DungeonLocation.floor)
+			}
+			endRecorded = true
+		} else if (!DungeonRun.ended) {
+			endRecorded = false
+		}
+
 		runChests = emptyList()
 		openChest = null
 		if (!module.enabled) return
@@ -325,7 +334,7 @@ object CroesusHelper {
 	private val costMemory = HashMap<String, List<Entry>>()
 
 	private fun costKey(type: String): String =
-		(if (DungeonLocation.inDungeon) "dungeon" else pendingRun?.first ?: "croesus") + "|" + type
+		(if (DungeonLocation.inDungeon) "dungeon" else pendingRun?.first?.toString() ?: "croesus") + "|" + type
 
 	/** The chest's costs, or what it was remembered to cost when it no longer says. */
 	private fun withRememberedCost(chest: Chest): Chest {
@@ -366,8 +375,8 @@ object CroesusHelper {
 		// Only with prices: a run judged on a table that has not arrived yet
 		// would be remembered as worth nothing.
 		if (!ItemPrices.loaded) return
-		pendingRun?.let { (key, signature) ->
-			if (runChests.isNotEmpty()) runs[key] = Run(signature, runChests.associate { it.type to it.profitWithKey })
+		pendingRun?.let { (index, floor) ->
+			if (runChests.isNotEmpty()) CroesusRuns.learn(index, floor, runChests.associate { it.type to it.profitWithKey })
 		}
 	}
 
@@ -504,14 +513,18 @@ object CroesusHelper {
 		val slot = screen.menu.slots.getOrNull(slotId) ?: return
 		val stack = slot.item
 		if (clean(stack.hoverName.string) !in RUN_NAMES) return
-		pendingRun = runKey(page, slot) to signature(stack)
+		val index = CroesusRuns.indexOf(page.toIntOrNull() ?: 1, slot.index) ?: return
+		pendingRun = index to floorOf(stack)
 	}
 
-	private fun runKey(page: String, slot: Slot): String = "${page.ifEmpty { "1" }}:${slot.index}"
+	/** A run's floor the way [CroesusRuns] keeps it, "M7" or "F5", read off its entry. */
+	private fun floorOf(stack: ItemStack): String {
+		val master = clean(stack.hoverName.string).startsWith("Master")
+		val number = lore(stack).firstNotNullOfOrNull { FLOOR_LINE.find(it) }?.groupValues?.get(1)?.let(::romanToInt) ?: 0
+		return (if (master) "M" else "F") + number
+	}
 
-	/** What a run's entry says that does not change as its chests are opened. */
-	private fun signature(stack: ItemStack): String =
-		clean(stack.hoverName.string) + "|" + lore(stack).firstOrNull { it.startsWith("Floor") }.orEmpty()
+	private val FLOOR_LINE = Regex("""^Floor ([IVX]+)""")
 
 	/** Draws a colour behind a slot's item, before the game draws the item. */
 	@JvmStatic
@@ -536,10 +549,10 @@ object CroesusHelper {
 		if (lines.any { it == NO_MORE }) return doneColor.argb
 		if (lines.any { it == UNOPENED }) return unopenedColor.argb
 		val opened = lines.firstNotNullOfOrNull { OPENED_CHEST.find(it)?.groupValues?.get(1) } ?: return null
-		val run = runs[runKey(page, slot)]?.takeIf { it.signature == signature(stack) }
+		val profits = CroesusRuns.indexOf(page.toIntOrNull() ?: 1, slot.index)?.let { CroesusRuns.at(it, floorOf(stack)) }?.keyProfits
 			// Not looked at yet: worth opening to find out.
 			?: return keyColor.argb
-		val worth = run.keyProfits.any { (type, profit) -> type != opened && profit >= minProfit() }
+		val worth = profits.any { (type, profit) -> type != opened && profit >= minProfit() }
 		return if (worth) keyColor.argb else doneColor.argb
 	}
 

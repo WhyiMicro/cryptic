@@ -196,9 +196,8 @@ object BossWaypoints {
 	val module = Module(
 		id = "boss_waypoints",
 		name = "Boss Waypoints",
-		description = "Your own waypoints in boss rooms. /cryptic bwp",
+		description = "Your own boss waypoints",
 		category = ModuleCategory.FLOOR_7,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			drawingSection, lineWidth, labelScale,

@@ -59,7 +59,6 @@ object SbKick {
 		name = "SB Kick",
 		description = "Times a SkyBlock kick",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(announce, textColor),
 	)

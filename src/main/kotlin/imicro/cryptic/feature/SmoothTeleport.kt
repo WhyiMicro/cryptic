@@ -124,26 +124,26 @@ object SmoothTeleport {
 
 		CONFLICTS.forEachIndexed { index, (fakeSetting, kind) ->
 			if (!(fake[index] && smoothOn && kinds[index])) return@forEachIndexed
-			val zpewName = "Fake zpew's ${fakeSetting.label}"
-			val smoothName = "Smooth teleport's $kind"
+			val zpewName = "Fake zpew (${fakeSetting.label})"
+			val smoothName = "Smooth teleport ($kind)"
 			when {
 				previousFake != null && !previousFake[index] -> {
 					fakeSetting.value = false
-					warn("$zpewName can't be used with $smoothName, so it was turned back off.")
+					warn(zpewName, smoothName)
 				}
 				previousKinds != null && !previousKinds[index] -> {
 					Etherwarp.smoothKinds.toggle(Etherwarp.smoothKinds.options.indexOf(kind))
-					warn("$smoothName can't be used with $zpewName, so it was unticked again.")
+					warn(smoothName, zpewName)
 				}
 				previousFake != null && !lastSmooth -> {
 					Etherwarp.smoothTeleport.value = false
-					warn("Smooth teleport can't be used while $zpewName is on, so it was turned back off.")
+					warn("Smooth teleport", zpewName)
 				}
 				// Both already on — a saved setup from before the two were kept
 				// apart — so the newer of the two gives way.
 				else -> {
 					Etherwarp.smoothKinds.toggle(Etherwarp.smoothKinds.options.indexOf(kind))
-					warn("$smoothName was unticked: it can't be used with $zpewName.")
+					warn(smoothName, zpewName)
 				}
 			}
 		}
@@ -153,10 +153,11 @@ object SmoothTeleport {
 		lastSmooth = Etherwarp.smoothTeleport.value
 	}
 
-	private fun warn(message: String) {
-		Toasts.show("Etherwarp", message, error = true)
+	/** Says that [turnedOff] was switched back off because it cannot be on with [kept]. */
+	private fun warn(turnedOff: String, kept: String) {
+		Toasts.show("Etherwarp", "§f$turnedOff §7was turned back off: it can't be on with §f$kept§7.", color = Toasts.Colors.TELEPORT)
 		if (!Toasts.module.enabled) {
-			client.gui.hud.chat.addClientSystemMessage(net.minecraft.network.chat.Component.literal("§8[Cryptic] §c$message"))
+			client.gui.hud.chat.addClientSystemMessage(net.minecraft.network.chat.Component.literal("§8[Cryptic] §c$turnedOff was turned back off: it can't be on with $kept."))
 		}
 	}
 

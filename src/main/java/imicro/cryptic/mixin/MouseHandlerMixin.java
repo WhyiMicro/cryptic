@@ -53,7 +53,7 @@ public abstract class MouseHandlerMixin {
     @Unique
     private int cryptic$swallowedButton = -1;
 
-    /** A click on one of Cryptic's notifications takes it away, and goes no further. */
+    /** A press on one of Cryptic's notifications is the notification's, and goes no further. */
     @Inject(method = "onButton", at = @At("HEAD"), cancellable = true)
     private void cryptic$clickNotification(long handle, MouseButtonInfo button, int action, CallbackInfo ci) {
         if (handle != Minecraft.getInstance().getWindow().handle()) return;
@@ -62,6 +62,9 @@ public abstract class MouseHandlerMixin {
             KeybindManager.onMouse(button.button(), false);
             if (button.button() == cryptic$swallowedButton) {
                 cryptic$swallowedButton = -1;
+                // The release is what decides a press on a notification: a click,
+                // or the end of a drag that may throw it away.
+                if (button.button() == 0) Toasts.onMouseReleased();
                 ci.cancel();
             }
             return;

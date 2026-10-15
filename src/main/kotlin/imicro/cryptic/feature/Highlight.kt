@@ -87,7 +87,13 @@ object Highlight {
 	private const val OUTLINE = 0
 	private const val FILL = 1
 
-	private val styles = listOf("Outline", "Fill", "Fill + Outline")
+	private const val GLOW = 3
+
+	/** Glow last: the game's own outline, always through walls, so it takes no phase, outline colour or width. */
+	private val styles = listOf("Outline", "Fill", "Fill + Outline", "Glow")
+
+	private fun starGlows() = starStyle.selectedIndex == GLOW
+	private fun specialGlows() = specialStyle.selectedIndex == GLOW
 
 	/** Whether anything in the special-mob group is switched on at all. */
 	/**
@@ -96,8 +102,8 @@ object Highlight {
 	 * a plain fill have no line to thicken.
 	 */
 	private fun drawsLines(): Boolean =
-		(highlightStarred.value && !starGlow.value && starStyle.selectedIndex != FILL) ||
-			(marksAnySpecial() && !specialGlow.value && specialStyle.selectedIndex != FILL) ||
+		(highlightStarred.value && !starGlows() && starStyle.selectedIndex != FILL) ||
+			(marksAnySpecial() && !specialGlows() && specialStyle.selectedIndex != FILL) ||
 			(marksAnySpecial() && specialTracers.value) ||
 			highlightMimicChest.value
 
@@ -131,20 +137,12 @@ object Highlight {
 	)
 
 	@JvmField
-	val starGlow = ToggleModuleSetting(
-		id = "star_glow",
-		label = "Use glow instead",
-		description = "The game's own glow instead of a box, always through walls.",
-		visibleIf = { highlightStarred.value },
-	)
-
-	@JvmField
 	val starStyle = DropdownModuleSetting(
 		id = "star_style",
 		label = "Starred style",
 		options = styles,
 		defaultIndex = OUTLINE,
-		visibleIf = { highlightStarred.value && !starGlow.value },
+		visibleIf = { highlightStarred.value },
 	)
 
 	@JvmField
@@ -152,7 +150,7 @@ object Highlight {
 		id = "star_phase",
 		label = "Phase",
 		description = "Draws the box through the room rather than only where the mob can be seen.",
-		visibleIf = { highlightStarred.value && !starGlow.value },
+		visibleIf = { highlightStarred.value && !starGlows() },
 	)
 
 	@JvmField
@@ -162,7 +160,7 @@ object Highlight {
 		defaultRgb = 0xFFFF55,
 		supportsAlpha = true,
 		defaultAlpha = 0x80,
-		visibleIf = { highlightStarred.value && (starGlow.value || starStyle.selectedIndex != OUTLINE) },
+		visibleIf = { highlightStarred.value && (starGlows() || starStyle.selectedIndex != OUTLINE) },
 	)
 
 	@JvmField
@@ -171,7 +169,7 @@ object Highlight {
 		label = "Starred outline",
 		defaultRgb = 0xFFFF55,
 		supportsAlpha = true,
-		visibleIf = { highlightStarred.value && !starGlow.value && starStyle.selectedIndex != FILL },
+		visibleIf = { highlightStarred.value && !starGlows() && starStyle.selectedIndex != FILL },
 	)
 
 	// ---- Special mobs ----------------------------------------------------
@@ -221,20 +219,12 @@ object Highlight {
 	)
 
 	@JvmField
-	val specialGlow = ToggleModuleSetting(
-		id = "special_glow",
-		label = "Use glow instead",
-		description = "The game's own glow instead of a box, always through walls.",
-		visibleIf = { marksAnySpecial() },
-	)
-
-	@JvmField
 	val specialStyle = DropdownModuleSetting(
 		id = "special_style",
 		label = "Special style",
 		options = styles,
 		defaultIndex = OUTLINE,
-		visibleIf = { marksAnySpecial() && !specialGlow.value },
+		visibleIf = { marksAnySpecial() },
 	)
 
 	@JvmField
@@ -243,7 +233,7 @@ object Highlight {
 		label = "Phase",
 		defaultValue = true,
 		description = "A bat behind a wall is the one you most want to know about.",
-		visibleIf = { marksAnySpecial() && !specialGlow.value },
+		visibleIf = { marksAnySpecial() && !specialGlows() },
 	)
 
 	@JvmField
@@ -253,7 +243,7 @@ object Highlight {
 		defaultRgb = 0x55FF55,
 		supportsAlpha = true,
 		defaultAlpha = 0x80,
-		visibleIf = { marksAnySpecial() && (specialGlow.value || specialStyle.selectedIndex != OUTLINE) },
+		visibleIf = { marksAnySpecial() && (specialGlows() || specialStyle.selectedIndex != OUTLINE) },
 	)
 
 	@JvmField
@@ -262,7 +252,7 @@ object Highlight {
 		label = "Special outline",
 		defaultRgb = 0x55FF55,
 		supportsAlpha = true,
-		visibleIf = { marksAnySpecial() && !specialGlow.value && specialStyle.selectedIndex != FILL },
+		visibleIf = { marksAnySpecial() && !specialGlows() && specialStyle.selectedIndex != FILL },
 	)
 
 	@JvmField
@@ -330,16 +320,15 @@ object Highlight {
 	val module = Module(
 		id = "highlight",
 		name = "Highlight",
-		description = "Marks starred and bonus mobs",
+		description = "Highlights starred mobs",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			hideNonStarNames,
-			highlightStarred.withMore(starGlow, starStyle, starPhase, starColor, starOutlineColor),
+			highlightStarred.withMore(starStyle, starPhase, starColor, starOutlineColor),
 			// The look every special mob shares sits behind the heading's "⋯",
 			// since it belongs to no one switch under it.
-			specialSection.withMore(specialGlow, specialStyle, specialPhase, specialColor, specialOutlineColor, specialTracers),
+			specialSection.withMore(specialStyle, specialPhase, specialColor, specialOutlineColor, specialTracers),
 			highlightBats,
 			highlightMimic,
 			highlightMimicChest.withMore(mimicChestColor),
@@ -625,16 +614,16 @@ object Highlight {
 		if (!active) return
 		val partialTick = Minecraft.getInstance().deltaTracker.getGameTimeDeltaPartialTick(false)
 
-		if (highlightStarred.value && !starGlow.value) {
+		if (highlightStarred.value && !starGlows()) {
 			starred.forEach {
 				drawEntity(context, it, partialTick, starColors, starStyle.selectedIndex, starPhase.value)
 			}
 		}
 
-		if (!specialGlow.value || specialTracers.value) {
+		if (!specialGlows() || specialTracers.value) {
 			Minecraft.getInstance().level?.entitiesForRendering()?.forEach { entity ->
 				val colors = specialColorFor(entity) ?: return@forEach
-				if (!specialGlow.value) {
+				if (!specialGlows()) {
 					drawEntity(context, entity, partialTick, colors, specialStyle.selectedIndex, specialPhase.value)
 				}
 				// A tracer is a line rather than a box, so it follows the
@@ -959,12 +948,12 @@ object Highlight {
 		if (!active) return EntityRenderState.NO_OUTLINE
 		if (entity !is LivingEntity) return EntityRenderState.NO_OUTLINE
 
-		if (highlightStarred.value && starGlow.value && entity in starred) {
+		if (highlightStarred.value && starGlows() && entity in starred) {
 			return ARGB.opaque(starColor.rgb)
 		}
 		// A glow is one colour by nature, and the fill is the one that reads
 		// as the mob's colour.
-		if (specialGlow.value) specialColorFor(entity)?.let { return ARGB.opaque(it.fill.rgb) }
+		if (specialGlows()) specialColorFor(entity)?.let { return ARGB.opaque(it.fill.rgb) }
 		return EntityRenderState.NO_OUTLINE
 	}
 }

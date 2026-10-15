@@ -59,7 +59,8 @@ public abstract class LivingEntityMixin extends Entity {
         if (!Animations.module.getEnabled()) return;
 
         var player = Minecraft.getInstance().player;
-        if (player == null || !this.is(player) || player.getMainHandItem().isEmpty()) return;
+        if (player == null || !this.is(player)) return;
+        if (player.getMainHandItem().isEmpty() && !Animations.swingAffectsHand.getValue()) return;
 
         int length;
         if (Animations.ignoreHaste.getValue()) {

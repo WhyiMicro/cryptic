@@ -104,9 +104,8 @@ object WitherCloakEffect {
 	val module = Module(
 		id = "wither_cloak_effect",
 		name = "Custom Wither Cloak",
-		description = "Replaces the Creeper Veil with orbiting shields",
+		description = "Orbiting shields for the Veil",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(shieldCount, shieldSpeed, shieldDistance, shieldSize, shieldHeight, dungeonsOnly),
 	)

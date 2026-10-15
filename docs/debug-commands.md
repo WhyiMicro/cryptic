@@ -100,13 +100,39 @@ tracking, and this is what says whether they still hold.
 /cryptic debug location
 ```
 
-Prints the sidebar's objective name and what Cryptic reads as SkyBlock and the
-current island.
+Prints the sidebar's objective name and what Cryptic reads as SkyBlock, the
+current island, and the zone the sidebar's ⏣ line names.
 
 Slot Binds and Nucleus QoL both refuse to act off SkyBlock, and Nucleus QoL
 outside the Crystal Hollows, so when one of them does nothing this says whether
 the place was misread. The scan only runs while one of those two modules is on,
-so with both off it reports nothing.
+so with both off it reports nothing. Within the Hollows Nucleus QoL goes by
+where you stand rather than the zone: the crystal slots show inside the square
+from 462 to 564 on x and z, and the Metal Detector finds the Mines of Divan from
+the blocks around you.
+
+```
+/cryptic debug hollows <zone>
+```
+
+Makes Cryptic read you as in the Crystal Hollows, in the zone named — "Crystal
+Nucleus", "Mines of Divan" and so on — so Nucleus QoL can be checked anywhere.
+The same zone again turns it off.
+
+```
+/cryptic debug crystals
+```
+
+Prints what Nucleus QoL has worked out — whether you are in the Hollows and the
+nucleus, where it found the middle of the Mines of Divan, how many places the
+treasure could be and how many treasure chests it is timing — then every armour
+stand and dropped item within 32 blocks: its name, what it wears on its head
+(name, SkyBlock id and the start of the skull texture), and how many crystals
+Nucleus QoL is highlighting.
+
+No mod Cryptic borrows from finds a crystal before it is picked up, so Nucleus
+QoL looks for one by name, by SkyBlock id and on stands' heads. Standing next to
+a crystal that is not boxed, this says what it actually is.
 
 ```
 /cryptic debug timers
@@ -227,7 +253,7 @@ in seconds, and the real seconds — the two only differ when the server lags:
 
 Only the big lightning volley is printed, not every bolt Storm throws. A wither
 line also says how long after the last boss line it came, which is the number
-the PY and Necron timings are read from.
+the PY timing is read from.
 
 Run it again to turn it off. It is always off when the game starts.
 
@@ -248,21 +274,13 @@ between sessions, in `config/cryptic/timings.json`.
 | `py` | 52t | Storm's PY call until the purple pillar should be lowered |
 | `goldor_start` | 64t | Storm dying until terminals can be done |
 | `goldor_core` | 60t | Goldor's repeating cycle |
-| `necron` | 15t | "I'm afraid, your journey ends now." until Necron drops |
 | `fire_freeze` | 206t | The Professor's line until Fire Freeze, with its 100-tick cast |
 | `watcher_move` | 400t (20s) | The Watcher's greeting until he moves his first wave on (Blood Camp's kill title) |
 | `livid` | 340t | Livid's greeting until he can be hurt (390 before 0.27.2) |
 
-`lightning` was measured with the log on 2026-10-06, over two runs; `py` and
-`necron` were then settled in game. The PY timer turns orange at 40 ticks and
+`lightning` was measured with the log on 2026-10-06, over two runs, and `py`
+was then settled in game. The PY timer turns orange at 40 ticks and
 red at 20, the last two times the pads move before Storm does.
-
-The Necron timer starts before his last words, so it runs for about six
-seconds instead of under one: at Goldor's "....", 104 ticks before "I'm afraid,
-your journey ends now.", and it is set again on "Necron, forgive me." (52
-before) and on Necron's first line (41 before). Those gaps come from the boss
-log; the last of them puts the count right if one ever differs. `necron` is
-only the part after his last words.
 
 The log also says when a wither appears, and when one jumps more than two
 blocks in a tick.
@@ -295,7 +313,7 @@ Holds the Creeper Veil shields on without waiting for Hypixel to grant it.
 /cryptic debug leapmessage
 ```
 
-Shows leap announcements to you instead of sending them to party chat, and
+Shows Spirit Leap Overlay's leap announcements to you instead of sending them to party chat, and
 prints one immediately so the wording can be read back without a teammate to
 leap to.
 
@@ -516,3 +534,19 @@ terminals answer as slowly as Hypixel would, which is the point of practising at
 all. The solver's first click protection applies there too, so a click in the
 first half second goes nowhere; **Skip click protection** turns that off for
 practice without touching what happens in a real dungeon.
+
+## Notifications
+
+```
+/cryptic debug toast <seconds> <title> <message>
+/cryptic debug toast head <player> <seconds> <title> <message>
+/cryptic debug toast sample <invite|carry|cookie|downtime|update|error|all>
+```
+
+Raises a notification, to see how one looks without waiting for whatever
+would raise it. Quote a title with spaces: `"&dHello there"`. Both the title
+and the message take `&` colour codes, and a title that opens with one is drawn
+in that colour, the way each module's own titles are. `head` puts a player's
+face on the left, from the tab list or looked up by name. `sample` shows the
+real kinds with made-up details; the invite answers to Y and N as the real one
+does.

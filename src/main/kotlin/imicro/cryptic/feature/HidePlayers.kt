@@ -56,9 +56,8 @@ object HidePlayers {
 	val module = Module(
 		id = "hide_players",
 		name = "Hide Players",
-		description = "Stops drawing the players crowding you",
+		description = "Hides players crowding you",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(onlyInDungeons, hideAll, distance),
 	)

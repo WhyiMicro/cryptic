@@ -15,13 +15,6 @@ import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.network.chat.Component
 import java.util.Locale
 import org.lwjgl.glfw.GLFW
-import imicro.cryptic.gui.AliasScreen
-import imicro.cryptic.gui.CarryScreen
-import imicro.cryptic.gui.CrosshairScreen
-import imicro.cryptic.gui.CrypticScreen
-import imicro.cryptic.gui.ImGuiRuntime
-import imicro.cryptic.gui.KeybindsScreen
-import imicro.cryptic.gui.SoundsScreen
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.puzzle.BlazeSolver
 import imicro.cryptic.config.ConfigManager
@@ -101,7 +94,6 @@ import imicro.cryptic.feature.PuzzleSolver
 import imicro.cryptic.feature.RenderOptimizer
 import imicro.cryptic.feature.Secrets
 import imicro.cryptic.feature.SlotBinds
-import imicro.cryptic.feature.LeapMessage
 import imicro.cryptic.feature.MageBeam
 import imicro.cryptic.feature.NoDebuff
 import imicro.cryptic.feature.RoomAlerts
@@ -250,12 +242,12 @@ object CrypticClient : ClientModInitializer {
 		RoomSecrets.initialize()
 		ClassNames.initialize()
 		Etherwarp.initialize()
-		LeapMessage.initialize()
 		WitherCloakEffect.initialize()
 		CustomNametags.initialize()
 		Highlight.initialize()
 		Secrets.initialize()
 		ArrowHitboxes.initialize()
+		ClassColors.initialize()
 		DeviceSolver.initialize()
 		TerminalEsp.initialize()
 		TerminalOrder.initialize()
@@ -278,6 +270,8 @@ object CrypticClient : ClientModInitializer {
 		PuzzleSolver.initialize()
 		MageBeam.initialize()
 		NucleusQol.initialize()
+		// The new menu's shapes are drawn by pipelines registered before the shaders load.
+		imicro.cryptic.render.RoundRect.touch()
 		BlockOverlay.initialize()
 		CarryManager.initialize()
 		KeybindManager.initialize()
@@ -353,6 +347,7 @@ object CrypticClient : ClientModInitializer {
 						// Switches for looking at dungeon-only features outside a
 						// dungeon. They last until the game closes, on purpose.
 						ClientCommands.literal("debug")
+							.then(imicro.cryptic.debug.ToastCommand.build())
 							.then(ClientCommands.literal("witheroutline").executes { context ->
 								val enabled = DebugOverrides.toggleOutlineEveryWither()
 								val note = if (!WitherOutline.active) {
@@ -399,11 +394,11 @@ object CrypticClient : ClientModInitializer {
 								}
 
 								context.source.sendFeedback(
-									Component.literal("Leap Message debug on: announcements are shown to you instead of sent."),
+									Component.literal("Leap announcement debug on: announcements are shown to you instead of sent."),
 								)
 								// One straight away, so the wording can be read
 								// back without a teammate to leap to.
-								LeapMessage.simulate(Minecraft.getInstance().player?.name?.string ?: "Steve")
+								SpiritLeapOverlay.simulateLeap(Minecraft.getInstance().player?.name?.string ?: "Steve")
 								1
 							})
 							.then(ClientCommands.literal("map").executes { context ->
@@ -565,6 +560,36 @@ object CrypticClient : ClientModInitializer {
 								// Whether SkyBlock and the island are being read,
 								// which everything gated on them depends on.
 								SkyblockLocation.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(
+								ClientCommands.literal("hollows")
+									.then(
+										ClientCommands.argument("zone", StringArgumentType.greedyString())
+											.suggests { _, builder ->
+												SharedSuggestionProvider.suggest(DebugOverrides.hollowsZones, builder)
+											}
+											.executes { context ->
+												val zone = DebugOverrides.toggleHollowsZone(StringArgumentType.getString(context, "zone"))
+												context.source.sendFeedback(
+													Component.literal(
+														if (zone == null) {
+															"Crystal Hollows debug off: reading the tab list and sidebar again."
+														} else {
+															"Crystal Hollows debug on: Cryptic reads you as in $zone."
+														},
+													),
+												)
+												1
+											},
+									),
+							)
+							.then(ClientCommands.literal("crystals").executes { context ->
+								// How a crystal waiting to be picked up looks is
+								// only known from inside a lobby that has one.
+								NucleusQol.describeCrystals().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
@@ -868,15 +893,15 @@ object CrypticClient : ClientModInitializer {
 					// The Settings tab's managers, which open whether or not their
 					// module is on. Deferred like the rest, for the chat screen.
 					.then(ClientCommands.literal("keybinds").executes {
-						KeybindsScreen.request()
+						imicro.cryptic.gui.menu.MenuScreen.request(KeybindManager.module)
 						1
 					})
 					.then(ClientCommands.literal("aliases").executes {
-						AliasScreen.request()
+						imicro.cryptic.gui.menu.MenuScreen.request(AliasManager.module)
 						1
 					})
 					.then(ClientCommands.literal("sounds").executes {
-						SoundsScreen.request()
+						imicro.cryptic.gui.menu.MenuScreen.request(SoundVolumes.module)
 						1
 					})
 					.then(ClientCommands.literal("update").executes {
@@ -888,7 +913,7 @@ object CrypticClient : ClientModInitializer {
 							.executes {
 								// Same deferral again: the window cannot open
 								// while the chat screen is still closing.
-								CarryScreen.request()
+								imicro.cryptic.gui.menu.MenuScreen.request(CarryManager.module)
 								1
 							}
 							.then(ClientCommands.literal("list").executes { context ->
@@ -1057,7 +1082,7 @@ object CrypticClient : ClientModInitializer {
 					SmartTickTimer.module.enabled || Etherwarp.needsFloorTracking ||
 					PuzzleSolver.module.enabled || BloodCamp.module.enabled ||
 					InvincibilityTimer.module.enabled ||
-					SpiritLeapOverlay.needsFloor7 ||
+					SpiritLeapOverlay.needsDungeon ||
 					TerracottaTimer.module.enabled || BlessingDisplay.module.enabled ||
 					MelodyHud.wanted || LagDetector.needsDungeon ||
 					WitherCloakEffect.needsDungeon || PuzzleHud.module.enabled ||
@@ -1116,12 +1141,9 @@ object CrypticClient : ClientModInitializer {
 			LavaToWater.tick(client)
 			DoorFix.tick(client)
 			CarryManager.tick(client)
-			CarryScreen.openIfRequested(client)
-			KeybindsScreen.openIfRequested(client)
-			AliasScreen.openIfRequested(client)
-			SoundsScreen.openIfRequested(client)
+			// A manager asked for by command or key opens the menu on its page.
+			imicro.cryptic.gui.menu.MenuScreen.openIfRequested(client)
 			AliasManager.tick(client)
-			CrosshairScreen.openIfRequested(client)
 			WitherCloakEffect.tick(client)
 			BlessingDisplay.tick(client)
 			SpringBootsHelper.tick(client)
@@ -1141,11 +1163,11 @@ object CrypticClient : ClientModInitializer {
 			InventoryWatch.tick(client)
 
 			while (carryManagerKey.consumeClick()) {
-				if (CarryManager.module.enabled) CarryScreen.request()
+				if (CarryManager.module.enabled) imicro.cryptic.gui.menu.MenuScreen.request(CarryManager.module)
 			}
 
 			while (crosshairEditorKey.consumeClick()) {
-				if (CrosshairEditor.module.enabled) CrosshairScreen.request()
+				if (CrosshairEditor.module.enabled) imicro.cryptic.gui.menu.MenuScreen.request(CrosshairEditor.module)
 			}
 
 			while (openGuiKey.consumeClick()) {
@@ -1170,6 +1192,6 @@ object CrypticClient : ClientModInitializer {
 	}
 
 	private fun openGui(client: Minecraft) {
-		ImGuiRuntime.open(client) { CrypticScreen() }
+		client.gui.setScreen(imicro.cryptic.gui.menu.MenuScreen())
 	}
 }

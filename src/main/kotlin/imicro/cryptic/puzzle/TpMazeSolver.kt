@@ -115,13 +115,23 @@ object TpMazeSolver {
 	}
 
 	/**
-	 * The pad somebody at these coordinates is standing on.
+	 * The pad somebody at these coordinates is standing on: the nearest one,
+	 * if it is near enough to be stood on.
 	 *
 	 * Measured flat, across the floor, because height says nothing here: every
 	 * pad is at one height and whoever is on one is above it, never in it.
+	 *
+	 * The nearest, not the first within reach. Rooms of the maze sit two blocks
+	 * apart, so a pad in the next room is within a few blocks of the one you
+	 * are on, and taking whichever came first in the list read thirteen of the
+	 * thirty pads as their neighbour — the solver then planned from the wrong
+	 * room and marked the wrong pads used, which is a loop. NoammAddons gets
+	 * away with "within three" only because it narrows to the room first.
 	 */
-	private fun padNear(x: Double, z: Double): BlockPos? =
-		pads.firstOrNull { abs(x - (it.x + 0.5)) + abs(z - (it.z + 0.5)) <= NEAR }
+	private fun padNear(x: Double, z: Double): BlockPos? {
+		val pad = pads.minByOrNull { (x - (it.x + 0.5)).let { dx -> dx * dx } + (z - (it.z + 0.5)).let { dz -> dz * dz } } ?: return null
+		return pad.takeIf { abs(x - (it.x + 0.5)) <= NEAR && abs(z - (it.z + 0.5)) <= NEAR }
+	}
 
 	/**
 	 * Cuts the answer down to the pads this landing is compatible with.
@@ -187,13 +197,12 @@ object TpMazeSolver {
 	/**
 	 * Picks the pad to step onto, out of the four in the room landed in.
 	 *
-	 * Never one that has already been stepped on. A pad always sends you to the
-	 * same place, so stepping on one a second time repeats a move whose outcome
-	 * is already known — and a maze walked by repeating known moves is a maze
-	 * walked in circles. That is the loop, and it is a loop Odin and NoammAddons
-	 * both have: they only rule out pads you have *landed on*, which is not the
-	 * same set. Ruling out the ones you have *left from* makes going round twice
-	 * impossible, because the room has four pads and the supply runs out.
+	 * Never one that has already been used, either way round. A pad always
+	 * sends you to the same place, and the pad you land on sends you back, so
+	 * stepping on either repeats a move whose outcome is already known — and a
+	 * maze walked by repeating known moves is a maze walked in circles. Odin
+	 * rules out both the same way; with the room's four pads used up, a repeat
+	 * is offered rather than nothing.
 	 *
 	 * Of what is left, a pad the narrowing still believes in is the one worth
 	 * taking; failing that, the one nearest the way you are already facing is a
@@ -212,13 +221,17 @@ object TpMazeSolver {
 		if (start + GROUP > pads.size) return
 		val others = pads.subList(start, start + GROUP).filter { it != pads[index] }
 
-		// Untaken first, and only fall back to the whole room when every pad in
-		// it has been used — at which point a repeat is the only move there is,
-		// and a line to one of them beats no line at all.
-		val pool = others.filter { it !in taken }.ifEmpty { others }
+		// Pads come in pairs: one that sent you somewhere is sent back to from
+		// there, so a pad landed on is as used up as one stepped off (Skyblocker
+		// works the maze out from exactly that). Unused pads first, then pads
+		// only landed on, and the whole room only when every pad in it has been
+		// stepped off — at which point a repeat is the only move there is, and a
+		// line to one of them beats no line at all.
+		val pool = others.filter { it !in visited }
+			.ifEmpty { others.filter { it !in taken } }
+			.ifEmpty { others }
 
 		best = pool.firstOrNull { it in candidates }
-			?: pool.firstOrNull { it !in visited }
 			?: pool.minByOrNull { pad ->
 				val towards = Math.toDegrees(atan2(pad.z + 0.5 - from.z, pad.x + 0.5 - from.x)).toFloat() - 90f
 				abs(Mth.wrapDegrees(towards) - Mth.wrapDegrees(yaw)).toDouble()
@@ -285,8 +298,8 @@ object TpMazeSolver {
 	/** A line this flat in one axis never crosses that axis's walls. */
 	private const val FLAT = 1e-8
 
-	/** How near a pad somebody has to be to be standing on it, measured flat. */
-	private const val NEAR = 3.0
+	/** How far from a pad's centre, along either axis, somebody standing on it can be. */
+	private const val NEAR = 1.5
 
 	/** The last entries are the way in and the way out, not part of the maze. */
 	private const val ENTRANCE_PADS = 2

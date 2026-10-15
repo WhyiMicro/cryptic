@@ -109,9 +109,8 @@ object CustomScale {
 	val module = Module(
 		id = "custom_scale",
 		name = "Custom Scale",
-		description = "Resizes players on your screen",
+		description = "Resizes other players",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			applyToSelf, applyToOthers, applyToNpcs,

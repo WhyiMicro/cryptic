@@ -1,9 +1,9 @@
 # Settings: Keybinds, Aliases, Sounds and Updates
 
-Four modules in the Settings tab. Each of the three managers has an **Open
-manager** button and a `/cryptic` command. The window opens whether or not its
-module is on. While a module is off, its window says so and has a **Turn on**
-button.
+Four modules in the menu's Settings view. Each manager is on its module's page:
+open the card with its **⋮** (or a right-click), or use its `/cryptic` command,
+which opens the menu straight on it. A manager works whether or not its module
+is on; the switch in the page's title row turns the module on.
 
 | Command | Opens |
 |---|---|
@@ -68,7 +68,7 @@ Aliases are kept in `config/cryptic/aliases.json`.
 ## Sound Manager
 
 A volume for any sound, from 0% (silent) to 200%, in steps of 5. This is
-NoammAddons' Sound Manager. The difference is that its window opens even with
+NoammAddons' Sound Manager. The difference is that it can be used even with
 the module off.
 
 - **Search** matches any part of a sound's id, e.g. `enderman` or `teleport`.

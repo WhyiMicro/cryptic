@@ -6,9 +6,7 @@ import imicro.cryptic.Cryptic
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonTeam
 import imicro.cryptic.dungeon.Floor7
-import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.KeybindModuleSetting
-import imicro.cryptic.gui.KeybindsScreen
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.skyblock.SkyblockLocation
@@ -85,17 +83,13 @@ object KeybindManager {
 	val bindings = mutableListOf<Binding>()
 	val categories = mutableListOf<Category>()
 
-	private val open = ButtonModuleSetting("open", "Open manager", action = { KeybindsScreen.request() })
-
 	@JvmField
 	val module = Module(
 		id = "keybinds_manager",
 		name = "Keybinds Manager",
-		description = "Keys that run a command or say something in chat",
+		description = "Keys that run commands",
 		category = ModuleCategory.MISC,
-		hasDemoSettings = false,
 		supportsKeybind = false,
-		settings = listOf(open),
 	)
 
 	/** Keys and buttons held right now, keys by GLFW code and buttons as [KeybindModuleSetting.mouse] makes them. */
@@ -140,9 +134,8 @@ object KeybindManager {
 	private fun press(code: Int) {
 		if (!held.add(code)) return
 		if (!module.enabled || bindings.isEmpty()) return
-		// The manager itself is where keys are being bound, not used.
-		val screen = Minecraft.getInstance().gui.screen()
-		if (screen is KeybindsScreen) return
+		// Cryptic's menu is where keys are being bound and typed, not used.
+		if (Minecraft.getInstance().gui.screen() is imicro.cryptic.gui.menu.MenuScreen) return
 
 		val disabled = categories.filter { !it.enabled }.mapTo(HashSet()) { it.name }
 		val matching = bindings.filter { binding ->

@@ -14,45 +14,6 @@ enum class ModuleCategory(val title: String) {
 	FLOOR_7("Boss"),
 	VISUAL("Render"),
 	MISC("Settings"),
-	DEVELOPER("Profiles"),
-}
-
-/**
- * Pre-built Dear ImGui identifiers for one control.
- *
- * ImGui addresses widgets by string, and the menu redraws every control each
- * frame. Building those strings per frame allocated continuously, so each one
- * is derived once from the stable module and setting ids.
- */
-class WidgetIds(prefix: String) {
-	/** Identifies the control itself: a toggle, slider track, button or swatch. */
-	val control = "##$prefix"
-
-	/** Identifies the inline numeric editor, which is one control in two states. */
-	val editorKey = prefix
-	val editorHit = "##edit_numeric_$prefix"
-	val editorInput = "##numeric_$prefix"
-
-	/** Identifies the popup opened by a color swatch. */
-	val picker = "##${prefix}_picker"
-
-	/** Identifies the "⋯" that opens the row's panel of further settings. */
-	val more = "##more_$prefix"
-}
-
-/** Pre-built identifiers for the controls a module card owns itself. */
-class ModuleWidgetIds(moduleId: String, dropdownOptionCount: Int) {
-	val card = "##card_$moduleId"
-	val toggle = "##toggle_$moduleId"
-	val expand = "##expand_$moduleId"
-	val keybind = "##bind_$moduleId"
-	val demoSlider = "##slider_$moduleId"
-	val demoSliderEditor = WidgetIds("${moduleId}_demo_slider")
-	val demoRange = "##range_$moduleId"
-	val demoRangeLower = WidgetIds("${moduleId}_range_lower")
-	val demoRangeUpper = WidgetIds("${moduleId}_range_upper")
-	val demoDropdown = "##dropdown_$moduleId"
-	val demoDropdownOptions: List<String> = List(dropdownOptionCount) { "##option_${moduleId}_$it" }
 }
 
 /**
@@ -83,14 +44,15 @@ class Module(
 	val description: String,
 	val category: ModuleCategory,
 	var enabled: Boolean = false,
-	val hasDemoSettings: Boolean = true,
 	val supportsToggle: Boolean = true,
 	val supportsKeybind: Boolean = false,
-	val slider: SliderSetting = SliderSetting("Amount", 50.0, 0.0, 100.0),
-	val range: RangeSetting = RangeSetting("Range", 25.0, 75.0, 0.0, 100.0),
-	val dropdown: DropdownSetting = DropdownSetting("Mode", listOf("Default", "Subtle", "Detailed")),
 	val keybind: KeybindSetting = KeybindSetting(),
 	settings: List<ModuleSetting> = emptyList(),
+	/**
+	 * What a left click on the card does, for a module that is something to
+	 * open rather than something to switch on. Right click still edits it.
+	 */
+	val cardAction: (() -> Unit)? = null,
 ) {
 	/**
 	 * Every setting the module has, the ones tucked into a "⋯" panel included,
@@ -100,43 +62,9 @@ class Module(
 	 */
 	val settings: List<ModuleSetting> = settings.flatMap { listOf(it) + it.more }.distinct()
 
-	val hasSettings: Boolean get() = hasDemoSettings || settings.isNotEmpty()
-
-	/** True when [source] is this module's own dropdown or one of its settings. */
-	fun owns(source: DropdownSource?): Boolean =
-		source != null && (source === dropdown || settings.any { it === source })
-
 	/** Lowercased once so the menu can sort cards without rebuilding the key. */
 	val sortKey: String = name.lowercase(Locale.ROOT)
 
-	val widgetIds = ModuleWidgetIds(id, dropdown.options.size)
-
-	init {
-		dropdown.attachTo(this)
-		settings.forEach { it.attachTo(this) }
-	}
-}
-
-class SliderSetting(val label: String, var value: Double, val min: Double, val max: Double) {
-	private val valueLabel = NumberLabel { it.roundToInt().toString() }
-
-	val labelWithColon: String = "$label:"
-	val displayValue: String get() = valueLabel.of(value)
-}
-
-class RangeSetting(
-	val label: String,
-	var lower: Double,
-	var upper: Double,
-	val min: Double,
-	val max: Double,
-) {
-	private val lowerLabelCache = NumberLabel { it.roundToInt().toString() }
-	private val upperLabelCache = NumberLabel { it.roundToInt().toString() }
-
-	val labelWithColon: String = "$label:"
-	val displayLower: String get() = lowerLabelCache.of(lower)
-	val displayUpper: String get() = upperLabelCache.of(upper)
 }
 
 /**
@@ -148,10 +76,6 @@ interface DropdownSource {
 	var selectedIndex: Int
 	val selected: String
 
-	/** Dear ImGui identifiers for the closed control and each option row. */
-	val buttonId: String
-	val optionIds: List<String>
-
 	/** Whether several options can be ticked at once, which keeps the list open while they are. */
 	val multiple: Boolean get() = false
 
@@ -160,26 +84,6 @@ interface DropdownSource {
 
 	/** An option was clicked in the open list. */
 	fun pick(index: Int) { selectedIndex = index }
-}
-
-class DropdownSetting(
-	val label: String,
-	override val options: List<String>,
-	override var selectedIndex: Int = 0,
-): DropdownSource {
-	override val selected: String get() = options[selectedIndex]
-
-	override var buttonId: String = "##dropdown"
-		private set
-
-	override var optionIds: List<String> = emptyList()
-		private set
-
-	/** A module's own identifiers are what make this dropdown's unique. */
-	internal fun attachTo(module: Module) {
-		buttonId = module.widgetIds.demoDropdown
-		optionIds = module.widgetIds.demoDropdownOptions
-	}
 }
 
 /**
@@ -221,19 +125,6 @@ sealed class ModuleSetting(
 	val label: String,
 	val visibleIf: () -> Boolean = { true },
 ) {
-	val labelWithColon: String = "$label:"
-
-	/**
-	 * Assigned once by the owning [Module], because a setting's identifier is
-	 * only unique when it is qualified with the module that declares it.
-	 */
-	var widgetIds: WidgetIds = WidgetIds(id)
-		private set
-
-	internal fun attachTo(module: Module) {
-		widgetIds = WidgetIds("${module.id}_$id")
-	}
-
 	open fun isVisible() = visibleIf()
 
 	/**
@@ -387,14 +278,6 @@ class RangeModuleSetting(
 		listOf(min, max, min + step, max - step).map(format).maxBy { it.length }
 	}
 
-	/**
-	 * Each end is separately editable, so each needs identifiers of its own.
-	 * Built on first use, because a setting only knows its qualified identifier
-	 * once the owning module has attached it.
-	 */
-	val lowerIds: WidgetIds by lazy { WidgetIds("${widgetIds.editorKey}_lower") }
-	val upperIds: WidgetIds by lazy { WidgetIds("${widgetIds.editorKey}_upper") }
-
 	/** A value somewhere in the range, inclusive of both ends. */
 	fun random(): Double =
 		if (upper <= lower) lower else lower + Math.random() * (upper - lower)
@@ -473,6 +356,8 @@ class TextModuleSetting(
 	val maxLength: Int = 128,
 	val hint: String = "",
 	val description: String = "",
+	/** Completions for what has been typed so far, listed under the field while it is being typed in. */
+	val suggestions: ((String) -> List<String>)? = null,
 	visibleIf: () -> Boolean = { true },
 ): ModuleSetting(id, label, visibleIf) {
 	var value: String = defaultValue
@@ -561,16 +446,6 @@ class DropdownModuleSetting(
 
 	override val selected: String get() = options[selectedIndex]
 
-	override val buttonId: String get() = widgetIds.control
-
-	/**
-	 * Built on first use rather than in the constructor, because a setting only
-	 * knows its qualified identifier once the owning module has attached it.
-	 */
-	override val optionIds: List<String> by lazy {
-		List(options.size) { "##option_${widgetIds.editorKey}_$it" }
-	}
-
 	/** Profiles store the chosen label, so wording changes cannot silently reorder. */
 	fun select(option: String) {
 		options.indexOf(option).takeIf { it >= 0 }?.let { selectedIndex = it }
@@ -629,18 +504,11 @@ class MultiSelectModuleSetting(
 		else -> options.filterIndexed { index, _ -> index in ticked }.joinToString(", ")
 	}.also { summary = it }
 
-	override val buttonId: String get() = widgetIds.control
-
 	override val multiple: Boolean get() = true
 
 	override fun isChecked(index: Int): Boolean = index in ticked
 
 	override fun pick(index: Int) = toggle(index)
-
-	/** One row per option, each with its own clickable id. */
-	override val optionIds: List<String> by lazy {
-		List(options.size) { "##multi_${widgetIds.editorKey}_$it" }
-	}
 
 	/** The ticked labels, joined, for the profile. */
 	fun encode(): String = options.filterIndexed { index, _ -> index in ticked }.joinToString(SEPARATOR)
@@ -755,9 +623,8 @@ object ModuleRegistry {
 	val autoSprint = Module(
 		id = "auto_sprint",
 		name = "Auto Sprint",
-		description = "Holds sprint for you, as Odin does",
+		description = "Holds sprint for you",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 	)
 
@@ -777,7 +644,6 @@ object ModuleRegistry {
 		imicro.cryptic.feature.InvincibilityTimer.module,
 		imicro.cryptic.feature.SpiritLeapOverlay.module,
 		imicro.cryptic.feature.RoomAlerts.module,
-		imicro.cryptic.feature.LeapMessage.module,
 		imicro.cryptic.feature.Etherwarp.module,
 		imicro.cryptic.feature.F7Qol.module,
 		imicro.cryptic.feature.TerracottaTimer.module,
@@ -787,7 +653,6 @@ object ModuleRegistry {
 		imicro.cryptic.feature.HidePlayers.module,
 		imicro.cryptic.feature.TerminalSolver.module,
 		imicro.cryptic.feature.TerminalTimes.module,
-		imicro.cryptic.feature.Tooltips.module,
 		imicro.cryptic.feature.TerminalSimulator.module,
 		imicro.cryptic.feature.TerminalEsp.module,
 		imicro.cryptic.feature.TerminalOrder.module,
@@ -843,6 +708,7 @@ object ModuleRegistry {
 		imicro.cryptic.feature.Toasts.module,
 		imicro.cryptic.feature.ExampleModule.module,
 		imicro.cryptic.feature.ClickGui.module,
+		imicro.cryptic.gui.menu.managers.ProfilesSection.module,
 	)
 
 	val byId: Map<String, Module> = modules.associateBy(Module::id)

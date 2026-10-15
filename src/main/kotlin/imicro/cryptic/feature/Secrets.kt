@@ -24,7 +24,6 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
-import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket
@@ -276,9 +275,11 @@ object Secrets {
 	val sound = DropdownModuleSetting(
 		id = "sound",
 		label = "Sound",
-		options = soundOptions.map { it.first },
+		options = soundOptions.map { it.first } + SoundChoices.CUSTOM,
 		visibleIf = { secretSound.value },
 	)
+
+	private val customSound = SoundChoices.customField("custom_sound", sound) { secretSound.value }
 
 	@JvmField
 	val volume = SliderModuleSetting(
@@ -314,9 +315,8 @@ object Secrets {
 	val module = Module(
 		id = "secrets",
 		name = "Secrets",
-		description = "Makes dungeon secrets easier to find",
+		description = "Helps you find secrets",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(autoCloseChest, movableCounter) + listOf(
 			hitboxSection,
@@ -331,7 +331,7 @@ object Secrets {
 				lockedFillColor, lockedOutlineColor, clickedPhase,
 			),
 			soundSection,
-			secretSound.withMore(sound, volume, pitch, previewSound),
+			secretSound.withMore(sound, customSound, volume, pitch, previewSound),
 		),
 	)
 
@@ -722,13 +722,12 @@ object Secrets {
 
 	// ---- Sound -----------------------------------------------------------
 
-	private fun selectedSound(): SoundEvent =
-		soundOptions[sound.selectedIndex.coerceIn(soundOptions.indices)].second
+	/** The sound chosen, or null when Custom holds no sound id. */
+	private fun selectedSound(): SoundEvent? =
+		if (sound.selected == SoundChoices.CUSTOM) SoundChoices.custom(customSound.value)
+		else soundOptions[sound.selectedIndex.coerceIn(soundOptions.indices)].second
 
 	private fun play() {
-		val client = Minecraft.getInstance()
-		client.soundManager.play(
-			SimpleSoundInstance.forUI(selectedSound(), pitch.value.toFloat(), volume.value.toFloat()),
-		)
+		SoundChoices.play(selectedSound() ?: return, volume.value.toFloat(), pitch.value.toFloat())
 	}
 }

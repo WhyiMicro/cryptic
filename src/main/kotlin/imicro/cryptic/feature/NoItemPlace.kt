@@ -67,9 +67,8 @@ object NoItemPlace {
 	val module = Module(
 		id = "no_item_place",
 		name = "No Item Place",
-		description = "Stops placing items by accident",
+		description = "No placing items by mistake",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(relics),
 	)

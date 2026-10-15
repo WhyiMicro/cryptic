@@ -140,6 +140,8 @@ object InvincibilityTimer {
 		visibleIf = { playSound.value },
 	)
 
+	private val customSound = SoundChoices.customField("custom_sound", sound) { playSound.value }
+
 	@JvmField
 	val volume = SliderModuleSetting(
 		id = "volume",
@@ -296,13 +298,12 @@ object InvincibilityTimer {
 	val module = Module(
 		id = "invincibility_timer",
 		name = "Invincibility Timer",
-		description = "Times the masks that save you from a death",
+		description = "Times your life-saving masks",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			announce,
-			playSound.withMore(sound, volume, pitch, previewSound),
+			playSound.withMore(sound, customSound, volume, pitch, previewSound),
 			procTitle,
 			onlyInDungeons,
 			shownSection,
@@ -370,7 +371,7 @@ object InvincibilityTimer {
 	}
 
 	private fun playProcSound() =
-		SoundChoices.play(sound.selectedIndex, volume.value.toFloat(), pitch.value.toFloat())
+		SoundChoices.play(sound.selectedIndex, volume.value.toFloat(), pitch.value.toFloat(), customSound.value)
 
 	/** How long the proc title holds, and how long it takes to fade, in ticks: Odin's. */
 	private const val TITLE_STAY_TICKS = 20

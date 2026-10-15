@@ -85,7 +85,6 @@ object CustomNametags {
 		name = "Custom Nametags",
 		description = "Restyles name tags",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			yourNameSection,

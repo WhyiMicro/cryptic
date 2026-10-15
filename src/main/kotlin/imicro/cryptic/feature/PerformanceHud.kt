@@ -91,7 +91,6 @@ object PerformanceHud {
 		name = "Performance HUD",
 		description = "TPS, FPS and ping on screen",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(nameColor, valueColor, direction, showFps, showTps, showPing, pingInterval),
 	)

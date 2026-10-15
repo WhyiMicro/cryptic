@@ -60,6 +60,10 @@ object Animations {
 		"ignore_haste", "Ignore Haste", description = "Ignores Haste when calculating swing speed",
 		visibleIf = { !disableSwingAnimation.value || terminatorOnly.value },
 	)
+	@JvmField val swingAffectsHand = ToggleModuleSetting(
+		"swing_affects_hand", "Swing speed affects hand", description = "Your empty hand swings at that speed too",
+		visibleIf = { !disableSwingAnimation.value || terminatorOnly.value },
+	)
 
 	private val configurableSettings = listOf(
 		itemScale,
@@ -68,7 +72,7 @@ object Animations {
 		rotationX, rotationY, rotationZ,
 		swingX, swingY, swingZ,
 		disableHandMovement, disableEquipAnimation, disableSwingAnimation, terminatorOnly,
-		swingSpeed, ignoreHaste,
+		swingSpeed, ignoreHaste, swingAffectsHand,
 	)
 
 	// The card is long enough that its controls are easier to find under the
@@ -79,7 +83,7 @@ object Animations {
 		SectionModuleSetting("rotation_section", "Rotation"),
 		rotationX, rotationY, rotationZ,
 		SectionModuleSetting("swing_section", "Swing"),
-		swingX, swingY, swingZ, swingSpeed, ignoreHaste,
+		swingX, swingY, swingZ, swingSpeed, ignoreHaste, swingAffectsHand,
 		SectionModuleSetting("animation_section", "Animations"),
 		disableHandMovement, disableEquipAnimation, disableSwingAnimation, terminatorOnly,
 	)
@@ -97,9 +101,8 @@ object Animations {
 	@JvmField val module = Module(
 		id = "animations",
 		name = "Animations",
-		description = "Moves and resizes your held item",
+		description = "Restyles your held item",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = layout + reset,
 	)

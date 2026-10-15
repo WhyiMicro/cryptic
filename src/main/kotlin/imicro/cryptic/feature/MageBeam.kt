@@ -245,9 +245,8 @@ object MageBeam {
 	val module: Module = Module(
 		id = "mage_beam",
 		name = "Mage Beam",
-		description = "Draws the mage beam as a line",
+		description = "Draws mage beams as lines",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = configurable + reset,
 	)

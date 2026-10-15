@@ -61,15 +61,6 @@ object BossTimings {
 
 		GOLDOR_CORE("goldor_core", 60, "Goldor's repeating cycle"),
 
-		/**
-		 * Necron drops 15 ticks after "I'm afraid, your journey ends now.", by
-		 * the user's timing in game on 2026-10-06. It was 60 before the update;
-		 * Odin dropped this timer. The count starts earlier than that line, at
-		 * Goldor's "....", and is put right on each line after it — see
-		 * [NECRON_LEAD_IN].
-		 */
-		NECRON("necron", 15, "\"I'm afraid, your journey ends now.\" until Necron drops"),
-
 		FIRE_FREEZE("fire_freeze", 206, "The Professor's line until Fire Freeze is used, plus its 100-tick cast"),
 
 		/** Odin's, after the update: a fixed 20s, where it used to depend on how soon the wave came. */
@@ -82,20 +73,6 @@ object BossTimings {
 		/** The ticks in use: the one set with the command, or the default. */
 		val ticks: Int get() = overrides[key] ?: defaultTicks
 	}
-
-	/**
-	 * The lines before Necron's "I'm afraid, your journey ends now.", and how
-	 * many ticks before it each one comes, from the boss log on 2026-10-06.
-	 * The Necron drop count starts at the first of them, so it runs for about
-	 * six seconds rather than under one, and is set again on each line after —
-	 * so a gap that is not always the same is put right before the drop.
-	 */
-	val NECRON_LEAD_IN = mapOf(
-		"[BOSS] Goldor: ...." to 104,
-		"[BOSS] Goldor: Necron, forgive me." to 52,
-		"[BOSS] Necron: You went further than any human before, congratulations." to 41,
-		"[BOSS] Necron: I'm afraid, your journey ends now." to 0,
-	)
 
 	private val overrides = HashMap<String, Int>()
 

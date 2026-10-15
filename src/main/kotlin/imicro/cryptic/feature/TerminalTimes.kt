@@ -69,9 +69,8 @@ object TerminalTimes {
 	val module = Module(
 		id = "terminal_times",
 		name = "Terminal Times",
-		description = "Times terminals, sections and phases",
+		description = "Times terminals and phases",
 		category = ModuleCategory.FLOOR_7,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(timesSection, announceTimes, splits, useRealTime, resetRecords),
 	)

@@ -149,9 +149,8 @@ object BreakerHelper {
 	val module = Module(
 		id = "breaker_helper",
 		name = "Breaker Helper",
-		description = "Stops the Breaker eating your clicks",
+		description = "No more lost Breaker clicks",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = configurableSettings,
 	)

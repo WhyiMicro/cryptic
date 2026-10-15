@@ -170,9 +170,8 @@ object TerminalOrder {
 	val module = Module(
 		id = "terminal_order",
 		name = "Terminal Order",
-		description = "Marks the terminals assigned to you",
+		description = "Marks your terminals",
 		category = ModuleCategory.FLOOR_7,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(
 			preset, highlightAll, autoAssign, classChoice, hideWhenDone,

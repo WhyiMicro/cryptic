@@ -140,9 +140,8 @@ object AutoClicker {
 	val module = Module(
 		id = "auto_clicker",
 		name = "Auto Clicker",
-		description = "Clicks for you at a human rate",
+		description = "Clicks for you, like a human",
 		category = ModuleCategory.GENERAL,
-		hasDemoSettings = false,
 		supportsKeybind = true,
 		keybind = clickKeybind,
 		settings = listOf(cps, pattern, mode, rightClick, allowBreaking),

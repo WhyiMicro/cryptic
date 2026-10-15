@@ -277,6 +277,16 @@ object BloodCamp {
 		description = "Says \"Blood done\" across the screen when the Watcher lets you through.",
 	)
 
+	private val doneTitleText = TextModuleSetting(
+		id = "done_title_text",
+		label = "Title",
+		defaultValue = "Blood done",
+		maxLength = 100,
+		hint = "Blood done",
+		description = "What the title says. & colour codes work.",
+		visibleIf = { doneTitle.value },
+	)
+
 	@JvmField
 	val speedAlert = ToggleModuleSetting(
 		id = "speed_alert",
@@ -301,7 +311,7 @@ object BloodCamp {
 		watcherBar,
 		alertSection,
 		killTitle.withMore(customTitle, titleColor),
-		doneTitle,
+		doneTitle.withMore(doneTitleText),
 		speedAlert.withMore(sendSpeed),
 	)
 
@@ -321,9 +331,8 @@ object BloodCamp {
 	val module: Module = Module(
 		id = "blood_camp",
 		name = "Blood Camp",
-		description = "Times the Watcher's waves and where they land",
+		description = "Times and boxes blood mobs",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = configurable + reset,
 	)
@@ -492,7 +501,7 @@ object BloodCamp {
 			if (doneTitle.value) {
 				val client = Minecraft.getInstance()
 				client.gui.hud.setTimes(0, DONE_TITLE_STAY_TICKS, DONE_TITLE_FADE_TICKS)
-				client.gui.hud.setTitle(Component.literal("§fBlood done"))
+				client.gui.hud.setTitle(Component.literal(DungeonScore.colored(doneTitleText.value, "§f")))
 			}
 			return
 		}
@@ -580,17 +589,22 @@ object BloodCamp {
 		if (!head.`is`(Items.PLAYER_HEAD)) return
 		if (SkyblockItem.skullTexture(head) !in mobSkulls) return
 
-		val moved = Vec3(
-			entity.x + xa / PACKET_UNITS,
-			entity.y + ya / PACKET_UNITS,
-			entity.z + za / PACKET_UNITS,
-		)
+		// Where the server has put it, which this packet has just been decoded
+		// into. Not the entity's own position plus the step: that is where it is
+		// drawn, a tick or two behind while it glides towards the server's, and
+		// at a blood mob's pace that put every landing spot half a block short.
+		// Odin reads the same value, at the point it is handed to interpolation.
+		val moved = entity.positionCodec.base
 
 		val mob = mobs.getOrPut(entity) { BloodMob(moved, ticks, firstWave) }
 		val step = moved.subtract(mob.last)
 		mob.last = moved
 		if (step.lengthSqr() > 0) mob.heading = mob.heading.add(step)
 		if (mob.heading.lengthSqr() <= 0) return
+
+		// Blocks per millisecond since it was first seen, for the box that leads it by your ping.
+		val millis = (ticks - mob.bornAt) * MILLIS_PER_TICK
+		if (millis > 0) mob.speed = moved.subtract(mob.start).scale(1.0 / millis)
 
 		// The walk is the same length every time, so where it ends is the start
 		// plus that many blocks in the direction it is going.
@@ -757,9 +771,6 @@ object BloodCamp {
 	private const val WATCHER_PREFIX = "[BOSS] The Watcher: "
 	private const val WAVE_MESSAGE = "[BOSS] The Watcher: Let's see how you can handle this."
 	private const val DONE_MESSAGE = "[BOSS] The Watcher: You have proven yourself. You may pass."
-
-	/** A movement packet counts in 1/4096ths of a block. */
-	private const val PACKET_UNITS = 4096.0
 
 	/** How near the Watcher one of his mobs stands, squared. */
 	private const val WATCHER_RADIUS_SQUARED = 400.0

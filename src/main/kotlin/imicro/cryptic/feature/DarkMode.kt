@@ -45,7 +45,6 @@ object DarkMode {
 		name = "Dark Mode",
 		description = "Darkens the screen",
 		category = ModuleCategory.VISUAL,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = listOf(opacity, tintHud),
 	)

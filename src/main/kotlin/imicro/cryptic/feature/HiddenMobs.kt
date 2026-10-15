@@ -139,9 +139,8 @@ object HiddenMobs {
 	val module = Module(
 		id = "hidden_mobs",
 		name = "Hidden Mobs",
-		description = "Shows the dungeon mobs that spawn invisible",
+		description = "Reveals invisible mobs",
 		category = ModuleCategory.DUNGEON,
-		hasDemoSettings = false,
 		supportsKeybind = false,
 		settings = configurableSettings,
 	)
