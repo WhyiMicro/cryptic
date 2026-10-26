@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="src/main/resources/assets/cryptic/icon.png" alt="Cryptic" width="128" height="128">
+</p>
+
 # Cryptic
 
 A Hypixel SkyBlock mod for Fabric, built to replace the handful of dungeon mods
