@@ -14,28 +14,20 @@ import kotlin.math.ln
 import kotlin.math.pow
 
 /**
- * Narrows the field of view while a key is held, the way a spyglass does.
- *
- * Modelled on Zoomify (LGPL, not ported — only its set of options is), which is
- * the mod worth matching for what a zoom should offer: a zoom the key alone
- * gives you, a wheel that goes further, a curve for the way in and out, and a
- * say in whether the held item comes along.
- *
- * Nothing here holds a per-frame animation timer. The zoom is a pure function
- * of the clock and the transition it is part-way through, so the two render
- * hooks can both ask for it in the same frame and get the same answer.
+ * Narrows the view while a key is held, like a spyglass. The options are modelled on Zoomify (not
+ * ported): a key zoom, the wheel to go further, an easing curve, and whether the hand follows. The
+ * zoom is a pure function of the clock and the running transition, so both render hooks get the
+ * same answer in a frame.
  */
 object Zoom {
-	/** How long a transition takes. Short enough not to be in the way. */
 	private const val TRANSITION_NANOS = 200_000_000.0
 
-	/** What one notch of the wheel multiplies the zoom by. */
 	private const val SCROLL_STEP = 1.2
 
-	/** Zoom in its own units: 1x is the view untouched, and the floor for both. */
+	/** 1x is the untouched view, and the floor for both zooms. */
 	private const val NO_ZOOM = 1.0
 
-	/** As far as the wheel goes, which the slider on its own cannot reach. */
+	/** The wheel's limit, beyond the slider's reach. */
 	private const val MAX_SCROLL_ZOOM = 20.0
 
 	@JvmField
@@ -80,11 +72,7 @@ object Zoom {
 		description = "Zooms the held item along with the view, instead of leaving it the size it was.",
 	)
 
-	/**
-	 * Bound to Minecraft's own key mapping, so the controls screen can rebind it
-	 * and Minecraft's options file is what remembers it. Unbound out of the box:
-	 * a zoom key is a matter of taste, and there is no spare key worth claiming.
-	 */
+	/** Minecraft's own key mapping, so the controls screen can rebind it. Unbound by default. */
 	private val zoomKeybind = KeybindSetting(
 		currentKeyName = {
 			if (CrypticClient.zoomKey.isUnbound) {
@@ -111,21 +99,19 @@ object Zoom {
 		settings = listOf(initialZoom, transition, scrollZoom, cinematicCamera, affectHandFov),
 	)
 
-	/** How far the wheel has been turned this time round, in notches. */
 	private var scrolled = 0.0
 
-	/** The zoom the running transition is heading for, and where it set off from. */
+	/** The zoom the transition heads for, and where it started. */
 	private var target = NO_ZOOM
 	private var from = NO_ZOOM
 	private var startedAt = 0L
 
-	/** True while Cryptic is the reason Minecraft's cinematic camera is on. */
+	/** True while Cryptic is the reason the cinematic camera is on. */
 	private var forcingSmoothCamera = false
 	private var smoothCameraWas = false
 
 	private var wasHeld = false
 
-	/** True while the key is down somewhere the zoom should apply. */
 	private fun held(): Boolean {
 		if (!module.enabled) return false
 		val client = Minecraft.getInstance()
@@ -133,7 +119,6 @@ object Zoom {
 		return CrypticClient.zoomKey.isDown
 	}
 
-	/** The zoom being asked for right now, before the transition catches up. */
 	private fun requested(): Double {
 		if (!held()) return NO_ZOOM
 		val base = initialZoom.value
@@ -142,12 +127,8 @@ object Zoom {
 	}
 
 	/**
-	 * What to divide the field of view by this frame.
-	 *
-	 * Also what starts a transition, because the thing worth reacting to — the
-	 * zoom being asked for having changed — is exactly what this has to read
-	 * anyway. Asking twice in one frame is safe: the second call finds the
-	 * transition already running and only reads it.
+	 * What to divide the FOV by this frame. Also starts transitions, since it reads the request
+	 * anyway; asking twice a frame is safe.
 	 */
 	@JvmStatic
 	fun factor(): Float {
@@ -161,16 +142,12 @@ object Zoom {
 		return zoomAt(now).toFloat()
 	}
 
-	/** The same, for the hand, which only follows the view when asked to. */
 	@JvmStatic
 	fun handFactor(): Float = if (affectHandFov.value) factor() else 1f
 
 	/**
-	 * The zoom part-way through the running transition.
-	 *
-	 * The multiplier is what is interpolated, not the angle: 1x to 4x passing
-	 * through 2x half way is what reads as an even zoom, where dividing the
-	 * field of view evenly rushes the start and crawls at the end.
+	 * The zoom part-way through the transition. The multiplier is interpolated, not the angle, so
+	 * it reads as even.
 	 */
 	private fun zoomAt(now: Long): Double {
 		if (from == target) return target
@@ -186,17 +163,12 @@ object Zoom {
 		else -> if (t < 0.5) 2.0 * t * t else 1.0 - (2.0 - 2.0 * t) * (2.0 - 2.0 * t) / 2.0
 	}
 
-	/**
-	 * Takes the wheel over while zoomed, and says so, because the same turn
-	 * would otherwise also change the held item.
-	 */
+	/** Takes the wheel while zoomed, so it doesn't also change the held item. */
 	@JvmStatic
 	fun onScroll(amount: Double): Boolean {
 		if (amount == 0.0 || !scrollZoom.value || !held()) return false
 
-		// Clamped in notches rather than in zoom, so scrolling past an end and
-		// back again takes the same number of turns either way instead of
-		// sitting on a piled-up number that has to be unwound first.
+		// Clamped in notches, so scrolling past an end and back takes the same turns.
 		val base = initialZoom.value
 		val lowest = ln(NO_ZOOM / base) / ln(SCROLL_STEP)
 		val highest = ln(MAX_SCROLL_ZOOM / base) / ln(SCROLL_STEP)
@@ -205,9 +177,8 @@ object Zoom {
 	}
 
 	/**
-	 * Holds Minecraft's cinematic camera on for as long as the zoom is, and
-	 * forgets how far the wheel was turned once the key comes back up, so every
-	 * zoom starts from the slider rather than where the last one left off.
+	 * Holds the cinematic camera on while zoomed, and resets the wheel when the key comes up, so
+	 * each zoom starts from the slider.
 	 */
 	fun tick(client: Minecraft) {
 		val zooming = held()

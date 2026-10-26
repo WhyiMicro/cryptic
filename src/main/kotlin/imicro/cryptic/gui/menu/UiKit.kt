@@ -10,14 +10,9 @@ import org.lwjgl.glfw.GLFW
 import kotlin.math.max
 
 /**
- * The widgets the managers inside the menu are built from: cards, buttons,
- * chips, switches, sliders, text fields, badges and progress bars, all in the
- * menu's look.
- *
- * Drawn immediately, the way the managers lay themselves out, and each widget
- * that can be clicked says what a click does as it is drawn. The press that
- * arrives before the next frame goes to the last widget drawn under it, which
- * is the one on top.
+ * The widgets the menu's managers are built from: cards, buttons, chips, switches, sliders, fields,
+ * badges and progress bars. Immediate mode: each clickable widget registers its click as it's
+ * drawn, and a press goes to the last widget drawn under it (the top one).
  */
 class UiKit {
 	lateinit var graphics: GuiGraphicsExtractor
@@ -36,7 +31,6 @@ class UiKit {
 	private val targets = ArrayList<Target>()
 	private var dragging: ((Float, Float) -> Unit)? = null
 
-	/** The field being typed in, and where it was drawn. */
 	private var focused: TextField? = null
 	private var focusedSelecting = false
 	private val fields = ArrayList<Triple<Box, TextField, Boolean>>()
@@ -44,10 +38,9 @@ class UiKit {
 	private val switches = HashMap<Any, Float>()
 	private val hover = HashMap<Any, Float>()
 
-	/** Whether a key press belongs to a field right now. */
 	val typing: Boolean get() = focused != null
 
-	/** Whether the pointer is inside the area the section was given this frame. */
+	/** The area the section was given this frame. */
 	var area = Box.NONE
 		private set
 
@@ -64,17 +57,14 @@ class UiKit {
 
 	fun hovered(box: Box) = area.contains(mx, my) && box.contains(mx, my)
 
-	/** Says what a left click in [box] does. */
 	fun onClick(box: Box, action: () -> Unit) {
 		targets += Target(box, { button, _, _ -> if (button == 0) action() }, null)
 	}
 
-	/** Says what any press in [box] does, and what dragging from it does after. */
+	/** What any press in [box] does, and what dragging from it does. */
 	fun onPress(box: Box, drag: ((Float, Float) -> Unit)? = null, press: (button: Int, x: Float, y: Float) -> Unit) {
 		targets += Target(box, press, drag)
 	}
-
-	// ---- Drawing ---------------------------------------------------------
 
 	fun card(box: Box, color: Int = MenuStyle.ROW) =
 		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(color, alpha), 0f)
@@ -106,7 +96,6 @@ class UiKit {
 		onClick(box, action)
 	}
 
-	/** The width a [button] needs for [label]. */
 	fun buttonWidth(label: String) = width(label, 13f, UiText.Face.MEDIUM) + 28f
 
 	fun iconButton(box: Box, glyph: String, color: Int = MenuStyle.TAB_HOVER, outline: Boolean = false, action: () -> Unit) {
@@ -135,7 +124,7 @@ class UiKit {
 
 	fun chipWidth(label: String) = width(label, 12f) + 22f
 
-	/** How tall [chips] will be for [labels] at [w], so a card can be sized before it is drawn. */
+	/** How tall [chips] will be, so a card can be sized first. */
 	fun chipsHeight(w: Float, labels: List<String>): Float {
 		if (labels.isEmpty()) return 0f
 		var rows = 1
@@ -151,7 +140,7 @@ class UiKit {
 		return rows * CHIP_HEIGHT + (rows - 1) * 6f
 	}
 
-	/** A wrapping row of chips; returns the height it took. */
+	/** A wrapping row of chips; returns its height. */
 	fun <T> chips(x: Float, y: Float, w: Float, items: List<T>, label: (T) -> String, selected: (T) -> Boolean, onClick: (T) -> Unit): Float {
 		if (items.isEmpty()) return 0f
 		var cx = x
@@ -175,7 +164,7 @@ class UiKit {
 		onClick(box, action)
 	}
 
-	/** A track with a handle at [ratio]; dragging it reports the new ratio. */
+	/** A track with a handle at [ratio]; dragging reports the new ratio. */
 	fun slider(box: Box, ratio: Float, onChange: (Float) -> Unit) {
 		val cy = box.y + box.h / 2f
 		val t = ratio.coerceIn(0f, 1f)
@@ -187,7 +176,6 @@ class UiKit {
 		onPress(Box(box.x - 8f, box.y, box.w + 16f, box.h), set) { button, x, y -> if (button == 0) set(x, y) }
 	}
 
-	/** A text field over [field]; clicking it puts the caret there. */
 	fun field(box: Box, field: TextField, hint: String, size: Float = 13f) {
 		val focus = focused === field
 		MenuStyle.drawField(graphics, box, hovered(box), focus, alpha)
@@ -195,7 +183,7 @@ class UiKit {
 		fields += Triple(box, field, focus)
 	}
 
-	/** A key's name in a small box, lit while it means something. Returns its width. */
+	/** A key's name in a small box, lit while active. Returns its width. */
 	fun badge(text: String, x: Float, y: Float, lit: Boolean = false, height: Float = 22f): Float {
 		val size = 11f
 		val w = max(34f, width(text, size, UiText.Face.MEDIUM) + 16f)
@@ -214,8 +202,6 @@ class UiKit {
 
 	private fun lift(key: Any, over: Boolean): Float =
 		approach(hover[key] ?: 0f, if (over) 1f else 0f, 18f, dt).also { hover[key] = it }
-
-	// ---- Input -----------------------------------------------------------
 
 	fun mouseClicked(mx: Float, my: Float, button: Int, doubleClick: Boolean): Boolean {
 		val field = fields.lastOrNull { it.first.contains(mx, my) }
@@ -269,7 +255,7 @@ class UiKit {
 		return true
 	}
 
-	/** Puts the caret in [field] as if it had been clicked, at the end of what is there. */
+	/** Focuses [field] with the caret at the end. */
 	fun focus(field: TextField) {
 		focused = field
 	}

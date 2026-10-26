@@ -4,56 +4,37 @@ import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.dungeon.Floor7
 import imicro.cryptic.skyblock.ServerStats
-import imicro.cryptic.skyblock.SkyblockItem
 import imicro.cryptic.skyblock.SkyblockLocation
 import net.fabricmc.fabric.api.event.player.UseBlockCallback
 import net.fabricmc.fabric.api.event.player.UseItemCallback
 import net.minecraft.client.CameraType
 import net.minecraft.client.Minecraft
-import net.minecraft.core.BlockPos
-import net.minecraft.core.component.DataComponents
-import net.minecraft.nbt.CompoundTag
-import net.minecraft.util.Mth
 import net.minecraft.world.InteractionResult
-import net.minecraft.world.entity.EntitySelector
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.entity.projectile.ProjectileUtil
-import net.minecraft.world.item.Items
-import net.minecraft.world.item.component.CustomData
+import net.minecraft.world.item.ShovelItem
 import net.minecraft.world.level.ClipContext
 import net.minecraft.world.level.block.Blocks
-import net.minecraft.world.level.block.CarpetBlock
-import net.minecraft.world.level.block.FlowerPotBlock
-import net.minecraft.world.level.block.WebBlock
-import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.Vec3
-import kotlin.math.ceil
-import kotlin.math.floor
 
 /**
- * Glides the camera, and your own model in third person, from where a teleport
- * started to where it lands, instead of snapping.
+ * Glides the camera (and your model in third person) from where a teleport started to where it
+ * lands, instead of snapping. Only what's drawn moves; nothing extra is sent.
  *
- * Skyblocker's Smooth AOTE (LGPL-3.0), both of its modes, as Skyblocker has them.
+ * - **Predictive** sets off on the click towards the predicted landing and arrives about a ping
+ * later, when the server's answer is due. A click before the last teleport landed adds a leg from
+ * the end of the last one. With no answer in time, gliding stops until the server teleports you.
+ * - **Responsive** waits for the server, then closes in from where the camera was over the
+ * Smoothing time. Only a teleport that follows a click with a teleport item glides, so a lag-back
+ * or a warp while holding one still snaps.
  *
- * **Predictive** starts on the click. The landing spot is worked out the way
- * Hypixel walks a teleport — a block at a time along your view, stopping at a
- * wall, a low ceiling or the floor — and the camera sets off towards it at
- * once, timed to arrive about when the server's answer will, which is your
- * ping. A teleport clicked before the last one landed chains on from its end.
- * If the server never answers, the glide stands down until it does.
- *
- * **Responsive** waits for the server. When its teleport arrives with an
- * enabled item in hand, the camera sets off from wherever it is and closes the
- * same share of the remaining distance each frame as time has passed of the
- * time remaining, so it lands on time at an even pace.
- *
- * Only what is drawn moves. The player is wherever the server says, and
- * nothing is sent that would not have been.
+ * Either way, a glide that would put the camera inside a block is lifted onto it, and etherwarps
+ * have their own smoothing time. Inspired by Skyblocker's Smooth AOTE; the click arming, the lift
+ * and the separate etherwarp time are ideas from NEU's.
  */
 object SmoothTeleport {
-	/** The teleport kinds, as the Etherwarp card names them: Skyblocker's five. */
+	/** The teleport kinds, as the Etherwarp card names them. */
 	const val INSTANT = "Instant Transmission"
 	const val ETHER = "Etherwarp"
 	const val IMPACT = "Wither Impact"
@@ -62,14 +43,34 @@ object SmoothTeleport {
 
 	val KINDS = listOf(INSTANT, ETHER, IMPACT, SINRECALL, WEIRD)
 
-	private val WITHER_BLADES = setOf("NECRON_BLADE", "ASTRAEA", "HYPERION", "SCYLLA", "VALKYRIE")
+	private fun nameOf(kind: EtherwarpZeroPing.Kind): String = when (kind) {
+		EtherwarpZeroPing.Kind.ETHERWARP -> ETHER
+		EtherwarpZeroPing.Kind.TRANSMISSION -> INSTANT
+		EtherwarpZeroPing.Kind.IMPACT -> IMPACT
+		EtherwarpZeroPing.Kind.SINRECALL -> SINRECALL
+		EtherwarpZeroPing.Kind.WEIRD -> WEIRD
+	}
 
-	/** The longest a predicted teleport is given, whatever the ping says. */
-	private const val MAX_TELEPORT_TIME = 2_500L
+	/** The longest a glide is given, whatever the ping says. */
+	private const val MAX_GLIDE_MS = 2_500L
+
+	/** An NPC this close along the view takes the click instead of the item. */
+	private const val NPC_REACH = 4.0
+
+	/** A server teleport this long after a teleport click is that click's; later ones snap. */
+	private const val ARM_MILLIS = 1_000L
+
+	/** How far above a block's top a lifted camera sits. */
+	private const val LIFT_MARGIN = 0.05
+
+	/** How far under a ceiling a pushed-down camera sits; clear of the view's near plane. */
+	private const val DROP_MARGIN = 0.15
+
+	private const val STANDING_EYES = 1.62
+	private const val SNEAKING_EYES = 1.27
 
 	private val client: Minecraft get() = Minecraft.getInstance()
 
-	/** True while the predictive mode is the one in use. */
 	val predictive: Boolean
 		get() = Etherwarp.module.enabled && Etherwarp.smoothTeleport.value && Etherwarp.smoothPredictive.value
 
@@ -78,30 +79,76 @@ object SmoothTeleport {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		UseItemCallback.EVENT.register { player, level, hand ->
-			if (level.isClientSide) calculateTeleportUse()
+		UseItemCallback.EVENT.register { _, level, _ ->
+			if (level.isClientSide) {
+				noteClick()
+				onClick()
+			}
 			InteractionResult.PASS
 		}
-		// A shovel turning grass or dirt into a path takes the click, so the
-		// item is never used: its teleport is caught on the block instead.
+		// A shovel on grass or dirt makes a path and the item is never used, so that click is
+		// caught on the block instead.
 		UseBlockCallback.EVENT.register { player, level, hand, hit ->
-			if (level.isClientSide) {
-				val stack = player.getItemInHand(hand)
-				val block = level.getBlockState(hit.blockPos).block
-				if (isShovel(stack.item) && block in SHOVEL_BLOCKS) calculateTeleportUse()
+			if (level.isClientSide && player.getItemInHand(hand).item is ShovelItem &&
+				level.getBlockState(hit.blockPos).block in PATH_BLOCKS
+			) {
+				noteClick()
+				onClick()
 			}
 			InteractionResult.PASS
 		}
 	}
 
+	private val PATH_BLOCKS = setOf(Blocks.GRASS_BLOCK, Blocks.DIRT, Blocks.COARSE_DIRT, Blocks.PODZOL)
+
+	/** Whether the camera may glide here, in this perspective. */
+	private fun allowed(): Boolean {
+		if (!Etherwarp.module.enabled || !Etherwarp.smoothTeleport.value) return false
+		if (Etherwarp.smoothOutsideDungeons.value && DungeonLocation.inDungeon) return false
+		return client.options.cameraType == CameraType.FIRST_PERSON || Etherwarp.smoothThirdPerson.value
+	}
+
+	/** False where Hypixel refuses teleports, so none is predicted. */
+	private fun teleportsWorkHere(): Boolean {
+		if (SkyblockLocation.area == "Mineshaft" || EtherwarpZeroPing.noTeleportZone() != null) return false
+		if (!DungeonLocation.inDungeon) return true
+		// Maxor's fight.
+		if (DungeonLocation.floor == 7 && DungeonRun.inBoss && Floor7.phase == 1) return false
+		return DungeonMap.currentRoom()?.data?.name !in NO_TELEPORT_ROOMS
+	}
+
+	private val NO_TELEPORT_ROOMS = setOf("Boulder", "Teleport Maze", "Old Trap", "New Trap")
+
+	/** The last click with a ticked teleport item, and its kind, for Responsive. */
+	private var clickedAt = 0L
+	private var clickedKind: EtherwarpZeroPing.Kind? = null
+
+	private fun noteClick() {
+		val (kind, _) = heldTeleport() ?: return
+		clickedAt = System.currentTimeMillis()
+		clickedKind = kind
+	}
+
+	/** The Smoothing time for [kind]: etherwarps have their own. */
+	private fun smoothMillis(kind: EtherwarpZeroPing.Kind?): Double =
+		if (kind == EtherwarpZeroPing.Kind.ETHERWARP) Etherwarp.smoothTimeEther.value else Etherwarp.smoothTime.value
+
+	private fun eyeHeight(player: Player): Double = if (player.isShiftKeyDown) SNEAKING_EYES else STANDING_EYES
+
+	/** The held item's teleport and range, if it's one of the ticked kinds. */
+	private fun heldTeleport(): Pair<EtherwarpZeroPing.Kind, Double>? {
+		val player = client.player ?: return null
+		val found = EtherwarpZeroPing.classify(player.mainHandItem, client.options.keyShift.isDown) ?: return null
+		return found.takeIf { Etherwarp.smoothKinds.isSelected(nameOf(it.first)) }
+	}
+
 	// ---- Fake zpew conflicts ------------------------------------------------
 	//
-	// Fake zpew puts the camera on the landing spot the moment you click; a
-	// glide moves it there over time. The two cannot both have the camera for
-	// the same teleport, so neither is allowed to win quietly: whichever switch
-	// was just turned on into a clash is turned back off, and you are told.
+	// Fake zpew moves the camera to the landing at once; a glide moves it over time. Both can't own
+	// the same teleport, so whichever switch was just turned on into a clash is turned back off,
+	// with a message.
 
-	/** The three pairs: a Fake zpew switch, and the Smooth teleport kind it clashes with. */
+	/** The three pairs: a Fake zpew switch and the Smooth teleport kind it clashes with. */
 	private val CONFLICTS: List<Pair<imicro.cryptic.gui.ToggleModuleSetting, String>> by lazy {
 		listOf(
 			Etherwarp.fakeZpew to ETHER,
@@ -110,7 +157,7 @@ object SmoothTeleport {
 		)
 	}
 
-	/** What each switch was last tick, to tell which one was just turned on. Null before the first look. */
+	/** Each switch's state last tick, to tell which was just turned on. Null before the first look. */
 	private var lastFake: List<Boolean>? = null
 	private var lastKinds: List<Boolean>? = null
 	private var lastSmooth = false
@@ -139,8 +186,7 @@ object SmoothTeleport {
 					Etherwarp.smoothTeleport.value = false
 					warn("Smooth teleport", zpewName)
 				}
-				// Both already on — a saved setup from before the two were kept
-				// apart — so the newer of the two gives way.
+				// Both already on (an old saved setup), so the Smooth teleport kind gives way.
 				else -> {
 					Etherwarp.smoothKinds.toggle(Etherwarp.smoothKinds.options.indexOf(kind))
 					warn(smoothName, zpewName)
@@ -153,369 +199,276 @@ object SmoothTeleport {
 		lastSmooth = Etherwarp.smoothTeleport.value
 	}
 
-	/** Says that [turnedOff] was switched back off because it cannot be on with [kept]. */
 	private fun warn(turnedOff: String, kept: String) {
-		Toasts.show("Etherwarp", "§f$turnedOff §7was turned back off: it can't be on with §f$kept§7.", color = Toasts.Colors.TELEPORT)
-		if (!Toasts.module.enabled) {
-			client.gui.hud.chat.addClientSystemMessage(net.minecraft.network.chat.Component.literal("§8[Cryptic] §c$turnedOff was turned back off: it can't be on with $kept."))
-		}
+		Toasts.show("Teleport Features", "§f$turnedOff §7was turned back off: it can't be on with §f$kept§7.", color = Toasts.Colors.TELEPORT)
 	}
 
-	/** Keeps the ping measured while the predictive mode needs it to time a glide. */
 	fun tick() {
 		resolveConflicts()
-		if (predictive && SkyblockLocation.onSkyblock) lastPing = ServerStats.ping.toLong().coerceAtLeast(0L)
-	}
-
-	// ---- Which items -------------------------------------------------------
-
-	/**
-	 * How far the held item teleports, or -1 when it does not or its kind is not
-	 * ticked: Skyblocker's table. An Aspect only etherwarps when merged and
-	 * sneaking, and a Transmission Tuner adds its blocks to either.
-	 */
-	private fun itemDistance(): Int {
-		val stack = client.player?.mainHandItem ?: return -1
-		val data = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag()
-		fun on(kind: String) = Etherwarp.smoothKinds.isSelected(kind)
-		return when (val id = SkyblockItem.id(stack)) {
-			"ASPECT_OF_THE_LEECH_1" -> if (on(WEIRD)) 3 else -1
-			"ASPECT_OF_THE_LEECH_2" -> if (on(WEIRD)) 4 else -1
-			"ASPECT_OF_THE_END", "ASPECT_OF_THE_VOID" ->
-				if (client.options.keyShift.isDown && data.getIntOr("ethermerge", 0) == 1) {
-					if (on(ETHER)) tuned(data, 57) else -1
-				} else {
-					if (on(INSTANT)) tuned(data, 8) else -1
-				}
-			"ETHERWARP_CONDUIT" -> if (on(ETHER)) tuned(data, 57) else -1
-			"SINSEEKER_SCYTHE" -> if (on(SINRECALL)) tuned(data, 4) else -1
-			else -> if (id in WITHER_BLADES && on(IMPACT)) 10 else -1
+		// A predicted glide lasts a ping, so the number is kept fresh while one could start.
+		if (predictive && SkyblockLocation.onSkyblock) {
+			ServerStats.wantFreshPing()
+			ping = ServerStats.ping.toLong().coerceAtLeast(0L)
 		}
 	}
 
-	private fun tuned(data: CompoundTag, base: Int): Int = base + data.getIntOr("tuned_transmission", 0)
-
-	private fun isShovel(item: net.minecraft.world.item.Item): Boolean =
-		item == Items.WOODEN_SHOVEL || item == Items.STONE_SHOVEL || item == Items.IRON_SHOVEL ||
-			item == Items.GOLDEN_SHOVEL || item == Items.DIAMOND_SHOVEL
-
-	private val SHOVEL_BLOCKS = setOf(Blocks.GRASS_BLOCK, Blocks.DIRT, Blocks.COARSE_DIRT, Blocks.PODZOL)
-
-	/** Whether the camera may glide at all, in this place and perspective. */
-	private fun allowed(): Boolean {
-		if (!Etherwarp.module.enabled || !Etherwarp.smoothTeleport.value) return false
-		if (Etherwarp.smoothOutsideDungeons.value && DungeonLocation.inDungeon) return false
-		if (client.options.cameraType != CameraType.FIRST_PERSON && !Etherwarp.smoothThirdPerson.value) return false
-		return true
-	}
+	// ---- Predictive -----------------------------------------------------------
+	//
+	// A chain of legs. Each click adds a leg: the camera sets off from wherever it's drawn now and
+	// moves by that teleport's step, timed to the ping. The next leg's step is worked out from
+	// where the server will have you after the steps so far.
 
 	/**
-	 * Where teleports are refused, so none is predicted: Skyblocker's list as
-	 * Cryptic can tell it — Glacite mineshafts, and in a dungeon the boulder
-	 * room, the teleport maze, the trap rooms and Maxor's fight.
+	 * The leg under way: the server-side eyes it starts from, its step, where the camera set off
+	 * from, and when.
 	 */
-	private fun allowedLocation(): Boolean {
-		if (SkyblockLocation.area == "Mineshaft") return false
-		if (!DungeonLocation.inDungeon) return true
-		if (DungeonLocation.floor == 7 && DungeonRun.inBoss && Floor7.phase == 1) return false
-		val room = DungeonMap.currentRoom()?.data?.name ?: return true
-		return room != "Boulder" && room != "Teleport Maze" && room != "Old Trap" && room != "New Trap"
-	}
+	private class Leg(val eyes: Vec3, val step: Vec3, val cameraFrom: Vec3, val startedAt: Long, val duration: Long)
 
-	private fun eyeHeight(player: Player): Double = if (player.isShiftKeyDown) 1.27 else 1.62
+	private var leg: Leg? = null
 
-	// ---- Predictive --------------------------------------------------------
+	/** Teleports clicked that the server hasn't answered yet. */
+	private var inFlight = 0
+	private var lastAnswerAt = 0L
 
-	private var startTime = 0L
-	private var startPos: Vec3? = null
-	private var cameraStartPos: Vec3? = null
-	private var teleportVector: Vec3? = null
-	private var lastPing = 0L
-	private var currentTeleportPing = 0L
-	private var teleportsAhead = 0
-	private var lastTeleportTime = 0L
-	private var teleportDisabled = false
+	/** Set when a teleport went unanswered: no gliding until the server teleports you. */
+	private var standingDown = false
 
-	/** A right click with an item, which may be a teleport to start gliding towards. */
-	private fun calculateTeleportUse() {
+	private var ping = 0L
+
+	private fun onClick() {
 		val player = client.player ?: return
-		if (client.level == null || !predictive || teleportDisabled) return
-		if (!allowed() || !allowedLocation()) return
-
-		val distance = itemDistance()
-		if (distance == -1) return
+		if (client.level == null || !predictive || standingDown) return
+		if (!allowed() || !teleportsWorkHere()) return
+		val (kind, range) = heldTeleport() ?: return
 		if (EtherwarpZeroPing.outOfMana()) return
 
-		// The start of a chain, or the next link from the end of the last one.
-		if (teleportsAhead == 0 || startPos == null || teleportVector == null) {
-			startPos = player.position().add(0.0, eyeHeight(player), 0.0)
-			cameraStartPos = client.gameRenderer.mainCamera().position()
-			lastTeleportTime = System.currentTimeMillis()
-		} else {
-			startPos = startPos!!.add(teleportVector!!)
-			cameraStartPos = interpolatedPredictive()
-		}
-		currentTeleportPing = lastPing
-		startTime = System.currentTimeMillis()
-
-		val start = startPos ?: return
-		val look = player.calculateViewVector(player.xRot, player.yRot)
-
-		// Talking to an NPC takes the click, and nobody goes anywhere.
-		if (isTargetingNpc(player, 4.0, start, look)) {
-			startPos = null
-			teleportVector = null
-			return
-		}
-
-		var vector = raycast(distance, look, start, false)
-		if (vector == null) {
-			startPos = null
-			return
-		}
-
-		// Hypixel lands you on the middle of a block, at its own eye height.
-		val end = start.add(vector)
-		val offset = Vec3(
-			end.x - roundToCenter(end.x),
-			end.y - (ceil(end.y) + eyeHeight(player) - 1),
-			end.z - roundToCenter(end.z),
-		)
-		vector = vector.subtract(offset)
-		teleportVector = vector
-		teleportsAhead += 1
-	}
-
-	/** The server's teleport, applied: one fewer in flight, and the chain may end. */
-	private fun predictiveTeleported() {
-		teleportsAhead = maxOf(0, teleportsAhead - 1)
-		lastTeleportTime = System.currentTimeMillis()
-		teleportDisabled = false
-		if (teleportsAhead == 0) {
-			// A little of the glide left: let it finish rather than jump to the end.
-			val timeLeft = currentTeleportPing - (System.currentTimeMillis() - startTime)
-			if (timeLeft > 0 && timeLeft <= Etherwarp.smoothTime.value) return
-			startPos = null
-			teleportVector = null
-		}
-	}
-
-	/** Where the predictive glide has the camera now, or null when it is not gliding. */
-	private fun interpolatedPredictive(): Vec3? {
-		val vector = teleportVector ?: return null
-		val cameraStart = cameraStartPos ?: return null
-		if (startPos == null || teleportDisabled || client.player == null) return null
-
 		val now = System.currentTimeMillis()
-		val gap = now - startTime
-		// No answer in time: this was no teleport. Stop until one really happens.
-		val patience = minOf(maxOf(lastPing, currentTeleportPing) + Etherwarp.smoothTime.value.toLong() * teleportsAhead, MAX_TELEPORT_TIME)
-		if (now - lastTeleportTime > patience) {
-			teleportDisabled = true
-			startPos = null
-			teleportVector = null
-			teleportsAhead = 0
-			return null
+		val previous = leg
+		val chained = inFlight > 0 && previous != null
+		val eyes: Vec3
+		val cameraFrom: Vec3
+		if (chained) {
+			eyes = previous.eyes.add(previous.step)
+			cameraFrom = predictivePosition(now) ?: client.gameRenderer.mainCamera().position()
+		} else {
+			eyes = player.position().add(0.0, eyeHeight(player), 0.0)
+			cameraFrom = client.gameRenderer.mainCamera().position()
+			lastAnswerAt = now
 		}
-		val estimated = minOf(currentTeleportPing, MAX_TELEPORT_TIME)
-		val percentage = if (estimated <= 0) 1.0 else (gap.toDouble() / estimated).coerceIn(0.0, 1.0)
 
-		if (teleportsAhead == 0 && gap >= estimated + Etherwarp.smoothTime.value) {
-			startPos = null
-			teleportVector = null
-			return null
+		val look = player.calculateViewVector(player.xRot, player.yRot)
+		if (npcTakesClick(player, eyes, look)) {
+			leg = null
+			return
 		}
-		return cameraStart.add(vector.scale(percentage))
+
+		val landing = landingEyes(kind, range, eyes, look, eyeHeight(player))
+		if (landing == null) {
+			leg = null
+			return
+		}
+		leg = Leg(eyes, landing.subtract(eyes), cameraFrom, now, ping)
+		inFlight++
+		imicro.cryptic.debug.TeleportLog.glide(cameraFrom, cameraFrom.add(landing.subtract(eyes)), ping)
 	}
 
-	private fun interpolatedPredictivePlayer(): Vec3? {
-		val start = startPos ?: return null
-		val cameraStart = cameraStartPos ?: return null
-		val player = client.player ?: return null
-		val difference = start.subtract(0.0, eyeHeight(player), 0.0).subtract(cameraStart)
-		return interpolatedPredictive()?.add(difference)
+	/** Where your eyes end up after the teleport, or null if it goes nowhere. */
+	private fun landingEyes(kind: EtherwarpZeroPing.Kind, range: Double, eyes: Vec3, look: Vec3, eyeHeight: Double): Vec3? {
+		val feet = eyes.subtract(0.0, eyeHeight, 0.0)
+		val landed = if (kind == EtherwarpZeroPing.Kind.ETHERWARP) {
+			val target = EtherwarpHelper.target(feet, look, range)
+			if (!target.valid) return null
+			EtherwarpHelper.landing(target.pos ?: return null)
+		} else {
+			InstantTransmissionHelper.predict(range, feet, look) ?: return null
+		}
+		return landed.add(0.0, eyeHeight, 0.0)
 	}
 
-	/** Whether the click would land on an NPC, which takes it instead of the item. */
-	private fun isTargetingNpc(player: Player, maxDistance: Double, start: Vec3, look: Vec3): Boolean {
+	/** Whether the click lands on an NPC (one with a "CLICK" tag), which takes it. */
+	private fun npcTakesClick(player: Player, eyes: Vec3, look: Vec3): Boolean {
 		val level = player.level()
-		val end = start.add(look.scale(maxDistance))
-		val blockDistance = level.clip(ClipContext(start, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player))
-			.location.distanceTo(start)
-		val box = player.boundingBox.expandTowards(look.scale(maxDistance)).inflate(1.0)
-		val hit = ProjectileUtil.getEntityHitResult(player, start, end, box, { !it.isSpectator && it !== player }, Mth.square(blockDistance))
+		val reach = eyes.add(look.scale(NPC_REACH))
+		val wall = level.clip(ClipContext(eyes, reach, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player)).location
+		val search = player.boundingBox.expandTowards(look.scale(NPC_REACH)).inflate(1.0)
+		val hit = ProjectileUtil.getEntityHitResult(player, eyes, reach, search, { !it.isSpectator && it !== player }, eyes.distanceToSqr(wall))
 			?: return false
-		return level.getEntitiesOfClass(ArmorStand::class.java, hit.entity.boundingBox.inflate(0.0, 2.0, 0.0), EntitySelector.ENTITY_NOT_BEING_RIDDEN)
+		return level.getEntitiesOfClass(ArmorStand::class.java, hit.entity.boundingBox.inflate(0.0, 2.0, 0.0)) { !it.isPassenger }
 			.any { it.name.string == "CLICK" }
 	}
 
-	private fun roundToCenter(value: Double): Double = Math.round(value - 0.5).toDouble() + 0.5
-
-	/**
-	 * Walks a teleport a block at a time, the way Hypixel does, and returns how
-	 * far it goes: Skyblocker's raycast, line for line.
-	 */
-	private fun raycast(distance: Int, direction: Vec3, start: Vec3, isEtherwarp: Boolean): Vec3? {
-		if (client.level == null) return null
-		val xDiagonal = if (direction.x > 0) BlockPos(1, 0, 0) else BlockPos(-1, 0, 0)
-		val zDiagonal = if (direction.z > 0) BlockPos(0, 0, 1) else BlockPos(0, 0, -1)
-		var closeFloorY = Int.MAX_VALUE
-
-		var offset = 0.0
-		while (offset <= distance) {
-			val pos = start.add(direction.scale(offset))
-			val check = BlockPos.containing(pos)
-
-			if (!canTeleportThrough(check)) {
-				if (!isEtherwarp && offset == 0.0) return null
-				if (isEtherwarp) return direction.scale(offset - 1).add(direction)
-				return direction.scale(offset - 1)
-			}
-
-			if (!canTeleportThrough(check.above()) && !isEtherwarp) {
-				if (offset == 0.0) {
-					// Too low a start to judge the ceiling from: carry on.
-					val justAhead = start.add(direction.scale(0.2))
-					if (justAhead.y - floor(justAhead.y) <= 0.495) {
-						offset++
-						continue
-					}
-					return null
-				}
-				return direction.scale(offset - 1)
-			}
-
-			// Diagonal walls, which Hypixel lets you through from some directions only.
-			if (offset != 0.0 && direction.x < 0 && isBlockFloor(check.east()) &&
-				isBlockFloor(BlockPos.containing(pos.subtract(direction)).offset(zDiagonal))
-			) {
-				return direction.scale(offset - 1)
-			}
-			if (offset != 0.0 && direction.z < 0 && direction.x < 0 && isBlockFloor(check.south()) &&
-				isBlockFloor(BlockPos.containing(pos.subtract(direction)).offset(xDiagonal))
-			) {
-				return direction.scale(offset - 1)
-			}
-
-			// Close above a floor: the teleport ends when it would drop below it.
-			if ((isBlockFloor(check.below()) ||
-					(isBlockFloor(check.below().offset(xDiagonal)) && isBlockFloor(check.below().offset(zDiagonal)))) &&
-				pos.y - floor(pos.y) < 0.31
-			) {
-				closeFloorY = check.y - 1
-			}
-			if (closeFloorY == check.y) return direction.scale(offset - 1)
-
-			offset++
-		}
-
-		// The full distance, a block lower when there is nothing to stand on —
-		// which Hypixel has taken to doing.
-		if (!isBlockFloor(BlockPos.containing(start.add(direction.scale(distance.toDouble())).subtract(0.0, 1.0, 0.0)))) {
-			return direction.scale(distance.toDouble()).subtract(0.0, 1.0, 0.0)
-		}
-		return direction.scale(distance.toDouble())
+	/** A server teleport, applied: one fewer in flight, and the chain may end. */
+	private fun onAnswer() {
+		inFlight = maxOf(0, inFlight - 1)
+		lastAnswerAt = System.currentTimeMillis()
+		standingDown = false
+		if (inFlight > 0) return
+		val current = leg ?: return
+		// A little of the glide left: let it finish instead of jumping to the end.
+		val left = current.startedAt + current.duration - lastAnswerAt
+		if (left > 0 && left <= Etherwarp.smoothTime.value) return
+		leg = null
 	}
 
-	/** Air, nothing to collide with, carpets, pots, cobwebs and thin snow. */
-	private fun canTeleportThrough(pos: BlockPos): Boolean {
-		val level = client.level ?: return false
-		val state = level.getBlockState(pos)
-		if (state.isAir) return true
-		val block = state.block
-		return state.getCollisionShape(level, pos).isEmpty ||
-			block is CarpetBlock || block is FlowerPotBlock || block is WebBlock ||
-			(block == Blocks.SNOW && state.getValue(BlockStateProperties.LAYERS) <= 3)
-	}
+	/** Where the predicted glide has the camera now, or null when not gliding. */
+	private fun predictivePosition(now: Long): Vec3? {
+		val current = leg ?: return null
+		if (standingDown || client.player == null) return null
+		val grace = Etherwarp.smoothTime.value.toLong()
 
-	/** A block full height, or mud, which counts as a floor. */
-	private fun isBlockFloor(pos: BlockPos): Boolean {
-		val level = client.level ?: return false
-		val state = level.getBlockState(pos)
-		val shape = state.getCollisionShape(level, pos)
-		if (shape.isEmpty) return false
-		return shape.bounds().maxY >= 1 || state.block == Blocks.MUD
-	}
-
-	// ---- Responsive --------------------------------------------------------
-
-	private var lastPosition: Vec3? = null
-	private var lastProgress = 0.0
-	private var responsiveStart = 0L
-	private var responsiveCameraStart: Vec3? = null
-
-	/** The server's teleport arriving, before it is applied: start a responsive glide. */
-	private fun responsiveGoingToTeleport() {
-		if (Etherwarp.smoothTime.value <= 0.0 || !allowed()) return
-		if (itemDistance() == -1) return
-		val camera = client.gameRenderer.mainCamera().position()
-		lastPosition = interpolatedResponsive(camera) ?: camera
-		lastProgress = 0.0
-		responsiveStart = System.currentTimeMillis()
-	}
-
-	private fun interpolatedResponsive(original: Vec3): Vec3? {
-		val last = lastPosition ?: return null
-		responsiveCameraStart = original
-		val progress = (System.currentTimeMillis() - responsiveStart) / Etherwarp.smoothTime.value.coerceAtLeast(1.0)
-		if (progress >= 1.0) {
-			lastPosition = null
-			lastProgress = 0.0
+		// No answer in time: that click didn't teleport. Stand down until one does.
+		val patience = minOf(maxOf(ping, current.duration) + grace * inFlight, MAX_GLIDE_MS)
+		if (now - lastAnswerAt > patience) {
+			standingDown = true
+			leg = null
+			inFlight = 0
 			return null
 		}
-		val relative = (progress - lastProgress) / (1.0 - lastProgress)
-		val next = last.add(original.subtract(last).scale(relative))
-		lastPosition = next
-		lastProgress = progress
+
+		val duration = minOf(current.duration, MAX_GLIDE_MS)
+		val elapsed = now - current.startedAt
+		if (inFlight == 0 && elapsed >= duration + grace) {
+			leg = null
+			return null
+		}
+		val t = if (duration <= 0) 1.0 else (elapsed.toDouble() / duration).coerceIn(0.0, 1.0)
+		return current.cameraFrom.add(current.step.scale(t))
+	}
+
+	/** Your model during a predicted glide: on the server-side path, a share of the step along. */
+	private fun predictivePlayer(): Vec3? {
+		val current = leg ?: return null
+		val player = client.player ?: return null
+		val camera = predictivePosition(System.currentTimeMillis()) ?: return null
+		val travelled = camera.subtract(current.cameraFrom)
+		return current.eyes.subtract(0.0, eyeHeight(player), 0.0).add(travelled)
+	}
+
+	// ---- Responsive -----------------------------------------------------------
+
+	/**
+	 * A catch-up after a server teleport: each frame closes the share of the remaining distance
+	 * that the time passed is of the time left, so it arrives on time at an even pace even while
+	 * you move.
+	 */
+	private class CatchUp(var at: Vec3, val startedAt: Long, val duration: Double) {
+		var done = 0.0
+	}
+
+	private var catchUp: CatchUp? = null
+
+	/** Where the camera really was last frame, for the model's offset in third person. */
+	private var lastReal: Vec3? = null
+
+	private fun startCatchUp() {
+		val now = System.currentTimeMillis()
+		// Ping-long answers still count, however slow the server.
+		val window = maxOf(ARM_MILLIS, ping + ARM_MILLIS / 2)
+		if (clickedAt == 0L || now - clickedAt > window) return
+		val duration = smoothMillis(clickedKind)
+		if (duration <= 0.0 || !allowed()) return
+		val camera = client.gameRenderer.mainCamera().position()
+		val from = responsivePosition(camera) ?: camera
+		catchUp = CatchUp(from, now, duration)
+		// One click, one glide.
+		clickedAt = 0L
+	}
+
+	private fun responsivePosition(real: Vec3): Vec3? {
+		val current = catchUp ?: return null
+		lastReal = real
+		val progress = (System.currentTimeMillis() - current.startedAt) / current.duration.coerceAtLeast(1.0)
+		if (progress >= 1.0) {
+			catchUp = null
+			return null
+		}
+		val share = (progress - current.done) / (1.0 - current.done)
+		val next = current.at.add(real.subtract(current.at).scale(share))
+		current.at = next
+		current.done = progress
 		return next
 	}
 
-	private fun interpolatedResponsivePlayer(partialTick: Float): Vec3? {
+	private fun responsivePlayer(partialTick: Float): Vec3? {
 		val player = client.player ?: return null
-		val cameraStart = responsiveCameraStart ?: return null
-		val difference = player.getPosition(partialTick).subtract(cameraStart)
-		return interpolatedResponsive(cameraStart)?.add(difference)
+		val real = lastReal ?: return null
+		val camera = responsivePosition(real) ?: return null
+		return player.getPosition(partialTick).add(camera.subtract(real))
 	}
 
-	// ---- Hooks ---------------------------------------------------------------
+	// ---- Hooks ------------------------------------------------------------------
 
-	/** The server's teleport arriving, on the client thread, before it is applied. */
+	/** The server's position packet arriving, before it's applied. */
 	@JvmStatic
 	fun beforeServerTeleport() {
 		if (!client.isSameThread) return
-		if (Etherwarp.module.enabled && Etherwarp.smoothTeleport.value && !Etherwarp.smoothPredictive.value) {
-			responsiveGoingToTeleport()
-		}
+		if (Etherwarp.module.enabled && Etherwarp.smoothTeleport.value && !Etherwarp.smoothPredictive.value) startCatchUp()
 	}
 
-	/** The server's teleport, applied. */
+	/** The server's position packet, applied. */
 	@JvmStatic
 	fun afterServerTeleport() {
 		if (!client.isSameThread) return
-		predictiveTeleported()
+		onAnswer()
 	}
 
-	/** Where the camera is, given where it really is: what the camera hook hands back. */
+	/**
+	 * The last positions handed out. Kept in fields so they always escape: the hooks pick between
+	 * these and the real position, and Java 25's JIT miscompiles that pick when one side is a fresh
+	 * allocation it could have optimised away (it crashed the game with a null position).
+	 */
+	private var handedCamera: Vec3? = null
+	private var handedPlayer: Vec3? = null
+
+	/** The camera's position while gliding, or null to leave it alone. */
 	@JvmStatic
 	fun cameraPosition(original: Vec3): Vec3? {
 		if (!Etherwarp.module.enabled || !Etherwarp.smoothTeleport.value) return null
-		return if (Etherwarp.smoothPredictive.value) interpolatedPredictive() else interpolatedResponsive(original)
+		val glided = if (Etherwarp.smoothPredictive.value) predictivePosition(System.currentTimeMillis()) else responsivePosition(original)
+		handedCamera = glided?.let(::outOfBlocks)
+		return handedCamera
 	}
 
-	/** Where your own model is drawn in third person, so it rides along with the camera. */
+	/**
+	 * Moves a glide point that's inside a block out of it, so its inside never shows. The straight
+	 * line up a ledge or stairs cuts through the corner and is lifted onto the top, as NEU does; a
+	 * ceiling (open below, solid above) pushes the camera down under it instead, or a low ceiling
+	 * would throw the view up through the roof.
+	 */
+	private fun outOfBlocks(point: Vec3): Vec3 {
+		val level = client.level ?: return point
+		val pos = net.minecraft.core.BlockPos.containing(point)
+		val shape = level.getBlockState(pos).getCollisionShape(level, pos)
+		if (shape.isEmpty) return point
+		val top = pos.y + shape.max(net.minecraft.core.Direction.Axis.Y)
+		val bottom = pos.y + shape.min(net.minecraft.core.Direction.Axis.Y)
+		if (point.y < bottom || point.y >= top) return point
+		fun open(at: net.minecraft.core.BlockPos) = level.getBlockState(at).getCollisionShape(level, at).isEmpty
+		val openAbove = top < pos.y + 1.0 || open(pos.above())
+		val openBelow = bottom > pos.y || open(pos.below())
+		val drop = when {
+			openBelow && !openAbove -> true
+			openAbove && !openBelow -> false
+			// Open on both sides or neither: the nearer face.
+			else -> point.y - bottom < top - point.y
+		}
+		return if (drop) Vec3(point.x, bottom - DROP_MARGIN, point.z) else Vec3(point.x, top + LIFT_MARGIN, point.z)
+	}
+
+	/** Your model's position in third person, riding along with the camera. */
 	@JvmStatic
 	fun playerPosition(partialTick: Float): Vec3? {
 		if (!Etherwarp.module.enabled || !Etherwarp.smoothTeleport.value) return null
 		if (client.options.cameraType.isFirstPerson) return null
-		return if (Etherwarp.smoothPredictive.value) interpolatedPredictivePlayer() else interpolatedResponsivePlayer(partialTick)
+		handedPlayer = if (Etherwarp.smoothPredictive.value) predictivePlayer() else responsivePlayer(partialTick)
+		return handedPlayer
 	}
 
 	fun forget() {
-		startPos = null
-		teleportVector = null
-		teleportsAhead = 0
-		teleportDisabled = false
-		lastPosition = null
-		lastProgress = 0.0
+		leg = null
+		inFlight = 0
+		standingDown = false
+		catchUp = null
+		clickedAt = 0L
 	}
 }

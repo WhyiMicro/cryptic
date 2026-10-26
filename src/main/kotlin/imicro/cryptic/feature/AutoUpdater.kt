@@ -19,19 +19,11 @@ import java.util.HexFormat
 import java.util.zip.ZipFile
 
 /**
- * Downloads a new Cryptic and installs it when the game closes.
- *
- * Update Checker finds the release; this fetches its jar into
- * `config/cryptic/update`, checks it is the file GitHub says it is (its
- * SHA-256) and really is Cryptic, and keeps it there. The running jar cannot
- * be replaced while the game has it open — Windows refuses — so the swap is
- * left to [imicro.cryptic.update.UpdateSwapper], a tiny separate Java process
- * started as the game shuts down that waits for it to exit and then trades the
- * jars over. The next launch is the new version.
- *
- * The way most Fabric mods that update themselves do it (SkyHanni's
- * libautoupdate). Essential instead never replaces its own jar and loads the
- * real mod from a download, which needs far more machinery than this.
+ * Downloads a new Cryptic and installs it when the game closes. Update Checker finds the release;
+ * this downloads its jar to `config/cryptic/update`, checks its SHA-256 against GitHub's and that
+ * it really is Cryptic, and keeps it. Windows won't replace a jar the game has open, so
+ * [imicro.cryptic.update.UpdateSwapper] does the swap in a separate process after the game exits.
+ * The same approach as SkyHanni's libautoupdate.
  */
 object AutoUpdater {
 	private val directory: Path = FabricLoader.getInstance().configDir.resolve("cryptic").resolve("update")
@@ -41,11 +33,11 @@ object AutoUpdater {
 	private const val HELPER_CLASS = "imicro.cryptic.update.UpdateSwapper"
 
 	private val http: HttpClient by lazy {
-		// GitHub hands a download off to its file host, so redirects are followed.
+		// GitHub redirects downloads to its file host.
 		HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).followRedirects(HttpClient.Redirect.NORMAL).build()
 	}
 
-	/** The downloaded jar waiting to go in when the game closes, and its version. */
+	/** The downloaded jar waiting for the game to close, and its version. */
 	@Volatile
 	private var pending: Pair<Path, String>? = null
 
@@ -58,14 +50,14 @@ object AutoUpdater {
 		if (initialized) return
 		initialized = true
 		ClientLifecycleEvents.CLIENT_STOPPING.register { install() }
-		// A download from a session that never got to install it — the game
-		// crashed, or was killed — is still good, if it is still newer.
+		// A download from a session that never installed it (crash, kill) is still good if it's
+		// still newer.
 		runCatching {
 			if (!Files.isDirectory(directory)) return@runCatching
 			Files.list(directory).use { files ->
 				files.filter { it.fileName.toString().endsWith(".jar") }.forEach { jar ->
 					val version = jar.fileName.toString().removePrefix("cryptic-").removeSuffix(".jar")
-					// Checked against this Minecraft again: the game may have been updated since.
+					// Checked against this Minecraft again, since the game may have updated.
 					if (UpdateChecker.isNewer(version, UpdateChecker.installed) && isCryptic(jar) && runsOnThisMinecraft(jar)) pending = jar to version
 					else Files.deleteIfExists(jar)
 				}
@@ -73,16 +65,12 @@ object AutoUpdater {
 		}.onFailure { Cryptic.LOGGER.warn("Could not look for a waiting update", it) }
 	}
 
-	/** Whether this game can update itself at all: a jar in a mods folder, not a development run. */
+	/** Whether this game can update itself: a jar in a mods folder, not a dev run. */
 	val supported: Boolean get() = runningJar() != null
 
-	/** The version already downloaded and waiting for the game to close, if any. */
 	val waiting: String? get() = pending?.second
 
-	/**
-	 * Downloads the jar of [release] for [version], off the game thread, and
-	 * says how it went through [done] (on whichever thread finished it).
-	 */
+	/** Downloads [release]'s jar for [version] off the game thread, reporting through [done]. */
 	fun download(release: JsonObject, version: String, done: (Result<String>) -> Unit) {
 		if (pending?.second == version) return done(Result.success(version))
 		if (downloading) return
@@ -119,11 +107,7 @@ object AutoUpdater {
 		}
 	}
 
-	/**
-	 * The release's jar for this Minecraft version — named `cryptic-0.30.0-26.2.jar`
-	 * for 26.2 — leaving out a sources jar. A release with no jar for this
-	 * version has nothing for this game, even when it has a jar for another.
-	 */
+	/** The release's jar for this Minecraft version (`cryptic-0.30.0-26.2.jar`), not a sources jar. */
 	fun assetFor(release: JsonObject): JsonObject? {
 		val minecraft = UpdateChecker.minecraftTag
 		if (minecraft.isEmpty()) return null
@@ -135,10 +119,8 @@ object AutoUpdater {
 	}
 
 	/**
-	 * Whether [jar] says it runs on the Minecraft this game is: its
-	 * `fabric.mod.json` asks for a Minecraft version (`~26.2`), and that is
-	 * checked the way Fabric itself checks it. The name the jar was released
-	 * under is a convention; this is what Fabric will refuse to start on.
+	 * Whether [jar]'s `fabric.mod.json` asks for this Minecraft version, checked the way Fabric
+	 * checks it.
 	 */
 	private fun runsOnThisMinecraft(jar: Path): Boolean = runCatching {
 		val running = FabricLoader.getInstance().getModContainer("minecraft").orElse(null)?.metadata?.version ?: return false
@@ -164,7 +146,6 @@ object AutoUpdater {
 		return HexFormat.of().formatHex(digest.digest())
 	}
 
-	/** Whether [jar] is a Fabric mod whose id is Cryptic's. */
 	private fun isCryptic(jar: Path): Boolean = runCatching {
 		ZipFile(jar.toFile()).use { zip ->
 			val entry = zip.getEntry("fabric.mod.json") ?: return false
@@ -173,7 +154,7 @@ object AutoUpdater {
 		}
 	}.getOrDefault(false)
 
-	/** The jar this game loaded Cryptic from, or null when it is not a jar (a development run). */
+	/** The jar Cryptic was loaded from, or null in a dev run. */
 	private fun runningJar(): Path? {
 		if (FabricLoader.getInstance().isDevelopmentEnvironment) return null
 		val container = FabricLoader.getInstance().getModContainer(Cryptic.MOD_ID).orElse(null) ?: return null
@@ -181,9 +162,8 @@ object AutoUpdater {
 	}
 
 	/**
-	 * Starts the swap, as the game shuts down: copies the helper class out of
-	 * the jar (it cannot run from the jar it is about to replace) and launches
-	 * it with this game's own Java.
+	 * Starts the swap as the game shuts down: copies the helper class out of the jar (it can't run
+	 * from the jar it replaces) and launches it with this game's Java.
 	 */
 	private fun install() {
 		val (jar, version) = pending ?: return
@@ -198,7 +178,7 @@ object AutoUpdater {
 			}
 			val windows = System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)
 			val bin = Path.of(System.getProperty("java.home"), "bin")
-			// javaw on Windows, so no console window flashes up as the game closes.
+			// javaw on Windows, so no console flashes up.
 			val java = listOf(if (windows) "javaw.exe" else "java", if (windows) "java.exe" else "java")
 				.map(bin::resolve).firstOrNull(Files::isRegularFile) ?: error("No Java found in ${bin}")
 			ProcessBuilder(

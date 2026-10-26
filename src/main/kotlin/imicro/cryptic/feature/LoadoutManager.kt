@@ -14,24 +14,16 @@ import net.minecraft.world.inventory.ContainerInput
 import org.lwjgl.glfw.GLFW
 
 /**
- * Keys for SkyBlock's loadout menu.
- *
- * Odin's Loadout Keybinds (BSD 3-Clause, Copyright (c) 2025 odtheking): in the
- * "(1/2) Loadout" menu a key presses the slot of the loadout it stands for, and
- * two more turn the page. The key that opens the menu is Odin's Command
- * Keybinds' Loadouts. Close GUI on swap is Cryptic's: the menu has done its job
- * once a loadout is put on, so it can go.
- *
- * The loadout keys are 1 to 0 to begin with, which in a chest would otherwise
- * swap the hovered item into the hotbar: inside the loadout menu they are
- * taken here instead. The page keys are the mouse's side buttons.
+ * Keys for SkyBlock's loadout menu, from Odin's Loadout Keybinds: a key per loadout and two page
+ * keys, plus Odin's Command Keybinds key to open it. Close GUI on swap is Cryptic's. The loadout
+ * keys default to 1 to 0, taken inside the menu before they'd swap hotbar items; the page keys are
+ * the mouse side buttons.
  */
 object LoadoutManager {
-	/** "(1/2) Loadout". */
 	private val LOADOUT_TITLE = Regex("""\((\d+)/(\d+)\) Loadout""")
 	private val FORMATTING = Regex("§.")
 
-	/** The twelve loadouts, three to a row, in the order Odin numbers them. */
+	/** The twelve loadouts, three to a row, in Odin's order. */
 	private val LOADOUT_SLOTS = intArrayOf(
 		14, 15, 16,
 		23, 24, 25,
@@ -39,7 +31,6 @@ object LoadoutManager {
 		41, 42, 43,
 	)
 
-	/** The page arrows. */
 	private const val NEXT_PAGE_SLOT = 44
 	private const val PREVIOUS_PAGE_SLOT = 17
 
@@ -84,7 +75,6 @@ object LoadoutManager {
 		InputConstants.KEY_9, InputConstants.KEY_0, InputConstants.KEY_MINUS, InputConstants.KEY_EQUALS,
 	)
 
-	/** One key per loadout, Loadout 1 to Loadout 12. */
 	val loadoutKeys: List<KeybindModuleSetting> = DEFAULT_KEYS.mapIndexed { index, key ->
 		KeybindModuleSetting(
 			id = "loadout_${index + 1}",
@@ -104,13 +94,12 @@ object LoadoutManager {
 		settings = listOf(openKey, closeOnSwap, pageSection, nextPage, previousPage, loadoutSection) + loadoutKeys,
 	)
 
-	/** Whether the open key was down last tick, so a held key opens the menu once. */
+	/** Whether the open key was down last tick, so holding it opens the menu once. */
 	private var openKeyDown = false
 
-	/** Set by a swap: the menu is closed on the next tick, once the click has gone out. */
+	/** Set by a swap; the menu closes next tick, once the click has gone out. */
 	private var closePending = false
 
-	/** True while SkyBlock has to be told apart from the rest of Hypixel for this. */
 	val needsSkyblock: Boolean get() = module.enabled
 
 	fun tick(client: Minecraft) {
@@ -127,7 +116,7 @@ object LoadoutManager {
 		openKeyDown = down
 	}
 
-	/** The page the loadout menu is on and how many it has, or null when it is not open. */
+	/** The loadout menu's page and page count, or null when it isn't open. */
 	private fun loadoutPage(screen: Any?): Pair<Int, Int>? {
 		if (screen !is AbstractContainerScreen<*>) return null
 		val match = LOADOUT_TITLE.find(screen.title.string.replace(FORMATTING, "")) ?: return null
@@ -136,7 +125,7 @@ object LoadoutManager {
 		return current to total
 	}
 
-	/** A key pressed in a screen. True when it was one of ours, which the screen then never sees. */
+	/** A key pressed in a screen. True when it was ours, and the screen never sees it. */
 	@JvmStatic
 	fun handleKeyPress(screen: AbstractContainerScreen<*>, key: Int): Boolean {
 		if (!module.enabled) return false
@@ -144,7 +133,6 @@ object LoadoutManager {
 		return act(screen, page) { it.matches(key) }
 	}
 
-	/** A mouse button pressed in a screen, for binds on the mouse — the side buttons by default. */
 	@JvmStatic
 	fun handleMouseClick(screen: AbstractContainerScreen<*>, button: Int): Boolean {
 		if (!module.enabled) return false
@@ -169,10 +157,7 @@ object LoadoutManager {
 		return true
 	}
 
-	/**
-	 * A slot clicked in a screen by hand: a loadout clicked in the loadout menu
-	 * is a swap too, as far as closing the menu goes.
-	 */
+	/** A loadout clicked by hand counts as a swap for closing the menu. */
 	@JvmStatic
 	fun onSlotClicked(slotId: Int, button: Int, input: ContainerInput) {
 		if (!module.enabled || !closeOnSwap.value) return
@@ -182,7 +167,7 @@ object LoadoutManager {
 		closePending = true
 	}
 
-	/** Whether a loadout slot has a loadout in it, rather than the glass that fills an empty one. */
+	/** Whether the slot holds a loadout rather than the glass of an empty one. */
 	private fun holdsLoadout(screen: AbstractContainerScreen<*>, slot: Int): Boolean {
 		val stack = screen.menu.slots.getOrNull(slot)?.item ?: return false
 		if (stack.isEmpty) return false

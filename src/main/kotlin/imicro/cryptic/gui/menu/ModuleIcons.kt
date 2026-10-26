@@ -3,23 +3,30 @@ package imicro.cryptic.gui.menu
 import imicro.cryptic.gui.Module
 
 /**
- * The Font Awesome (6.7.2, free solid) glyph on each module's card, by module id.
- *
- * Kept in one place so they are easy to swap: find an icon on fontawesome.com,
- * check it is in the free solid set, and put its Unicode value here. The name
- * beside each one is Font Awesome's. A module missing from the list falls back
- * to its category's icon.
+ * The Font Awesome (6.7.2, free solid) glyph on each module's card, by module id. To change one,
+ * find a free solid icon on fontawesome.com and put its Unicode value here. Missing modules use
+ * their category's icon.
  */
 object ModuleIcons {
 	private val byId = mapOf(
 		// General
-		"arrow_fix" to "\uf7d9", // screwdriver-wrench
-		"arrow_hit_sound" to "\uf140", // bullseye
+		"bow_tweaks" to "\uf140", // bullseye
 		"auto_clicker" to "\uf8cc", // computer-mouse
 		"auto_gfs" to "\uf49e", // box-open
 		"auto_sprint" to "\uf70c", // person-running
 		"better_chat" to "\uf086", // comments
 		"cookie_reminder" to "\uf564", // cookie-bite
+		"confirm_disconnect" to "\uf2f5", // right-from-bracket
+		"party_finder" to "\ue533", // people-group
+		"party_blacklist" to "\uf235", // user-xmark
+		"item_outline" to "\uf5ee", // draw-polygon
+		"capes" to "\uf024", // flag
+		"freelook" to "\uf1e5", // binoculars
+		"freecam" to "\uf03d", // video
+		"hide_armor" to "\uf070", // eye-slash
+		"client_restrictions" to "\uf023", // lock
+		"wither_dragons" to "\uf6d5", // dragon
+		"relics" to "\uf521", // crown
 		"daily_rewards" to "\uf06b", // gift
 		"experiment_solver" to "\uf0c3", // flask
 		"gyro_helper" to "\uf76f", // tornado
@@ -28,7 +35,7 @@ object ModuleIcons {
 		"no_jump_delay" to "\uf102", // angles-up
 		"nucleus_qol" to "\uf3a5", // gem
 		"party_features" to "\uf0c0", // users
-		"sb_kick" to "\uf2f5", // right-from-bracket
+		"sb_kick" to "\ue552", // person-walking-arrow-right
 		"scrollable_tooltips" to "\uf70e", // scroll
 		"slot_binds" to "\uf0c1", // link
 		"spring_boots_helper" to "\uf54b", // shoe-prints
@@ -36,6 +43,7 @@ object ModuleIcons {
 
 		// Dungeon
 		"auto_requeue" to "\uf2f9", // rotate-right
+		"class_abilities" to "\uf72b", // wand-magic-sparkles
 		"blessing_display" to "\uf684", // hands-praying
 		"blood_camp" to "\uf043", // droplet
 		"breaker_helper" to "\uf6e3", // hammer
@@ -72,17 +80,17 @@ object ModuleIcons {
 		"terminal_solver" to "\uf120", // terminal
 		"terminal_times" to "\uf017", // clock
 		"terracotta_timer" to "\uf443", // chess-pawn
+		"f3_features" to "\uf501", // user-graduate
 
 		// Render
 		"animations" to "\uf255", // hand-back-fist
-		"arrow_hitboxes" to "\uf5cb", // vector-square
 		"better_glow" to "\uf0eb", // lightbulb
 		"block_overlay" to "\uf1b2", // cube
 		"camera" to "\uf030", // camera
 		"custom_nametags" to "\uf02b", // tag
 		"custom_scale" to "\uf31e", // maximize
 		"dark_mode" to "\uf186", // moon
-		"etherwarp" to "\ue2ca", // wand-magic-sparkles
+		"etherwarp" to "\uf124", // location-arrow
 		"hide_players" to "\uf506", // user-slash
 		"lava_to_water" to "\uf773", // water
 		"no_debuff" to "\uf484", // pills
@@ -91,19 +99,28 @@ object ModuleIcons {
 		"time_changer" to "\uf185", // sun
 		"wither_cloak_effect" to "\uf505", // user-shield
 
-		// Settings
+		// General: the managers
 		"alias_manager" to "\uf121", // code
 		"carry_manager" to "\uf4ce", // people-carry-box
-		"click_gui" to "\uf1de", // sliders
+		"slayer_features" to "\uf54c", // skull
+		"chocolate_factory" to "\uf275", // industry
 		"crosshair_editor" to "\uf05b", // crosshairs
-		"example_module" to "\uf61f", // shapes
 		"keybinds_manager" to "\uf11c", // keyboard
-		"profiles" to "\uf5fd", // layer-group
 		"sound_manager" to "\uf028", // volume-high
+
+		// Settings
+		"click_gui" to "\uf1de", // sliders
+		"credits" to "\uf004", // heart
+		"example_module" to "\uf61f", // shapes
+		"profiles" to "\uf5fd", // layer-group
 		"toasts" to "\uf0f3", // bell
+		"item_protection" to "\uf132", // shield
+		"bazaar" to "\uf54e", // store
+		"mining" to "\uf85e", // person-digging
+		"fishing" to "\uf578", // fish
+		"hud_editor" to "\uf26c", // display
 		"update_checker" to "\uf0ed", // cloud-arrow-down
 	)
 
-	/** The module's own icon, or null to use its category's. */
 	fun of(module: Module): String? = byId[module.id]
 }

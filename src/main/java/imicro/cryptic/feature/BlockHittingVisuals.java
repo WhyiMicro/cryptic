@@ -17,22 +17,14 @@ public final class BlockHittingVisuals {
     private BlockHittingVisuals() {
     }
 
-    /**
-     * These checks run once per rendered humanoid per frame, so the plain field
-     * reads that decide whether the pose can apply at all are evaluated before
-     * anything touches the client, an entity, or an item tag.
-     */
+    /** Runs per humanoid per frame, so the cheap field checks come first. */
     private static boolean isEnabled() {
         return !EXTERNAL_BLOCKING_RENDERER_PRESENT
             && Animations.module.getEnabled()
             && Animations.blockHitting.getValue();
     }
 
-    /**
-     * Render states are reused for every visible player. Comparing entity ids is
-     * therefore essential: checking only for AvatarRenderState would make every
-     * player use Cryptic's local block pose while the use key is held.
-     */
+    /** Render states are reused for every player, so the entity id has to match the local player's. */
     public static boolean isBlockingLocalPlayer(AvatarRenderState state) {
         if (!isEnabled()) return false;
 
@@ -54,7 +46,6 @@ public final class BlockHittingVisuals {
             && holdsBlockingSword(minecraft, localPlayer, localPlayer.getMainHandItem());
     }
 
-    /** The same rule for one specific held stack, used by the first-person renderer. */
     public static boolean isBlockingWith(LivingEntity entity, ItemStack stack) {
         return isEnabled() && holdsBlockingSword(Minecraft.getInstance(), entity, stack);
     }

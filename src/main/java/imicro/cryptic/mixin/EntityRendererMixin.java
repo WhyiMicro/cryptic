@@ -28,15 +28,11 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Feeds Cryptic's own decisions into the render state an entity is drawn from. */
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererMixin<T extends Entity, S extends EntityRenderState> {
     /**
-     * Leaves an entity undrawn: a corpse Render Optimizer has finished with,
-     * or the nametag of a mob Highlight is not interested in. Refusing to
-     * render is cheaper than rendering it invisibly, and answering here rather
-     * than deleting the entity on a tick means a tag never shows for a frame
-     * before it goes.
+     * Leaves an entity undrawn: a corpse Render Optimizer is done with, or a nametag Highlight
+     * doesn't want. Answered here so a tag never shows for a frame.
      */
     @Inject(method = "shouldRender", at = @At("HEAD"), cancellable = true)
     private void cryptic$skipHiddenEntities(T entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> info) {
@@ -46,12 +42,8 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
     }
 
     /**
-     * Un-hides the dungeon mobs Hypixel spawns invisible, as they are drawn,
-     * and notes which entity this state was built from.
-     *
-     * The note is what lets a feature posing a model know whose model it is: a
-     * render state is a flat copy with no way back to its entity, and the
-     * model-setup call it ends up in is given nothing else.
+     * Un-hides the dungeon mobs Hypixel spawns invisible, and records which entity this state came
+     * from (a render state has no link back).
      */
     @Inject(method = "extractRenderState", at = @At("HEAD"))
     private void cryptic$revealHiddenMobs(T entity, S state, float partialTick, CallbackInfo info) {
@@ -59,15 +51,12 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
         ((EntityRenderStateHolder) state).cryptic$setEntity(entity);
     }
 
-    /** Drops the vanilla name tag for players whose label Cryptic draws itself. */
     @Inject(method = "extractRenderState", at = @At("TAIL"))
     private void cryptic$hideReplacedNameTag(T entity, S state, float partialTick, CallbackInfo info) {
         Component customTag = CustomNametags.tagFor(entity);
         if (customTag != null) {
             state.nameTag = customTag;
-            // Vanilla only works out where a tag hangs for entities it decided
-            // to name, and the player is never one of them, so the attachment
-            // it left empty has to be filled in as well.
+            // Vanilla never works out a tag position for the player, so it's filled in here.
             if (state.nameTagAttachment == null) {
                 state.nameTagAttachment = entity.getAttachments()
                     .getNullable(EntityAttachment.NAME_TAG, 0, entity.getYRot(partialTick));
@@ -87,17 +76,8 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
     }
 
     /**
-     * Moves the two things pinned to a resized model with it.
-     *
-     * The name tag hangs at a height worked out from the real model and the
-     * shadow is cast at the real model's width, so neither follows a scale
-     * applied to the model alone — a shrunk player wears their name a body
-     * length above their head until this runs. Both are opt-in, because a name
-     * that keeps its own size is often the point of shrinking somebody.
-     */
-    /**
-     * Your own model in third person, carried along with a smooth teleport's
-     * camera rather than left waiting at the landing spot — Skyblocker's hook.
+     * Moves the name tag and shadow with a resized model; both opt-in, since a normal-sized name is
+     * often the point.
      */
     @Inject(method = "extractRenderState", at = @At("TAIL"))
     private void cryptic$smoothTeleportModel(T entity, S state, float partialTick, CallbackInfo info) {
@@ -122,13 +102,7 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
         }
     }
 
-    /**
-     * Outlines the entities Cryptic wants outlined.
-     *
-     * Vanilla has just filled this in from the entity's team color, and only
-     * for entities the server is making glow, so the assignment is replaced
-     * rather than added to.
-     */
+    /** Outlines the entities Cryptic wants outlined, replacing vanilla's team-colour glow. */
     @Inject(method = "extractRenderState", at = @At("TAIL"))
     private void cryptic$applyCustomOutline(T entity, S state, float partialTick, CallbackInfo info) {
         if (RenderOptimizer.hidesEntityFire()) {
@@ -143,14 +117,23 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
             outlineColor = CarryManager.outlineColorFor(entity);
         }
         if (outlineColor == EntityRenderState.NO_OUTLINE) {
+            outlineColor = imicro.cryptic.feature.SlayerFeatures.outlineColorFor(entity);
+        }
+        if (outlineColor == EntityRenderState.NO_OUTLINE) {
+            Integer dragon = imicro.cryptic.feature.WitherDragons.outlineColorFor(entity);
+            if (dragon != null) outlineColor = dragon;
+        }
+        if (outlineColor == EntityRenderState.NO_OUTLINE) {
             outlineColor = SpiritBear.outlineColorFor(entity);
+        }
+        if (outlineColor == EntityRenderState.NO_OUTLINE) {
+            outlineColor = imicro.cryptic.feature.ItemOutline.outlineColorFor(entity);
         }
         if (outlineColor != EntityRenderState.NO_OUTLINE) {
             state.outlineColor = outlineColor;
         }
 
-        // Whatever ends up outlined, ours or the server's, carries Better
-        // Glow's fill strength in the alpha the outline pass reads.
+        // Any outline carries Better Glow's fill strength in its alpha.
         if (state.outlineColor != EntityRenderState.NO_OUTLINE) {
             state.outlineColor = BetterGlow.applyFill(state.outlineColor);
         }

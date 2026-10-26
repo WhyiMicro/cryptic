@@ -13,18 +13,10 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
 
 /**
- * Replaces the black wireframe around the block you are looking at.
- *
- * Ported from NoammAddons (CC0, Copyright (c) Noamm9). Vanilla's outline is a
- * thin black line, which on a dark dungeon floor is very nearly invisible —
- * and the block under your crosshair is the thing a secret, a lever and an
- * etherwarp all depend on. A coloured box of your own width says it plainly.
- *
- * It replaces rather than adds: the vanilla outline is cancelled in the same
- * breath, so there is never one drawn under the other.
+ * Replaces vanilla's thin black block outline with a coloured box of your own width, cancelling
+ * vanilla's. Ported from NoammAddons.
  */
 object BlockOverlay {
-	/** Indices into [mode]. */
 	private const val MODE_OUTLINE = 0
 	private const val MODE_FILL = 1
 
@@ -84,26 +76,16 @@ object BlockOverlay {
 		visibleIf = { !advanced.value },
 	)
 
-	@JvmField
-	val hideWithEtherwarp = ToggleModuleSetting(
-		id = "hide_with_etherwarp",
-		label = "Hide with Etherwarp",
-		defaultValue = true,
-		description = "Steps aside while you aim an etherwarp.",
-	)
-
-	// ---- Advanced: Custom Block Highlight --------------------------------
+	// ---- Advanced ----------------------------------------------------------
 	//
-	// Ported from Custom Block Highlight (GPL-3.0, Tektonikal). Drawn by
-	// [BlockHighlight] rather than the plain box above, which is what the
-	// Advanced switch chooses between.
+	// Drawn by [BlockHighlight] instead of the plain box. Inspired by Custom Block Highlight.
 
 	@JvmField
 	val advanced = ToggleModuleSetting(
 		id = "advanced",
 		label = "Advanced",
 		defaultValue = false,
-		description = "Custom Block Highlight's shapes, gradients and animations.",
+		description = "Cut and tapered edges, gradients, a rainbow, and a box that glides, fades and pops in.",
 	)
 
 	private fun shown() = advanced.value
@@ -112,7 +94,6 @@ object BlockOverlay {
 
 	private val shapeSection = SectionModuleSetting("advanced_shape_section", "Shape", visibleIf = ::shown)
 
-	/** Indices into [shapeStyle]. */
 	const val SHAPE_BOUNDS = 0
 	const val SHAPE_COLLISION = 1
 
@@ -126,7 +107,6 @@ object BlockOverlay {
 		visibleIf = ::shown,
 	)
 
-	/** Indices into [faces]. */
 	const val FACES_ALL = 0
 	const val FACES_EXPOSED = 1
 	const val FACES_LOOKED_AT = 2
@@ -140,30 +120,6 @@ object BlockOverlay {
 		defaultIndex = FACES_ALL,
 		description = "Which sides are drawn. Bounds only.",
 		visibleIf = { shown() && shapeStyle.selectedIndex == SHAPE_BOUNDS },
-	)
-
-	@JvmField
-	val expandBlocks = SliderModuleSetting(
-		id = "expand_blocks",
-		label = "Grow by",
-		defaultValue = 0.0,
-		min = -0.25,
-		max = 0.25,
-		step = 0.005,
-		unit = " blocks",
-		visibleIf = ::shown,
-	)
-
-	@JvmField
-	val scalePercent = SliderModuleSetting(
-		id = "scale_percent",
-		label = "Scale",
-		defaultValue = 100.0,
-		min = 50.0,
-		max = 150.0,
-		step = 1.0,
-		unit = "%",
-		visibleIf = ::shown,
 	)
 
 	@JvmField
@@ -229,7 +185,6 @@ object BlockOverlay {
 		visibleIf = { outlined() && (cutFromCenter.value > 0 || cutFromCorner.value > 0) },
 	)
 
-	/** Indices into [depth]. */
 	const val DEPTH_NORMAL = 0
 	const val DEPTH_THROUGH = 1
 	const val DEPTH_BEHIND = 2
@@ -392,13 +347,13 @@ object BlockOverlay {
 
 	private val advancedSettings = listOf(
 		advanced,
-		shapeSection, shapeStyle, faces, expandBlocks, scalePercent, connectedChests,
+		shapeSection, shapeStyle, faces, connectedChests,
 		linesSection, cutFromCorner, cutFromCenter, outerThickness, innerThickness, depth,
 		colourSection, gradient, outlineColor2, fillColor2, rainbow, rainbowSpeed, rainbowDelay, rainbowSaturation, rainbowBrightness,
 		animationSection, easing, easeSpeed, fade, fadeSpeed, popIn, popSpeed,
 	)
 
-	private val configurable = listOf(mode, fillColor, outlineColor, lineWidth, fullBlock, phase, hideWithEtherwarp) + advancedSettings
+	private val configurable = listOf(mode, fillColor, outlineColor, lineWidth, fullBlock, phase) + advancedSettings
 
 	@JvmField
 	val module = Module(
@@ -418,16 +373,16 @@ object BlockOverlay {
 
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(BlockHighlight::render)
-		// Returning false from this event is what cancels vanilla's own outline,
-		// which is the only way to replace it rather than draw over it.
+		// Returning false cancels vanilla's outline.
 		LevelRenderEvents.BEFORE_BLOCK_OUTLINE.register { context, outline ->
 			val client = Minecraft.getInstance()
+			if (Mining.hidesOutline(outline.pos())) return@register false
 			if (!module.enabled || client.gui.hud.isHidden) return@register true
-			if (hideWithEtherwarp.value && Etherwarp.isAiming()) return@register false
-			// The Gyro Helper draws its own box on the same block, and owns the
-			// switch that decides whether one outline or two is wanted.
+			// The etherwarp overlay's block takes its place.
+			if (Etherwarp.overlayShown) return@register false
+			// Gyro Helper draws its own box here and decides whether one outline or two is wanted.
 			if (GyroHelper.hidesBlockOutline()) return@register false
-			// Advanced draws its own, every frame, so it can fade out after the block is gone.
+			// Advanced draws its own every frame, so it can fade after the block is gone.
 			if (advanced.value) return@register false
 
 			WorldRender.drawBlock(

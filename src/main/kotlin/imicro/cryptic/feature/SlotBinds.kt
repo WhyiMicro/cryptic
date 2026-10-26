@@ -13,6 +13,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.KeybindSetting
 import imicro.cryptic.gui.SlotMapModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.mixin.ContainerScreenAccessor
 import imicro.cryptic.render.GuiShapes
 import net.minecraft.client.KeyMapping
@@ -25,27 +26,15 @@ import net.minecraft.client.input.KeyEvent
 import net.minecraft.world.inventory.ContainerInput
 
 /**
- * Ties two inventory slots together, so one shift-click swaps them.
- *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking). SkyBlock asks
- * you to swap the same few items in and out of the same hotbar slot all day —
- * an aspect of the end for a wither impact, a pickaxe for a mining trip — and
- * doing it by dragging is slow and easy to get wrong under pressure. A bind
- * makes it one click on either end.
- *
- * A bind with an end on the hotbar is one click in, one click out: the game has
- * a single action for "put this slot in that hotbar number". Two slots with
- * neither on the hotbar have no such action and take three clicks through the
- * cursor, which is what the "Allow outside of hotbar" switch is for.
+ * Ties two inventory slots together so one shift-click swaps them, for items swapped all day (an
+ * AOTE for a Hyperion, a pickaxe for mining). Ported from Odin. With one end on the hotbar it's a
+ * single hotbar-swap action; two non-hotbar slots take three cursor clicks, which "Allow outside of
+ * hotbar" enables.
  */
 object SlotBinds {
 	/**
-	 * The slots a bind may touch, which are the player's own.
-	 *
-	 * Odin's range. The inventory screen numbers the crafting grid below five,
-	 * and those are not slots anything is kept in; the four armour slots are
-	 * five to eight and can be bound like any other. The hotbar is the last
-	 * nine.
+	 * Bindable slots: the player's own. Below five is the crafting grid; 5 to 8 are armour; the
+	 * hotbar is the last nine. Odin's range.
 	 */
 	private val BINDABLE = 5 until 45
 	private val HOTBAR = 36..44
@@ -53,17 +42,32 @@ object SlotBinds {
 	/** The four armour slots, helmet down to boots. */
 	private val ARMOR = 5..8
 
-	/** Indices into [lineDisplay]. */
 	private const val LINES_HOVER = 0
 	private const val LINES_HOVER_SHIFT = 1
+
+	/** The profile that ships with Cryptic and can't be changed: no binds at all. */
+	const val NO_BINDS = "No binds"
+
+	/**
+	 * The other profile that ships with Cryptic: always the binds you have right now, whichever
+	 * profile they came from, so the binds you had when the game closed are there next time.
+	 */
+	const val LAST_SESSION = "Remember through sessions"
+
+	/** What [LAST_SESSION] was called, and still the name its binds are saved under. */
+	private const val SESSION_KEY = "Last session"
+
+	private val BUILT_IN = setOf(NO_BINDS, LAST_SESSION, SESSION_KEY)
 
 	@JvmField
 	val profile = DropdownModuleSetting(
 		id = "profile",
 		label = "Profile",
-		options = listOf("Profile 1", "Profile 2", "Profile 3", "Profile 4", "Profile 5", "Profile 6"),
+		options = listOf(NO_BINDS),
 		defaultIndex = 0,
-		description = "Six independent sets of binds.",
+		description = "Picking one loads its binds. Remember through sessions is always the binds you had last, kept when the game closes; No binds has none. Save under a name below to add your own.",
+		liveOptions = { listOf(NO_BINDS, LAST_SESSION) + binds.names().filter { it !in BUILT_IN } },
+		renamed = mapOf(SESSION_KEY to LAST_SESSION),
 	)
 
 	@JvmField
@@ -106,6 +110,8 @@ object SlotBinds {
 	val allowOutsideHotbar = ToggleModuleSetting(
 		id = "allow_outside_hotbar",
 		label = "Allow outside of hotbar",
+		// Below it, a loaded profile's binds with neither end on the hotbar are left alone.
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		defaultValue = true,
 		description = "Lets two slots be bound with neither on the hotbar, such as a worn helmet and a spare one. " +
 			"That swap takes three clicks rather than one.",
@@ -115,15 +121,20 @@ object SlotBinds {
 	val binds = SlotMapModuleSetting(id = "binds", label = "Binds")
 
 	@JvmField
-	val save = ButtonModuleSetting("save", "Save to profile", action = { saveToProfile() })
+	val profileName = TextModuleSetting(
+		id = "profile_name",
+		label = "Save as",
+		maxLength = 32,
+		hint = "Profile name",
+		description = "Saves the binds you have now under this name. An existing name is overwritten.",
+		button = ButtonModuleSetting("save", "Save", action = { saveToProfile() }),
+	)
+
+	private val delete = ButtonModuleSetting("delete", "Delete profile", action = { deleteProfile() }, visibleIf = { profile.selected !in BUILT_IN })
 
 	/**
-	 * The module card's own bind button, pointed at the real key mapping.
-	 *
-	 * The mapping is Minecraft's, so its options file remembers it and the
-	 * controls screen can rebind it — but a key that is the whole of how a
-	 * module is used should be settable from the module, not only from a screen
-	 * three menus away.
+	 * The card's own bind button on the real key mapping, so it can be set from the module as well
+	 * as the controls screen.
 	 */
 	private val bindKey = KeybindSetting(
 		currentKeyName = {
@@ -148,60 +159,81 @@ object SlotBinds {
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = true,
 		keybind = bindKey,
-		settings = listOf(profile, save, dungeonsOnly, allowOutsideHotbar, lineDisplay, lineColor, lineWidth, binds),
+		// The binds load first, so the saved profile name is in the dropdown when it's read.
+		settings = listOf(binds, profile, profileName, delete, dungeonsOnly, allowOutsideHotbar, lineDisplay, lineColor, lineWidth),
 	)
 
 	/**
-	 * The binds being edited, which are not the binds that have been saved.
-	 *
-	 * Everything made in the inventory lands here and nowhere else until **Save
-	 * to profile** is pressed. That is the difference between a bind you were
-	 * trying out and a bind you meant: without it, one press of the key over the
-	 * wrong slot is written into the profile before you have seen what it did,
-	 * and the only way back is to make the opposite change by hand.
-	 *
-	 * Switching profile loads that profile's binds in over the top, which is
-	 * also how an unwanted set of edits is thrown away.
+	 * The binds being edited. Changes stay here until saved under a name, so a bind you were trying
+	 * out doesn't get saved by accident. Switching profile loads its binds over these, which also
+	 * discards unwanted edits.
 	 */
 	private val working = LinkedHashMap<Int, Int>()
 
-	/** Which profile [working] was last loaded from, so a switch is noticed. */
+	/** Which profile [working] was loaded from, to notice a switch. */
 	private var loadedFrom: String? = null
 
 	private val current: MutableMap<Int, Int>
 		get() {
-			val chosen = profile.selected
-			if (loadedFrom != chosen) {
-				loadedFrom = chosen
-				working.clear()
-				working.putAll(binds.binds(chosen))
-			}
+			followProfile()
 			return working
 		}
 
-	/** True while the working set differs from what the profile holds. */
-	val unsaved: Boolean
-		get() = loadedFrom != null && working != binds.binds(profile.selected)
-
-	/**
-	 * Writes the binds being edited into the profile the dropdown is on.
-	 *
-	 * The one place anything is committed. [imicro.cryptic.config.ConfigManager]
-	 * notices the change and persists it with everything else.
-	 */
-	private fun saveToProfile() {
+	/** Loads the picked profile's binds once it changes. */
+	private fun followProfile() {
 		val chosen = profile.selected
-		val target = binds.binds(chosen)
-		target.clear()
-		target.putAll(current)
-		say("Saved §f${target.size / 2} §7binds to §f$chosen")
+		if (loadedFrom == chosen) return
+		// The name box follows, so saving again updates the profile you picked.
+		if (loadedFrom != null) profileName.value = if (chosen in BUILT_IN) "" else chosen
+		loadedFrom = chosen
+		working.clear()
+		if (chosen != NO_BINDS) working.putAll(binds.binds(if (chosen == LAST_SESSION) SESSION_KEY else chosen))
 	}
 
 	/**
-	 * The first half of a bind being made, waiting for its other end.
-	 *
-	 * Cleared whenever a screen closes, because a half-made bind is only
-	 * meaningful while the inventory it was started in is still open.
+	 * Saves the binds being edited under the typed name and picks that profile;
+	 * [imicro.cryptic.config.ConfigManager] writes it out with everything else.
+	 */
+	private fun saveToProfile() {
+		val name = profileName.value.trim()
+		val edited = LinkedHashMap(current)
+		when {
+			name.isEmpty() -> return say("Type a name for the profile first", error = true)
+			BUILT_IN.any { name.equals(it, ignoreCase = true) } -> return say("§f$name §7is built in, pick another name", error = true)
+			name.any { it == ';' || it == '=' } -> return say("A name can't contain ; or =", error = true)
+			edited.isEmpty() -> return say("There are no binds to save", error = true)
+		}
+		val existed = name in binds.names()
+		val target = binds.binds(name)
+		target.clear()
+		target.putAll(edited)
+		profile.select(name)
+		loadedFrom = name
+		profileName.value = name
+		val count = edited.size / 2
+		val binds = if (count == 1) "1 bind" else "$count binds"
+		say(if (existed) "Updated §f$name §7($binds)" else "Saved §f$name §7($binds)")
+	}
+
+	/** Keeps [LAST_SESSION]'s binds equal to the ones in use; the config saves them with everything else. */
+	private fun rememberSession() {
+		val session = binds.binds(SESSION_KEY)
+		if (session == working) return
+		session.clear()
+		session.putAll(working)
+	}
+
+	private fun deleteProfile() {
+		val name = profile.selected
+		if (name in BUILT_IN) return
+		binds.remove(name)
+		profile.select(NO_BINDS)
+		say("Deleted §f$name")
+	}
+
+	/**
+	 * The first half of a bind being made. Cleared when the screen closes, since a half-bind only
+	 * means something in that inventory.
 	 */
 	private var pending: Int? = null
 
@@ -209,25 +241,19 @@ object SlotBinds {
 		pending = null
 	}
 
-	/**
-	 * Drops a half-made bind once the inventory it was started in has gone.
-	 *
-	 * A bind is two slots picked in one screen; carrying the first of them into
-	 * the next screen the player opens would tie together two things they never
-	 * pointed at together.
-	 */
+	/** Drops a half-made bind once its inventory has closed. */
 	fun tick(client: Minecraft) {
+		// Every tick, so the name box changes as soon as another profile is picked.
+		if (module.enabled) {
+			followProfile()
+			rememberSession()
+		}
 		if (pending != null && client.gui.screen() !is InventoryScreen) pending = null
 	}
 
 	/**
-	 * A key pressed in the inventory: makes, or removes, a bind.
-	 *
-	 * Press it over a slot to start a bind and again over another to finish it;
-	 * press it over a slot that already has one to take that bind away, both ends
-	 * of it at once.
-	 *
-	 * Returns true when the key was ours and the screen should not see it.
+	 * A key in the inventory: over a slot it starts a bind, over a second it finishes it, and over
+	 * a bound slot it removes that bind (both ends). True when the key was ours.
 	 */
 	@JvmStatic
 	fun handleKeyPress(screen: Screen, event: KeyEvent): Boolean {
@@ -238,9 +264,7 @@ object SlotBinds {
 		val started = pending
 
 		if (started == null) {
-			// A bind is written both ways round, so removing it has to take both
-			// — otherwise one end goes on pointing at a slot that no longer
-			// points back, and unbinding reads as only half working.
+			// Binds are stored both ways, so both directions are removed.
 			val other = current.remove(slot)
 			if (other != null) {
 				if (current[other] == slot) current.remove(other)
@@ -268,11 +292,8 @@ object SlotBinds {
 	}
 
 	/**
-	 * A shift-click on a bound slot, turned into the swap it meant.
-	 *
-	 * Returns true when it was handled, so the screen does not also do its own
-	 * shift-click — which would move the item to the other end of the inventory
-	 * instead.
+	 * A shift-click on a bound slot, turned into the swap. True when handled, so the screen doesn't
+	 * also move the item.
 	 */
 	@JvmStatic
 	fun handleShiftClick(screen: AbstractContainerScreen<*>, button: Int): Boolean {
@@ -284,13 +305,11 @@ object SlotBinds {
 
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return false
-		// The menu the player holds, which is the one the game checks a click
-		// against — not the screen's, which can disagree with it.
+		// The menu the player holds, which the game checks clicks against, not the screen's.
 		val container = player.containerMenu.containerId
 
-		// With an end on the hotbar the game has one action for the whole swap,
-		// "put this slot in that hotbar number", and that is all that is sent —
-		// which is all Odin and NoammAddons ever send.
+		// With an end on the hotbar, one "put this slot in that hotbar number" action does it all,
+		// as Odin and NoammAddons send.
 		val hotbar = if (clicked in HOTBAR) clicked else if (bound in HOTBAR) bound else null
 		if (hotbar != null) {
 			val slot = if (hotbar == clicked) bound else clicked
@@ -299,18 +318,13 @@ object SlotBinds {
 		}
 
 		if (!allowOutsideHotbar.value) return false
-		// Something already in hand would be dropped into the first slot clicked.
+		// Something already in hand would land in the first slot clicked.
 		if (!player.containerMenu.carried.isEmpty) return false
 
-		// Two slots with neither on the hotbar can only be exchanged through the
-		// cursor: pick one up, drop it on the other, put what came back where the
-		// first one was. Which of the two is picked up first turned out to
-		// matter. Starting on a worn piece leaves its armour slot empty for the
-		// third click to fill, and Hypixel does not take that click: the swap
-		// half happens and the piece you meant to put on is left in your hand.
-		// Starting on the *other* slot never empties the armour slot — the
-		// middle click exchanges the two in one go — so with armour involved the
-		// order is fixed, whichever end was clicked.
+		// Without a hotbar end, the swap goes through the cursor: pick one up, drop it on the
+		// other, put the returned item back. With armour involved, start from the non-armour slot:
+		// starting on a worn piece empties the armour slot, and Hypixel ignores the third click,
+		// leaving the piece in your hand.
 		val first = if (clicked in ARMOR && bound !in ARMOR) bound else clicked
 		val second = if (first == clicked) bound else clicked
 		pickup(client, player, container, first)
@@ -329,22 +343,15 @@ object SlotBinds {
 	}
 
 	/**
-	 * Whether a shift-click should swap here.
-	 *
-	 * Only on SkyBlock, because another game's inventory is laid out for another
-	 * game and a bind made for this one means nothing there. Making a bind is
-	 * gated on SkyBlock alone; the dungeons-only toggle holds back just the swap,
-	 * so a set can still be arranged in the hub before it is needed.
+	 * Only on SkyBlock. Making binds needs only SkyBlock; the dungeons-only toggle holds back just
+	 * the swap, so a set can be arranged in the hub.
 	 */
 	private fun swapsHere(): Boolean =
 		SkyblockLocation.onSkyblock && (!dungeonsOnly.value || DungeonLocation.inDungeon)
 
 	/**
-	 * Draws the line joining a bound slot to its partner.
-	 *
-	 * Two things get one: the bind being made, which follows the cursor so there
-	 * is something to aim with, and the bind under the cursor, which is how you
-	 * check what a slot is tied to without remembering.
+	 * Draws the line from a bound slot to its partner: for the bind being made (following the
+	 * cursor), and for the bind under the cursor.
 	 */
 	@JvmStatic
 	fun render(screen: Screen, context: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
@@ -352,7 +359,7 @@ object SlotBinds {
 
 		val started = pending
 		val hovered = hoveredSlot(screen)
-		val bound = hovered?.let { current[it] }
+		val bound = hovered?.let { slot -> current[slot]?.takeIf { usable(slot, it) } }
 
 		val showBound = when (lineDisplay.selectedIndex) {
 			LINES_HOVER -> bound != null
@@ -370,7 +377,8 @@ object SlotBinds {
 		line(context, start.first, start.second, end.first, end.second)
 	}
 
-	/** The middle of a slot on screen, which is where a line ends. */
+	private fun usable(a: Int, b: Int): Boolean = a in HOTBAR || b in HOTBAR || allowOutsideHotbar.value
+
 	private fun centreOf(screen: AbstractContainerScreen<*>, slot: Int): Pair<Int, Int>? {
 		val accessor = screen as? ContainerScreenAccessor ?: return null
 		val target = screen.menu.slots.getOrNull(slot) ?: return null
@@ -380,15 +388,7 @@ object SlotBinds {
 	private fun hoveredSlot(screen: AbstractContainerScreen<*>): Int? =
 		(screen as? ContainerScreenAccessor)?.`cryptic$hoveredSlot`()?.index?.takeIf { it in BINDABLE }
 
-	/**
-	 * A straight line between two slots, drawn Odin's way.
-	 *
-	 * The drawing itself is [GuiShapes]: one quad, turned to face along the
-	 * line. Two earlier attempts are worth not repeating — a square stepped
-	 * along the line is a staircase, and rasterising it a column at a time to
-	 * smooth the edges in alpha is right in principle and was wrong here, badly
-	 * enough that nothing but the two ends ever drew.
-	 */
+	/** A straight line between slots, drawn as one rotated quad with [GuiShapes], Odin's way. */
 	private fun line(context: GuiGraphicsExtractor, x1: Int, y1: Int, x2: Int, y2: Int) {
 		GuiShapes.line(
 			context,
@@ -401,7 +401,7 @@ object SlotBinds {
 		)
 	}
 
-	/** Said as a notification rather than in chat, where it would scroll away. */
+	/** Shown as a notification, since chat would scroll away. */
 	private fun say(message: String, error: Boolean = false) {
 		Toasts.show("Slot Binds", message, error, color = Toasts.Colors.INVENTORY)
 	}

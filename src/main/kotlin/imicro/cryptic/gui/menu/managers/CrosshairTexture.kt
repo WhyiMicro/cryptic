@@ -9,27 +9,22 @@ import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.resources.Identifier
 
 /**
- * A crosshair drawing painted into a small texture, one texel a cell, and
- * stretched over the canvas as a single quad.
- *
- * Filling cells one at a time was thousands of quads a frame on the big
- * canvas. This is one, whatever is drawn, and the texture is only repainted
- * when the drawing or its colours change. Dynamic textures sample nearest, so
- * stretched to a whole number of pixels a cell the edges stay hard.
+ * A crosshair drawing painted into a small texture, one texel per cell, and stretched over the
+ * canvas as one quad. Repainted only when the drawing or colours change. Nearest sampling keeps
+ * edges hard.
  */
 internal class CrosshairTexture(name: String) {
 	private val image = NativeImage(SIZE, SIZE, true)
 	private val texture = DynamicTexture({ "Cryptic crosshair $name" }, image)
 	private val id: Identifier = Cryptic.id("crosshair/$name")
 
-	/** What the texture was last painted from; a different one repaints it. */
 	private var paintedFrom: Any? = null
 
 	init {
 		Minecraft.getInstance().textureManager.register(id, texture)
 	}
 
-	/** Repaints through [paint], which sets texels as (x, y, ARGB), unless [key] matches the last paint. */
+	/** Repaints through [paint] (x, y, ARGB) unless [key] matches the last paint. */
 	fun update(key: Any, paint: ((Int, Int, Int) -> Unit) -> Unit) {
 		if (key == paintedFrom) return
 		paintedFrom = key
@@ -38,7 +33,7 @@ internal class CrosshairTexture(name: String) {
 		texture.upload()
 	}
 
-	/** The top-left [cells] by [cells] texels, drawn [width] by [height] at ([x], [y]) and tinted by [color]. */
+	/** The top-left [cells] square, drawn [width] by [height] at ([x], [y]), tinted by [color]. */
 	fun draw(graphics: GuiGraphicsExtractor, x: Int, y: Int, width: Int, height: Int, cells: Int, color: Int) {
 		graphics.blit(RenderPipelines.GUI_TEXTURED, id, x, y, 0f, 0f, width, height, cells, cells, SIZE, SIZE, color)
 	}

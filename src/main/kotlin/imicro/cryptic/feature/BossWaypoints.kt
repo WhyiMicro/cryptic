@@ -35,18 +35,11 @@ import net.minecraft.world.phys.HitResult
 import java.util.Locale
 
 /**
- * Waypoints you place in a dungeon boss room.
- *
- * Dungeon Waypoints' editor for the one place it cannot reach: the boss rooms
- * are not rooms on the map, they have no rotation to work out, and every run of
- * a floor fights in the same spot — so a boss waypoint is a plain world
- * position, kept per floor ("F7", "M7"). Turn on Edit mode, right-click a block
- * to place or remove one, sneak-right-click to title it.
- *
- * Each waypoint keeps its own look: outline, fill or both, drawn through walls
- * or not, in its own colour — whatever the editor was set to when it was put
- * down — because a boss room wants a stack spot to read differently from a
- * pre-dev ledge. Packs work as Dungeon Waypoints' do, from `/cryptic bwp`.
+ * Waypoints placed in dungeon boss rooms. Boss rooms aren't map rooms and are the same every run,
+ * so a waypoint is a plain world position kept per floor ("F7", "M7"). Edit mode: right-click to
+ * place or remove, sneak-right-click to title. Each waypoint keeps its own style and colour from
+ * when it was placed; Dungeon Breaker waypoints instead share one colour and hide once their block
+ * is broken. Packs via `/cryptic bwp`.
  */
 object BossWaypoints {
 	private const val STYLE_OUTLINE = 0
@@ -54,7 +47,6 @@ object BossWaypoints {
 	private const val STYLE_BOTH = 2
 	private val STYLE_NAMES = listOf("Outline", "Fill", "Fill + outline")
 
-	/** One waypoint: a world position, how it is drawn, and its colour as ARGB. */
 	data class BossWaypoint(
 		val x: Int,
 		val y: Int,
@@ -64,11 +56,12 @@ object BossWaypoints {
 		val color: Int = 0x6000FFFF,
 		val title: String? = null,
 		val size: Double? = null,
+		/** A block to break with the Dungeon Breaker. */
+		val breaker: Boolean = false,
 	) {
 		val pos: BlockPos get() = BlockPos(x, y, z)
 	}
 
-	/** The packs, by floor. */
 	object Packs : PackStore<BossWaypoint>("Boss Waypoint Packs", "boss-waypoint-packs.json", BossWaypoint::class.java, "My Boss Waypoints") {
 		override fun toJson(pack: Pack<BossWaypoint>): JsonElement {
 			val root = JsonObject()
@@ -86,8 +79,6 @@ object BossWaypoints {
 			}
 		}
 	}
-
-	// ---- Settings --------------------------------------------------------
 
 	private val drawingSection = SectionModuleSetting("drawing_section", "Drawing")
 
@@ -130,12 +121,22 @@ object BossWaypoints {
 	)
 
 	@JvmField
+	val placeBreaker = ToggleModuleSetting(
+		id = "place_breaker",
+		label = "Dungeon Breaker",
+		defaultValue = false,
+		description = "The next waypoint marks a block to break with the Dungeon Breaker: drawn in the Dungeon Breaker " +
+			"colour, never through walls, and gone once the block is broken.",
+	)
+
+	@JvmField
 	val placeStyle = DropdownModuleSetting(
 		id = "place_style",
 		label = "Style",
 		options = STYLE_NAMES,
 		defaultIndex = STYLE_BOTH,
 		description = "How the next waypoint is drawn.",
+		visibleIf = { !placeBreaker.value },
 	)
 
 	@JvmField
@@ -144,6 +145,7 @@ object BossWaypoints {
 		label = "Phase",
 		defaultValue = false,
 		description = "Draws the next waypoint through walls.",
+		visibleIf = { !placeBreaker.value },
 	)
 
 	@JvmField
@@ -154,6 +156,7 @@ object BossWaypoints {
 		supportsAlpha = true,
 		defaultAlpha = 0x60,
 		description = "The next waypoint's colour. Its opacity is the fill's; the outline is always solid.",
+		visibleIf = { !placeBreaker.value },
 	)
 
 	@JvmField
@@ -202,7 +205,7 @@ object BossWaypoints {
 		settings = listOf(
 			drawingSection, lineWidth, labelScale,
 			shareFloors,
-			editorSection, editMode, editKey, placeStyle, placePhase, placeColor, floating, useBlockSize, size,
+			editorSection, editMode, editKey, placeBreaker, placeStyle, placePhase, placeColor, floating, useBlockSize, size,
 		),
 	)
 
@@ -218,10 +221,9 @@ object BossWaypoints {
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 	}
 
-	/** True while the floor and the boss have to be read for this module. */
 	val needsDungeon: Boolean get() = module.enabled
 
-	/** "F7", "M7", "E" for the entrance: the floor whose boss you are fighting, or null outside one. */
+	/** "F7", "M7", "E": the floor whose boss you're fighting, or null. */
 	private fun floorKey(): String? {
 		if (!module.enabled || !DungeonLocation.inDungeon || !DungeonRun.inBoss) return null
 		val floor = DungeonLocation.floor
@@ -230,9 +232,8 @@ object BossWaypoints {
 	}
 
 	/**
-	 * The keys whose waypoints show in this boss room: its own, and with
-	 * [shareFloors] on its pair's too — Master Mode is the same map — normal
-	 * floor first.
+	 * The keys shown in this boss room: its own, plus its pair's with [shareFloors] on (Master Mode
+	 * is the same map), normal floor first.
 	 */
 	private fun sharedKeys(key: String): List<String> {
 		if (!shareFloors.value || key == "E") return listOf(key)
@@ -240,33 +241,42 @@ object BossWaypoints {
 		return listOf("F$floor", "M$floor")
 	}
 
-	/** Where a new waypoint goes: the normal floor while sharing, so both modes have it. */
+	/** New waypoints go under the normal floor while sharing, so both modes have them. */
 	private fun placeKey(key: String): String = sharedKeys(key).first()
 
-	/** Every waypoint showing here, from every pack, with the pack it is in. */
 	private fun visible(key: String) = sharedKeys(key).asSequence().flatMap { Packs.waypointsIn(it) }
 
-	/** The edited pack's list that holds a waypoint at [pos] here, or null. */
+	/** The edited pack's list holding a waypoint at [pos], or null. */
 	private fun editedListWith(key: String, pos: BlockPos): MutableList<BossWaypoint>? {
 		val pack = Packs.editPack ?: return null
 		return sharedKeys(key).mapNotNull { pack.rooms[it] }.firstOrNull { list -> list.any { it.pos == pos } }
 	}
 
-	// ---- Drawing ---------------------------------------------------------
-
 	private fun render(context: LevelRenderContext) {
 		val key = floorKey() ?: return
 		val waypoints = visible(key).map { it.second }.toList()
-		// Whole blocks drawn alike, by where they are, so a run of them can be
-		// filled as one shape instead of as boxes whose shared sides show.
-		val blocks = waypoints.filter { isWholeBlock(it) }.associateBy { it.pos }
+		// Whole blocks drawn alike are grouped by position, so a run of them fills as one shape.
+		val blocks = waypoints.filter { !it.breaker && isWholeBlock(it) }.associateBy { it.pos }
+		val level = Minecraft.getInstance().level ?: return
 		for (waypoint in waypoints) {
+			val box = boxAt(waypoint.pos, waypoint.size)
+			if (waypoint.breaker) {
+				// Gone once broken, and drawn as Dungeon Waypoints draws its breaker blocks.
+				if (level.getBlockState(waypoint.pos).isAir) continue
+				DungeonWaypoints.drawBreaker(context, box, waypoint.title)
+				continue
+			}
 			val faces = if (isWholeBlock(waypoint)) openFaces(waypoint, blocks) else WorldRender.ALL_FACES
-			draw(context, boxAt(waypoint.pos, waypoint.size), waypoint.style, waypoint.phase, waypoint.color, waypoint.title, faces = faces)
+			draw(context, box, waypoint.style, waypoint.phase, waypoint.color, waypoint.title, faces = faces)
 		}
 		if (editMode.value) {
 			val target = target() ?: return
-			draw(context, boxAt(target, if (useBlockSize.value) null else size.value), placeStyle.selectedIndex, placePhase.value, placeColor.argb, null, preview = true)
+			val box = boxAt(target, if (useBlockSize.value) null else size.value)
+			if (placeBreaker.value) {
+				DungeonWaypoints.drawBreaker(context, box, null, preview = true)
+			} else {
+				draw(context, box, placeStyle.selectedIndex, placePhase.value, placeColor.argb, null, preview = true)
+			}
 		}
 	}
 
@@ -277,16 +287,14 @@ object BossWaypoints {
 		return if (shape.isEmpty) AABB(pos) else shape.bounds().move(pos)
 	}
 
-	/** True for a waypoint that fills exactly its block, which is the kind that can join its neighbours. */
 	private fun isWholeBlock(waypoint: BossWaypoint): Boolean {
 		if (waypoint.size != null) return false
 		return boxAt(waypoint.pos, null) == AABB(waypoint.pos)
 	}
 
 	/**
-	 * The sides of [waypoint] to fill: all but those against another whole-block
-	 * waypoint drawn the same way, whose shared wall would otherwise be drawn
-	 * twice and show through the fill as a line.
+	 * The sides of [waypoint] to fill: all but those against an identical whole-block neighbour,
+	 * whose shared wall would show as a line.
 	 */
 	private fun openFaces(waypoint: BossWaypoint, blocks: Map<BlockPos, BossWaypoint>): Int {
 		var faces = WorldRender.ALL_FACES
@@ -337,8 +345,7 @@ object BossWaypoints {
 			poseStack = context.poseStack(),
 			collector = context.submitNodeCollector(),
 			orientation = Minecraft.getInstance().gameRenderer.mainCamera().rotation(),
-			// White, shadowed and through walls, in the middle of the block, as
-			// Dungeon Waypoints draws its labels.
+			// White, shadowed and through walls, as Dungeon Waypoints draws labels.
 			text = Component.literal(title),
 			x = (box.minX + box.maxX) / 2,
 			y = (box.minY + box.maxY) / 2,
@@ -349,8 +356,6 @@ object BossWaypoints {
 		)
 	}
 
-	// ---- Editing ---------------------------------------------------------
-
 	private fun target(): BlockPos? {
 		floorKey() ?: return null
 		val hit = Minecraft.getInstance().hitResult
@@ -359,7 +364,7 @@ object BossWaypoints {
 		return null
 	}
 
-	/** A right click on nothing while Edit mode is on: a floating waypoint, when they are allowed. */
+	/** A right click on nothing in Edit mode: a floating waypoint, when allowed. */
 	@JvmStatic
 	fun onEditorAirClick(): Boolean {
 		if (!module.enabled || !editMode.value || !floating.value) return false
@@ -367,13 +372,13 @@ object BossWaypoints {
 		return onEditorClick(pos)
 	}
 
-	/** A right click while Edit mode is on, in a boss room. True swallows the click. */
+	/** A right click in Edit mode in a boss room. True swallows it. */
 	@JvmStatic
 	fun onEditorClick(pos: BlockPos): Boolean {
 		if (!module.enabled || !editMode.value) return false
 		val key = floorKey() ?: return false
-		// The list it is in when there is one, under either floor while they
-		// share; otherwise the list a new one goes in.
+		// The list it's already in (under either floor while sharing), or the one a new waypoint
+		// goes in.
 		val list = editedListWith(key, pos) ?: Packs.editList(placeKey(key))
 		val existing = list.firstOrNull { it.pos == pos }
 		val client = Minecraft.getInstance()
@@ -402,7 +407,10 @@ object BossWaypoints {
 			note("Removed a boss waypoint.")
 		} else {
 			list += newWaypoint(pos)
-			note("Placed a ${STYLE_NAMES[placeStyle.selectedIndex].lowercase()}${if (placePhase.value) ", phased" else ""} boss waypoint.")
+			note(
+				if (placeBreaker.value) "Placed a Dungeon Breaker boss waypoint."
+				else "Placed a ${STYLE_NAMES[placeStyle.selectedIndex].lowercase()}${if (placePhase.value) ", phased" else ""} boss waypoint.",
+			)
 		}
 		Packs.save()
 		return true
@@ -416,6 +424,7 @@ object BossWaypoints {
 		phase = placePhase.value,
 		color = placeColor.argb,
 		size = if (useBlockSize.value) null else size.value,
+		breaker = placeBreaker.value,
 	)
 
 	private fun note(text: String) {
@@ -434,9 +443,8 @@ object BossWaypoints {
 	}
 
 	/**
-	 * Shift and the wheel, while editing in a boss room: steps through the
-	 * styles the next waypoint is drawn in. True takes the turn, so the hotbar
-	 * does not move with it.
+	 * Shift and the wheel while editing: steps through the next waypoint's styles. True takes the
+	 * scroll from the hotbar.
 	 */
 	@JvmStatic
 	fun onScroll(amount: Double): Boolean {
@@ -488,8 +496,6 @@ object BossWaypoints {
 			context.text(font, text, (width - font.width(text)) / 2, font.lineHeight, 0xFF000000.toInt() or placeColor.rgb)
 		}
 	}
-
-	// ---- /cryptic bwp ----------------------------------------------------
 
 	private fun feedback(context: CommandContext<FabricClientCommandSource>, text: String) {
 		context.source.sendFeedback(Component.literal("§8[Cryptic] §7$text"))

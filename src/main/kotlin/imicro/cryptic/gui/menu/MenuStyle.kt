@@ -7,7 +7,6 @@ import net.minecraft.client.gui.GuiGraphicsExtractor
 import kotlin.math.exp
 import kotlin.math.roundToInt
 
-/** A rectangle in the menu's design pixels. */
 class Box(val x: Float, val y: Float, val w: Float, val h: Float) {
 	val right get() = x + w
 	val bottom get() = y + h
@@ -18,9 +17,7 @@ class Box(val x: Float, val y: Float, val w: Float, val h: Float) {
 	}
 }
 
-/** The menu's palette and the small drawing helpers every part of it shares. */
 object MenuStyle {
-	// ARGB, as Minecraft's GUI renderer takes them.
 	const val WINDOW_BG = 0xFF131315.toInt()
 	const val WINDOW_EDGE = 0xFF26262A.toInt()
 	const val TAB_PILL = 0xFF222225.toInt()
@@ -35,11 +32,10 @@ object MenuStyle {
 	const val ICON_OFF = 0xFF5E5E64.toInt()
 	const val STAR = 0xFFF4C430.toInt()
 	const val DANGER = 0xFFDF4A4F.toInt()
-	const val SCROLLBAR = 0x44FFFFFF
 	const val CARD_OFF = 0xFF1C1C1F.toInt()
 	const val CARD_OFF_HOVER = 0xFF232327.toInt()
-	// The switch as the old menu drew it: a grey track that fills with the accent,
-	// and a dark knob that turns white as it crosses.
+	// The switch: a grey track filling with the accent, and a dark knob turning white as it
+	// crosses.
 	const val SWITCH_OFF = 0xFF474747.toInt()
 	const val KNOB_OFF = 0xFF161616.toInt()
 	const val KNOB_ON = 0xFFFFFFFF.toInt()
@@ -53,7 +49,7 @@ object MenuStyle {
 	const val POPUP = 0xFF1B1B1E.toInt()
 	const val POPUP_HOVER = 0xFF26262B.toInt()
 
-	/** The Font Awesome glyphs the menu uses. [STAR] is drawn from both the solid and the outline face. */
+	/** The Font Awesome glyphs the menu uses. [STAR] comes in solid and outline. */
 	object Icons {
 		const val ELLIPSIS_VERTICAL = ""
 		const val STAR = ""
@@ -71,21 +67,17 @@ object MenuStyle {
 		const val CHECK = ""
 	}
 
-	/** Click GUI's accent colour, which everything that means "on" or "chosen" is drawn in. */
+	/** Click GUI's accent colour, used for everything "on" or "chosen". */
 	fun accent(): Int = 0xFF000000.toInt() or ClickGui.accentColor.rgb
 
-	/** The accent, darkened: a card that is switched on. */
 	fun cardOn(): Int = scale(accent(), 0.55f)
 
 	fun cardOnHover(): Int = scale(accent(), 0.65f)
 
-	/** Secondary text on a switched-on card: the accent, washed out towards white. */
 	fun onMuted(): Int = blend(accent(), 0xFFFFFFFF.toInt(), 0.7f)
 
-	/** The highlight behind selected text. */
 	fun selection(): Int = (accent() and 0x00FFFFFF) or 0x66000000
 
-	/** [color] with its red, green and blue multiplied by [factor]. */
 	fun scale(color: Int, factor: Float): Int {
 		val r = (((color shr 16) and 0xFF) * factor).toInt().coerceIn(0, 255)
 		val g = (((color shr 8) and 0xFF) * factor).toInt().coerceIn(0, 255)
@@ -98,14 +90,12 @@ object MenuStyle {
 
 	fun easeOut(t: Float): Float = 1f - (1f - t) * (1f - t) * (1f - t)
 
-	/** [color] (ARGB) with its alpha multiplied by [amount]. */
 	fun fade(color: Int, amount: Float): Int {
 		if (amount >= 0.999f) return color
 		val a = ((color ushr 24) * amount.coerceIn(0f, 1f)).toInt().coerceIn(0, 255)
 		return (color and 0x00FFFFFF) or (a shl 24)
 	}
 
-	/** [from] to [to], channel by channel. */
 	fun blend(from: Int, to: Int, t: Float): Int {
 		if (t <= 0f) return from
 		if (t >= 1f) return to
@@ -119,9 +109,8 @@ object MenuStyle {
 	}
 
 	/**
-	 * A switch, the way the old menu drew it: the track blends from grey to the
-	 * accent and the knob from dark to white as it slides across, so one flicked
-	 * back halfway turns back from where it is.
+	 * A switch whose track and knob blend as it slides, so one flicked back halfway turns from
+	 * where it is.
 	 */
 	fun drawSwitch(graphics: GuiGraphicsExtractor, box: Box, t: Float, alpha: Float) {
 		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(blend(SWITCH_OFF, accent(), t), alpha), box.h / 2f)
@@ -133,13 +122,9 @@ object MenuStyle {
 	}
 
 	/**
-	 * Soft edges on a scrolling list: the window's colour fading in over the
-	 * top and bottom of [box], so rows dissolve into the edge instead of being
-	 * cut off by it. Each fade only shows while there is more list beyond its
-	 * edge, and grows in over the first [topRamp] / [bottomRamp] of scrolling:
-	 * a list that rests a little way in from its clip passes the gap as its
-	 * ramp, so it is fully faded by the time anything reaches the edge. Drawn
-	 * after the list, inside its clip.
+	 * Soft edges on a scrolling list: the window colour fading in over the top and bottom of [box].
+	 * Each fade shows only while there's more list beyond it, and grows in over the first [topRamp]
+	 * / [bottomRamp] of scrolling. Drawn after the list, inside its clip.
 	 */
 	fun drawScrollFades(
 		graphics: GuiGraphicsExtractor, box: Box, scroll: Float, maxScroll: Float, alpha: Float,
@@ -152,13 +137,8 @@ object MenuStyle {
 	}
 
 	/**
-	 * One edge's fade, from [edge] inwards ([direction] 1 down, -1 up): a few
-	 * pixels of solid window colour, so nothing is left showing faintly at the
-	 * very edge, then an eased fall-off. A straight ramp leaves a visible line
-	 * where it meets the edge; this one levels out at both ends.
-	 *
-	 * Filled a screen pixel row at a time, each row its own shade, so there
-	 * are no seams between steps — a fade is only thirty-odd rows.
+	 * One edge's fade: a few solid pixels, then an eased fall-off (a straight ramp shows a line).
+	 * Filled a screen row at a time so there are no seams.
 	 */
 	private fun drawFade(graphics: GuiGraphicsExtractor, x0: Float, x1: Float, edge: Float, direction: Float, strength: Float) {
 		val ppu = UiText.pixelsPerUnit
@@ -171,27 +151,26 @@ object MenuStyle {
 		val solid = (FADE_SOLID * ppu).roundToInt().coerceAtLeast(1)
 		val length = (FADE_LENGTH * ppu).roundToInt().coerceAtLeast(1)
 		val step = if (direction > 0) 1 else -1
-		// Starts outside the edge: the clip is rounded outwards to whole GUI
-		// units, which at a big GUI scale is several screen pixels, and a row of
-		// list left between it and the fade shows as a line. A GUI unit and a
-		// bit covers the worst of it; whatever lies outside the clip is cut off.
+		// Starts outside the edge: the clip rounds outward to whole GUI units, and a sliver of list
+		// left there shows as a line.
 		val overlap = Minecraft.getInstance().window.guiScale + ppu.roundToInt() + 1
 		for (row in -overlap until solid + length) {
 			val t = ((row - solid + 0.5f) / length).coerceIn(0f, 1f)
 			val cover = if (row < solid) 1f else 1f - t * t * (3f - 2f * t)
-			// Rows run inwards from the edge: below it for the top, above it for the bottom.
 			val y = if (step > 0) start + row else start - row - 1
 			graphics.fill(left, y, right, y + 1, fade(WINDOW_BG, strength * cover))
 		}
 		pose.popMatrix()
 	}
 
-	/** How far a scroll fade reaches, in design pixels: a solid band at the edge, then the fall-off. */
 	private const val FADE_SOLID = 3f
 	private const val FADE_LENGTH = 30f
 	private const val SCROLL_FADE = FADE_SOLID + FADE_LENGTH
 
-	/** A field's box:a shade off the row, with an edge that lightens under the pointer and turns teal while typing. */
+	/**
+	 * A field's box: a shade off the row, with an edge that lightens on hover and turns teal while
+	 * typing.
+	 */
 	fun drawField(graphics: GuiGraphicsExtractor, box: Box, hovered: Boolean, focused: Boolean, alpha: Float, radius: Float = 6f) {
 		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(FIELD, alpha), radius)
 		val edge = when {

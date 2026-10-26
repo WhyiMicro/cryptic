@@ -16,18 +16,9 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 
 /**
- * Lists the floor's puzzles, and which of them are done.
- *
- * Devonian's Puzzles Display (GPL-3.0, Copyright (c) Synnerz; licence in
- * `licenses/Devonian-LICENSE.txt`). Hypixel keeps this list in the tab list —
- * how many puzzles the floor has, then a row for each with a star, a tick or a
- * cross, and the name of whoever failed it — which is a place nobody looks in
- * the middle of a run. This is that list, on the HUD.
- *
- * Hypixel only names a puzzle once somebody has walked into it; until then its
- * row says `???`. Cryptic's scan of the floor knows the rooms before anybody
- * has been in them, so the same two choices the map offers are offered here:
- * as Hypixel reveals them, or all at once.
+ * The floor's puzzles and which are done, from the tab list, on the HUD under a done count. Puzzles
+ * show as `???` until someone enters them; like the map, the scan can reveal them all at once.
+ * Inspired by Devonian's Puzzles Display.
  */
 object PuzzleHud {
 	private const val REVEAL_ALL = 0
@@ -50,6 +41,9 @@ object PuzzleHud {
 		options = listOf("Whole floor", "As you explore"),
 		defaultIndex = REVEAL_ALL,
 		description = "Whether a puzzle nobody has walked into yet is already named, from Cryptic's own scan of the floor.",
+		// Below Cheat it's always as you explore.
+		visibleIf = { imicro.cryptic.gui.Restrictions.allows(imicro.cryptic.gui.Restriction.CHEAT) },
+		optionRestrictions = mapOf("Whole floor" to imicro.cryptic.gui.Restriction.CHEAT),
 	)
 
 	@JvmField
@@ -70,7 +64,6 @@ object PuzzleHud {
 		settings = listOf(reveal, onlyBeforeStart),
 	)
 
-	/** True while the floor has to be scanned for room names on this module's account. */
 	val needsScan: Boolean get() = module.enabled && reveal.selectedIndex == REVEAL_ALL
 
 	private var initialized = false
@@ -81,7 +74,6 @@ object PuzzleHud {
 		Hud.register(PuzzleElement())
 	}
 
-	/** One row: a puzzle's name, its mark, and who failed it if anybody did. */
 	private class Row(val name: String, val mark: Char, val failedBy: String = "")
 
 	private val EXAMPLE = listOf(
@@ -91,10 +83,7 @@ object PuzzleHud {
 		Row("???", PENDING),
 	)
 
-	/**
-	 * The rows to show: the ones Hypixel has named, then the ones only the scan
-	 * knows, then a `???` for each the floor still owes.
-	 */
+	/** The rows: those Hypixel has named, those only the scan knows, then a `???` for each still owed. */
 	private fun rows(): List<Row> {
 		if (DebugOverrides.sampleHudValues) return EXAMPLE
 
@@ -133,7 +122,7 @@ object PuzzleHud {
 		private fun measured(): List<Row> = rows().ifEmpty { EXAMPLE }
 
 		override val width: Int
-			get() = maxOf(font.width("Puzzles: 5"), measured().maxOf { font.width(text(it)) })
+			get() = maxOf(font.width("Puzzles: 5/5"), measured().maxOf { font.width(text(it)) })
 
 		override val height: Int get() = font.lineHeight * (measured().size + 1)
 
@@ -148,8 +137,9 @@ object PuzzleHud {
 		private fun draw(context: GuiGraphicsExtractor, rows: List<Row>) {
 			val title = "Puzzles: "
 			context.text(font, title, 0, 0, TITLE_COLOR)
-			// More than three is a floor worth groaning at, as Devonian has it.
-			context.text(font, rows.size.toString(), font.width(title), 0, if (rows.size > 3) PENDING_COLOR else DONE_COLOR)
+			// Green once nothing is left.
+			val done = rows.count { it.mark == DONE }
+			context.text(font, "$done/${rows.size}", font.width(title), 0, if (done == rows.size) DONE_COLOR else PENDING_COLOR)
 
 			rows.forEachIndexed { index, row ->
 				val y = (index + 1) * font.lineHeight

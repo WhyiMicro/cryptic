@@ -14,16 +14,8 @@ import net.minecraft.client.gui.GuiGraphicsExtractor
 import java.util.Locale
 
 /**
- * The three numbers that say how the game is running: TPS, FPS and ping.
- *
- * Odin's Performance HUD (BSD 3-Clause, Copyright (c) 2025 odtheking), with
- * its settings as they are there — a colour for the names, a colour for the
- * values, which way they are laid out, and a switch for each of the three.
- *
- * What differs is where the numbers come from, which is [ServerStats]. Odin
- * keeps the game's debug pinger running for good to have a ping to show, which
- * is a packet every tick; this asks once every two seconds, and only while the
- * ping is actually on screen.
+ * TPS, FPS and ping, with Odin's Performance HUD settings. The numbers come from [ServerStats],
+ * which pings every two seconds and only while shown, instead of Odin's every-tick debug pinger.
  */
 object PerformanceHud {
 	private const val HORIZONTAL = 0
@@ -103,14 +95,12 @@ object PerformanceHud {
 		Hud.register(PerformanceElement())
 	}
 
-	/** One name and its number, in the order Odin lists them. */
 	private fun metrics(): List<Pair<String, String>> {
 		val list = ArrayList<Pair<String, String>>(3)
 		if (showTps.value) list += "TPS: " to String.format(Locale.ROOT, "%.1f", ServerStats.tps)
 		if (showFps.value) list += "FPS: " to Minecraft.getInstance().fps.toString()
 		if (showPing.value) {
-			// Asking is what keeps it being measured, so it is only asked for
-			// while it is wanted.
+			// Asking keeps it measured, so it's only asked while wanted.
 			ServerStats.pingIntervalMillis = (pingInterval.value * 1000).toLong()
 			val ping = ServerStats.ping
 			list += "Ping: " to if (ping < 0) "..." else ping.toString()
@@ -121,15 +111,9 @@ object PerformanceHud {
 	private class PerformanceElement : HudElement("performance_hud", "Performance HUD", 0.01, 0.01) {
 		private val font get() = Minecraft.getInstance().font
 
-		/** The gap between two metrics on one line. */
 		private val gap get() = font.width(" ")
 
-		/**
-		 * Measured against numbers as wide as they get, not the ones showing.
-		 *
-		 * The frame the editor draws and the space the element takes should not
-		 * twitch every time the FPS gains or loses a digit.
-		 */
+		/** Measured against the widest numbers, so the frame doesn't twitch as digits change. */
 		override val width: Int
 			get() {
 				val widths = sized().map { font.width(it.first + it.second) }
@@ -161,8 +145,7 @@ object PerformanceHud {
 			var x = 0
 			var y = 0
 			val horizontal = direction.selectedIndex == HORIZONTAL
-			// Horizontally each one keeps the room its widest value would take,
-			// so the ones after it do not slide about as a digit comes and goes.
+			// Each keeps the room its widest value takes, so the rest don't slide.
 			val slots = sized()
 
 			metrics().forEachIndexed { index, (name, value) ->

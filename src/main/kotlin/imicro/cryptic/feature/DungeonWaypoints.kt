@@ -35,7 +35,6 @@ import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.core.BlockPos
-import net.minecraft.core.Direction
 import net.minecraft.network.chat.Component
 import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.BlockHitResult
@@ -45,57 +44,42 @@ import org.lwjgl.glfw.GLFW
 import java.util.Locale
 
 /**
- * Boxes in each dungeon room: where its secrets are, and wherever you put one.
+ * Boxes in each dungeon room: its secrets, and your own waypoints.
  *
- * Two halves, from two mods.
+ * **Secret waypoints** come from Devonian's table (`dungeon/secret_waypoints.json`) of every chest,
+ * item, wither essence, bat, redstone key and lever, in room coordinates. Each kind has a colour
+ * and switch; taken secrets stop being drawn.
  *
- * **Secret waypoints** are Devonian's (GPL-3.0, Copyright (c) Synnerz; licence
- * in `licenses/Devonian-LICENSE.txt`): its table of every chest, item, wither
- * essence, bat spot, redstone key and lever in every room, written in the
- * room's own coordinates and turned into the world's once the room's rotation
- * is known. Each kind has its own colour and its own switch, and a secret
- * stops being drawn once it has been taken.
+ * **Custom waypoints** are Odin's Dungeon Waypoints (by Bonsai): in Edit mode, right-click a block
+ * to add or remove, sneak-right-click to title. Kept per room name, so they appear in every copy of
+ * that room. Kinds: plain, secret (hidden once taken), etherwarp (hidden once warped onto),
+ * Dungeon Breaker (hidden once broken), start and alignment. `/cryptic dwp` is Odin's `/dwp` and imports its strings.
+ * Packs are managed by [WaypointPacks]; Devonian's spots are the read-only Default pack.
  *
- * **Custom waypoints** are Odin's Dungeon Waypoints (BSD 3-Clause, Copyright
- * (c) 2025 odtheking, by Bonsai): turn on Edit mode, right-click a block in a
- * room to put a waypoint there and again to take it away, sneak-right-click to
- * give it a title. They are kept per room, so one placed in "Atlas" shows in
- * every Atlas whichever way it is turned. Four kinds: plain, secret (hidden
- * once taken), etherwarp (hidden once you warp onto it) and Dungeon Breaker
- * (hidden once the block is broken). `/cryptic dwp` is Odin's `/dwp`, and its
- * import reads waypoint strings exported from Odin.
- *
- * Custom waypoints come in packs, managed by [WaypointPacks]; Devonian's spots
- * are the read-only Default pack beside them.
- *
- * One style for most things, outline, fill or both, so the room reads as one
- * layer. Two kinds are drawn their own way: an etherwarp spot is a fill only,
- * so no outline sits on the block the warp is being aimed at, and etherwarp
- * and Dungeon Breaker spots are never drawn through walls.
+ * Etherwarp spots are fill only so nothing sits on the aimed block, and etherwarp, breaker and
+ * alignment spots are never drawn through walls.
  */
 object DungeonWaypoints {
 	private const val STYLE_OUTLINE = 0
 	private const val STYLE_FILL = 1
 
-	/** How far a picked-up item, or a dying bat, may be from its spot and still be it. */
+	/** How far a picked-up item or dying bat may be from its spot. */
 	private const val ITEM_RANGE = 6.0
 	private const val BAT_RANGE = 10.0
 
-	/** One bat is heard dying twice, by its sound and by its death; this keeps it one bat. */
+	/** One bat is heard dying twice (sound and death); this keeps it one. */
 	private const val BAT_REPEAT_MILLIS = 400L
 
-	/** How soon "That chest is locked!" has to follow a click to undo it. */
+	/** How soon "That chest is locked!" must follow a click to undo it. */
 	private const val LOCKED_MILLIS = 1_500L
 
-	/** How far a floating waypoint is put, when the crosshair is on nothing: Odin's distance. */
+	/** How far ahead a floating waypoint goes (Odin's distance). */
 	private const val FLOATING_DISTANCE = 5.0
 
-	/** How close a box's side has to be to its block's to count as that side. */
-	private const val EDGE_EPSILON = 0.001
+	/** How close a box side must be to its block's side to count as it. */
 
 	private val FORMATTING = Regex("§.")
 
-	/** Devonian's six kinds, by the keys its data uses. */
 	enum class SecretType(val key: String, val label: String, val defaultRgb: Int) {
 		CHEST("chest", "Chests", 0x00FF00),
 		ITEM("item", "Items", 0x5555FF),
@@ -115,15 +99,21 @@ object DungeonWaypoints {
 		)
 	}
 
-	/** The kinds of waypoint a player can place, with Odin's three and Dungeon Breaker. */
+	/** Waypoint kinds a player can place: Odin's three, Dungeon Breaker, Start and Alignment. */
 	enum class CustomType(val label: String, val defaultRgb: Int) {
 		NORMAL("Normal", 0xFF5555),
 		SECRET("Secret", 0x5555FF),
 		ETHERWARP("Etherwarp", 0xFFAA00),
 		BREAKER("Dungeon Breaker", 0xAA00AA),
 
-		/** Where a route begins. Always an outline, always through walls, so it can be found from anywhere in the room. */
-		START("Start", 0x55FF55);
+		/**
+		 * Where a route begins: always an outline and always through walls, so it can be found
+		 * anywhere in the room.
+		 */
+		START("Start", 0x55FF55),
+
+		/** Where to stand or aim for a line-up: an outline that only shows where it can be seen. */
+		ALIGNMENT("Alignment", 0x55FFFF);
 
 		/** Shows or hides every waypoint of this kind, with its colour beside it. */
 		val show = ToggleModuleSetting(
@@ -145,8 +135,6 @@ object DungeonWaypoints {
 			}
 		}
 	}
-
-	// ---- Settings --------------------------------------------------------
 
 	private val styleSection = SectionModuleSetting("style_section", "Style")
 
@@ -213,7 +201,7 @@ object DungeonWaypoints {
 		id = "secrets",
 		label = "Secret waypoints",
 		defaultValue = true,
-		description = "Devonian's spots for every secret in the room you are in.",
+		description = "Marks every secret in the room you are in.",
 	)
 
 	@JvmField
@@ -301,18 +289,15 @@ object DungeonWaypoints {
 			listOf(editorSection, editMode, editKey, placeType, floating, useBlockSize, size),
 	)
 
-	// ---- Data ------------------------------------------------------------
-
-	/** Devonian's data: room name, then kind, then positions in the room's coordinates. */
+	/** The secret table: room name, kind, positions in room coordinates. */
 	private val secretData: Map<String, Map<SecretType, List<BlockPos>>> by lazy { loadSecretData() }
 
-	/** A waypoint you placed. Position in the room's own coordinates; [size] null is the block's own. */
+	/** A placed waypoint, in room coordinates; [size] null means the block's own shape. */
 	data class Custom(val x: Int, val y: Int, val z: Int, val type: String, val title: String? = null, val size: Double? = null) {
 		val pos: BlockPos get() = BlockPos(x, y, z)
 		val kind: CustomType get() = runCatching { CustomType.valueOf(type) }.getOrDefault(CustomType.NORMAL)
 	}
 
-	/** How many spots the Default pack holds, for the pack manager. */
 	val defaultCount: Int get() = secretData.values.sumOf { kinds -> kinds.values.sumOf { it.size } }
 
 	/** Secrets taken this run, as world positions. */
@@ -324,7 +309,7 @@ object DungeonWaypoints {
 	private var lastBatAt = 0L
 	private var lastBatPos: BlockPos? = null
 
-	/** Set by `/cryptic dwp`, and acted on next tick once the chat has closed. */
+	/** Set by `/cryptic dwp`, acted on next tick once chat has closed. */
 	private var openMenu = false
 	private var editKeyDown = false
 
@@ -350,23 +335,24 @@ object DungeonWaypoints {
 				type to list.asJsonArray.map { point ->
 					val xyz = point.asJsonArray
 					BlockPos(xyz[0].asInt, xyz[1].asInt, xyz[2].asInt)
-				}
+				}.filter { pos -> BLAZE_CHEST_HEIGHT[room]?.let { pos.y == it } ?: true }
 			}.toMap()
 		}
 	}.onFailure { Cryptic.LOGGER.error("Could not read the secret waypoints", it) }.getOrDefault(emptyMap())
 
+	/**
+	 * Higher Or Lower comes in two builds: Higher Blaze is entered at the bottom and climbs, Lower
+	 * Blaze is entered at the top and goes down. Devonian lists both chests under both, so each
+	 * showed the other's chest too; each keeps only its own, at the height dtMap's room data gives.
+	 */
+	private val BLAZE_CHEST_HEIGHT = mapOf("Higher Blaze" to 118, "Lower Blaze" to 68)
+
 	private fun saveCustoms() = WaypointPacks.save()
 
-	// ---- Where -----------------------------------------------------------
-
-	/** True while the floor and the room have to be read for this module. */
 	val needsDungeon: Boolean get() = module.enabled
 
-	/** The room being stood in, once it is known which way it is turned. */
-	/**
-	 * Whether every secret in [room] has been found, by anybody: its checkmark
-	 * gone green on the map, or its secret count full.
-	 */
+	/** The current room, once its rotation is known. */
+	/** Whether every secret in [room] is found, by anyone: its checkmark green, or its count full. */
 	private fun roomSecretsDone(room: DungeonRoom): Boolean {
 		if (room.state == DungeonRoom.State.GREEN) return true
 		val total = room.data?.secrets ?: return false
@@ -377,7 +363,7 @@ object DungeonWaypoints {
 		if (!module.enabled || !DungeonLocation.inDungeon || DungeonRun.inBoss) return null
 		val level = Minecraft.getInstance().level ?: return null
 		val room = DungeonMap.currentRoom() ?: return null
-		// Nothing is found in the entrance, and nothing is placed there either.
+		// Nothing is found or placed in the entrance.
 		if (room.type == DungeonRoom.Type.ENTRANCE || room.data?.name == "Entrance") return null
 		if (room.data == null || !room.resolveRotation(level)) return null
 		return room
@@ -390,16 +376,12 @@ object DungeonWaypoints {
 		}
 	}
 
-	/** Every custom waypoint in the room from the packs switched on, placed in the world. */
 	private fun customsIn(room: DungeonRoom): Sequence<Pair<Custom, BlockPos>> {
 		val name = room.data?.name ?: return emptySequence()
 		return WaypointPacks.waypointsIn(name).mapNotNull { (_, custom) -> room.getRealCoords(custom.pos)?.let { custom to it } }
 	}
 
-	/**
-	 * The room at a world position, once its turn is known, for a secret taken
-	 * in a room you are not standing in: a bat flies, and dies where it likes.
-	 */
+	/** The room at a world position, for a secret taken elsewhere (bats die where they like). */
 	private fun roomAt(x: Double, z: Double): DungeonRoom? {
 		val level = Minecraft.getInstance().level ?: return null
 		val room = DungeonFloor.roomAt(DungeonFloor.tileOf(x, z)) ?: return null
@@ -407,9 +389,6 @@ object DungeonWaypoints {
 		return room
 	}
 
-	// ---- Secrets being taken ---------------------------------------------
-
-	/** A block right-clicked: a chest, a skull, a lever. */
 	@JvmStatic
 	fun onBlockUsed(pos: BlockPos) {
 		val room = room() ?: return
@@ -421,17 +400,13 @@ object DungeonWaypoints {
 		lastChestAt = System.currentTimeMillis()
 	}
 
-	/** A secret item picked up, wherever it had rolled to. */
 	@JvmStatic
 	fun onItemPickedUp(pos: BlockPos) = takeNearest(pos, ITEM_RANGE, SecretType.ITEM)
 
 	/**
-	 * A bat dying, which is a bat secret taken: from its death sound, or from the
-	 * death itself. Both arrive for one bat, so a second within a moment and a
-	 * few blocks of the first is the same bat. Only the client thread's pass.
-	 *
-	 * Bats fly, so the nearest bat spot within ten blocks is taken, in the
-	 * room the bat died in as well as the one you are standing in.
+	 * A bat dying is a bat secret taken, from its sound or its death; a second report close in time
+	 * and space is the same bat. Client thread only. The nearest bat spot within ten blocks is
+	 * taken, in the bat's room as well as yours.
 	 */
 	@JvmStatic
 	fun onBatDied(x: Double, y: Double, z: Double) {
@@ -458,7 +433,7 @@ object DungeonWaypoints {
 			?.let { found += it }
 	}
 
-	/** After a server teleport: an etherwarp waypoint you are now standing on is done with. */
+	/** After a server teleport: an etherwarp waypoint you're now on is done. */
 	@JvmStatic
 	fun onTeleport() {
 		val client = Minecraft.getInstance()
@@ -471,7 +446,6 @@ object DungeonWaypoints {
 			.forEach { found += it.second }
 	}
 
-	/** A chat packet, on the client thread. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay || !module.enabled) return
@@ -488,17 +462,13 @@ object DungeonWaypoints {
 		}
 	}
 
-	// ---- Drawing ---------------------------------------------------------
-
 	private fun render(context: LevelRenderContext) {
 		val room = room() ?: return
 		val client = Minecraft.getInstance()
 		val level = client.level ?: return
 
-		// A room Hypixel calls finished has nothing left to find. A secret only
-		// leaves on its own when this client sees it taken — your click, an item
-		// picked up near you, a bat dying near its spot — so one a teammate took,
-		// or a bat that flew off to die, stayed drawn after the room was done.
+		// A room Hypixel calls finished has nothing left, which covers secrets taken out of sight
+		// (a teammate's, or a bat that flew off).
 		val roomDone = hideFound.value && roomSecretsDone(room)
 
 		if (secrets.value && !roomDone) {
@@ -517,29 +487,22 @@ object DungeonWaypoints {
 					CustomType.SECRET -> if (at in found || roomDone) continue
 					CustomType.ETHERWARP -> if (at in found) continue
 					CustomType.BREAKER -> if (level.getBlockState(at).isAir) continue
-					CustomType.NORMAL, CustomType.START -> Unit
+					CustomType.NORMAL, CustomType.START, CustomType.ALIGNMENT -> Unit
 				}
 				val label = waypoint.title ?: if (labels.value) kind.label else null
-				// Etherwarp spots are a fill and nothing else, whatever the style:
-				// an outline on the block you are aiming the warp at is in the way
-				// of the crosshair. Etherwarp and breaker spots are never drawn
-				// through walls, since the block you can actually see is the one
-				// that counts for both. A start spot is the opposite: an outline,
-				// always through walls, so it can be found from anywhere in the room.
+				// Etherwarp spots are fill only (an outline would sit on the aimed block).
+				// Etherwarp and breaker spots never show through walls, since the visible block is
+				// what counts. Start spots are the opposite: outline, always through walls. Alignment
+				// spots are outlines that never show through walls.
 				val fillOnly = kind == CustomType.ETHERWARP
-				val outlineOnly = kind == CustomType.START
+				val outlineOnly = kind == CustomType.START || kind == CustomType.ALIGNMENT
 				val phase = when (kind) {
-					CustomType.ETHERWARP, CustomType.BREAKER -> false
+					CustomType.ETHERWARP, CustomType.BREAKER, CustomType.ALIGNMENT -> false
 					CustomType.START -> true
 					else -> throughWalls.value
 				}
-				val box = boxAt(at, waypoint.size)
-				// A breaker block is usually set in a wall: the sides against a solid
-				// block are left inside it, so the outline never shows on the block
-				// next door.
-				val tucked = if (kind == CustomType.BREAKER) buriedSides(at, box) else 0
-				// And solid: the spot to warp onto is meant to be unmistakable.
-				draw(context, box, kind.color.rgb, label, fillOnly = fillOnly, outlineOnly = outlineOnly, phase = phase, solid = kind == CustomType.ETHERWARP, tucked = tucked)
+				// And solid: the warp spot should be unmistakable.
+				draw(context, boxAt(at, waypoint.size), kind.color.rgb, label, fillOnly = fillOnly, outlineOnly = outlineOnly, phase = phase, solid = kind == CustomType.ETHERWARP)
 			}
 		}
 
@@ -549,30 +512,11 @@ object DungeonWaypoints {
 		}
 	}
 
-	/** The block's own outline, or a cube of [size] centred on it. */
 	private fun boxAt(pos: BlockPos, size: Double?): AABB {
 		if (size != null) return AABB(pos).inflate((size - 1.0) / 2.0)
 		val level = Minecraft.getInstance().level ?: return AABB(pos)
 		val shape = level.getBlockState(pos).getShape(level, pos)
 		return if (shape.isEmpty) AABB(pos) else shape.bounds().move(pos)
-	}
-
-	/** The sides of [box] that lie on its block's own sides and against a full block, where nothing can see them. */
-	private fun buriedSides(pos: BlockPos, box: AABB): Int {
-		val level = Minecraft.getInstance().level ?: return 0
-		var sides = 0
-		fun check(face: Int, side: Double, edge: Int, direction: Direction) {
-			if (Math.abs(side - edge) > EDGE_EPSILON) return
-			val next = pos.relative(direction)
-			if (level.getBlockState(next).isCollisionShapeFullBlock(level, next)) sides = sides or face
-		}
-		check(WorldRender.FACE_DOWN, box.minY, pos.y, Direction.DOWN)
-		check(WorldRender.FACE_UP, box.maxY, pos.y + 1, Direction.UP)
-		check(WorldRender.FACE_NORTH, box.minZ, pos.z, Direction.NORTH)
-		check(WorldRender.FACE_SOUTH, box.maxZ, pos.z + 1, Direction.SOUTH)
-		check(WorldRender.FACE_WEST, box.minX, pos.x, Direction.WEST)
-		check(WorldRender.FACE_EAST, box.maxX, pos.x + 1, Direction.EAST)
-		return sides
 	}
 
 	private fun draw(
@@ -585,7 +529,6 @@ object DungeonWaypoints {
 		outlineOnly: Boolean = false,
 		phase: Boolean = throughWalls.value,
 		solid: Boolean = false,
-		tucked: Int = 0,
 	) {
 		val mode = when {
 			fillOnly -> STYLE_FILL
@@ -608,7 +551,6 @@ object DungeonWaypoints {
 			fill = mode != STYLE_OUTLINE,
 			phase = phase,
 			lineWidth = lineWidth.value.toFloat(),
-			tucked = tucked,
 		)
 		if (label == null) return
 		val client = Minecraft.getInstance()
@@ -616,8 +558,7 @@ object DungeonWaypoints {
 			poseStack = context.poseStack(),
 			collector = context.submitNodeCollector(),
 			orientation = client.gameRenderer.mainCamera().rotation(),
-			// White, shadowed and through walls whatever the box does, in the
-			// middle of the block: a label is read, so it has to be readable.
+			// White, shadowed and through walls, in the block's middle: labels must be readable.
 			text = Component.literal(label),
 			x = (box.minX + box.maxX) / 2,
 			y = (box.minY + box.maxY) / 2,
@@ -628,14 +569,16 @@ object DungeonWaypoints {
 		)
 	}
 
-	// ---- Editing ---------------------------------------------------------
+	/** A Dungeon Breaker block as this module draws one, for Boss Waypoints to match. */
+	internal fun drawBreaker(context: LevelRenderContext, box: AABB, label: String?, preview: Boolean = false) {
+		draw(context, box, CustomType.BREAKER.color.rgb, label, preview = preview, phase = false)
+	}
 
 	private fun placing(): CustomType = CustomType.entries[placeType.selectedIndex.coerceIn(0, CustomType.entries.size - 1)]
 
 	/**
-	 * The block under the crosshair, while there is a room to put it in. With
-	 * floating waypoints allowed and the crosshair on nothing, the spot in the
-	 * air ahead instead.
+	 * The block under the crosshair while there's a room for it; with floating waypoints on and
+	 * nothing hit, the spot in the air ahead.
 	 */
 	private fun target(): BlockPos? {
 		room() ?: return null
@@ -645,13 +588,11 @@ object DungeonWaypoints {
 		return null
 	}
 
-	/** The block [FLOATING_DISTANCE] ahead of the eyes, which is where Odin puts a waypoint in the air. */
 	internal fun floatingPos(): BlockPos? {
 		val player = Minecraft.getInstance().player ?: return null
 		return BlockPos.containing(player.eyePosition.add(player.lookAngle.scale(FLOATING_DISTANCE)))
 	}
 
-	/** A right click on nothing while Edit mode is on: a floating waypoint, when they are allowed. */
 	@JvmStatic
 	fun onEditorAirClick(): Boolean {
 		if (!module.enabled || !editMode.value || !floating.value) return false
@@ -660,9 +601,8 @@ object DungeonWaypoints {
 	}
 
 	/**
-	 * A right click on a block while Edit mode is on: places a waypoint, takes
-	 * one away, or — sneaking — asks for a title. True swallows the click, so
-	 * the chest or lever under it is not touched while editing.
+	 * A right click on a block in Edit mode: adds a waypoint, removes one, or (sneaking) asks for a
+	 * title. True swallows the click, so the chest or lever isn't touched.
 	 */
 	@JvmStatic
 	fun onEditorClick(pos: BlockPos): Boolean {
@@ -674,7 +614,7 @@ object DungeonWaypoints {
 		val existing = list.firstOrNull { it.pos == relative }
 		val client = Minecraft.getInstance()
 
-		// A waypoint from another pack is that pack's, and is left alone.
+		// Waypoints from other packs are left alone.
 		if (existing == null) {
 			val owner = WaypointPacks.waypointsIn(name).firstOrNull { (pack, custom) ->
 				custom.pos == relative && pack !== WaypointPacks.editPack
@@ -719,7 +659,7 @@ object DungeonWaypoints {
 		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §7$text"))
 	}
 
-	/** What Edit mode is about to place, or the waypoint under the crosshair. Odin's editor HUD. */
+	/** What Edit mode will place, or the waypoint under the crosshair. Odin's editor HUD. */
 	private class EditorElement : HudElement("dungeon_waypoint_editor", "Waypoint Editor", 0.40, 0.70) {
 		private val font get() = Minecraft.getInstance().font
 
@@ -764,8 +704,6 @@ object DungeonWaypoints {
 		}
 	}
 
-	// ---- /cryptic dwp ----------------------------------------------------
-
 	private fun feedback(context: CommandContext<FabricClientCommandSource>, text: String) {
 		context.source.sendFeedback(Component.literal("§8[Cryptic] §7$text"))
 	}
@@ -773,8 +711,7 @@ object DungeonWaypoints {
 	fun command(): LiteralArgumentBuilder<FabricClientCommandSource> =
 		ClientCommands.literal("dwp")
 			.executes {
-				// Opened next tick: the chat screen closing after the command would
-				// otherwise close this straight after it opened.
+				// Next tick, or chat closing after the command would close it.
 				openMenu = true
 				1
 			}
@@ -797,13 +734,13 @@ object DungeonWaypoints {
 			.then(ClientCommands.literal("type").then(
 				ClientCommands.argument("kind", StringArgumentType.word())
 					.suggests { _, builder ->
-						listOf("normal", "secret", "etherwarp", "breaker", "start").forEach(builder::suggest)
+						listOf("normal", "secret", "etherwarp", "breaker", "start", "alignment").forEach(builder::suggest)
 						builder.buildFuture()
 					}
 					.executes { context ->
 						val kind = CustomType.parse(StringArgumentType.getString(context, "kind"))
 						if (kind == null) {
-							feedback(context, "§cNo such kind. §7normal, secret, etherwarp, breaker or start.")
+							feedback(context, "§cNo such kind. §7normal, secret, etherwarp, breaker, start or alignment.")
 							return@executes 0
 						}
 						placeType.selectedIndex = kind.ordinal
@@ -856,7 +793,6 @@ object DungeonWaypoints {
 				1
 			})
 
-	/** Edit mode on or off, from the key or the command, and says which. */
 	private fun toggleEditMode() {
 		editMode.value = !editMode.value
 		note(
@@ -869,9 +805,8 @@ object DungeonWaypoints {
 	}
 
 	/**
-	 * Shift and the wheel, while editing in a room: steps through the kinds of
-	 * waypoint the next click places. True takes the turn, so the hotbar does
-	 * not move with it.
+	 * Shift and the wheel while editing: steps through what the next click places. True takes the
+	 * scroll from the hotbar.
 	 */
 	@JvmStatic
 	fun onScroll(amount: Double): Boolean {
@@ -890,7 +825,6 @@ object DungeonWaypoints {
 		return true
 	}
 
-	/** Opens the pack manager when asked, and watches the Edit mode key. */
 	fun tick(client: Minecraft) {
 		if (openMenu) {
 			openMenu = false
@@ -902,7 +836,6 @@ object DungeonWaypoints {
 		editKeyDown = down
 	}
 
-	/** For `/cryptic debug waypoints`: the room, its turn, and what is drawn in it. */
 	fun describe(): List<String> {
 		val room = DungeonMap.currentRoom()
 		val level = Minecraft.getInstance().level

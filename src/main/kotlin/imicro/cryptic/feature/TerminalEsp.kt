@@ -19,27 +19,16 @@ import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.Vec3
 
 /**
- * Boxes the terminals in Goldor's tower that still have to be done.
- *
- * Ported from NoammAddons (CC0, Copyright (c) Noamm9). A terminal is a chest
- * that has to be right-clicked, and the part of it that answers a right click
- * is an invisible armour stand rather than the block anybody can see — so a
- * terminal missed at range is usually a terminal that was aimed at and not hit.
- * What is drawn here is that armour stand's own hitbox, which is the thing the
- * click has to land on.
- *
- * Hypixel names the stand "Inactive Terminal" until the terminal is finished
- * and "Terminal Active" afterwards, so the name alone says which are left.
+ * Boxes the Goldor terminals still to do. A terminal's clickable part is an invisible armour stand,
+ * not the visible block, so this draws the stand's hitbox. Hypixel names it "Inactive Terminal"
+ * until done. Ported from NoammAddons.
  */
 object TerminalEsp {
-	/** Indices into [mode]. */
 	private const val MODE_OUTLINE = 0
 	private const val MODE_FILL = 1
 
-	/** How far a stand may sit from a recorded terminal and still be one. */
 	private const val MATCH_RANGE_SQUARED = 1.5
 
-	/** How far past the outermost terminal the world is asked for entities. */
 	private const val SEARCH_MARGIN = 2.0
 
 	/** NoammAddons' flash timings, in milliseconds. */
@@ -47,19 +36,13 @@ object TerminalEsp {
 	private const val FLASH_HOLD_MS = 250L
 	private const val FLASH_FADE_MS = 200L
 
-	/** The name Hypixel gives a terminal nobody has finished yet. */
 	private const val UNFINISHED_NAME = "Inactive Terminal"
 
-	/** Strips leftover section-sign codes, which Hypixel colours the name with. */
 	private val formattingPattern = Regex("§.")
 
 	/**
-	 * Where the terminals stand in each quarter of the phase.
-	 *
-	 * The positions are NoammAddons'. They are needed because the tower holds
-	 * other armour stands with the same name in other quarters, and a stand two
-	 * hundred blocks away being boxed through a wall is worse than not boxing
-	 * anything.
+	 * Where the terminals stand in each section (NoammAddons' positions). Needed because other
+	 * sections have stands with the same name.
 	 */
 	private val TERMINAL_POSITIONS = listOf(
 		listOf(Vec3(110.0, 113.0, 73.0), Vec3(110.0, 119.0, 79.0), Vec3(90.0, 112.0, 92.0), Vec3(90.0, 122.0, 101.0)),
@@ -152,16 +135,9 @@ object TerminalEsp {
 		),
 	)
 
-	/**
-	 * The boxes to draw, rebuilt once a tick.
-	 *
-	 * The scan is a tick's work rather than a frame's because a terminal only
-	 * changes when somebody finishes it, and the render pass runs many times in
-	 * between.
-	 */
+	/** The boxes to draw, rebuilt once a tick; terminals only change when someone finishes one. */
 	private var boxes: List<Pair<Int, AABB>> = emptyList()
 
-	/** When each stand was last clicked, by entity id. */
 	private val clickedAt = HashMap<Int, Long>()
 
 	private var initialized = false
@@ -188,8 +164,7 @@ object TerminalEsp {
 		}
 
 		val positions = TERMINAL_POSITIONS[section - 1]
-		// One box around every terminal in the quarter, so the world is asked
-		// for entities once rather than once per terminal.
+		// One box around every terminal in the section, so the world is queried once.
 		val search = AABB(
 			positions.minOf { it.x } - SEARCH_MARGIN,
 			positions.minOf { it.y } - SEARCH_MARGIN,
@@ -206,20 +181,14 @@ object TerminalEsp {
 		if (clickedAt.isNotEmpty()) clickedAt.entries.removeIf { System.currentTimeMillis() - it.value > FLASH_HOLD_MS + FLASH_FADE_MS }
 	}
 
-	/**
-	 * An entity you clicked or hit. Only the stands being boxed are remembered,
-	 * so this costs nothing anywhere else. NoammAddons' Flash On Click.
-	 */
+	/** An entity you clicked or hit. Only boxed stands are remembered. NoammAddons' Flash On Click. */
 	@JvmStatic
 	fun onClicked(entity: Entity) {
 		if (!module.enabled || !flashOnClick.value || entity !is ArmorStand) return
 		if (boxes.any { it.first == entity.id }) clickedAt[entity.id] = System.currentTimeMillis()
 	}
 
-	/**
-	 * How far a box is through its flash, 0 to 1: up almost at once, held while
-	 * the click is fresh, then faded back to its own colour.
-	 */
+	/** How far a box is through its flash, 0 to 1: up almost at once, held, then faded back. */
 	private fun flashOf(id: Int): Float {
 		val at = clickedAt[id] ?: return 0f
 		val elapsed = System.currentTimeMillis() - at
@@ -230,7 +199,6 @@ object TerminalEsp {
 		}
 	}
 
-	/** [base] moved towards the flash colour by [amount], keeping its own alpha. */
 	private fun flashed(base: Int, amount: Float): Int {
 		if (amount <= 0f) return base
 		val flash = flashColor.argb

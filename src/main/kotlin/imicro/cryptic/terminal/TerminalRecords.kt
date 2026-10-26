@@ -10,15 +10,8 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
 /**
- * The fastest each terminal has ever been solved.
- *
- * A file of its own rather than a corner of the profile: a personal best is a
- * record of something that happened, not a preference, and swapping colour
- * schemes should not swap away the times. Ported in spirit from Odin's
- * `PersonalBest` (BSD 3-Clause, Copyright (c) 2025 odtheking).
- *
- * The simulator's times are kept apart from the real ones, because a terminal
- * played against a client with no server in the way is not the same terminal.
+ * Each terminal's fastest solve, in a file of its own so profiles don't swap the times. Simulator
+ * times are kept separately.
  */
 object TerminalRecords {
 	private val logger = LoggerFactory.getLogger("cryptic/terminals")
@@ -63,15 +56,9 @@ object TerminalRecords {
 	private fun times(simulated: Boolean): MutableMap<String, Float> =
 		if (simulated) load().simulator!! else load().terminals!!
 
-	/** The best time for [name], or null when it has never been solved. */
 	fun best(name: String, simulated: Boolean): Float? = times(simulated)[name]
 
-	/**
-	 * Records [seconds] for [name] and says whether it was a new best.
-	 *
-	 * The old best comes back with it, so the caller can say what was beaten
-	 * rather than only that something was.
-	 */
+	/** Records [seconds] for [name]. Returns the old best, so the caller can say what was beaten. */
 	fun record(name: String, seconds: Float, simulated: Boolean): Float? {
 		val previous = times(simulated)[name]
 		if (previous != null && previous <= seconds) return previous

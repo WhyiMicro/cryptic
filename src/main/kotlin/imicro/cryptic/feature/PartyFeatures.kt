@@ -21,58 +21,52 @@ import org.lwjgl.glfw.GLFW
 import java.util.Locale
 
 /**
- * Party chat commands, and a party invite you can answer with one key.
+ * Party chat commands, and a party invite you answer with one key.
  *
- * The commands are the ones Odin's Chat Commands (BSD 3-Clause, Copyright (c)
- * 2025 odtheking) and NoammAddons' Party Helper (CC0, Noamm9) share: somebody
- * types `!w` in party chat and the leader's client warps the party, `!m7` and
- * it queues the floor, `!ping` and everybody's client says its own. They exist
- * because the person who wants the party warped is rarely the person who can
- * do it, and asking takes longer than the warp.
+ * The commands are those Odin's Chat Commands and NoammAddons' Party Helper share: `!w` warps the
+ * party, `!m7` queues a floor, `!ping` makes everyone's client report its own. Commands that act on
+ * the party are only run by the leader, tracked from chat lines; when unknown, it tries and
+ * Hypixel's refusal answers.
  *
- * The ones that *do* something to the party are only acted on by its leader,
- * which is why this keeps track of who that is — from the same chat lines a
- * player would work it out from. When it has not seen enough to know, it
- * tries, and Hypixel's refusal is what tells it.
+ * The invite notification is Cryptic's own: held on screen for Hypixel's sixty seconds, answered
+ * with a key.
  *
- * The invite is Cryptic's own. Hypixel gives you sixty seconds and a line of
- * chat to click on, which is a small target that scrolls; this holds it on
- * screen for the sixty seconds and takes a key instead.
- *
- * Chat is read straight off the packet rather than through Fabric's message
- * event, the way Odin and NoammAddons both read it. The event is only raised
- * for a message every other mod has agreed to show, and a mod that hides or
- * rewrites a line takes it away from everybody listening after it.
+ * Chat is read from the packet (as Odin and NoammAddons do), since Fabric's event misses lines
+ * other mods hide.
  */
 object PartyFeatures {
 	private const val SOURCE = "Party"
 
-	/** Hypixel's own limit on how long an invite stands. */
 	private const val INVITE_SECONDS = 60.0
 
-	/** How long after a command is asked for before it is answered. Odin waits the same. */
+	/** How long after a command is asked before it's answered (as Odin waits). */
 	private const val REPLY_DELAY_TICKS = 4
 
-	/** The least time between two things this sends, so a burst of commands is not a burst of chat. */
+	/** The least time between two things this sends. */
 	private const val SEND_SPACING_TICKS = 12
 
-	/** How long a !ping waits for its first measurement, when nothing was measuring already. */
+	/** How long a !ping waits for its first measurement, when nothing was measuring. */
 	private const val PING_WAIT_TICKS = 40
 
-	/** Never more than this many answers waiting; a party spamming commands gets the first few. */
+	/** At most this many answers waiting; a spamming party gets the first few. */
 	private const val MAX_QUEUED = 4
 
 	private val FORMATTING = Regex("§.")
 	private const val RANK = """(?:\[[^\]]+] )?"""
 	private const val NAME = """(\w{1,16})"""
 
-	/** "Party > [MVP+] Name: !command", rank and the emblem after a name both optional. */
+	/** "Party > [MVP+] Name: !command", rank and emblem optional. */
 	private val partyChat = Regex("""^Party > $RANK$NAME(?: [^\s:]+)?: ?(.*)$""")
 
 	private val inviteLine = Regex("""^$RANK$NAME has invited you to join (?:their|$RANK$NAME's) party!""")
 	private val inviteExpired = Regex("""^The party invite from $RANK$NAME has expired""")
 
-	// Who leads, and who is in it, as Hypixel says it.
+	// A friend request, framed in dashes with [ACCEPT] - [DENY] - [IGNORE] under it.
+	private val friendRequestLine = Regex("""^Friend request from $RANK$NAME""")
+	private val friendRequestExpired = Regex("""friend request from $RANK$NAME (?:has )?expired""", RegexOption.IGNORE_CASE)
+	private val nowFriends = Regex("""^You are now friends with $RANK$NAME""")
+
+	// Who leads and who's in it, as Hypixel says it.
 	private val joinedParty = Regex("""^You have joined $RANK$NAME's party!""")
 	private val partyingWith = Regex("""^You'll be partying with: (.+)$""")
 	private val transferredTo = Regex("""^The party was transferred to $RANK$NAME (?:by|because) """)
@@ -80,9 +74,8 @@ object PartyFeatures {
 	private val promotedLeader = Regex("""^$RANK$NAME has promoted $RANK$NAME to Party Leader""")
 
 	/**
-	 * "[MVP+] Name entered The Catacombs, Floor VII!", which Hypixel shows the
-	 * whole party at the start of every run. Only the leader can start one, so
-	 * it names the leader each run without anybody asking.
+	 * "[MVP+] Name entered The Catacombs, Floor VII!", shown to the whole party at each run's
+	 * start. Only the leader can start one, so it names the leader.
 	 */
 	private val enteredDungeon = Regex("""^$RANK$NAME entered (?:MM )?The Catacombs,""")
 	private val listHeading = Regex("""^Party Members \((\d+)\)$""")
@@ -108,24 +101,22 @@ object PartyFeatures {
 		Regex("""^You are not in a party"""),
 	)
 
-	/** Hypixel's names for the floors, which is what its queue command takes. */
 	private val FLOOR_NAMES = listOf("ENTRANCE", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN")
 
-	/** `f1` to `f7` and `m1` to `m7`. */
+	/** `k1` to `k5`, or `t1` to `t5` for tier. */
+	private val KUUDRA_COMMAND = Regex("""[kt]([1-5])""")
+	private val KUUDRA_TIERS = listOf("KUUDRA_NORMAL", "KUUDRA_HOT", "KUUDRA_BURNING", "KUUDRA_FIERY", "KUUDRA_INFERNAL")
+
 	private val floorCommand = Regex("""^[fm][1-7]$""")
 
 	/**
-	 * Every word a command can be asked for by, short and long alike.
-	 *
-	 * Also what decides that a line you typed yourself is a command at all, and
-	 * so should go to party chat whichever channel you happen to be in.
+	 * Every word a command can be called by. Also what makes a line you typed a command, sent to
+	 * party chat whatever channel you're in.
 	 */
 	private val COMMAND_WORDS = setOf(
 		"w", "warp", "ai", "allinv", "allinvite", "inv", "invite", "pt", "ptme", "transfer",
 		"k", "kick", "ko", "kickoffline", "dt", "downtime", "undt", "undowntime", "coords", "cords", "co", "ping", "tps", "fps",
 	)
-
-	// ---- Invites ---------------------------------------------------------
 
 	private val inviteSection = SectionModuleSetting("invite_section", "Invites")
 
@@ -139,11 +130,20 @@ object PartyFeatures {
 	)
 
 	@JvmField
+	val friendToast = ToggleModuleSetting(
+		id = "friend_toast",
+		label = "Friend request notification",
+		defaultValue = true,
+		description = "Holds a friend request on screen for a minute. Press Y to accept it, N to deny it. " +
+			"It is one of Cryptic's notifications, so Toast Notifications has to be on.",
+	)
+
+	@JvmField
 	val inviteSound = ToggleModuleSetting(
 		id = "invite_sound",
 		label = "Play a sound",
 		defaultValue = true,
-		visibleIf = { inviteToast.value || autoAccept.value },
+		visibleIf = { inviteToast.value || autoAccept.value || friendToast.value },
 	)
 
 	@JvmField
@@ -153,8 +153,6 @@ object PartyFeatures {
 		defaultValue = false,
 		description = "Accepts every party invite the moment it arrives, whoever it is from.",
 	)
-
-	// ---- Commands --------------------------------------------------------
 
 	private val commandSection = SectionModuleSetting("command_section", "Party commands")
 
@@ -198,6 +196,9 @@ object PartyFeatures {
 
 	@JvmField
 	val floors = command("floors", "!f1 to !f7, !m1 to !m7", "As leader: queues the party for that floor.")
+
+	@JvmField
+	val kuudra = command("kuudra", "!k1 to !k5", "As leader: queues the party for that Kuudra tier, Basic to Infernal. !t1 to !t5 do the same.")
 
 	@JvmField
 	val transfer = command(
@@ -251,55 +252,41 @@ object PartyFeatures {
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
 		settings = listOf(
-			inviteSection, inviteToast, autoAccept, inviteSound,
+			inviteSection, inviteToast, autoAccept, friendToast, inviteSound,
 			commandSection, commands, redirect,
-			enabledSection, warp, allInvite, invite, floors, transfer, kick, kickOffline, downtime, coords, ping, tps, fps,
+			enabledSection, warp, allInvite, invite, floors, kuudra, transfer, kick, kickOffline, downtime, coords, ping, tps, fps,
 		),
 	)
 
-	// ---- Who leads, and who is in it --------------------------------------
-
-	/** The leader's name, or null while nothing seen so far has said. */
+	/** The leader's name, or null while unknown. */
 	private var leader: String? = null
 
-	/** True once Hypixel has refused something for not being the leader. */
 	private var refusedAsLeader = false
 
 	/**
-	 * Everybody known to be in the party, as they spell their names.
-	 *
-	 * Gathered from whatever says so — the party list, people joining and
-	 * leaving, anybody who speaks in party chat — because there is no one place
-	 * that lists a party without being asked. It only has to be good enough to
-	 * finish a name somebody typed the start of.
+	 * Everyone known to be in the party, gathered from the party list, joins, leaves and party
+	 * chat. Only needs to be good enough to complete a typed name.
 	 */
 	private val members = LinkedHashSet<String>()
 
 	private fun self(): String? = Minecraft.getInstance().player?.name?.string
 
 	/**
-	 * Whether a leader's command is worth trying.
-	 *
-	 * Yes when you are known to lead, no when somebody else is, and yes again
-	 * when nothing is known — a party joined before the game started, or through
-	 * the dungeon finder, never said who leads it. Trying costs one refused
-	 * command, and the refusal settles the question from then on.
+	 * Whether a leader's command is worth trying: yes when you lead, no when someone else does, and
+	 * yes when unknown (a party joined before launch or via the dungeon finder never said). The
+	 * first refusal settles it.
 	 */
 	private fun mayLead(): Boolean {
 		val known = leader
 		return if (known != null) known == self() else !refusedAsLeader
 	}
 
-	/**
-	 * The same answer for other modules: whether you lead the party, or might.
-	 * Followed whether or not Party Features itself is switched on.
-	 */
-	fun mightLead(): Boolean = mayLead()
-
-	/** Who leads the party, or null when nothing seen has said. */
 	fun leaderName(): String? = leader
 
-	/** How many the last /party list counted, and when it arrived. */
+	/** [mayLead], for other modules' leader commands. */
+	fun mayLeadParty(): Boolean = mayLead()
+
+	/** How many the last /party list counted, and when. */
 	@Volatile
 	var listedSize: Int? = null
 		private set
@@ -308,7 +295,7 @@ object PartyFeatures {
 	var listedAt = 0L
 		private set
 
-	/** When Hypixel last said there is no party, or that you have left it. */
+	/** When Hypixel last said there's no party, or that you left. */
 	@Volatile
 	var noPartyAt = 0L
 		private set
@@ -326,12 +313,8 @@ object PartyFeatures {
 	}
 
 	/**
-	 * The party member a half-typed name most likely means, or null for none.
-	 *
-	 * A whole name first, then one that starts with what was typed, then one
-	 * that merely contains it — and the shortest of those, which is the one the
-	 * fewest extra letters away. Case is ignored throughout: nobody types the
-	 * capitals in somebody else's name.
+	 * The member a half-typed name most likely means: an exact name, then a prefix, then a
+	 * substring, the shortest match winning. Case-insensitive.
 	 */
 	private fun closestMember(typed: String): String? {
 		val wanted = typed.lowercase(Locale.ROOT)
@@ -343,19 +326,16 @@ object PartyFeatures {
 		return candidates.filter { wanted in it.lowercase(Locale.ROOT) }.minByOrNull { it.length }
 	}
 
-	// ---- Sending ---------------------------------------------------------
-
 	/**
-	 * Something waiting to be sent. [command] is asked for when its turn comes
-	 * rather than when it is queued, for the one answer that is not known yet
-	 * at the moment it is asked for.
+	 * Something waiting to be sent. [command] is asked for when its turn comes, for answers not
+	 * known yet when queued.
 	 */
 	private class Queued(val command: () -> String, var ticks: Int)
 
 	private val queue = ArrayDeque<Queued>()
 	private var sendCooldown = 0
 
-	/** Queues a command, without its slash, to be sent a moment from now. */
+	/** Queues a command (without its slash) to send shortly. */
 	private fun send(command: String) = sendLater(REPLY_DELAY_TICKS) { command }
 
 	private fun sendLater(ticks: Int, command: () -> String) {
@@ -366,24 +346,19 @@ object PartyFeatures {
 	private fun say(message: String) = send("pc $message")
 
 	/**
-	 * Queues a command for another module, without its slash, so every command
-	 * Cryptic sends keeps the same spacing. Two sent in the same moment — the
-	 * downtime reminder and Auto Requeue's message, both at the end of a run —
-	 * had the second refused for coming too fast.
+	 * Queues a command for another module, so every command Cryptic sends keeps the same spacing
+	 * (two at the end of a run had the second refused).
 	 */
 	fun enqueue(command: String) = sendLater(0) { command }
 
 	private fun dispatch(client: Minecraft, command: String) {
-		// The debug switch shows what would have been sent, so every command can
-		// be tried without a party to try it on.
+		// The debug switch shows what would be sent, so commands can be tried without a party.
 		if (DebugOverrides.previewPartyCommands) {
 			client.gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §7Would send: §f/$command"))
 			return
 		}
 		client.connection?.sendCommand(command)
 	}
-
-	// ---- Downtime --------------------------------------------------------
 
 	/** Who asked for a break this run, and why. */
 	private val breaks = LinkedHashMap<String, String>()
@@ -412,7 +387,7 @@ object PartyFeatures {
 			}
 		}
 
-		// The run ending is when the break somebody asked for is due.
+		// The break is due when the run ends.
 		if (DungeonRun.ended && !endHandled) {
 			endHandled = true
 			remindOfBreaks(client)
@@ -429,25 +404,20 @@ object PartyFeatures {
 		client.gui.hud.setTitle(Component.literal("§cDowntime"))
 		client.gui.hud.setSubtitle(Component.literal("§f$summary"))
 		Toasts.show(SOURCE, "Downtime for $toastSummary", life = 10.0, color = Toasts.Colors.PARTY)
-		say("Downtime needed: $summary")
+		// Only the leader tells the party, and Auto Requeue says it itself when it's on.
+		if (mayLead() && !AutoRequeue.module.enabled) say("Downtime needed: $summary")
 	}
 
-	// ---- What you type ---------------------------------------------------
-
-	/** The command a line is asking for, lowercased, or null if it is not one of these. */
+	/** The command a line asks for, lowercased, or null. */
 	private fun commandWord(text: String): String? {
 		if (!text.startsWith("!")) return null
 		val word = text.drop(1).trim().substringBefore(' ').lowercase(Locale.ROOT)
-		return word.takeIf { it in COMMAND_WORDS || floorCommand.matches(it) }
+		return word.takeIf { it in COMMAND_WORDS || floorCommand.matches(it) || KUUDRA_COMMAND.matches(it) }
 	}
 
 	/**
-	 * A line of chat on its way out. False stops it, which is how a command
-	 * typed into all chat ends up in party chat instead.
-	 *
-	 * Only a line that is one of these commands is touched: anything else
-	 * beginning with an exclamation mark is somebody being emphatic, and goes
-	 * where they sent it.
+	 * A chat line on its way out. False stops it, which is how a command typed in all chat goes to
+	 * party chat instead. Only actual commands are touched.
 	 */
 	private fun allowOutgoing(message: String): Boolean {
 		if (!module.enabled || !commands.value || !redirect.value) return true
@@ -456,17 +426,11 @@ object PartyFeatures {
 		return false
 	}
 
-	// ---- What arrives ----------------------------------------------------
-
-	/**
-	 * A chat packet, on the client thread, before anything else has had a say
-	 * in whether it is shown.
-	 */
+	/** A chat packet on the client thread, before anything decides whether it's shown. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay) return
-		// Called from inside a packet handler, where anything thrown is the
-		// connection's problem. A chat line is never worth that.
+		// Inside a packet handler, where a throw drops the connection.
 		try {
 			readChat(message)
 		} catch (error: RuntimeException) {
@@ -475,14 +439,14 @@ object PartyFeatures {
 	}
 
 	private fun readChat(message: Component) {
-		// One message can carry several lines — Hypixel frames an invite in rules
-		// of dashes — and every pattern here is written for a single line.
+		// One message can hold several lines (Hypixel frames invites in dash rules).
 		for (raw in message.string.split('\n')) {
 			val line = raw.replace(FORMATTING, "").trim()
 			if (line.isEmpty()) continue
 			trackParty(line)
 			if (!module.enabled) continue
 			onInviteLine(line, message)
+			onFriendLine(line, message)
 
 			val (sender, said) = partyChat.find(line)?.destructured ?: continue
 			members += sender
@@ -492,6 +456,7 @@ object PartyFeatures {
 
 	/** Followed whether or not the module is on, so switching it on mid-party already knows. */
 	private fun trackParty(line: String) {
+		retryAcceptIfRefused(line)
 		joinedParty.find(line)?.let {
 			members.clear()
 			return setLeader(it.groupValues[1])
@@ -502,8 +467,7 @@ object PartyFeatures {
 			}
 			return
 		}
-		// "...because Name left" is somebody leaving as well as a new leader, and
-		// it is the only word Hypixel gives of that leaving.
+		// "...because Name left" is also someone leaving, and Hypixel's only word of it.
 		transferredBecauseLeft.find(line)?.let {
 			members -= it.groupValues[2]
 			return setLeader(it.groupValues[1])
@@ -512,7 +476,7 @@ object PartyFeatures {
 		enteredDungeon.find(line)?.let { return setLeader(it.groupValues[1]) }
 		promotedLeader.find(line)?.let { return setLeader(it.groupValues[2]) }
 
-		// The party list, which is the one complete account there is.
+		// The party list, the one complete account.
 		listHeading.matchEntire(line)?.let {
 			members.clear()
 			listedSize = it.groupValues[1].toIntOrNull()
@@ -529,16 +493,17 @@ object PartyFeatures {
 		finderJoined.find(line)?.let {
 			val name = it.groupValues[1]
 			members += name
-			// You joining somebody's group: the group is theirs, and whose it is
-			// is not said. Not you, at least, until something names the leader.
-			if (name.equals(self(), ignoreCase = true) && leader == self()) leader = null
+			// Joining someone's party: it's theirs, but who leads isn't said yet.
+			if (name.equals(self(), ignoreCase = true)) {
+				if (leader == self()) leader = null
+				refusedAsLeader = true
+			}
 			return
 		}
 		for (pattern in memberGone) pattern.find(line)?.let { members -= it.groupValues[1]; return }
 
-		// "Your party has been queued in the dungeon finder" was once read as
-		// you leading. It is shown to every member, so a member of somebody
-		// else's party was taken for its leader and tried to requeue it.
+		// "Your party has been queued in the dungeon finder" is shown to every member, so it
+		// doesn't mean you lead.
 		if (notLeader.containsMatchIn(line)) {
 			if (leader == self()) leader = null
 			refusedAsLeader = true
@@ -549,9 +514,8 @@ object PartyFeatures {
 			return forgetParty()
 		}
 
-		// Inviting somebody with no party of your own is how one is made, and
-		// makes you its leader. With a leader already known this says nothing
-		// new: a party with all-invite on lets anybody invite.
+		// Inviting someone without a party creates one with you as leader. With a leader known it
+		// says nothing (all-invite lets anyone invite).
 		invitedSomeone.find(line)?.let {
 			if (leader == null && it.groupValues[1] == self()) setLeader(self())
 		}
@@ -565,8 +529,7 @@ object PartyFeatures {
 		val match = inviteLine.find(line) ?: return
 		val inviter = match.groupValues[1]
 		val owner = match.groupValues[2].ifEmpty { inviter }
-		// The command Hypixel put behind "Click here to join!", when the message
-		// has it, so that accepting does exactly what clicking would have.
+		// The command behind "Click here to join!", so accepting does exactly what clicking would.
 		val accept = acceptCommandIn(message) ?: "party accept $inviter"
 		raiseInvite(inviter, owner, accept)
 	}
@@ -589,7 +552,7 @@ object PartyFeatures {
 		}
 
 		if (autoAccept.value) {
-			dispatch(client, accept)
+			join(client, accept)
 			Toasts.show(SOURCE, "Joined §f$owner§7's party", color = Toasts.Colors.PARTY, head = inviter)
 			return
 		}
@@ -606,37 +569,123 @@ object PartyFeatures {
 			keys = mapOf(
 				GLFW.GLFW_KEY_Y to {
 					pendingInvites -= id
-					dispatch(client, accept)
+					join(client, accept)
 				},
-				// Hypixel has no command for turning an invite down; one that is
-				// ignored simply runs out. So this only takes the notice away.
+				// Hypixel has no command to decline an invite; it just runs out. So this only
+				// removes the notice.
 				GLFW.GLFW_KEY_N to { pendingInvites -= id },
 			),
 		) { "§f$inviter §7invited you to $whose" }
 	}
 
-	/** Shows an invite from nobody, for `/cryptic debug partyinvite`. */
+	/** The accept last sent, while Hypixel may still answer that you're already in a party. */
+	private var lastAccept: String? = null
+	private var lastAcceptAt = 0L
+
+	/** How long after accepting a refusal is taken to be its answer. */
+	private const val ACCEPT_ANSWER_MILLIS = 5_000L
+
+	private val alreadyInParty = Regex("""^You are already in a party""")
+
+	/** Whether you're known to be in a party; unknown counts as no, and Hypixel's refusal covers it. */
+	private fun inParty(): Boolean = leader != null || members.any { !it.equals(self(), ignoreCase = true) }
+
+	/**
+	 * Accepts an invite, leaving the party you're in first, since Hypixel refuses to join a second.
+	 * Queued, so the leave goes out first with the usual spacing.
+	 */
+	private fun join(client: Minecraft, accept: String) {
+		if (inParty()) {
+			enqueue("party leave")
+			enqueue(accept)
+			lastAccept = null
+			return
+		}
+		dispatch(client, accept)
+		lastAccept = accept
+		lastAcceptAt = System.currentTimeMillis()
+	}
+
+	/** Hypixel said no because of a party Cryptic didn't know about: leave it and accept again. */
+	private fun retryAcceptIfRefused(line: String) {
+		val accept = lastAccept ?: return
+		if (System.currentTimeMillis() - lastAcceptAt > ACCEPT_ANSWER_MILLIS) {
+			lastAccept = null
+			return
+		}
+		if (!alreadyInParty.containsMatchIn(line)) return
+		lastAccept = null
+		enqueue("party leave")
+		enqueue(accept)
+	}
+
+	/** An invite from nobody, for `/cryptic debug partyinvite`. */
 	fun simulateInvite(inviter: String) = raiseInvite(inviter, inviter, "party accept $inviter")
 
-	/** The `/party accept …` a message's click runs, without its slash. */
-	private fun acceptCommandIn(component: Component): String? {
+	private fun acceptCommandIn(component: Component): String? = commandIn(component, "party accept", "p accept")
+
+	/** The first click command in [component] starting with one of [starts], without its slash. */
+	private fun commandIn(component: Component, vararg starts: String): String? {
 		val click = component.style.clickEvent
 		if (click is ClickEvent.RunCommand) {
 			val command = click.command().removePrefix("/")
-			if (command.startsWith("party accept", ignoreCase = true) || command.startsWith("p accept", ignoreCase = true)) {
-				return command
-			}
+			if (starts.any { command.startsWith(it, ignoreCase = true) }) return command
 		}
-		for (sibling in component.siblings) acceptCommandIn(sibling)?.let { return it }
+		for (sibling in component.siblings) commandIn(sibling, *starts)?.let { return it }
 		return null
 	}
 
-	/** [text] is the command without its exclamation mark: "kick its", "m7". */
+	/**
+	 * Hypixel's "Friend request from Name" with [ACCEPT] - [DENY] - [IGNORE], held on screen like
+	 * an invite: Y accepts, N denies.
+	 */
+	private fun onFriendLine(line: String, message: Component) {
+		if (!friendToast.value) return
+		friendRequestExpired.find(line)?.let { return Toasts.dismiss(friendId(it.groupValues[1])) }
+		nowFriends.find(line)?.let { return Toasts.dismiss(friendId(it.groupValues[1])) }
+
+		val sender = friendRequestLine.find(line)?.groupValues?.get(1) ?: return
+		// The commands behind [ACCEPT] and [DENY], so a key does exactly what clicking would.
+		val accept = commandIn(message, "friend accept", "f accept") ?: "friend accept $sender"
+		val deny = commandIn(message, "friend deny", "f deny") ?: "friend deny $sender"
+		raiseFriendRequest(sender, accept, deny)
+	}
+
+	private fun friendId(sender: String): String = "friend_request_${sender.lowercase(Locale.ROOT)}"
+
+	private fun raiseFriendRequest(sender: String, accept: String, deny: String) {
+		val client = Minecraft.getInstance()
+		if (inviteSound.value) {
+			client.soundManager.play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING.value(), 1.0f, 1.0f))
+		}
+		Toasts.ask(
+			source = "Friends",
+			id = friendId(sender),
+			life = FRIEND_REQUEST_SECONDS,
+			color = Toasts.Colors.FRIEND,
+			head = sender,
+			footer = "§a[Y] §fAccept   §c[N] §fDeny",
+			keys = mapOf(
+				GLFW.GLFW_KEY_Y to { dispatch(client, accept) },
+				GLFW.GLFW_KEY_N to { dispatch(client, deny) },
+			),
+		) { "§f$sender §7sent you a friend request" }
+	}
+
+	/**
+	 * How long the notification stays. Hypixel keeps the request longer; it can still be answered
+	 * in chat.
+	 */
+	private const val FRIEND_REQUEST_SECONDS = 60.0
+
+	/** A friend request from nobody, for `/cryptic debug friendrequest`. */
+	fun simulateFriendRequest(sender: String) = raiseFriendRequest(sender, "friend accept $sender", "friend deny $sender")
+
+	/** [text] is the command without its "!": "kick its", "m7". */
 	private fun onCommand(sender: String, text: String) {
 		val words = text.trim().split(Regex("\\s+"))
 		val name = words.firstOrNull()?.lowercase(Locale.ROOT) ?: return
-		// A name at most, never a sentence: whatever follows the command ends up
-		// inside a command of this client's own.
+		// Only a name, never a sentence, since it ends up inside one of this client's commands.
 		val argument = words.getOrNull(1)?.takeIf { it.matches(Regex("""\w{1,16}""")) }
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return
@@ -646,15 +695,13 @@ object PartyFeatures {
 			"ai", "allinvite", "allinv" -> if (allInvite.value && mayLead()) send("party settings allinvite")
 			"inv", "invite" -> if (invite.value && mayLead() && argument != null) send("party invite $argument")
 			"pt", "ptme", "transfer" -> if (transfer.value && mayLead()) {
-				// "!pt" alone hands the party to whoever asked; "!pt name" to the
-				// member that name fits, which is also how the leader passes it on.
+				// "!pt" alone transfers to whoever asked; "!pt name" to the matching member.
 				val target = if (argument != null && name != "ptme") closestMember(argument) ?: argument else sender
 				if (!target.equals(self(), ignoreCase = true)) send("party transfer $target")
 			}
 			"k", "kick" -> if (kick.value && mayLead() && argument != null) {
-				// Whoever in the party the typed name fits, so the start of a
-				// name is enough. With nobody it fits, it is sent as it was
-				// typed and Hypixel is left to say it knows nobody by that name.
+				// The member the typed name fits, so a prefix is enough; otherwise sent as typed
+				// for Hypixel to answer.
 				val target = closestMember(argument) ?: argument
 				if (!target.equals(self(), ignoreCase = true)) send("party kick $target")
 			}
@@ -662,9 +709,8 @@ object PartyFeatures {
 
 			"dt", "downtime" -> if (downtime.value) {
 				if (DungeonRun.ended || !DungeonLocation.inDungeon) {
-					// The run is over, so the break is wanted now: Auto Requeue
-					// stops its countdown for it. Kept, it would be announced
-					// again at the end of the run after.
+					// The run is over, so the break is wanted now and Auto Requeue stops for it.
+					// Not kept, or it would repeat next run.
 					Toasts.show(SOURCE, "§f$sender §7wants downtime now", color = Toasts.Colors.PARTY, head = sender)
 				} else {
 					val reason = words.drop(1).joinToString(" ").take(40).ifBlank { "no reason given" }
@@ -679,9 +725,8 @@ object PartyFeatures {
 			"coords", "cords", "co" ->
 				if (coords.value) say("x: ${player.blockX}, y: ${player.blockY}, z: ${player.blockZ}")
 			"ping" -> if (ping.value) {
-				// Asking is what starts the measuring, so with nothing on screen
-				// showing a ping there may be no number yet. The answer waits
-				// long enough for one to come back rather than saying nought.
+				// With nothing showing ping, measuring may only just have started, so the answer
+				// waits for a number.
 				val wait = if (ServerStats.ping < 0) PING_WAIT_TICKS else REPLY_DELAY_TICKS
 				sendLater(wait) {
 					val millis = ServerStats.ping
@@ -696,12 +741,14 @@ object PartyFeatures {
 	}
 
 	/**
-	 * `f1`…`f7` and `m1`…`m7`, which queue the party for that floor.
-	 *
-	 * Through `/joininstance`, Hypixel's own command for it — the same one the
+	 * `f1` to `f7` and `m1` to `m7` queue that floor via `/joininstance`, the command Hypixel's
 	 * dungeon menu runs.
 	 */
 	private fun queueFloor(name: String) {
+		KUUDRA_COMMAND.matchEntire(name)?.let { match ->
+			if (kuudra.value && mayLead()) send("joininstance ${KUUDRA_TIERS[match.groupValues[1].toInt() - 1]}")
+			return
+		}
 		if (!floors.value || !floorCommand.matches(name) || !mayLead()) return
 		val floor = name[1].digitToInt()
 		when (name[0]) {
@@ -710,7 +757,6 @@ object PartyFeatures {
 		}
 	}
 
-	/** Who this thinks leads and who is in the party, for `/cryptic debug party`. */
 	fun describe(): List<String> = listOf(
 		"§8[Cryptic] §7Party leader: §f${leader ?: "not known"}" +
 			if (refusedAsLeader) " §7(Hypixel has said it is not you)" else "",

@@ -7,51 +7,34 @@ import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.network.chat.Component
+import imicro.cryptic.gui.Module
+import imicro.cryptic.gui.ModuleCategory
 
 /**
- * Drag Cryptic's HUD elements into place.
- *
- * Every element is drawn where it will really sit, at the size it will really
- * be, with a frame around it: arranging the HUD against a mock-up is how you
- * end up with one that overlaps something in the real thing. Elements that
- * have nothing to show outside a dungeon draw a stand-in instead, which is
- * what [HudElement.renderExample] is for.
+ * Drag Cryptic's HUD elements into place. Each is drawn where and how big it really is; elements
+ * with nothing to show draw [HudElement.renderExample] instead. Layers along the top show one tab's
+ * elements at a time, or only those on screen where you are, so a full HUD doesn't pile up.
  */
 class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.literal("Cryptic HUD")) {
 	private var dragged: HudElement? = null
 
-	/**
-	 * The element the arrow keys move.
-	 *
-	 * Set by clicking one and kept after the mouse is let go, because nudging
-	 * something into line means letting go of it first: the point of the keys
-	 * is the pixel a drag cannot hit.
-	 */
+	/** The element the arrow keys move. Stays selected after the drag, so it can be nudged. */
 	private var selected: HudElement? = null
 	private var grabX = 0.0
 	private var grabY = 0.0
 
-	/** Where the cursor was when the screen was last drawn. */
 	private var lastMouseX = 0.0
 	private var lastMouseY = 0.0
 
-	/** Which arms of the centre cross are currently holding the dragged element. */
 	private var snappedX = false
 	private var snappedY = false
 
-	/** How far the elements not being dragged have faded back, 0 to 1. */
+	/** How far the other elements have faded while one is dragged, 0 to 1. */
 	private var dim = 0f
 	private var lastFrame = 0L
 
-	/**
-	 * Escape goes back where you came from.
-	 *
-	 * Reached from the menu's own button this is a step into a sub-screen, and
-	 * a step out again should land back in the menu rather than in the game.
-	 * Reached from `/cryptic hud` there is nothing behind it, so it closes.
-	 */
 	override fun onClose() {
-		if (parent != null) minecraft?.gui?.setScreen(parent) else super.onClose()
+		if (parent != null) minecraft.gui.setScreen(parent) else super.onClose()
 	}
 
 	override fun isPauseScreen(): Boolean = false
@@ -69,32 +52,79 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 
 		if (dragged != null) drawCentreCross(context)
 
-		// The one being dragged goes last, so it sits above the veil over the rest.
 		val held = dragged
-		for (element in Hud.elements.filter { it !== held } + listOfNotNull(held)) {
-			if (!element.showInEditor()) continue
+		for (element in shown().filter { it !== held } + listOfNotNull(held)) {
 			val bounds = boundsOf(element)
 			val hovered = element === dragged || (dragged == null && bounds.contains(mouseX.toDouble(), mouseY.toDouble()))
+			// The selected one is lit and named as if hovered, so it's clear what the arrows move.
+			val lit = hovered || element === selected
 
 			Hud.draw(context, element) { element.renderExample(context) }
-			// While one is moving the rest fade back, so where it lands among them is
-			// easy to see. Minecraft's GUI cannot fade an item, so this is a veil in
-			// the backdrop's colour laid over them rather than a real opacity.
+			// The others fade while one is dragged. The GUI can't fade items, so this is a veil
+			// over them.
 			val faded = if (element === held) 0f else dim
 			if (faded > 0.01f) {
 				context.fill(bounds.left, bounds.top, bounds.right, bounds.bottom, scaleAlpha(VEIL, faded))
 			}
-			outline(context, bounds, scaleAlpha(if (hovered) FRAME_HOVERED else FRAME, 1f - faded * 0.6f))
+			outline(context, bounds, scaleAlpha(if (lit) FRAME_HOVERED else FRAME, 1f - faded * 0.6f))
 
-			val label = "${element.name}  ${"%.2f".format(element.scale)}x"
-			context.centeredText(font, label, (bounds.left + bounds.right) / 2, bounds.top - font.lineHeight - 2, scaleAlpha(LABEL, 1f - faded * 0.7f))
+			// Names only on the elements in hand, so a full HUD isn't buried in labels.
+			if (lit) {
+				val label = "${element.name}  ${"%.2f".format(element.scale)}x"
+				context.centeredText(font, label, (bounds.left + bounds.right) / 2, bounds.top - font.lineHeight - 2, scaleAlpha(LABEL, 1f - faded * 0.7f))
+			}
 		}
 
-		context.centeredText(font, HINT, width / 2, height - font.lineHeight - 6, LABEL)
+		// The tabs and tips get out of the way while an element is being moved.
+		val chrome = 1f - dim
+		if (chrome > 0.01f) {
+			drawLayers(context, mouseX, mouseY, chrome)
+			if (HudSettings.showTips.value) context.centeredText(font, HINT, width / 2, height - font.lineHeight - 6, scaleAlpha(LABEL, chrome))
+		}
+		if (shown().isEmpty()) context.centeredText(font, EMPTY_LAYER, width / 2, height / 2 - 4, LABEL_MUTED)
 		super.extractRenderState(context, mouseX, mouseY, partialTick)
 	}
 
+	// ---- Layers -------------------------------------------------------------------
+
+	private enum class Layer(val label: String) { ALL("All"), DUNGEON("Dungeon"), BOSS("Boss"), GENERAL("General"), RENDER("Render"), NOW("Showing now") }
+
+	/** The elements in the current layer that the editor offers. */
+	private fun shown(): List<HudElement> = Hud.elements.filter { element ->
+		element.showInEditor() && when (layer) {
+			Layer.ALL -> true
+			Layer.NOW -> element.isVisible()
+			Layer.DUNGEON -> categoryOf(element) == ModuleCategory.DUNGEON
+			Layer.BOSS -> categoryOf(element) == ModuleCategory.FLOOR_7
+			Layer.GENERAL -> categoryOf(element) == ModuleCategory.GENERAL || categoryOf(element) == ModuleCategory.MISC
+			Layer.RENDER -> categoryOf(element) == ModuleCategory.VISUAL
+		}
+	}
+
+	private fun layerBoxes(): List<Pair<Layer, Bounds>> {
+		var x = width / 2 - (Layer.entries.sumOf { font.width(it.label) + LAYER_PAD * 2 } + (Layer.entries.size - 1) * LAYER_GAP) / 2
+		return Layer.entries.map { each ->
+			val w = font.width(each.label) + LAYER_PAD * 2
+			(each to Bounds(x, LAYER_TOP, x + w, LAYER_TOP + LAYER_HEIGHT)).also { x += w + LAYER_GAP }
+		}
+	}
+
+	private fun drawLayers(context: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, alpha: Float) {
+		for ((each, box) in layerBoxes()) {
+			val active = each == layer
+			val hovered = dragged == null && box.contains(mouseX.toDouble(), mouseY.toDouble())
+			context.fill(box.left, box.top, box.right, box.bottom, scaleAlpha(if (active) LAYER_ACTIVE else if (hovered) LAYER_HOVER else LAYER_IDLE, alpha))
+			if (active) context.fill(box.left, box.bottom - 1, box.right, box.bottom, scaleAlpha(FRAME_HOVERED, alpha))
+			context.text(font, each.label, box.left + LAYER_PAD, box.top + (LAYER_HEIGHT - font.lineHeight) / 2 + 1, scaleAlpha(if (active || hovered) LABEL else LABEL_MUTED, alpha))
+		}
+	}
+
 	override fun mouseClicked(event: MouseButtonEvent, doubled: Boolean): Boolean {
+		layerBoxes().firstOrNull { it.second.contains(event.x(), event.y()) }?.let { (each, _) ->
+			layer = each
+			selected = null
+			return true
+		}
 		if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
 			val hit = topmostAt(event.x(), event.y())
 			if (hit != null) {
@@ -104,11 +134,16 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 				grabY = event.y() - hit.y * height
 				return true
 			}
+			selected = null
 		}
 
+		// Right-click opens the settings of the module the element belongs to.
 		if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
-			topmostAt(event.x(), event.y())?.let {
-				it.reset()
+			topmostAt(event.x(), event.y())?.let { element ->
+				moduleOf(element)?.let { module ->
+					imicro.cryptic.gui.menu.MenuScreen.request(module, settings = true)
+					imicro.cryptic.gui.menu.MenuScreen.openIfRequested(minecraft)
+				}
 				return true
 			}
 		}
@@ -125,16 +160,7 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		return true
 	}
 
-	/**
-	 * Pulls a dragged element onto the middle of the screen.
-	 *
-	 * Each axis snaps on its own, so an element can be centred across the
-	 * screen while sitting wherever you like down it — which is what you want
-	 * nine times out of ten, and is impossible to hit by hand at this scale.
-	 * [snappedX] and [snappedY] say which arms of the cross to light up, so the
-	 * snap is something you can see happen rather than something you discover
-	 * afterwards.
-	 */
+	/** Snaps each axis to the screen's middle on its own, and lights that arm of the cross. */
 	private fun snapToCentre(element: HudElement) {
 		snappedX = false
 		snappedY = false
@@ -156,11 +182,6 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		}
 	}
 
-	/**
-	 * The cross in the middle of the screen, drawn only while something is
-	 * being dragged — it is a guide, and a guide with nothing to guide is just
-	 * a mark on the screen.
-	 */
 	private fun drawCentreCross(context: GuiGraphicsExtractor) {
 		val midX = width / 2
 		val midY = height / 2
@@ -168,8 +189,6 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		val horizontal = if (snappedY) CROSS_SNAPPED else CROSS
 		val vertical = if (snappedX) CROSS_SNAPPED else CROSS
 
-		// Each arm is drawn its full length when it is holding the element, so
-		// a snap reads as a line through the screen rather than a longer tick.
 		val armX = if (snappedX) height else CROSS_ARM
 		val armY = if (snappedY) width else CROSS_ARM
 
@@ -195,14 +214,21 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	}
 
 	override fun keyPressed(event: KeyEvent): Boolean {
+		// R resets the element under the cursor, or the selected one; shift-R the whole layer.
 		if (event.key() == InputConstants.KEY_R) {
-			Hud.elements.forEach(HudElement::reset)
-			selected = null
+			if (event.hasShiftDown()) {
+				shown().forEach(HudElement::reset)
+				selected = null
+			} else {
+				(topmostAt(lastMouseX, lastMouseY) ?: selected)?.let {
+					it.reset()
+					it.clampTo(width, height)
+				}
+			}
 			return true
 		}
 
-		// A pixel at a time, or five with shift held. Placements are fractions
-		// of the screen, so a step is divided by the screen rather than added.
+		// One pixel, or five with shift. Placements are fractions of the screen.
 		val step = if (event.hasShiftDown()) FAST_NUDGE else 1
 		val nudge = when (event.key()) {
 			InputConstants.KEY_LEFT -> -step to 0
@@ -212,8 +238,7 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 			else -> return super.keyPressed(event)
 		}
 
-		// Whatever is under the cursor first, so a nudge can be aimed without
-		// clicking — which would pick the element up and move it on the way.
+		// The element under the cursor first, so a nudge doesn't need a click.
 		val element = topmostAt(lastMouseX, lastMouseY) ?: selected ?: return true
 		selected = element
 		element.x += nudge.first.toDouble() / width
@@ -222,12 +247,7 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		return true
 	}
 
-	/**
-	 * Placements belong to the profile, the same as every other setting.
-	 *
-	 * Saving on removal rather than on close catches every way out of the
-	 * screen, including being replaced by another one.
-	 */
+	/** Saved on removal, which catches every way out of the screen. */
 	override fun removed() {
 		ConfigManager.flush()
 		super.removed()
@@ -238,7 +258,6 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		return (color and 0x00FFFFFF) or (a shl 24)
 	}
 
-	/** A one-pixel border, so the frame shows an element's reach without hiding it. */
 	private fun outline(context: GuiGraphicsExtractor, bounds: Bounds, color: Int) {
 		context.fill(bounds.left, bounds.top, bounds.right, bounds.top + 1, color)
 		context.fill(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, color)
@@ -246,13 +265,12 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		context.fill(bounds.right - 1, bounds.top, bounds.right, bounds.bottom, color)
 	}
 
-	/** The last element drawn is the one on top, so it is hit first. */
 	private fun topmostAt(mouseX: Double, mouseY: Double): HudElement? =
-		Hud.elements.lastOrNull { it.showInEditor() && boundsOf(it).contains(mouseX, mouseY) }
+		shown().lastOrNull { boundsOf(it).contains(mouseX, mouseY) }
 
 	private fun boundsOf(element: HudElement): Bounds {
-		val left = (element.x * width).toInt()
-		val top = (element.y * height).toInt()
+		val left = Math.round(element.x * width).toInt()
+		val top = Math.round(element.y * height).toInt()
 		return Bounds(
 			left,
 			top,
@@ -266,20 +284,46 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	}
 
 	private companion object {
-		const val HINT = "Drag to move  •  Arrows nudge  •  Scroll to resize  •  Right-click resets one  •  R resets all"
+		/** Kept for the session, so the editor opens on the layer last used. */
+		var layer = Layer.ALL
+
+		private val modules = HashMap<String, Module?>()
+
+		/**
+		 * The module an element belongs to, found from the feature object that declares it (its
+		 * `module` field), so elements don't each have to say.
+		 */
+		fun moduleOf(element: HudElement): Module? = modules.getOrPut(element.id) {
+			runCatching {
+				val owner = element.javaClass.enclosingClass ?: element.javaClass
+				val instance = owner.getField("INSTANCE").get(null)
+				(runCatching { owner.getField("module").get(instance) }.getOrNull()
+					?: owner.getDeclaredField("module").apply { isAccessible = true }.get(instance)) as? Module
+			}.getOrNull()
+		}
+
+		/** The menu tab of the module an element belongs to. */
+		fun categoryOf(element: HudElement): ModuleCategory = element.layer ?: moduleOf(element)?.category ?: ModuleCategory.GENERAL
+
+		const val HINT = "Drag to move  •  Arrows nudge  •  Scroll to resize  •  Right-click for settings  •  R resets one  •  Shift-R resets the layer"
+		const val EMPTY_LAYER = "Nothing in this layer"
+		const val LAYER_TOP = 6
+		const val LAYER_HEIGHT = 14
+		const val LAYER_PAD = 6
+		const val LAYER_GAP = 2
+		const val LAYER_IDLE = 0x80101010.toInt()
+		const val LAYER_HOVER = 0xA0202020.toInt()
+		const val LAYER_ACTIVE = 0xC0303030.toInt()
+		const val LABEL_MUTED = 0xFF9A9A9A.toInt()
 		const val BACKDROP = 0xA0101010.toInt()
 
-		/** Laid over the elements not being dragged: the backdrop's colour, most of the way opaque. */
 		const val VEIL = 0xB4101010.toInt()
 		const val DIM_SPEED = 14f
 
-		/** How near the middle an element has to be dragged before it is taken. */
 		const val SNAP_DISTANCE = 6
 
-		/** How far one arrow key moves an element with shift held. */
 		const val FAST_NUDGE = 5
 
-		/** The cross's reach when it is only offering, in GUI pixels. */
 		const val CROSS_ARM = 34
 
 		const val CROSS = 0x50FFFFFF

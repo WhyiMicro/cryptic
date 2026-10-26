@@ -25,26 +25,19 @@ import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.decoration.ArmorStand
 
 /**
- * Finds the wither and blood keys, and says so.
- *
- * A key is an invisible armour stand carrying an item, which is easy to walk
- * straight past in a room full of mobs — and the run stops until somebody picks
- * it up. The highlight is ported from NoammAddons (CC0), and the pickup sound
- * is dtMap's (BSD 3-Clause, Copyright (c) 2026 rice.who); both licences are
- * recorded in `licenses/` and `META-INF/notices/`.
+ * Finds the wither and blood keys (invisible armour stands carrying the item) and highlights them,
+ * with a sound on pickup. The highlight is from NoammAddons; the sound is dtMap's.
  */
 object DoorKeys {
-	/** dtMap's pling, resolved through Cryptic's own `sounds.json`. */
+	/** dtMap's pling, through Cryptic's `sounds.json`. */
 	private val KEY_SOUND: SoundEvent = SoundEvent.createVariableRangeEvent(Cryptic.id("key"))
 
-	/** How Hypixel names the two stands, which is what marks them as keys. */
 	private const val WITHER_KEY = "Wither Key"
 	private const val BLOOD_KEY = "Blood Key"
 
-	/** A key does not move, so looking for one four times a second is plenty. */
 	private const val RESCAN_INTERVAL_TICKS = 5
 
-	/** The vertical slice of an armour stand the carried key floats in. */
+	/** The slice of the armour stand the key floats in. */
 	private const val KEY_BOTTOM = 1.2
 	private const val KEY_TOP = 2.0
 	private const val KEY_HALF_WIDTH = 0.4
@@ -70,7 +63,6 @@ object DoorKeys {
 		visibleIf = { pickupSound.value },
 	)
 
-	/** Indices into [mode], which every module here numbers the same way. */
 	private const val OUTLINE = 0
 	private const val FILL = 1
 
@@ -222,7 +214,7 @@ object DoorKeys {
 			listOf(tracersSection, tracers, tracerWidth, reset),
 	)
 
-	/** Hypixel announces a pickup either by name or anonymously. */
+	/** Hypixel announces a pickup by name or anonymously. */
 	private val witherClaimed = Regex("""^(?:\[[A-Za-z+]+] )?[A-Za-z0-9_]+ has obtained Wither Key!$""")
 	private val bloodClaimed = Regex("""^(?:\[[A-Za-z+]+] )?[A-Za-z0-9_]+ has obtained Blood Key!$""")
 	private const val WITHER_PICKED_UP = "A Wither Key was picked up!"
@@ -240,22 +232,16 @@ object DoorKeys {
 		if (initialized) return
 		initialized = true
 
-		// Pipelines are gathered while the game starts, so they are registered
-		// now rather than on the first frame that draws a highlight.
+		// Pipelines are registered at startup, not on the first highlight.
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientReceiveMessageEvents.GAME.register { message, _ -> onMessage(message.string) }
 	}
 
 	/**
-	 * True while there is any reason to be looking for keys.
-	 *
-	 * The armour-stand override widens what *counts* as a key; it does not widen
-	 * where to look for one. Letting it do both is what put tracers on every
-	 * minion on the private island and on every damage number an ability threw
-	 * up — both are armour stands, and outside a dungeon there was nothing left
-	 * to rule them out. To try it somewhere there is no dungeon, pair it with
-	 * `/cryptic debug floor`, which is what that override is for.
+	 * True while there's a reason to look for keys. The armour-stand override widens what counts as
+	 * a key, not where to look; pair it with `/cryptic debug floor` outside a dungeon, or every
+	 * minion and damage number gets a tracer.
 	 */
 	private val active: Boolean
 		get() = module.enabled && DungeonLocation.inDungeon && !DungeonRun.inBoss
@@ -268,8 +254,7 @@ object DoorKeys {
 
 		val level = client.level ?: return
 		if (ticksUntilRescan-- > 0) {
-			// Keys vanish the instant somebody takes them, which is worth
-			// noticing before the next scan comes round.
+			// Keys vanish when taken; worth noticing before the next scan.
 			if (found.any { !it.first.isAlive }) found = found.filter { it.first.isAlive }
 			return
 		}
@@ -285,10 +270,7 @@ object DoorKeys {
 		found = keys ?: emptyList()
 	}
 
-	/**
-	 * Which of the two keys this stand is carrying, or null when it is carrying
-	 * neither or the player asked not to be shown that one.
-	 */
+	/** Which key this stand carries, or null for neither or one switched off. */
 	private fun colorFor(stand: ArmorStand): BoxColors? {
 		if (DebugOverrides.highlightEveryArmorStand) return witherColors
 
@@ -333,8 +315,7 @@ object DoorKeys {
 					x = entity.x,
 					y = entity.y + (KEY_BOTTOM + KEY_TOP) / 2,
 					z = entity.z,
-					// The tracer follows the outline, which is the half of the
-					// highlight meant to be seen from across a room.
+					// The tracer follows the outline, the half meant to be seen from across a room.
 					argb = color.outline.rgb or 0xFF000000.toInt(),
 					lineWidth = tracerWidth.value.toFloat(),
 					phase = phase,
@@ -352,7 +333,7 @@ object DoorKeys {
 		if (pickedUp) play()
 	}
 
-	/** Plays the pling, which `/cryptic debug keys` also uses to preview it. */
+	/** Plays the pling (also for `/cryptic debug keys`). */
 	fun play() {
 		val client = Minecraft.getInstance()
 		client.player?.playSound(KEY_SOUND, volume.value.toFloat(), 1.0f)

@@ -14,18 +14,10 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Reports a block changing, with the state it is replacing.
+ * Reports each block change with the state it replaces, for Simon Says (a lantern going out is a
+ * step; lighting up can be a redraw) and the Sharp Shooter mark. The same hook Odin uses.
  *
- * The Simon Says device shows its sequence by turning sea lanterns off one at a
- * time, and which state a block is leaving is the whole signal — a lantern
- * lighting up can be the display being redrawn, but one going out is a step of
- * the sequence. Nothing else the client is told carries that, so it is read
- * here, on the way in, before the chunk has forgotten what was there — which is
- * also what keeps the Sharp Shooter mark on the block that is lit rather than a
- * tick behind it. The same hook Odin (BSD 3-Clause) uses for it.
- *
- * This runs for every block change in the world, so the receiver's first act is
- * to decide it has nothing to do.
+ * Runs for every block change in the world, so receivers bail out first.
  */
 @Mixin(LevelChunk.class)
 public abstract class LevelChunkMixin {
@@ -34,15 +26,12 @@ public abstract class LevelChunkMixin {
 
     @Inject(method = "setBlockState", at = @At("HEAD"))
     private void cryptic$noteBlockChange(BlockPos pos, BlockState state, int flags, CallbackInfoReturnable<BlockState> info) {
-        // A terracotta going down leaves a flower pot, and what it replaced does
-        // not matter, so this one needs no lookup at all.
+        // A terracotta going down leaves a flower pot; no lookup needed.
         if (TerracottaTimer.isWatching() && state.getBlock() instanceof FlowerPotBlock) {
             TerracottaTimer.onPotPlaced(pos);
         }
 
-        // Asked before the old state is looked up, because that lookup is the
-        // only real cost here and almost every block change in the world is
-        // one nothing is listening for.
+        // Checked before the old state lookup, the only real cost here.
         boolean simon = SimonSays.INSTANCE.isWatching();
         boolean sharp = SharpShooter.INSTANCE.isWatching();
         if (!simon && !sharp) return;

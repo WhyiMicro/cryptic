@@ -8,17 +8,9 @@ import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.Vec3
 
 /**
- * The line to walk on each floor of the ice fill.
- *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking). Each of the
- * three floors is one of a handful of patterns, told apart by a pair of
- * positions: one that is air in this pattern and one that is not. Once the
- * pattern is known the route across it is a list of positions, drawn as a line
- * on the ice.
- *
- * The optimised patterns are the same floors walked in a shorter order — they
- * are quicker and easier to fall off, which is why they are a choice rather
- * than the default.
+ * Ice Fill: the path across each of the three floors. Each floor is one of a few patterns, told
+ * apart by one position that is air and one that isn't. The optimised routes are shorter but easier
+ * to fall off. Ported from Odin.
  */
 object IceFillSolver {
 	private const val PUZZLE = "Ice Fill"

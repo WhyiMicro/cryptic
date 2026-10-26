@@ -6,16 +6,9 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.minecraft.core.BlockPos
 
 /**
- * Which of Oruo's three answers is the right one.
- *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking). The questions
- * come from a fixed set, so the answers are a lookup; what has to be watched
- * for is which of the three letters carries the right answer this time, since
- * Oruo shuffles them. The SkyBlock year is the one question nobody can write
- * down, and is worked out from the clock instead.
- *
- * The timer is the other half of the puzzle: there is a limit on answering and
- * nothing on screen counts it down.
+ * Quiz: which of Oruo's three shuffled answers is right. The questions are a lookup; the SkyBlock
+ * year question is worked out from the clock. Also times the answer window, which nothing on screen
+ * shows. Ported from Odin.
  */
 object QuizSolver {
 	private const val PUZZLE = "Quiz"
@@ -23,24 +16,21 @@ object QuizSolver {
 	private const val START_TICKS = 220
 	private const val QUESTION_TICKS = 100
 
-	/** One of the three plates, and whether this round's answer is on it. */
 	private class Option(var pos: BlockPos? = null, var correct: Boolean = false)
 
 	private var options = List(3) { Option() }
 
-	/** The answers to the question being asked, once it has been recognised. */
 	private var answers: List<String>? = null
 
-	/** Ticks left, the length of this round, and which of the three it is. */
+	/** The right answer's words, from its line; and whether this question's was sent to the party. */
+	private var answerText: String? = null
+	private var announced = false
+
+	/** Ticks left, the round's length, and which of the three rounds. */
 	var timer: Triple<Int, Int, Int> = Triple(0, 0, 0)
 		private set
 
-	/**
-	 * True from Oruo's greeting until the quiz is finished or failed.
-	 *
-	 * The countdown only runs between questions, so on its own it left the HUD
-	 * blinking out every time a question was actually on screen.
-	 */
+	/** True from Oruo's greeting until the quiz ends. The countdown alone only runs between questions. */
 	var running = false
 		private set
 
@@ -59,10 +49,8 @@ object QuizSolver {
 	}
 
 	fun onMessage(raw: String) {
-		// Oruo writes his three options with the colour codes inside the text
-		// rather than as style, so the line really does begin "§6 " and a test
-		// for the letter at the front of it never matched. Everything here
-		// reads the line with the codes taken out.
+		// Oruo's options carry colour codes inside the text, so lines are matched with codes
+		// stripped.
 		val message = FORMATTING.replace(raw, "")
 
 		when (message) {
@@ -80,10 +68,13 @@ object QuizSolver {
 				reset()
 				return
 			}
-			if (message.contains("answered Question #")) options.forEach { it.correct = false }
+			if (message.contains("answered Question #")) {
+				options.forEach { it.correct = false }
+				answerText = null
+				announced = false
+			}
 		}
 
-		// A wrong answer ends the round as surely as the last question does.
 		if (message.startsWith(ORUO) && message.contains("chose the wrong answer")) {
 			reset()
 			return
@@ -95,6 +86,12 @@ object QuizSolver {
 				'ⓐ' -> options[0].correct = true
 				'ⓑ' -> options[1].correct = true
 				'ⓒ' -> options[2].correct = true
+			}
+			answerText = trimmed.drop(1).trim()
+			if (PuzzleSolver.quizParty.value && !announced) {
+				announced = true
+				val letter = "ABC"[LETTERS.indexOfFirst { trimmed.startsWith(it) }.coerceIn(0, 2)]
+				imicro.cryptic.feature.PartyFeatures.enqueue("pc Quiz: $letter - $answerText")
 			}
 		}
 
@@ -112,13 +109,8 @@ object QuizSolver {
 		(((System.currentTimeMillis() / 1000) - 1_560_276_000) / 446_400).toInt() + 1
 
 	/**
-	 * Which of the three letters carries the answer, once it is known.
-	 *
-	 * The countdown only runs between questions — it is the wait for the next
-	 * one rather than a deadline — so the HUD would otherwise go blank exactly
-	 * when the question everybody is reading is on screen. The letter fills
-	 * that gap, and is the one thing worth reading if the block itself is
-	 * behind you.
+	 * The letter of the right answer, once known; shown while a question is up, when the countdown
+	 * isn't running.
 	 */
 	fun correctLetter(): String? {
 		if (answers == null) return null
@@ -126,18 +118,16 @@ object QuizSolver {
 		return if (index >= 0) LETTERS.getOrNull(index) else null
 	}
 
+	/** The right answer's words, once known. */
+	fun correctAnswer(): String? = answerText.takeIf { correctLetter() != null }
+
 	fun render(context: LevelRenderContext) {
 		if (!PuzzleSolver.quizEnabled.value || answers == null) return
-		// Drawn through walls, the answer is for reading from wherever you have
-		// wandered off to while Oruo talks, so it stays up outside the room. Not
-		// drawn through them, there is nothing to see from outside anyway.
+		// Drawn through walls, the answer stays up after you leave the room.
 		if (!PuzzleSolver.quizPhase.value && !PuzzleRooms.inside(PUZZLE)) return
 
 		options.forEach { option ->
 			if (!option.correct) return@forEach
-			// The plate itself rather than the block under it, and no beam over
-			// it: the answer is a block you walk onto from two paces away, and
-			// a column of light is a lot of screen for that.
 			val pos = option.pos ?: return@forEach
 			PuzzleRender.block(
 				context,
@@ -152,6 +142,8 @@ object QuizSolver {
 	fun reset() {
 		options = List(3) { Option() }
 		answers = null
+		answerText = null
+		announced = false
 		timer = Triple(0, 0, 0)
 		running = false
 	}
@@ -164,7 +156,6 @@ object QuizSolver {
 	private const val ONE_LEFT = "[STATUE] Oruo the Omniscient: One more question!"
 	private const val YEAR_QUESTION = "What SkyBlock year is it?"
 
-	/** Hypixel's own colour codes, written into the text of the line. */
 	private val FORMATTING = Regex("§.")
 
 	private val LETTERS = listOf("ⓐ", "ⓑ", "ⓒ")

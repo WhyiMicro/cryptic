@@ -37,7 +37,7 @@ data class ProfileEntry(
     val builtIn: Boolean,
 )
 
-/** Human-readable local JSON plus portable, versioned Base64 profile strings. */
+/** Settings as readable local JSON, plus portable Base64 profile strings. */
 object ConfigManager {
     const val EXPORT_PREFIX = "CRYPTIC_PROFILE_V1:"
 
@@ -45,7 +45,6 @@ object ConfigManager {
     private const val FORMAT_VERSION = 1
     private const val DEFAULT_PROFILE = "Default"
 
-    /** The profile the jar ships with, used on a first run and to seed "Default". */
     private const val SHIPPED_DEFAULT_PATH = "/assets/cryptic/default_profile.json"
     private const val SAVE_DEBOUNCE_NANOS = 250_000_000L
 
@@ -64,7 +63,6 @@ object ConfigManager {
     private var cachedProfiles = emptyList<ProfileEntry>()
     private val profileNames = mutableMapOf<Path, CachedProfileName>()
 
-    /** A profile's display name lives inside its file, so it is re-read only when that file changes. */
     private class CachedProfileName(val modifiedAt: Long, val size: Long, val name: String)
 
     fun initialize() {
@@ -75,9 +73,8 @@ object ConfigManager {
             Files.createDirectories(profileDirectory)
             val defaultPath = profilePath(DEFAULT_PROFILE)
             val shipped = shippedDefault()
-            // The built-in profile is the jar's, and nothing saves over it, so it
-            // is brought up to date with each release: a copy written by an
-            // older jar would otherwise hand out that jar's defaults forever.
+            // The built-in profile is refreshed from the jar each release, or an old copy would
+            // keep old defaults forever.
             val shippedJson = shipped?.let(gson::toJson)
             if (!Files.exists(defaultPath) || (shippedJson != null && Files.readString(defaultPath) != shippedJson)) {
                 writeAtomically(defaultPath, shippedJson ?: encodeCurrent(DEFAULT_PROFILE))
@@ -88,10 +85,7 @@ object ConfigManager {
                 activeProfile = root.string("profile")?.takeIf(String::isNotBlank) ?: DEFAULT_PROFILE
                 apply(root)
             } else if (shipped != null) {
-                // A first run has nothing to restore, so the settings the jar
-                // ships with are what it starts from. Every module is off; what
-                // the bundled profile carries is a sensible arrangement of each,
-                // so switching one on is all it takes.
+                // First run: start from the profile the jar ships with.
                 apply(shipped)
             }
 
@@ -103,13 +97,8 @@ object ConfigManager {
     }
 
     /**
-     * Called each frame; disk writes happen only after settings stop changing
-     * briefly.
-     *
-     * Noticing that nothing changed has to be cheap, because that is the answer
-     * on almost every frame the menu is open. A fingerprint of the live values
-     * answers it without building a JSON document, and the document is only
-     * produced once the debounce has actually elapsed.
+     * Called every frame; writes only once settings have stopped changing for a moment. A
+     * fingerprint of the live values keeps the no-change case cheap.
      */
     fun autosave() {
         initialize()
@@ -129,7 +118,6 @@ object ConfigManager {
 
         val current = encodeCurrent(activeProfile)
         if (current == lastSavedJson) {
-            // The values moved and came back, so there is nothing to write.
             savedFingerprint = fingerprint
             pendingFingerprint = null
             return
@@ -180,8 +168,8 @@ object ConfigManager {
 
     fun exportProfile(entry: ProfileEntry): Result<String> = runCatching {
         flush()
-        // "Default" stays immutable on disk, but exporting its active card must
-        // still capture the settings the player is currently looking at.
+        // "Default" is never written to disk, but exporting it must capture what the player
+        // currently has.
         val json = if (entry.active) encodeCurrent(entry.name) else Files.readString(entry.path)
         parseAndValidate(json)
         EXPORT_PREFIX + Base64.getEncoder().encodeToString(json.toByteArray(StandardCharsets.UTF_8))
@@ -193,10 +181,7 @@ object ConfigManager {
         EXPORT_PREFIX + Base64.getEncoder().encodeToString(json.toByteArray(StandardCharsets.UTF_8))
     }
 
-    /**
-     * Imports settings into the profile that is already active. No new profile
-     * is created, which makes the GUI workflow explicit and hard to misclick.
-     */
+    /** Imports into the active profile; no new profile is created. */
     fun importIntoProfile(entry: ProfileEntry, encoded: String): Result<String> = runCatching {
         require(entry.active) { "Select this profile before importing into it" }
         require(!entry.builtIn) { "Create and select a custom profile before importing" }
@@ -216,7 +201,7 @@ object ConfigManager {
         name
     }
 
-    /** Imports a new stored profile without changing the active profile. */
+    /** Imports a new stored profile without switching to it. */
     fun importProfile(encoded: String): Result<String> = runCatching {
         flush()
         val imported = decodeExport(encoded)
@@ -278,11 +263,7 @@ object ConfigManager {
         pendingFingerprint = null
     }
 
-    /**
-     * An allocation-free digest of everything [encodeCurrent] writes. Values are
-     * mixed in by their exact bits, so any change the profile records also
-     * changes the digest.
-     */
+    /** An allocation-free digest of everything [encodeCurrent] writes. */
     private fun fingerprintCurrent(): Long {
         var hash = activeProfile.hashCode().toLong()
         val hudElements = Hud.elements
@@ -293,15 +274,15 @@ object ConfigManager {
         val modules = ModuleRegistry.modules
         for (index in modules.indices) {
             val module = modules[index]
-            if (module.supportsToggle) hash = hash.mix(if (module.enabled) 1L else 0L)
+            if (module.supportsToggle) hash = hash.mix(if (module.storedEnabled) 1L else 0L)
             val settings = module.settings
             for (settingIndex in settings.indices) {
                 hash = when (val setting = settings[settingIndex]) {
-                    is ToggleModuleSetting -> hash.mix(if (setting.value) 1L else 0L)
+                    is ToggleModuleSetting -> hash.mix(if (setting.storedValue) 1L else 0L)
                     is SliderModuleSetting -> hash.mix(setting.value.toRawBits())
                     is RangeModuleSetting -> hash.mix(setting.lower.toRawBits()).mix(setting.upper.toRawBits())
                     is ColorModuleSetting -> hash.mix(setting.argb.toLong())
-                    is DropdownModuleSetting -> hash.mix(setting.selectedIndex.toLong())
+                    is DropdownModuleSetting -> hash.mix(setting.storedIndex.toLong())
                     is MultiSelectModuleSetting -> hash.mix(setting.encode().hashCode().toLong())
                     is TextModuleSetting -> hash.mix(setting.value.hashCode().toLong())
                     is KeybindModuleSetting -> hash.mix(setting.keyCode.toLong())
@@ -343,10 +324,7 @@ object ConfigManager {
         )
     }
 
-    /**
-     * Reading and parsing every profile on each save added up once a player kept
-     * more than a handful, so a file is only re-read when its stamp changes.
-     */
+    /** Profile files are only re-read when their timestamp changes. */
     private fun profileName(path: Path, modifiedAt: Long): String {
         val size = runCatching { Files.size(path) }.getOrDefault(-1L)
         val cached = profileNames[path]
@@ -371,8 +349,6 @@ object ConfigManager {
         }
         root.add("modules", modules)
 
-        // Where the player dragged each HUD element belongs with the settings
-        // it was arranged alongside, so it travels with the profile.
         if (Hud.elements.isNotEmpty()) {
             val hud = JsonObject()
             Hud.elements.forEach { element ->
@@ -388,19 +364,19 @@ object ConfigManager {
     }
 
     private fun encodeModule(module: Module) = JsonObject().apply {
-        if (module.supportsToggle) addProperty("enabled", module.enabled)
+        if (module.supportsToggle) addProperty("enabled", module.storedEnabled)
         if (module.settings.isNotEmpty()) {
             add("settings", JsonObject().also { settings ->
                 module.settings.forEach { setting ->
                     when (setting) {
-                        is ToggleModuleSetting -> settings.addProperty(setting.id, setting.value)
+                        is ToggleModuleSetting -> settings.addProperty(setting.id, setting.storedValue)
                         is SliderModuleSetting -> settings.addProperty(setting.id, setting.value)
                         is RangeModuleSetting -> settings.add(setting.id, JsonObject().also {
                             it.addProperty("lower", setting.lower)
                             it.addProperty("upper", setting.upper)
                         })
                         is ColorModuleSetting -> settings.addProperty(setting.id, setting.hex)
-                        is DropdownModuleSetting -> settings.addProperty(setting.id, setting.selected)
+                        is DropdownModuleSetting -> settings.addProperty(setting.id, setting.storedSelected)
                         is MultiSelectModuleSetting -> settings.addProperty(setting.id, setting.encode())
                         is TextModuleSetting -> settings.addProperty(setting.id, setting.value)
                         is KeybindModuleSetting -> settings.addProperty(setting.id, setting.keyCode)
@@ -424,6 +400,8 @@ object ConfigManager {
 
         val modules = root.objectOrNull("modules") ?: return
         mergeRetiredModules(modules)
+        migrateTerminatorOnly(modules)
+        migrateFireFreeze(modules)
         ModuleRegistry.byId.forEach { (id, module) ->
             val value = modules.objectOrNull(id) ?: return@forEach
             if (module.supportsToggle) value.boolean("enabled")?.let { module.enabled = it }
@@ -454,9 +432,8 @@ object ConfigManager {
     }
 
     /**
-     * A module that became part of another: its card's on switch becomes the
-     * [enabledAs] switch on the new card, and each of its settings the same
-     * setting under [prefix]. [dropped] are settings the new card no longer has.
+     * A module that was merged into another: its on switch becomes [enabledAs] on the new card, and
+     * its settings move under [prefix]. [dropped] are settings the new card no longer has.
      */
     private class RetiredModule(
         val id: String,
@@ -465,7 +442,6 @@ object ConfigManager {
         val dropped: Set<String> = emptySet(),
     )
 
-    /** Keyed by the card they were folded into. */
     private val RETIRED_MODULES = mapOf(
         "f7_qol" to listOf(
             RetiredModule("door_fix", enabledAs = "door_fix", prefix = "door_"),
@@ -475,24 +451,53 @@ object ConfigManager {
         "spirit_leap_overlay" to listOf(
             RetiredModule("leap_message", enabledAs = "announce_leap", prefix = "leap_"),
         ),
+        "bow_tweaks" to listOf(
+            RetiredModule("arrow_fix", enabledAs = "arrow_fix", prefix = ""),
+            RetiredModule("arrow_hit_sound", enabledAs = "hit_sound", prefix = "hit_sound_"),
+            RetiredModule("arrow_hitboxes", enabledAs = "arrow_hitboxes", prefix = "hitbox_"),
+        ),
     )
 
+    /** Smart Tick Timer's Fire Freeze switch, which moved to F3/M3 Features with its own element. */
+    private fun migrateFireFreeze(modules: JsonObject) {
+        val timer = modules.objectOrNull("smart_tick_timer") ?: return
+        val settings = timer.objectOrNull("settings") ?: return
+        val on = settings.boolean("fire_freeze_timer") ?: return
+        settings.remove("fire_freeze_timer")
+        if (modules.has("f3_features") || !on || timer.boolean("enabled") != true) return
+        modules.add("f3_features", JsonObject().also {
+            it.addProperty("enabled", true)
+            it.add("settings", JsonObject().apply { addProperty("fire_freeze_timer", true) })
+        })
+    }
+
     /**
-     * Carries a profile written before modules were merged over to the merged
-     * card, so a switch that was on stays on.
-     *
-     * Only when the profile has nothing for the new card yet: once it has been
-     * saved with one, that is the answer, and the old entries — which the next
-     * save drops — say nothing new.
+     * Animations' old "Terminator only" swing switch, which became Bow Tweaks' shortbow one: with
+     * both on, the swing was only ever off on a Terminator, so it moves across.
+     */
+    private fun migrateTerminatorOnly(modules: JsonObject) {
+        val animations = modules.objectOrNull("animations")?.objectOrNull("settings") ?: return
+        val terminatorOnly = animations.boolean("terminator_only") ?: return
+        animations.remove("terminator_only")
+        if (!terminatorOnly || animations.boolean("disable_swing_animation") != true) return
+        if (modules.objectOrNull("animations")?.boolean("enabled") != true) return
+        animations.addProperty("disable_swing_animation", false)
+        val bow = modules.objectOrNull("bow_tweaks") ?: JsonObject().also { modules.add("bow_tweaks", it) }
+        val settings = bow.objectOrNull("settings") ?: JsonObject().also { bow.add("settings", it) }
+        bow.addProperty("enabled", true)
+        settings.addProperty("shortbow_no_swing", true)
+    }
+
+    /**
+     * Moves a merged module's old settings onto the card it became, unless the profile already has
+     * that card.
      */
     private fun mergeRetiredModules(modules: JsonObject) {
         RETIRED_MODULES.forEach { (target, retired) ->
             val present = retired.filter { modules.has(it.id) }
             if (present.isEmpty()) return@forEach
 
-            // Folded into a card the profile already has: what the old module
-            // said goes in only where the card says nothing yet, and the card's
-            // own switch is left as it is.
+            // Only fills in what the existing card doesn't already say.
             modules.objectOrNull(target)?.let { existing ->
                 val settings = existing.objectOrNull("settings") ?: JsonObject().also { existing.add("settings", it) }
                 present.forEach { old ->
@@ -525,11 +530,8 @@ object ConfigManager {
     }
 
     /**
-     * The profile bundled in the jar, or null when it cannot be read.
-     *
-     * Loaded through the class loader rather than Minecraft's resource manager,
-     * because the config is read while the client is still starting and the
-     * resource manager is not ready to answer yet.
+     * Read through the class loader, because the config loads before Minecraft's resource manager
+     * is ready.
      */
     private fun shippedDefault(): JsonObject? = runCatching {
         val stream = ConfigManager::class.java.getResourceAsStream(SHIPPED_DEFAULT_PATH)
@@ -578,10 +580,6 @@ object ConfigManager {
         return candidatePath != excludedPath && Files.exists(candidatePath)
     }
 
-    /**
-     * Keeps names pleasant and portable without stripping ordinary spaces,
-     * accents, emoji, or other Unicode characters from the displayed name.
-     */
     private fun cleanProfileName(name: String): String {
         val normalized = Normalizer.normalize(name, Normalizer.Form.NFKC)
             .filterNot { it.isISOControl() }
@@ -592,7 +590,7 @@ object ConfigManager {
         return normalized.substring(0, endIndex).trim().ifBlank { "Profile" }
     }
 
-    /** Only the filename is sanitized; the full display name remains in JSON. */
+    /** Only the file name is sanitized; the display name in the JSON is kept as typed. */
     private fun safeFileName(name: String): String {
         val stem = cleanProfileName(name)
             .replace(Regex("[<>:\"/\\\\|?*\\u0000-\\u001F]"), "_")

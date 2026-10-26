@@ -25,18 +25,11 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 /**
- * Named sets of waypoints, any number switched on, one of them edited.
- *
- * Odin's waypoint packs (BSD 3-Clause, Copyright (c) 2025 odtheking): a pack
- * for a route, a pack a friend sent you, a pack of your own — shown together,
- * edited one at a time. Within a pack, waypoints are kept under a key: a room's
- * name for dungeon rooms, a floor for boss rooms.
- *
- * Shared by Dungeon Waypoints and Boss Waypoints, which differ only in what a
- * waypoint is and how a pack is written out to share.
+ * Named waypoint packs: any number on, one edited. From Odin's waypoint packs. Waypoints are keyed
+ * by room name (dungeons) or floor (boss rooms). Shared by Dungeon Waypoints and Boss Waypoints,
+ * which differ only in the waypoint type and share format.
  */
 abstract class PackStore<T : Any>(
-	/** The heading of the pack manager. */
 	val title: String,
 	private val fileName: String,
 	private val itemClass: Class<T>,
@@ -46,14 +39,12 @@ abstract class PackStore<T : Any>(
 		val count: Int get() = rooms.values.sumOf { it.size }
 	}
 
-	/** A read-only pack listed first, with a switch and nothing else. */
 	class DefaultRow(val label: String, val count: () -> Int, val enabled: () -> Boolean, val setEnabled: (Boolean) -> Unit)
 
 	open val defaultRow: DefaultRow? = null
 
 	val packs = mutableListOf<Pack<T>>()
 
-	/** The pack Edit mode writes into, by name. */
 	var editName: String? = null
 		private set
 
@@ -63,10 +54,10 @@ abstract class PackStore<T : Any>(
 	protected val dir: Path get() = FabricLoader.getInstance().configDir.resolve("cryptic")
 	private val file: Path get() = dir.resolve(fileName)
 
-	/** Anything to read when the store's own file does not exist yet. */
+	/** Read when the store's own file doesn't exist yet. */
 	protected open fun loadLegacy() = Unit
 
-	/** Keys no waypoint may be kept under: dropped when the file is read and when a pack is imported. */
+	/** Keys no waypoint may use, dropped on load and import. */
 	protected open val excludedKeys: Set<String> = emptySet()
 
 	fun load() {
@@ -114,13 +105,13 @@ abstract class PackStore<T : Any>(
 		}.onFailure { Cryptic.LOGGER.error("Could not save {}", fileName, it) }
 	}
 
-	/** Every waypoint under [key] from the packs switched on, with the pack it is in. */
+	/** Every waypoint under [key] from enabled packs, with its pack. */
 	fun waypointsIn(key: String): Sequence<Pair<Pack<T>, T>> =
 		packs.asSequence().filter { it.enabled }.flatMap { pack ->
 			pack.rooms[key].orEmpty().asSequence().map { pack to it }
 		}
 
-	/** The list Edit mode writes into for [key], making a first pack if there is none. */
+	/** The list Edit mode writes into for [key], creating a first pack if needed. */
 	fun editList(key: String): MutableList<T> {
 		val pack = editPack ?: create(firstPackName) ?: packs.first()
 		if (editName != pack.name) setEdit(pack)
@@ -137,7 +128,7 @@ abstract class PackStore<T : Any>(
 	private fun nameTaken(name: String): Boolean =
 		(defaultRow != null && name.equals("Default", ignoreCase = true)) || packs.any { it.name.equals(name, ignoreCase = true) }
 
-	/** A free name built on [base]: itself, then "base 2", "base 3". */
+	/** A free name: [base], then "base 2", "base 3". */
 	fun freeName(base: String): String {
 		val clean = base.trim().ifBlank { "Pack" }.take(32)
 		if (!nameTaken(clean)) return clean
@@ -169,7 +160,7 @@ abstract class PackStore<T : Any>(
 		save()
 	}
 
-	/** Adds a pack decoded from [text]. Null when it is not something this store can read. */
+	/** Adds a pack decoded from [text], or null if it can't be read. */
 	fun import(name: String, text: String): Pack<T>? {
 		val rooms = decode(text)?.filterKeys { it !in excludedKeys } ?: return null
 		val pack = Pack(freeName(name), true, LinkedHashMap(rooms.mapValues { it.value.toMutableList() }))
@@ -179,7 +170,7 @@ abstract class PackStore<T : Any>(
 		return pack
 	}
 
-	/** A pack as a string to share: gzip, then base64, of [toJson]. */
+	/** A shareable string: [toJson], gzipped and base64'd. */
 	fun export(pack: Pack<T>): String {
 		val bytes = ByteArrayOutputStream().use { out ->
 			GZIPOutputStream(out).use { it.write(toJson(pack).toString().toByteArray()) }
@@ -188,10 +179,9 @@ abstract class PackStore<T : Any>(
 		return Base64.getEncoder().encodeToString(bytes)
 	}
 
-	/** The JSON a shared pack is written as. */
 	protected abstract fun toJson(pack: Pack<T>): JsonElement
 
-	/** Waypoints by key, read from shared JSON, or null when it is not what this store reads. */
+	/** Waypoints by key from shared JSON, or null if it isn't this store's format. */
 	protected abstract fun fromJson(root: JsonObject): Map<String, List<T>>?
 
 	fun decode(raw: String): Map<String, List<T>>? {
@@ -206,12 +196,10 @@ abstract class PackStore<T : Any>(
 }
 
 /**
- * The pack manager, `/cryptic dwp` and `/cryptic bwp`: switch packs on and off,
- * pick the one Edit mode writes into, and create, import, export, rename or
- * delete them. Odin's pack selector, on Minecraft's own widgets.
+ * The pack manager (`/cryptic dwp`, `/cryptic bwp`): toggle packs, pick the one Edit writes into,
+ * and create, import, export, rename or delete. Odin's pack selector on Minecraft's widgets.
  */
 class PackScreen<T : Any>(private val store: PackStore<T>) : Screen(Component.literal(store.title)) {
-	/** A question waiting for a line of text: its title and what to do with the answer. */
 	private class Prompt(val title: String, val initial: String, val done: (String) -> Unit)
 
 	private var prompt: Prompt? = null
@@ -226,7 +214,7 @@ class PackScreen<T : Any>(private val store: PackStore<T>) : Screen(Component.li
 	private val listTop = 64
 	private val visibleRows get() = ((height - listTop - 50) / rowHeight).coerceAtLeast(1)
 
-	/** One line of the list: the read-only default, or a pack. */
+	/** One list line: the read-only default, or a pack. */
 	private val rows: List<PackStore.Pack<T>?>
 		get() = (if (store.defaultRow != null) listOf<PackStore.Pack<T>?>(null) else emptyList()) + store.packs
 
@@ -384,7 +372,7 @@ class PackScreen<T : Any>(private val store: PackStore<T>) : Screen(Component.li
 				editing -> "§e★ §f${pack.name}"
 				else -> pack.name
 			}
-			// The count sits against the buttons, and a long name gives way to it.
+			// The count sits by the buttons; long names give way to it.
 			val count = "§a${pack?.count ?: default?.count?.invoke() ?: 0} §7wp"
 			val countX = left + (if (pack == null) panelWidth - 8 else 192) - font.width(count)
 			graphics.text(font, fit(name, countX - (left + 28) - 6), left + 28, y + 8, white)
@@ -394,7 +382,7 @@ class PackScreen<T : Any>(private val store: PackStore<T>) : Screen(Component.li
 		status?.let { graphics.centeredText(font, it, width / 2, height - 44, 0xFFAAAAAA.toInt()) }
 	}
 
-	/** [text] cut down to [width] pixels, with an ellipsis when it had to be. */
+	/** [text] cut to [width] pixels, with an ellipsis if needed. */
 	private fun fit(text: String, width: Int): String {
 		if (font.width(text) <= width) return text
 		var cut = text

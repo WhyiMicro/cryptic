@@ -8,24 +8,13 @@ import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.AABB
 
 /**
- * Which boulder to push, and from where.
- *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking). The room is
- * one of a few dozen fixed layouts, so reading which of the grid's spaces have
- * a boulder on them gives a string that the answer sheet is keyed by. The
- * answer is a list of pushes in order: a box on the boulder to push, and the
- * block whose click pushes it, which is how a push is crossed off.
- *
- * Odin's pairing is kept exactly as it is. An earlier version here marked the
- * block that gets clicked instead, on the theory that the sign is the thing
- * you aim at - and it put boxes in mid-air, because the two positions in the
- * answer sheet are a boulder and the space beside it rather than a sign and
- * its wall.
+ * Boulder: which boulder to push, and from where. The board's boulders form a key into Odin's
+ * answer sheet, which lists the pushes in order: a box on the boulder and the block whose click
+ * pushes it. Ported from Odin.
  */
 object BoulderSolver {
 	private const val PUZZLE = "Boulder"
 
-	/** A boulder to push, and the block whose click pushes it. */
 	private data class Push(val box: AABB, val click: BlockPos)
 
 	private val pushes = mutableListOf<Push>()
@@ -37,8 +26,7 @@ object BoulderSolver {
 		val level = Minecraft.getInstance().level ?: return
 		if (!room.resolveRotation(level)) return
 
-		// The grid read back to front, which is the order the answer sheet's
-		// keys were written in.
+		// Read back to front, the order the sheet's keys use.
 		val board = StringBuilder(42)
 		for (z in 24 downTo 9 step 3) {
 			for (x in 24 downTo 6 step 3) {
@@ -56,7 +44,6 @@ object BoulderSolver {
 		}
 	}
 
-	/** A push is done when the block that makes it has been clicked. */
 	fun onBlockUsed(pos: BlockPos) {
 		pushes.firstOrNull { it.click == pos }?.let(pushes::remove)
 	}

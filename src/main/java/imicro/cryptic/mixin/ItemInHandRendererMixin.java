@@ -3,6 +3,7 @@ package imicro.cryptic.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import imicro.cryptic.feature.Animations;
+import imicro.cryptic.feature.BowTweaks;
 import imicro.cryptic.feature.BlockHittingVisuals;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.AbstractClientPlayer;
@@ -21,9 +22,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Applies the Animations module to Minecraft's first-person item renderer. */
-// Apply after renderer mods using Mixin's default priority. In particular,
-// Bring Blocking Back redirects the same swing call as Cryptic's optional
+// After renderer mods at default priority; Bring Blocking Back redirects the same swing call as the
 // compatibility path below.
 @Mixin(value = ItemInHandRenderer.class, priority = 900)
 public abstract class ItemInHandRendererMixin {
@@ -80,10 +79,7 @@ public abstract class ItemInHandRendererMixin {
         poseStack.translate(offsetX * handSign, offsetY, offsetZ);
     }
 
-    /**
-     * Let vanilla render the main hand as the opposite arm. This moves both the
-     * arm and item without mirroring their textures or reversing their models.
-     */
+    /** Renders the main hand as the opposite arm, moving arm and item without mirroring textures. */
     @Redirect(
         method = "submitArmWithItem",
         at = @At(
@@ -101,19 +97,14 @@ public abstract class ItemInHandRendererMixin {
 
     @ModifyVariable(method = "submitArmWithItem", at = @At("HEAD"), ordinal = 2, argsOnly = true)
     private float cryptic$modifySwingProgress(float swingProgress) {
-        if (!Animations.module.getEnabled() || !Animations.disableSwingAnimation.getValue()) {
-            return swingProgress;
-        }
-        if (Animations.terminatorOnly.getValue() && !Animations.isTerminator(mainHandItem)) {
-            return swingProgress;
-        }
-        return 1.0f;
+        if (Animations.module.getEnabled() && Animations.disableSwingAnimation.getValue()) return 1.0f;
+        if (BowTweaks.hidesSwing(mainHandItem)) return 1.0f;
+        return swingProgress;
     }
 
     /**
-     * Minecraft can briefly lower the held item when an attack is registered.
-     * Keep the normal swing transform but discard that equip offset. Real item
-     * swaps still use the ordinary equip animation when its toggle is disabled.
+     * Drops the brief lowering vanilla adds when an attack registers, keeping the swing. Real item
+     * swaps still animate unless that toggle is off.
      */
     @ModifyVariable(method = "submitArmWithItem", at = @At("HEAD"), ordinal = 3, argsOnly = true)
     private float cryptic$keepSwingEquipped(float equipProgress) {
@@ -146,8 +137,7 @@ public abstract class ItemInHandRendererMixin {
     ) {
         if (!Animations.module.getEnabled()) return;
 
-        // Rotating by zero and scaling by one are identity transforms; skipping
-        // them keeps the default configuration free of per-frame matrix work.
+        // Zero rotation and scale one are skipped, so defaults cost nothing per frame.
         float rotationX = (float) Animations.rotationX.getValue();
         float rotationY = (float) Animations.rotationY.getValue();
         float rotationZ = (float) Animations.rotationZ.getValue();
@@ -160,10 +150,8 @@ public abstract class ItemInHandRendererMixin {
     }
 
     /**
-     * BringBlockingBack applies its pose inside renderItem rather than beside
-     * vanilla's first-person transforms. Keeping the same boundary prevents
-     * Cryptic's position, rotation, and scale controls from changing which
-     * transform the block animation considers its origin.
+     * BringBlockingBack applies its pose inside renderItem; using the same boundary keeps Cryptic's
+     * position, rotation and scale from shifting the block animation's origin.
      */
     @Inject(method = "renderItem", at = @At("HEAD"))
     private void cryptic$applySwordBlockPose(
@@ -186,12 +174,27 @@ public abstract class ItemInHandRendererMixin {
         poseStack.mulPose(Axis.YP.rotationDegrees(112.0f * side));
     }
 
+    /** Item Outline's particles follow the first-person item as it's drawn, animations and all. */
+    @Inject(method = "renderItem", at = @At("HEAD"))
+    private void cryptic$noteHeldItemPose(
+        net.minecraft.world.entity.LivingEntity livingEntity,
+        ItemStack itemStack,
+        net.minecraft.world.item.ItemDisplayContext displayContext,
+        PoseStack poseStack,
+        SubmitNodeCollector submitNodeCollector,
+        int light,
+        CallbackInfo ci
+    ) {
+        boolean right = displayContext == net.minecraft.world.item.ItemDisplayContext.FIRST_PERSON_RIGHT_HAND;
+        if (!right && displayContext != net.minecraft.world.item.ItemDisplayContext.FIRST_PERSON_LEFT_HAND) return;
+        if (livingEntity != Minecraft.getInstance().player || itemStack != livingEntity.getMainHandItem()) return;
+        imicro.cryptic.feature.ItemOutline.captureHandPose(poseStack.last().pose(), right, itemStack, displayContext);
+    }
+
     /**
-     * Port of BringBlockingBack's block-hit swing path, first written for 26.1.2 and unchanged since. Vanilla
-     * already applied the arm/equip transform before this call in this version,
-     * so the blocking path only needs the attack rotation. In particular it
-     * skips swingArm's large XYZ translation, which caused the sword to jump
-     * around when combined with Cryptic's item-position and scale settings.
+     * BringBlockingBack's block-hit swing, ported. Vanilla already applied the arm and equip
+     * transform here, so only the attack rotation is needed; skipping swingArm's translation stops
+     * the sword jumping with Cryptic's position and scale settings.
      */
     @Redirect(
         method = "submitArmWithItem",

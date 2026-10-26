@@ -10,334 +10,181 @@ import net.minecraft.world.level.block.ButtonBlock
 import net.minecraft.world.phys.AABB
 
 /**
- * Where to put the next noughts-and-crosses piece.
+ * Tic Tac Toe: the square to play, and during the opponent's turn the square you'll play next. The
+ * board is nine item frames whose maps show X or O, read from the colour at the map's centre.
  *
- * Ported from Skyblocker (LGPL-3.0), which credits Danker's original. The
- * board is nine item frames on a wall, each holding a map that is either an X
- * or an O, and which it is can be read from the colour of the map's middle
- * pixel. Once the board is known the move is a minimax search — the same one
- * everybody writes, because the game is small enough to solve exactly.
- *
- * It answers on your turn, which is when an odd number of frames are up and
- * the board is not full. On the opponent's turn it can answer early, which is
- * Lumen's idea (AGPL-3.0, Lumen contributors): every move the opponent would
- * sensibly make is tried, with your best reply to each, and a square that is
- * your best reply to all of them is marked before they have moved — so it can
- * be aimed at while they are still deciding.
- *
- * Lumen also marks two squares when the opponent has exactly two good moves
- * and your answer to each is the other one. That case is left out here: tried
- * against every board where it is the opponent's move, it never happens — for
- * them to have only two good moves, every other has to lose, which only
- * happens when they must block, and a block is one square.
+ * The game is small enough to solve completely: a board is one number, every position's result is
+ * cached, and every square keeping the best result is marked. On their turn, a square that is your
+ * best reply to every sensible move of theirs is marked early.
  */
 object TicTacToeSolver {
 	private const val PUZZLE = "Tic Tac Toe"
 
-	/** The colour of the middle pixel, which is what says X from O. */
-	private const val CROSS_COLOR = 114
-	private const val NOUGHT_COLOR = 33
+	// A board is nine base-3 digits, square 0 top left, row by row: 0 empty, YOU, THEM.
+	private const val EMPTY = 0
+	private const val YOU = 1
+	private const val THEM = 2
+	private val POWERS = IntArray(9) { var p = 1; repeat(it) { p *= 3 }; p }
 
-	/** Every square that reaches the best outcome, which is often more than one. */
-	private var squares: Set<Pair<Int, Int>> = emptySet()
+	private val LINES = arrayOf(
+		intArrayOf(0, 1, 2), intArrayOf(3, 4, 5), intArrayOf(6, 7, 8),
+		intArrayOf(0, 3, 6), intArrayOf(1, 4, 7), intArrayOf(2, 5, 8),
+		intArrayOf(0, 4, 8), intArrayOf(2, 4, 6),
+	)
 
-	/** On the opponent's turn, the squares that will be your answer whatever they play. */
-	private var predicted: Set<Pair<Int, Int>> = emptySet()
+	/** A position's result with best play: 1 win, 0 draw, -1 loss. */
+	private val results = HashMap<Int, Int>()
+
+	private var answer: Set<Int> = emptySet()
+
+	private var early: Set<Int> = emptySet()
 
 	fun tick() {
-		squares = emptySet()
-		predicted = emptySet()
+		answer = emptySet()
+		early = emptySet()
 		if (!PuzzleSolver.ticTacToeEnabled.value) return
-
 		val room = PuzzleRooms.named(PUZZLE) ?: return
+		val (board, marks) = readBoard(room) ?: return
+
+		// No marks is unstarted, nine is finished; an odd count means it's your turn.
+		if (marks == 0 || marks == 9 || winner(board) != EMPTY) return
+		if (marks % 2 == 1) {
+			answer = bestSquares(board, YOU).toSet()
+		} else if (PuzzleSolver.ticTacToePreAim.value) {
+			early = earlyAnswer(board)
+		}
+	}
+
+	/** The board and its mark count; null if a frame couldn't be read. */
+	private fun readBoard(room: DungeonRoom): Pair<Int, Int>? {
 		val client = Minecraft.getInstance()
-		val level = client.level ?: return
-		val player = client.player ?: return
+		val level = client.level ?: return null
+		val player = client.player ?: return null
+		val near = AABB(player.blockPosition()).inflate(SEARCH)
 
-		val search = AABB(
-			player.x - SEARCH, player.y - SEARCH, player.z - SEARCH,
-			player.x + SEARCH, player.y + SEARCH, player.z + SEARCH,
-		)
-		val frames = level.getEntitiesOfClass(ItemFrame::class.java, search, ItemFrame::hasFramedMap)
-		// Nine frames is a finished board, and an empty one has nothing to go
-		// on. An even number is the puzzle's turn rather than yours.
-		if (frames.isEmpty() || frames.size == 9) return
-		val yourTurn = frames.size % 2 == 1
-		if (!yourTurn && !PuzzleSolver.ticTacToePreAim.value) return
-
-		val board = Array(3) { CharArray(3) }
-		frames.forEach { frame ->
-			val map = level.getMapData(frame.getFramedMapId(frame.item) ?: return@forEach) ?: return@forEach
-			val relative = room.getRelativeCoords(frame.blockPosition()) ?: return@forEach
-
-			val row = when (relative.y) {
-				72 -> 0
-				71 -> 1
-				70 -> 2
-				else -> return@forEach
+		var board = 0
+		var marks = 0
+		for (frame in level.getEntitiesOfClass(ItemFrame::class.java, near, ItemFrame::hasFramedMap)) {
+			val square = squareAt(room, frame.blockPosition()) ?: continue
+			val map = frame.getFramedMapId(frame.item)?.let(level::getMapData) ?: return null
+			val mark = when (map.colors[MAP_MIDDLE].toInt() and 0xFF) {
+				CROSS -> THEM
+				NOUGHT -> YOU
+				else -> return null
 			}
-			val column = when (relative.z) {
-				17 -> 0
-				16 -> 1
-				15 -> 2
-				else -> return@forEach
-			}
+			board += mark * POWERS[square]
+			marks++
+		}
+		return board to marks
+	}
 
-			when (map.colors[MIDDLE_PIXEL].toInt() and 0xFF) {
-				CROSS_COLOR -> board[row][column] = 'X'
-				NOUGHT_COLOR -> board[row][column] = 'O'
+	private fun at(board: Int, square: Int): Int = board / POWERS[square] % 3
+
+	private fun winner(board: Int): Int {
+		for (line in LINES) {
+			val first = at(board, line[0])
+			if (first != EMPTY && first == at(board, line[1]) && first == at(board, line[2])) return first
+		}
+		return EMPTY
+	}
+
+	private fun emptySquares(board: Int): List<Int> = (0..8).filter { at(board, it) == EMPTY }
+
+	private fun result(board: Int, toMove: Int): Int {
+		val key = board * 2 + (toMove - 1)
+		results[key]?.let { return it }
+		val value = when (winner(board)) {
+			YOU -> 1
+			THEM -> -1
+			else -> {
+				val moves = emptySquares(board)
+				when {
+					moves.isEmpty() -> 0
+					toMove == YOU -> moves.maxOf { result(board + YOU * POWERS[it], THEM) }
+					else -> moves.minOf { result(board + THEM * POWERS[it], YOU) }
+				}
 			}
 		}
+		results[key] = value
+		return value
+	}
 
-		// A board already won is over, and one whose marks could not all be read
-		// is not the board that is there.
-		if (outcome(board) != 0) return
-		if (board.sumOf { row -> row.count { it != '\u0000' } } != frames.size) return
-
-		// Every square that ends as well as the best one does. A tie is a win
-		// here - the puzzle is failed only by losing - so when two squares both
-		// tie there is no reason to send you to one of them in particular.
-		if (yourTurn) {
-			squares = bestMoves(board).toSet()
-			return
-		}
-		predict(board)
+	/** Every square giving [side] its best result. */
+	private fun bestSquares(board: Int, side: Int): List<Int> {
+		val next = if (side == YOU) THEM else YOU
+		val scored = emptySquares(board).associateWith { result(board + side * POWERS[it], next) }
+		val best = (if (side == YOU) scored.values.maxOrNull() else scored.values.minOrNull()) ?: return emptyList()
+		return scored.filterValues { it == best }.keys.toList()
 	}
 
 	/**
-	 * Your answer before the opponent has moved, if it can be known.
-	 *
-	 * Each of their best moves is tried, and your best replies to it worked out.
-	 * A square that is among your best replies to every one of them is safe to
-	 * aim at now — none of their moves takes it, and none makes it wrong. Lumen
-	 * shows the replies to their first good move; only the squares common to
-	 * all of them are shown here, so a pre-aimed square is never one that their
-	 * actual move turns into a mistake.
-	 *
-	 * It assumes they play well. If they do not, their move still lands, and
-	 * the real answer replaces this one on your turn.
+	 * Squares that are your best reply to every sensible opponent move. Empty if any of their moves
+	 * leaves you lost.
 	 */
-	private fun predict(board: Array<CharArray>) {
-		val replies = theirBestMoves(board)
-		if (replies.isEmpty()) return
-
-		// A reply that leaves you lost whatever you do makes every square equally
-		// "best", and marking all of them says nothing; only a board where your
-		// answer holds the draw is predicted.
-		val answers = replies.map { (row, column) ->
-			board[row][column] = 'X'
-			val (yours, score) = if (outcome(board) == 0) scoredBestMoves(board) else emptyList<Pair<Int, Int>>() to -WIN
-			board[row][column] = '\u0000'
-			if (score < 0) return
-			(row to column) to yours.toSet()
+	private fun earlyAnswer(board: Int): Set<Int> {
+		var common: Set<Int>? = null
+		for (theirs in bestSquares(board, THEM)) {
+			val after = board + THEM * POWERS[theirs]
+			if (winner(after) != EMPTY || result(after, YOU) < 0) return emptySet()
+			val replies = bestSquares(after, YOU).toSet()
+			common = common?.intersect(replies) ?: replies
 		}
-
-		predicted = answers.map { it.second }.reduce { all, next -> all intersect next }
+		return common.orEmpty()
 	}
 
-	/** The opponent's best moves: every square that leaves you the worst outcome. */
-	private fun theirBestMoves(board: Array<CharArray>): List<Pair<Int, Int>> {
-		val scores = mutableListOf<Pair<Pair<Int, Int>, Int>>()
-		for (row in 0..2) {
-			for (column in 0..2) {
-				if (board[row][column] != '\u0000') continue
-				board[row][column] = 'X'
-				val score = search(board, Int.MIN_VALUE, Int.MAX_VALUE, true)
-				board[row][column] = '\u0000'
-				scores.add((row to column) to score)
-			}
-		}
-		val worst = scores.minOfOrNull { it.second } ?: return emptyList()
-		return scores.filter { it.second == worst }.map { it.first }
+	private fun squareAt(room: DungeonRoom, pos: BlockPos): Int? {
+		val relative = room.getRelativeCoords(pos) ?: return null
+		val row = ROW_Y.indexOf(relative.y)
+		val column = COLUMN_Z.indexOf(relative.z)
+		return if (row < 0 || column < 0) null else row * 3 + column
 	}
 
-	/**
-	 * Whether a click on this square should be swallowed.
-	 *
-	 * Only the board's own squares are considered, and only while the solver
-	 * has an answer: anything else is somebody clicking something that is not
-	 * this puzzle. Playing a square that loses is how the room is failed, and
-	 * the squares are a block apart on a wall you are shooting at.
-	 */
+	/** Whether to swallow a click on [pos]: a board button that isn't your answer, while there is one. */
 	@JvmStatic
 	fun blocksClick(pos: BlockPos): Boolean {
-		if (!PuzzleSolver.ticTacToeEnabled.value || !PuzzleSolver.ticTacToeBlockWrong.value) return false
-		if (squares.isEmpty()) return false
+		if (!PuzzleSolver.ticTacToeEnabled.value || !PuzzleSolver.ticTacToeBlockWrong.value || answer.isEmpty()) return false
 		val room = PuzzleRooms.named(PUZZLE) ?: return false
-
-		// Asked of the block you clicked rather than of a position worked out
-		// beforehand. The board's x was a written-down guess, and a guess that
-		// is a block out makes the answer's positions match nothing in the
-		// world, at which point the guard has to let everything through or
-		// block everything. What the clicked block is, and which row and
-		// column of the board it stands in, are both things the world knows.
-		val level = Minecraft.getInstance().level ?: return false
-		if (level.getBlockState(pos).block !is ButtonBlock) return false
+		if (Minecraft.getInstance().level?.getBlockState(pos)?.block !is ButtonBlock) return false
 		val square = squareAt(room, pos) ?: return false
-		return square !in squares
+		return square !in answer
 	}
 
-	/** Which row and column of the board a position is, if it is on it. */
-	private fun squareAt(room: DungeonRoom, pos: BlockPos): Pair<Int, Int>? {
-		val relative = room.getRelativeCoords(pos) ?: return null
-		val row = ROW_Y.indexOf(relative.y).takeIf { it >= 0 } ?: return null
-		val column = COLUMN_Z.indexOf(relative.z).takeIf { it >= 0 } ?: return null
-		return row to column
-	}
-
-	/**
-	 * The button for a square, found by looking along the wall for it.
-	 *
-	 * The row and column fix two of the three coordinates; the third is
-	 * whichever depth the buttons were built at, so it is searched for instead
-	 * of assumed.
-	 */
-	private fun buttonAt(room: DungeonRoom, row: Int, column: Int): BlockPos? {
+	/** The button for [square]. Row and column fix two coordinates; the depth into the wall is searched. */
+	private fun buttonFor(room: DungeonRoom, square: Int): BlockPos? {
 		val level = Minecraft.getInstance().level ?: return null
-		for (x in BOARD_X_SEARCH) {
-			val pos = room.getRealCoords(BlockPos(x, ROW_Y[row], COLUMN_Z[column])) ?: continue
-			if (level.getBlockState(pos).block is ButtonBlock) return pos
+		return BUTTON_DEPTHS.firstNotNullOfOrNull { depth ->
+			room.getRealCoords(BlockPos(depth, ROW_Y[square / 3], COLUMN_Z[square % 3]))
+				?.takeIf { level.getBlockState(it).block is ButtonBlock }
 		}
-		return null
 	}
-
-	/** The board's rows, top to bottom, and its columns, in the room's own coordinates. */
-	private val ROW_Y = listOf(72, 71, 70)
-	private val COLUMN_Z = listOf(17, 16, 15)
-
-	/** How deep into the wall the buttons are looked for. */
-	private val BOARD_X_SEARCH = 6..10
 
 	fun render(context: LevelRenderContext) {
 		if (!PuzzleSolver.ticTacToeEnabled.value) return
-		val marked = squares.ifEmpty { predicted }
+		val marked = answer.ifEmpty { early }
 		if (marked.isEmpty()) return
 		val room = PuzzleRooms.named(PUZZLE) ?: return
-		val color = PuzzleSolver.ticTacToeColor.argb
-
-		// The button's own shape rather than the cube around it: what you shoot
-		// is a button on a wall, and a whole block marks the wall as well.
-		marked.mapNotNull { (row, column) -> buttonAt(room, row, column) }.forEach {
-			PuzzleRender.shape(
-				context,
-				it,
-				color,
-				PuzzleSolver.ticTacToeStyle.selectedIndex,
-				phase = false,
-			)
+		// The button's own shape, not the whole block.
+		for (square in marked) {
+			val button = buttonFor(room, square) ?: continue
+			PuzzleRender.shape(context, button, PuzzleSolver.ticTacToeColor.argb, PuzzleSolver.ticTacToeStyle.selectedIndex, phase = false)
 		}
 	}
 
 	fun reset() {
-		squares = emptySet()
-		predicted = emptySet()
+		answer = emptySet()
+		early = emptySet()
 	}
 
+	/** The rows (top to bottom) and columns, in room coordinates. */
+	private val ROW_Y = listOf(72, 71, 70)
+	private val COLUMN_Z = listOf(17, 16, 15)
 
-	/**
-	 * Every square that reaches the best outcome available.
-	 *
-	 * Skyblocker takes the single highest-scoring square; this keeps all of
-	 * them, because the board regularly offers two squares that both hold the
-	 * draw and picking one of them is a decision the solver has no reason to
-	 * make. Scores come back equal only when the games they lead to end the
-	 * same way.
-	 */
-	private fun bestMoves(board: Array<CharArray>): List<Pair<Int, Int>> = scoredBestMoves(board).first
+	private val BUTTON_DEPTHS = 6..10
 
-	/** [bestMoves], with the score they all reach. */
-	private fun scoredBestMoves(board: Array<CharArray>): Pair<List<Pair<Int, Int>>, Int> {
-		val scores = mutableListOf<Pair<Pair<Int, Int>, Int>>()
+	/** Map colours of X and O at the centre of the 128×128 map. */
+	private const val CROSS = 114
+	private const val NOUGHT = 33
+	private const val MAP_MIDDLE = 128 * 64 + 64
 
-		for (row in 0..2) {
-			for (column in 0..2) {
-				if (board[row][column] != '\u0000') continue
-				board[row][column] = 'O'
-				val score = search(board, Int.MIN_VALUE, Int.MAX_VALUE, false)
-				board[row][column] = '\u0000'
-				scores.add((row to column) to score)
-			}
-		}
-
-		val best = scores.maxOfOrNull { it.second } ?: return emptyList<Pair<Int, Int>>() to 0
-		return scores.filter { it.second == best }.map { it.first } to best
-	}
-
-	/**
-	 * Minimax with alpha-beta pruning: nine squares is small enough to solve.
-	 *
-	 * No preference for a quick win, which the usual version gets by shading
-	 * the score with how deep it was found. That shading is what made two
-	 * squares that both hold the draw score differently, and here they are the
-	 * same answer: the puzzle is failed by losing, and a draw reached in four
-	 * moves is worth exactly as much as one reached in two.
-	 */
-	private fun search(board: Array<CharArray>, alphaIn: Int, betaIn: Int, maximizing: Boolean): Int {
-		val score = outcome(board)
-		if (score == WIN || score == -WIN) return score
-		if (board.none { row -> row.any { it == '\u0000' } }) return 0
-
-		var alpha = alphaIn
-		var beta = betaIn
-
-		if (maximizing) {
-			var best = Int.MIN_VALUE
-			for (row in 0..2) {
-				for (column in 0..2) {
-					if (board[row][column] != '\u0000') continue
-					board[row][column] = 'O'
-					best = maxOf(best, search(board, alpha, beta, false))
-					board[row][column] = '\u0000'
-					alpha = maxOf(alpha, best)
-					if (beta <= alpha) break
-				}
-			}
-			return best
-		}
-
-		var best = Int.MAX_VALUE
-		for (row in 0..2) {
-			for (column in 0..2) {
-				if (board[row][column] != '\u0000') continue
-				board[row][column] = 'X'
-				best = minOf(best, search(board, alpha, beta, true))
-				board[row][column] = '\u0000'
-				beta = minOf(beta, best)
-				if (beta <= alpha) break
-			}
-		}
-		return best
-	}
-
-	/** Ten for a win, minus ten for a loss, nothing for anything else. */
-	private fun outcome(board: Array<CharArray>): Int {
-		val lines = listOf(
-			Triple(board[0][0], board[0][1], board[0][2]),
-			Triple(board[1][0], board[1][1], board[1][2]),
-			Triple(board[2][0], board[2][1], board[2][2]),
-			Triple(board[0][0], board[1][0], board[2][0]),
-			Triple(board[0][1], board[1][1], board[2][1]),
-			Triple(board[0][2], board[1][2], board[2][2]),
-			Triple(board[0][0], board[1][1], board[2][2]),
-			Triple(board[0][2], board[1][1], board[2][0]),
-		)
-
-		lines.forEach { (a, b, c) ->
-			if (a == b && a == c) {
-				when (a) {
-					'X' -> return -WIN
-					'O' -> return WIN
-				}
-			}
-		}
-		return 0
-	}
-
-	private const val WIN = 10
-
-	/** The middle of a 128 by 128 map, which is the pixel that carries the mark. */
-	private const val MIDDLE_PIXEL = 8256
-
-	/** How far to look for the board, which is Skyblocker's twenty-one blocks. */
 	private const val SEARCH = 21.0
 }

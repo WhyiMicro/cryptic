@@ -11,17 +11,14 @@ import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.network.chat.Component
 
 /**
- * Which of the five crystals are still to be placed in the Crystal Nucleus,
- * from the Crystals widget in Hypixel's tab list ("Jade: ✖ Not Found",
- * "Amber: ✔ Found", "Topaz: ✔ Placed") — the lines Skyblocker reads too.
- *
- * Shown as a HUD element of its own or under the Crystal Hollows map, as the
- * dungeon score is under the dungeon map. A crystal leaves it once placed.
+ * Which of the five crystals are still to be placed in the Crystal Nucleus, from the tab list's
+ * Crystals widget ("Jade: ✖ Not Found", "Topaz: ✔ Placed"). Shown on its own or under the Crystal
+ * Hollows map. A crystal leaves once placed.
  */
 object CrystalStatus {
 	enum class State { NOT_FOUND, FOUND, PLACED }
 
-	/** The five, in the order the nucleus goes round, with their slot colours. */
+	/** The five in the nucleus's order, with their slot colours. */
 	enum class Crystal(val title: String, val color: () -> Int) {
 		JADE("Jade", { NucleusQol.jadeColor.rgb }),
 		AMBER("Amber", { NucleusQol.amberColor.rgb }),
@@ -30,10 +27,8 @@ object CrystalStatus {
 		TOPAZ("Topaz", { NucleusQol.topazColor.rgb }),
 	}
 
-	/** Indices into [style]. */
 	private const val STYLE_MINIMAL = 0
 
-	/** Indices into [placement]. */
 	private const val UNDER_MAP = 0
 
 	@JvmField
@@ -64,7 +59,6 @@ object CrystalStatus {
 		visibleIf = { missingCrystals.value },
 	)
 
-	/** The toggle with its style and placement behind its dots. */
 	val setting = missingCrystals.withMore(style, placement)
 
 	private val ROW = Regex("""^(Jade|Amber|Amethyst|Sapphire|Topaz): (.+)$""")
@@ -72,7 +66,9 @@ object CrystalStatus {
 
 	private var states: Map<Crystal, State> = emptyMap()
 
-	/** Whether the tab list has the Crystals widget, without which nothing here can be known. */
+	/** What the tab list says of [crystal], or null while the Crystals widget isn't shown. */
+	fun stateOf(crystal: Crystal): State? = states[crystal]
+
 	private var widgetShown = false
 	private var ticksUntilRead = 0
 
@@ -84,7 +80,6 @@ object CrystalStatus {
 		Hud.register(OwnElement())
 	}
 
-	/** Twice a second, from [NucleusQol.tick]. */
 	fun tick(client: Minecraft) {
 		if (ticksUntilRead-- > 0) return
 		ticksUntilRead = 10
@@ -92,7 +87,6 @@ object CrystalStatus {
 		read(connection.onlinePlayers.mapNotNull { it.tabListDisplayName?.string })
 	}
 
-	/** The crystals' states from tab list rows as Hypixel writes them. */
 	fun read(rows: List<String>) {
 		val read = HashMap<Crystal, State>()
 		var heading = false
@@ -118,15 +112,12 @@ object CrystalStatus {
 			if (state == State.PLACED) null else crystal to state
 		}
 
-	/** Something to say: crystals still missing, or that the widget is not there to read. */
+	/** Something to say: crystals still missing, or the widget isn't there to read. */
 	private val wanted: Boolean
 		get() = NucleusQol.module.enabled && missingCrystals.value && SkyblockLocation.inCrystalHollows &&
 			(!widgetShown || shown(false).isNotEmpty())
 
-	/** True while the map carries this rather than its own element. */
 	private val attached: Boolean get() = placement.selectedIndex == UNDER_MAP && HollowsMap.mapShown
-
-	// --- Drawing ----------------------------------------------------------
 
 	private const val GEM = "💎"
 
@@ -145,7 +136,7 @@ object CrystalStatus {
 		}
 	}
 
-	/** How wide and tall [render] draws, for the element and the map under it. */
+	/** How big [render] draws, for the element and the map. */
 	fun size(example: Boolean = false): Pair<Int, Int> {
 		val list = shown(example)
 		if (style.selectedIndex == STYLE_MINIMAL && (widgetShown || example)) {
@@ -158,8 +149,8 @@ object CrystalStatus {
 	private const val GEM_STEP = 11
 
 	/**
-	 * What is drawn: every crystal not yet placed, or in the minimalistic style
-	 * only those not found yet, since one in your pocket is as good as placed.
+	 * Every crystal not placed, or in the minimal style only those not found (one in your pocket is
+	 * as good as placed).
 	 */
 	private fun shown(example: Boolean): List<Pair<Crystal, State>> {
 		val list = if (example) EXAMPLE else missing
@@ -167,9 +158,8 @@ object CrystalStatus {
 	}
 
 	/**
-	 * Drawn from the top-left. Under something [frameWidth] wide, the gems are
-	 * centred, and the written lines line up with whichever edge of it is
-	 * nearer the middle of the screen ([alignRight]), so they never run off it.
+	 * Drawn from the top-left. Under something [frameWidth] wide, gems are centred and lines align
+	 * to the edge nearer the screen's middle ([alignRight]).
 	 */
 	fun render(
 		context: GuiGraphicsExtractor, x: Int, y: Int,
@@ -191,7 +181,6 @@ object CrystalStatus {
 		}
 	}
 
-	/** Under the map, when that is where it lives. */
 	fun attachedHeight(): Int = if (attached && wanted) size().second + 4 else 0
 
 	fun renderUnderMap(context: GuiGraphicsExtractor, mapWidth: Int, top: Int, alignRight: Boolean) {
@@ -207,7 +196,6 @@ object CrystalStatus {
 
 	private val EXAMPLE = listOf(Crystal.JADE to State.NOT_FOUND, Crystal.AMBER to State.FOUND, Crystal.TOPAZ to State.NOT_FOUND)
 
-	/** For `/cryptic debug crystals`. */
 	fun describe(): String =
 		if (!widgetShown) "Crystals widget: not in the tab list" else
 			"Crystals: " + Crystal.entries.joinToString { "${it.title} ${states[it]?.name?.lowercase() ?: "?"}" }

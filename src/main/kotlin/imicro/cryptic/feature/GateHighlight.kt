@@ -15,27 +15,10 @@ import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.phys.AABB
 
 /**
- * Boxes the gate out of the section you are in, in a colour that says whether
- * it still stands.
- *
- * Ported from NoammAddons' Gate Highlight (CC0, Noamm9). Each of the first three
- * sections of the Goldor phase ends in a gate that has to be blown open before
- * the party can move on, and from the far side of a section there is no telling
- * at a glance whether it has gone yet.
- *
- * NoammAddons answers that by drawing the box only while the gate stands, so
- * that no box means it is open. The trouble is that no box also means the module
- * is off, or the section was read wrong, or the chunk has not arrived — an
- * absence cannot tell those apart. So a blown gate is drawn too, in a colour of
- * its own: red says wait, green says go, and nothing at all says nothing.
- *
- * Whether it stands is read off one block of it. A standing gate is built of
- * cracked and infested stone bricks, and a blown one is not there at all, so a
- * single block of the wall says which. The fourth section has no gate — it opens
- * onto the core — so there is nothing to draw there.
- *
- * Part of the F7/M7 QOL card rather than a card of its own, and never drawn
- * through walls: a gate is only worth seeing from where it can be walked to.
+ * Boxes the gate out of your Goldor section in a colour saying whether it stands: red for standing,
+ * green for blown. Drawing blown gates too means no box only ever means nothing to show. Read from
+ * one block (standing gates are cracked and infested stone bricks). s4 has no gate. On the F7/M7
+ * QOL card, never through walls. Ported from NoammAddons.
  */
 object GateHighlight {
 	private val styles = listOf("Outline", "Fill", "Fill + outline")
@@ -115,21 +98,17 @@ object GateHighlight {
 		visibleIf = { enabled.value && showDestroyed.value && style.selectedIndex != FILL },
 	)
 
-	/** Listed on the F7/M7 QOL card. */
+	/** Listed on the F7/M7 Features card. */
 	val settings: List<ModuleSetting> = listOf(
 		enabled, style, lineWidth, fillColor, outlineColor,
 		showDestroyed, destroyedFillColor, destroyedOutlineColor,
 	)
 
-	/** True while the gate is to be drawn, for the floor scans too. */
 	val active: Boolean get() = F7Qol.module.enabled && enabled.value
 
 	/**
-	 * One section's gate: a block of it to read, and the box around the whole.
-	 *
-	 * Keyed by the section it closes off, since a party only ever cares about the
-	 * gate in front of it — the next section's gate is still standing as well,
-	 * and boxing that one too would be one box saying nothing new.
+	 * A section's gate: one block to read and the box around it. Only the gate in front of the
+	 * party is drawn.
 	 */
 	private class Gate(val probe: BlockPos, val box: AABB)
 
@@ -173,19 +152,14 @@ object GateHighlight {
 			fillArgb = if (standing) fillColor.argb else destroyedFillColor.argb,
 			outline = mode != FILL,
 			fill = mode != OUTLINE,
-			// Never through walls: the gate is only worth seeing from where it can be walked to.
 			phase = false,
 			lineWidth = lineWidth.value.toFloat(),
 		)
 	}
 
 	/**
-	 * What one block of the gate says about the whole of it.
-	 *
-	 * Three answers, not two. A chunk the client has not been sent reads as air
-	 * just as a blown gate does, and calling that "destroyed" would paint a gate
-	 * green from across the tower before anybody had seen it — so a block that
-	 * is not loaded is no answer at all, and nothing is drawn for it.
+	 * What one block says about the gate: standing, blown, or unknown, since an unloaded chunk
+	 * reads as air too.
 	 */
 	private fun stateOf(gate: Gate): State {
 		val level = Minecraft.getInstance().level ?: return State.UNKNOWN
@@ -195,7 +169,6 @@ object GateHighlight {
 		return when {
 			state.block == Blocks.CRACKED_STONE_BRICKS || state.block == Blocks.INFESTED_STONE_BRICKS -> State.STANDING
 			state.isAir -> State.DESTROYED
-			// Something else entirely: not a gate this was written for.
 			else -> State.UNKNOWN
 		}
 	}

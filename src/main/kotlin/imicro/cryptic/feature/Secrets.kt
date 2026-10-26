@@ -44,30 +44,20 @@ import net.minecraft.world.phys.shapes.VoxelShape
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * The things that make finding a dungeon's secrets less fiddly.
+ * Makes finding secrets less fiddly: closes secret chests for you, grows the hitboxes of blocks
+ * secrets hide behind, and marks what you clicked (red if locked, Odin's `SecretClicked`). Mostly
+ * from NoammAddons' `Secrets`.
  *
- * Mostly ported from NoammAddons' `Secrets` (CC0, Noamm9): closing a secret
- * chest for you, growing the hitboxes of the blocks secrets hide behind, and
- * marking what you just clicked so nobody goes back for it. The locked-chest
- * colour is Odin's `SecretClicked` (BSD 3-Clause, Copyright (c) 2025 odtheking).
- *
- * The hitboxes are the part worth understanding, and the part where a full
- * block is the wrong answer. A lever and a mushroom get one, but a button
- * keeps its depth and only grows across the face it is stuck to — a full-block
- * button would be clickable from inside the wall behind it. A skull only grows
- * if it is one of the two Hypixel actually hides secrets in, because every
- * other skull in a dungeon is scenery. Only this client's idea of the shape
- * changes; the server still decides whether an interaction lands.
+ * A lever or mushroom grows to a full block, but a button only grows across its face, or it would
+ * be clickable from behind the wall. A skull only grows if it's one of the two Hypixel hides
+ * secrets in. Client-side only; the server decides.
  */
 object Secrets {
 	private const val OUTLINE = 0
 	private const val FILL = 1
 	private const val FILL_OUTLINE = 2
 
-	/**
-	 * The skull owners Hypixel puts secrets behind: wither essence and the
-	 * redstone key. NoammAddons' list.
-	 */
+	/** Skull owners Hypixel hides secrets behind: wither essence and the redstone key (NoammAddons' list). */
 	private val secretSkullOwners = setOf(
 		"2865274b-3097-394e-8149-ec629c72d850",
 		"e0f3e929-869e-3dca-9504-54c666ee6f23",
@@ -75,8 +65,8 @@ object Secrets {
 	)
 
 	/**
-	 * Levers on Floor 7's Goldor terminals, which are not secrets and which a
-	 * grown hitbox would make easy to open by walking past. NoammAddons' list.
+	 * F7 terminal levers, which aren't secrets and would be too easy to hit with a grown hitbox
+	 * (NoammAddons' list).
 	 */
 	private val terminalLevers = setOf(
 		BlockPos(61, 136, 142), BlockPos(60, 136, 142), BlockPos(59, 136, 142),
@@ -86,10 +76,7 @@ object Secrets {
 		BlockPos(60, 133, 142), BlockPos(59, 133, 142),
 	)
 
-	/**
-	 * Everything a secret can give you, which is a short and fixed list. The
-	 * healing potion is named several ways across floors, so all of them count.
-	 */
+	/** Everything a secret can give; the healing potion has several names across floors. */
 	private val secretItems = listOf(
 		"Healing Potion" to setOf(
 			"Health Potion VIII Splash Potion", "Healing Potion 8 Splash Potion",
@@ -107,6 +94,7 @@ object Secrets {
 		"Revive Stone" to setOf("Revive Stone"),
 		"Architect's First Draft" to setOf("Architect's First Draft"),
 		"Secret Dye" to setOf("Secret Dye"),
+		"Candycomb" to setOf("Candycomb"),
 	)
 
 	private val soundOptions = listOf(
@@ -124,7 +112,21 @@ object Secrets {
 	val autoCloseChest = ToggleModuleSetting(
 		id = "auto_close_chest",
 		label = "Auto close chest",
-		description = "Shuts a secret chest as it opens.",
+		description = "Shuts a secret chest for you.",
+	)
+
+	private const val CLOSE_INSTANTLY = 0
+	private const val CLOSE_ON_MOVE = 1
+
+	@JvmField
+	val autoCloseMode = DropdownModuleSetting(
+		id = "auto_close_mode",
+		label = "Close",
+		options = listOf("Instantly", "On move"),
+		defaultIndex = CLOSE_INSTANTLY,
+		description = "Instantly shuts it as it opens. On move shuts it the same way if you're moving, otherwise when you next press a movement key.",
+		visibleIf = { autoCloseChest.value },
+		optionRestrictions = mapOf("Instantly" to imicro.cryptic.gui.Restriction.CHEAT),
 	)
 
 	@JvmField
@@ -135,16 +137,17 @@ object Secrets {
 			"red with none found, yellow partway, green once they all are.",
 	)
 
-	/** Whether the action bar's count is being moved into the counter, which [RoomSecrets] asks. */
 	val movesCounter: Boolean get() = module.enabled && movableCounter.value
 
-	// ---- Secret hitboxes -------------------------------------------------
-
-	private val hitboxSection = SectionModuleSetting(id = "hitbox_section", label = "Secret hitboxes")
+	private val hitboxSection = SectionModuleSetting(
+		id = "hitbox_section", label = "Secret hitboxes",
+		visibleIf = { imicro.cryptic.gui.Restrictions.allows(imicro.cryptic.gui.Restriction.SEMI_LEGIT) },
+	)
 
 	@JvmField
 	val hitboxesOnlyInDungeons = ToggleModuleSetting(
 		id = "hitboxes_only_in_dungeons",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Only in dungeons",
 		defaultValue = true,
 		description = "Leaves every block alone outside a dungeon, where a grown hitbox is only in the way.",
@@ -153,6 +156,7 @@ object Secrets {
 	@JvmField
 	val leverHitbox = ToggleModuleSetting(
 		id = "lever_hitbox",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Lever",
 		description = "Gives levers a full block hitbox. Floor 7's terminal levers are left alone.",
 	)
@@ -160,6 +164,7 @@ object Secrets {
 	@JvmField
 	val buttonHitbox = ToggleModuleSetting(
 		id = "button_hitbox",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Button",
 		description = "Stretches a button across the face it is on.",
 	)
@@ -167,6 +172,7 @@ object Secrets {
 	@JvmField
 	val skullHitbox = ToggleModuleSetting(
 		id = "skull_hitbox",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Skulls",
 		description = "Full hitboxes for essence and key skulls.",
 	)
@@ -174,11 +180,10 @@ object Secrets {
 	@JvmField
 	val mushroomHitbox = ToggleModuleSetting(
 		id = "mushroom_hitbox",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Mushroom",
 		description = "Gives mushrooms a full block hitbox.",
 	)
-
-	// ---- Secret clicked --------------------------------------------------
 
 	private val clickedSection = SectionModuleSetting(id = "clicked_section", label = "Secret clicked")
 
@@ -260,8 +265,6 @@ object Secrets {
 		visibleIf = { highlightClicked.value },
 	)
 
-	// ---- Secret sound ----------------------------------------------------
-
 	private val soundSection = SectionModuleSetting(id = "sound_section", label = "Secret sound")
 
 	@JvmField
@@ -318,7 +321,7 @@ object Secrets {
 		description = "Helps you find secrets",
 		category = ModuleCategory.DUNGEON,
 		supportsKeybind = false,
-		settings = listOf(autoCloseChest, movableCounter) + listOf(
+		settings = listOf(autoCloseChest.withMore(autoCloseMode), movableCounter) + listOf(
 			hitboxSection,
 			hitboxesOnlyInDungeons,
 			leverHitbox,
@@ -335,36 +338,32 @@ object Secrets {
 		),
 	)
 
-	/** A secret that has been taken: where, when, and whether it turned out locked. */
+	/** A taken secret: when, and whether it was locked. */
 	private class Taken(val at: Long, var locked: Boolean = false)
 
 	private val taken = ConcurrentHashMap<BlockPos, Taken>()
 
-	/** The last one marked, so Hypixel's "that chest is locked" can find it. */
+	/** The last one marked, for Hypixel's "that chest is locked". */
 	@Volatile
 	private var lastMarked: BlockPos? = null
 
-	/** An item secret fires once per pickup burst rather than once per item. */
+	/** Item secrets count once per pickup burst. */
 	private var lastItemSecretAt = 0L
 
 	private const val ITEM_SECRET_COOLDOWN_MILLIS = 2000L
 
-	/** What Hypixel says when the chest you opened wants a key. */
 	private const val LOCKED_MESSAGE = "That chest is locked!"
 
-	/** What Hypixel says when the chest was opened before, by you or by anybody. */
+	/** Hypixel's line for a chest opened before, by anyone. */
 	private const val SEARCHED_MESSAGE = "This chest has already been searched!"
 
 	/**
-	 * Every secret the counter has counted on this server.
-	 *
-	 * Kept for the whole floor, where [taken] only lasts as long as a block's
-	 * highlight: a chest clicked again after that used to count again, as a
-	 * second secret, until Hypixel's own number put it right.
+	 * Every secret the counter counted on this server, for the whole floor, so re-clicking a chest
+	 * doesn't count it twice.
 	 */
 	private val counted = HashSet<BlockPos>()
 
-	/** The secret the counter last added, which Hypixel's answer may take back. */
+	/** The secret last added, which Hypixel's answer may take back. */
 	private var lastCounted: BlockPos? = null
 
 	private val FORMATTING = Regex("§.")
@@ -374,27 +373,18 @@ object Secrets {
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> onWorldChange() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> onWorldChange() }
-		// Chat is heard in [onSystemChat], from the packet, before any mod can
-		// hide it.
+		// Chat is read in [onSystemChat] from the packet, before any mod can hide it.
 	}
 
-	// ---- The counter -----------------------------------------------------
-
 	/**
-	 * The room's secret count, where Hypixel's action bar used to show it.
-	 *
-	 * Taken from the room being stood in rather than from the action bar, which
-	 * is a second behind on both counts that matter: walking into a room, when
-	 * it still shows the last one, and taking a secret, when it still shows the
-	 * number from before. The room is known the moment it is walked into, and its
-	 * total comes with it. A secret taken here counts the moment Cryptic sees it
-	 * taken; Hypixel's own count, read off the action bar, takes over once it
-	 * agrees, and puts right any guess it does not agree with.
+	 * The room's secret count, where Hypixel's action bar showed it. Taken from the current room,
+	 * since the action bar lags a second on entry and after each secret. A secret taken here counts
+	 * at once; Hypixel's own count takes over once it agrees and corrects any wrong guess.
 	 */
 	private class CounterElement: HudElement("secrets_counter", "Secrets Counter", 0.47, 0.84) {
 		private val font get() = Minecraft.getInstance().font
 
-		// As wide as the widest count, so the text stays centred as it changes.
+		// As wide as the widest count, so the text stays centred.
 		override val width: Int get() = font.width(COUNTER_WIDEST)
 		override val height: Int get() = font.lineHeight
 
@@ -420,36 +410,34 @@ object Secrets {
 		}
 	}
 
-	/** The count to show, found then total, or null for none. */
 	private fun counterValues(): Pair<Int, Int>? {
 		if (!movesCounter || !DungeonLocation.inDungeon || DungeonRun.inBoss) return null
 
 		val room = DungeonMap.currentRoom()
 		val total = room?.data?.secrets ?: 0
+		val now = System.currentTimeMillis()
+		// A secret just taken shows at once; the bar lags a second behind it.
+		val guessing = room != null && room === guessRoom && now - guessAt < GUESS_MILLIS
+		// A known room's own count, which only takes readings that are this room's, never the raw
+		// bar, which shows the last room's for a moment after you walk in.
 		if (room != null && total > 0) {
-			val fresh = room === guessRoom && System.currentTimeMillis() - guessAt < GUESS_MILLIS
-			val found = if (fresh) maxOf(room.foundSecrets, guessCount) else room.foundSecrets
+			val found = if (guessing) maxOf(room.foundSecrets, guessCount) else room.foundSecrets
 			return found.coerceIn(0, total) to total
 		}
 
-		// A room the scan has named and that holds no secrets at all - most
-		// puzzles, the blood room, the entrance - has nothing to count, so the
-		// counter goes the moment you step in rather than showing the last
-		// room's number until Hypixel's own text would have faded.
+		// A named room with no secrets (most puzzles, blood, the entrance) hides the counter
+		// immediately.
 		if (room?.data != null) return null
 
-		// A room the scan has not named has no total of its own, so Hypixel's
-		// count stands in, for as long as the action bar would have shown it.
+		// An unnamed room has no total, so Hypixel's count stands in while the action bar would
+		// show it.
 		if (RoomSecrets.found < 0 || System.currentTimeMillis() - RoomSecrets.seenAt >= COUNTER_SHOWN_MILLIS) return null
 		return RoomSecrets.found to RoomSecrets.total
 	}
 
 	/**
-	 * A secret taken in the room being stood in, before Hypixel has counted it.
-	 *
-	 * Counted from the room's last confirmed number, and only for a few seconds:
-	 * long enough for the action bar to catch up, short enough that a click that
-	 * turned out not to be a secret stops showing as one on its own.
+	 * A secret taken in this room before Hypixel counts it, added to the room's last confirmed
+	 * number for a few seconds.
 	 */
 	private fun guessFound() {
 		val room = DungeonMap.currentRoom() ?: return
@@ -467,13 +455,12 @@ object Secrets {
 	private var guessAt = 0L
 
 	private const val GUESS_MILLIS = 4000L
+
 	private const val COUNTER_WIDEST = "00/00"
 	private const val COUNTER_SHOWN_MILLIS = 3000L
 	private const val COUNTER_RED = 0xFFFF5555.toInt()
 	private const val COUNTER_YELLOW = 0xFFFFFF55.toInt()
 	private const val COUNTER_GREEN = 0xFF55FF55.toInt()
-
-	// ---- Hitboxes --------------------------------------------------------
 
 	private fun hitboxesApply(): Boolean =
 		module.enabled && (!hitboxesOnlyInDungeons.value || DungeonLocation.inDungeon)
@@ -487,10 +474,7 @@ object Secrets {
 	@JvmStatic
 	fun growsMushroom(): Boolean = hitboxesApply() && mushroomHitbox.value
 
-	/**
-	 * A skull only grows if it is one Hypixel hides a secret behind, which is
-	 * the owner of the skin rather than anything about the block.
-	 */
+	/** A skull grows only if its skin owner is one Hypixel hides a secret behind. */
 	@JvmStatic
 	fun growsSkull(pos: BlockPos): Boolean {
 		if (!hitboxesApply() || !skullHitbox.value) return false
@@ -506,9 +490,8 @@ object Secrets {
 	fun growsButton(): Boolean = hitboxesApply() && buttonHitbox.value
 
 	/**
-	 * A button stretched across the wall it is on, keeping the depth it already
-	 * had. NoammAddons' shape: a full block would stick through the wall and be
-	 * clickable from the room on the other side.
+	 * A button stretched across its wall, keeping its depth (NoammAddons' shape), so it can't be
+	 * clicked through the wall.
 	 */
 	@JvmStatic
 	fun buttonShape(state: BlockState): VoxelShape {
@@ -529,13 +512,9 @@ object Secrets {
 		}
 	}
 
-	// ---- Chests ----------------------------------------------------------
-
 	/**
-	 * Whether the chest that just opened should be shut again.
-	 *
-	 * Only a plain chest, and only in a dungeon: a menu with a name of its own
-	 * is Hypixel asking a question, and closing it would answer for you.
+	 * Whether the chest that just opened should close. Only plain chests in a dungeon; a named menu
+	 * is Hypixel asking something.
 	 */
 	@JvmStatic
 	fun closesChest(containerId: Int, type: MenuType<*>, title: String): Boolean {
@@ -545,20 +524,51 @@ object Secrets {
 		if (type != MenuType.GENERIC_9x3 && type != MenuType.GENERIC_9x6) return false
 		if (title != "Chest" && title != "Large Chest") return false
 
+		// Already moving as it opens: shut it at once, as Instantly does, so it never shows.
+		if (autoCloseMode.selectedIndex == CLOSE_ON_MOVE && !movementPressed(Minecraft.getInstance())) {
+			closeOnMove = containerId
+			return false
+		}
 		close(containerId)
 		return true
 	}
 
+	/** The secret chest left open until a movement key is pressed. */
+	@Volatile
+	private var closeOnMove: Int? = null
+
 	/**
-	 * Shuts the chest the way pressing escape would.
-	 *
-	 * Taking the screen down is only half of closing a container. The player
-	 * also holds the menu that is open, and the game refuses any click whose
-	 * menu is not the one it holds — so a chest whose screen was removed and
-	 * nothing else left the player holding a chest that no longer existed, and
-	 * the next inventory opened would not take a single click until it had been
-	 * closed and opened again. That was the inventory that needed opening twice,
-	 * and the log said so every time: "Ignoring click in mismatching container".
+	 * Movement keys, read from the keyboard itself: while a screen is open the game stops updating
+	 * its key mappings.
+	 */
+	private fun movementPressed(client: Minecraft): Boolean {
+		val options = client.options
+		val window = client.window
+		return listOf(options.keyUp, options.keyDown, options.keyLeft, options.keyRight, options.keyJump).any { mapping ->
+			val key = (mapping as imicro.cryptic.mixin.KeyMappingAccessor).`cryptic$key`()
+			key.type == com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM && com.mojang.blaze3d.platform.InputConstants.isKeyDown(window, key.value)
+		}
+	}
+
+	private fun tickCloseOnMove() {
+		val containerId = closeOnMove ?: return
+		val client = Minecraft.getInstance()
+		val open = (client.gui.screen() as? AbstractContainerScreen<*>)?.menu?.containerId
+		// Opening waits for its contents; anything else open means it's already gone.
+		if (open == null && client.player?.containerMenu?.containerId == containerId) return
+		if (open != containerId) {
+			closeOnMove = null
+			return
+		}
+		if (!movementPressed(client)) return
+		closeOnMove = null
+		close(containerId)
+	}
+
+	/**
+	 * Closes the chest like escape does. Removing just the screen leaves the player holding the
+	 * chest's menu, and the next inventory then refuses every click until reopened ("Ignoring click
+	 * in mismatching container").
 	 */
 	private fun close(containerId: Int) {
 		val client = Minecraft.getInstance()
@@ -567,8 +577,7 @@ object Secrets {
 			InventoryWatch.note("Secrets auto-closed chest $containerId")
 			player.connection.send(ServerboundContainerClosePacket(containerId))
 			if (player.containerMenu.containerId == containerId) {
-				// Puts the player's own inventory back as the open menu, and
-				// takes the screen down with it.
+				// Puts the player's inventory back as the open menu and removes the screen.
 				player.clientSideCloseContainer()
 			} else if ((client.gui.screen() as? AbstractContainerScreen<*>)?.menu?.containerId == containerId) {
 				client.gui.setScreen(null)
@@ -576,12 +585,7 @@ object Secrets {
 		}
 	}
 
-	// ---- Taking a secret -------------------------------------------------
-
-	/**
-	 * Whether a block is one Hypixel hides secrets in. NoammAddons' rule: any
-	 * chest or lever, and the two skulls that carry one.
-	 */
+	/** Whether a block holds secrets: any chest or lever, and the two secret skulls (NoammAddons' rule). */
 	private fun isSecretBlock(pos: BlockPos): Boolean {
 		val level = Minecraft.getInstance().level ?: return false
 		val block = level.getBlockState(pos).block
@@ -594,7 +598,6 @@ object Secrets {
 		}
 	}
 
-	/** Called when the player interacts with a block, whatever it turns out to be. */
 	@JvmStatic
 	fun onBlockUsed(pos: BlockPos) {
 		if (!module.enabled || !DungeonLocation.inDungeon) return
@@ -602,10 +605,7 @@ object Secrets {
 		mark(pos)
 	}
 
-	/**
-	 * A bat is a secret, and dies where it was. Hypixel's own death sound is
-	 * the only announcement, so it is what this listens for.
-	 */
+	/** A bat secret: Hypixel's death sound is the only announcement. */
 	@JvmStatic
 	fun onBatDied(x: Double, y: Double, z: Double) {
 		if (!module.enabled || !DungeonLocation.inDungeon) return
@@ -613,10 +613,8 @@ object Secrets {
 	}
 
 	/**
-	 * An item secret, picked up rather than clicked.
-	 *
-	 * A chest emptied at once is a handful of pickups a tick apart, so a short
-	 * cooldown keeps that one secret rather than five.
+	 * An item secret picked up. A chest emptied at once is several pickups, so a short cooldown
+	 * counts one.
 	 */
 	@JvmStatic
 	fun onSecretItemPickedUp(pos: BlockPos) {
@@ -627,7 +625,6 @@ object Secrets {
 		mark(pos)
 	}
 
-	/** Whether a dropped item is one of the things a secret gives you. */
 	@JvmStatic
 	fun isSecretDrop(stack: ItemStack): Boolean {
 		val name = stack.hoverName.string
@@ -635,11 +632,11 @@ object Secrets {
 	}
 
 	private fun mark(pos: BlockPos) {
-		// The same block twice is one secret, not two.
+		// The same block twice is one secret.
 		if (taken.putIfAbsent(pos, Taken(System.currentTimeMillis())) != null) return
 		lastMarked = pos
 		if (secretSound.value) play()
-		// Counted once a floor, however often it is clicked.
+		// Counted once per floor however often it's clicked.
 		lastCounted = null
 		if (movesCounter && counted.add(pos.immutable())) {
 			lastCounted = pos.immutable()
@@ -647,7 +644,6 @@ object Secrets {
 		}
 	}
 
-	/** A chat packet, on the client thread. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay) return
@@ -658,9 +654,8 @@ object Secrets {
 	}
 
 	/**
-	 * Hypixel saying the chest was opened before — by you earlier, or by a
-	 * teammate — so it was not a secret found now and the counter takes it
-	 * back. It stays counted, so clicking it again adds nothing either.
+	 * Hypixel says the chest was opened before, so the counter takes it back; it stays counted so
+	 * clicking again adds nothing.
 	 */
 	private fun onChestSearched() {
 		if (!module.enabled || lastCounted == null) return
@@ -668,13 +663,13 @@ object Secrets {
 		if (guessRoom === DungeonMap.currentRoom() && guessCount > 0) guessCount--
 	}
 
-	/** Hypixel says so in chat, and the box turns to say it too. Odin's idea. */
+	/** Hypixel says it's locked, and the box turns red. Odin's idea. */
 	@JvmStatic
 	fun onChestLocked() {
 		if (!module.enabled) return
 		lastMarked?.let { taken[it]?.locked = true }
-		// A locked chest was not a secret taken, so the counter takes it back,
-		// and may count it once it is opened with a key.
+		// A locked chest wasn't a secret taken, so the counter takes it back until it's opened with
+		// a key.
 		if (lastCounted != null && lastCounted == lastMarked) {
 			counted.remove(lastCounted)
 			lastCounted = null
@@ -683,6 +678,7 @@ object Secrets {
 	}
 
 	fun tick() {
+		tickCloseOnMove()
 		if (taken.isEmpty()) return
 		val cutoff = System.currentTimeMillis() - highlightTime.value.toLong()
 		taken.entries.removeIf { it.value.at < cutoff }
@@ -712,17 +708,13 @@ object Secrets {
 				fill = style != OUTLINE,
 				phase = clickedPhase.value,
 				lineWidth = 2f,
-				// The block's own shape, which already reflects whatever the
-				// hitbox switches above have done to it: a lever boxed as a
-				// full block when its hitbox is off is a lie about where it is.
+				// The block's own shape, which already reflects the hitbox settings.
 				fullBlock = false,
 			)
 		}
 	}
 
-	// ---- Sound -----------------------------------------------------------
-
-	/** The sound chosen, or null when Custom holds no sound id. */
+	/** The chosen sound, or null when Custom holds no id. */
 	private fun selectedSound(): SoundEvent? =
 		if (sound.selected == SoundChoices.CUSTOM) SoundChoices.custom(customSound.value)
 		else soundOptions[sound.selectedIndex.coerceIn(soundOptions.indices)].second

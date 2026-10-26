@@ -2,24 +2,17 @@ package imicro.cryptic.feature
 
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.Restriction
+import imicro.cryptic.gui.Restrictions
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import net.minecraft.client.Minecraft
 
 /**
- * The handful of things the camera does that are worth taking back.
- *
- * Ported from NoammAddons (CC0, Copyright (c) Noamm9), minus blindness and
- * nausea, which belong to No Debuff. What is left is the view itself — where
- * the camera sits, how wide it sees, and the overlays painted over it — plus
- * full bright, which used to be a module of its own and is one line of state
- * and a toggle.
- *
- * Nothing here is sent anywhere. Every one of these changes what this client
- * draws and nothing else, which is why the sneak fix is a fix rather than a
- * trick: the server told the client to crouch, and the client stops believing
- * it while going on crouching whenever the player actually does.
+ * Camera tweaks: where it sits, how wide it sees, the overlays over it, and full bright.
+ * Client-side only; the sneak fix just stops believing the server's crouch flag. Ported from
+ * NoammAddons (blindness and nausea are in No Debuff).
  */
 object CameraTweaks {
 	private val viewSection = SectionModuleSetting("view_section", "View")
@@ -33,10 +26,8 @@ object CameraTweaks {
 	)
 
 	/**
-	 * True while the extracted lightmap already holds Cryptic's values.
-	 *
-	 * A fully lit lightmap never changes, so the texture is only rebuilt on the
-	 * frames where the setting is switched on or off.
+	 * True while the lightmap already holds Cryptic's values, so it's only rebuilt when the setting
+	 * changes.
 	 */
 	@JvmField
 	var lightmapApplied = false
@@ -55,7 +46,8 @@ object CameraTweaks {
 	@JvmField
 	val noCameraClip = ToggleModuleSetting(
 		id = "no_camera_clip",
-		label = "No camera clip",
+		label = "Allow camera clipping",
+		restriction = Restriction.CHEAT,
 		defaultValue = false,
 		description = "Stops the third-person camera being pushed forward by walls.",
 	)
@@ -63,6 +55,7 @@ object CameraTweaks {
 	@JvmField
 	val customDistance = ToggleModuleSetting(
 		id = "custom_distance",
+		restriction = Restriction.SEMI_LEGIT,
 		label = "Custom camera distance",
 		defaultValue = false,
 	)
@@ -78,11 +71,12 @@ object CameraTweaks {
 		visibleIf = { customDistance.value },
 	)
 
-	private val fovSection = SectionModuleSetting("fov_section", "Field of view")
+	private val fovSection = SectionModuleSetting("fov_section", "Field of view", visibleIf = { Restrictions.allows(Restriction.SEMI_LEGIT) })
 
 	@JvmField
 	val customFov = ToggleModuleSetting(
 		id = "custom_fov",
+		restriction = Restriction.SEMI_LEGIT,
 		label = "Custom FOV",
 		defaultValue = false,
 		description = "Sets a field of view past the slider's limits.",
@@ -167,7 +161,6 @@ object CameraTweaks {
 	@JvmStatic
 	fun ignoresWalls(): Boolean = module.enabled && noCameraClip.value
 
-	/** The distance the camera should sit at, or null to leave the game's own. */
 	@JvmStatic
 	fun cameraDistance(): Double? =
 		if (module.enabled && customDistance.value) distance.value else null
@@ -187,13 +180,7 @@ object CameraTweaks {
 	@JvmStatic
 	fun fixesRidingInput(): Boolean = module.enabled && ridingInputFix.value
 
-	/**
-	 * How much wider than the settings screen's own the view should be.
-	 *
-	 * A ratio rather than an angle, because the number the game has by the time
-	 * it asks has already been through everything else that touches it — a zoom
-	 * most of all. Scaling it keeps those working; replacing it would not.
-	 */
+	/** A ratio on the game's own FOV, so zoom and anything else touching it keep working. */
 	@JvmStatic
 	fun fovRatio(): Float {
 		if (!module.enabled || !customFov.value) return 1f

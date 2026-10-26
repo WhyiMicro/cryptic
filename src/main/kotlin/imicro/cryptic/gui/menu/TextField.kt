@@ -10,14 +10,9 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * The editing behind every box in the menu that takes typing: the search, a
- * text setting, a number beside a slider, a colour's hex code.
- *
- * It does what a text box anywhere else does: a caret that moves with the
- * arrows, Home and End; a selection made with Shift, with Ctrl+A, or by
- * dragging the pointer across it, which typing replaces; Ctrl+C, X and V;
- * Ctrl with the arrows or Backspace working a word at a time. The text scrolls
- * sideways to keep the caret in view.
+ * The editing behind every text box in the menu: search, text settings, slider numbers, hex codes.
+ * Caret with arrows, Home and End; selection by Shift, Ctrl+A or dragging; Ctrl+C, X and V;
+ * Ctrl+arrows and Backspace by word. Scrolls sideways to keep the caret in view.
  */
 class TextField(private val maxLength: Int, private val accepts: (Int) -> Boolean = { it >= ' '.code }) {
 	private val content = StringBuilder()
@@ -27,11 +22,9 @@ class TextField(private val maxLength: Int, private val accepts: (Int) -> Boolea
 		private set
 	private var anchor = 0
 
-	/** How far the text is scrolled left to keep the caret in view, in design pixels. */
 	private var scrollX = 0f
 	private var blink = 0f
 
-	/** Where the text was last drawn, for turning a pointer position into a place in it. */
 	private var textX = 0f
 	private var size = 13f
 
@@ -58,8 +51,8 @@ class TextField(private val maxLength: Int, private val accepts: (Int) -> Boolea
 	}
 
 	/**
-	 * Lays the text out in [box] the way [draw] will, so a press can find its
-	 * place in a field before the field has been drawn as the active one.
+	 * Lays the text out in [box] as [draw] will, so a press can be placed before the field has been
+	 * drawn active.
 	 */
 	fun place(box: Box, textSize: Float, padding: Float = 12f, centered: Boolean = false) {
 		size = textSize
@@ -67,7 +60,7 @@ class TextField(private val maxLength: Int, private val accepts: (Int) -> Boolea
 		textX = if (centered && width <= box.w - padding * 2f) box.x + (box.w - width) / 2f else box.x + padding - scrollX
 	}
 
-	/** Puts the caret under the pointer; with [extend], drags the selection there instead. */
+	/** Puts the caret under the pointer; with [extend], moves the selection end there. */
 	fun pointAt(mx: Float, extend: Boolean = false) {
 		val local = mx - textX
 		var index = 0
@@ -82,7 +75,7 @@ class TextField(private val maxLength: Int, private val accepts: (Int) -> Boolea
 		blink = 0f
 	}
 
-	/** Handles a key; returns false for one that is not about editing text, such as Escape. */
+	/** Handles a key; false for keys that aren't editing, such as Escape. */
 	fun keyPressed(event: KeyEvent): Boolean {
 		val control = (event.modifiers() and GLFW.GLFW_MOD_CONTROL) != 0
 		val shift = (event.modifiers() and GLFW.GLFW_MOD_SHIFT) != 0
@@ -171,8 +164,8 @@ class TextField(private val maxLength: Int, private val accepts: (Int) -> Boolea
 	}
 
 	/**
-	 * Draws the text inside [box], with the selection behind it and the caret
-	 * while [focused]; [centered] for the short numbers beside a slider.
+	 * Draws the text in [box] with its selection and, while [focused], the caret. [centered] for
+	 * slider numbers.
 	 */
 	fun draw(
 		graphics: GuiGraphicsExtractor, box: Box, textSize: Float, color: Int, focused: Boolean,
@@ -189,7 +182,6 @@ class TextField(private val maxLength: Int, private val accepts: (Int) -> Boolea
 			scrollX = 0f
 			textX = box.x + (box.w - fullWidth) / 2f
 		} else {
-			// Scroll just far enough to keep the caret inside the box.
 			if (caretOffset - scrollX > room) scrollX = caretOffset - room
 			if (caretOffset - scrollX < 0f) scrollX = caretOffset
 			scrollX = scrollX.coerceIn(0f, max(0f, fullWidth - room))

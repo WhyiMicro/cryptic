@@ -13,16 +13,8 @@ import net.minecraft.client.gui.GuiGraphicsExtractor
 import java.util.Locale
 
 /**
- * Counts how long ago SkyBlock threw you out.
- *
- * Ported from NoammAddons (CC0, Copyright (c) Noamm9). Being kicked while
- * joining puts you in a lobby with a cooldown nobody tells you the length of,
- * and trying again too early simply kicks you again. A clock running from the
- * kick is the whole fix: you can see when it is worth another attempt instead
- * of guessing and being thrown out twice more.
- *
- * It clears itself once you are on SkyBlock again, and gives up after a minute
- * — by then the cooldown has long gone and the number is only clutter.
+ * Counts time since SkyBlock kicked you, so you know when a retry won't just kick you again. Clears
+ * once you're back on SkyBlock, and after a minute. Ported from NoammAddons.
  */
 object SbKick {
 	private const val KICK_PROBLEM = "There was a problem joining SkyBlock, try again in a moment!"
@@ -32,7 +24,7 @@ object SbKick {
 		"You were kicked while joining that server!",
 	)
 
-	/** How long the count stays up, and how long a successful join takes to trust. */
+	/** How long the count stays up, and how long a join must last to be trusted. */
 	private const val SHOW_MILLIS = 60_000L
 	private const val SETTLE_MILLIS = 10_000L
 
@@ -94,11 +86,8 @@ object SbKick {
 	}
 
 	/**
-	 * How long ago the kick was, or null while there is nothing to say.
-	 *
-	 * Getting back onto SkyBlock ends it, but not instantly: the lobby you land
-	 * in is SkyBlock too for a moment, so the count has to outlive that before a
-	 * join is believed.
+	 * Time since the kick, or null. The lobby you land in counts as SkyBlock briefly, so a join
+	 * must last before it ends the count.
 	 */
 	private fun sinceKick(): Long? {
 		if (!module.enabled || !counting) return null
@@ -129,7 +118,6 @@ object SbKick {
 			context.text(font, text(elapsed), 0, 0, textColor.argb)
 		}
 
-		/** There is no kick to show in the editor, and hopefully none to come. */
 		override fun renderExample(context: GuiGraphicsExtractor) {
 			context.text(font, EXAMPLE, 0, 0, textColor.argb)
 		}

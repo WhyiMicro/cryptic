@@ -40,6 +40,7 @@ import imicro.cryptic.feature.CarryManager
 import imicro.cryptic.feature.KeybindManager
 import imicro.cryptic.feature.AliasManager
 import imicro.cryptic.feature.SoundVolumes
+import imicro.cryptic.feature.LeapPreview
 import imicro.cryptic.feature.SmoothTeleport
 import imicro.cryptic.feature.UpdateChecker
 import imicro.cryptic.feature.CrosshairEditor
@@ -119,23 +120,34 @@ import imicro.cryptic.skyblock.SkyblockLocation
 import imicro.cryptic.slayer.VoidgloomBosses
 import imicro.cryptic.terminal.Terminals
 
-/** Client-only setup: key mappings and screens belong here, not in [Cryptic]. */
+/** Client-only setup: key mappings, commands, screens and ticks. */
 object CrypticClient : ClientModInitializer {
 	private val keyCategory = KeyMapping.Category.register(Cryptic.id("cryptic"))
-	/** How many finished carries `/cryptic carry history` shows without asking. */
 	private const val CARRY_HISTORY_LINES = 10
+
+	/** The short name for "/cryptic". */
+	private const val SHORT_COMMAND = "cc"
+
+	/**
+	 * Takes the server's own "/cc" out of its command tree, before Fabric adds the client commands
+	 * to it for completion, so only Cryptic's subcommands are suggested. Brigadier can't remove a
+	 * node, so its maps are edited. Client thread, from the commands packet.
+	 */
+	@JvmStatic
+	fun dropServerCommand(root: com.mojang.brigadier.tree.CommandNode<*>) {
+		runCatching {
+			for (name in listOf("children", "literals", "arguments")) {
+				val field = com.mojang.brigadier.tree.CommandNode::class.java.getDeclaredField(name).apply { isAccessible = true }
+				(field.get(root) as? MutableMap<*, *>)?.remove(SHORT_COMMAND)
+			}
+		}.onFailure { Cryptic.LOGGER.warn("Could not drop the server's /{}", SHORT_COMMAND, it) }
+	}
 
 	private var openGuiRequested = false
 	private var hudEditorRequested = false
 	private var termSimRequested = false
 
-	/**
-	 * Right shift out of the box, which almost nothing else in Minecraft wants.
-	 *
-	 * Only a fresh install sees this: once a key has been bound, Minecraft's own
-	 * options file is what remembers it, and rebinding through the controls
-	 * screen or the menu's own bind button overrides it for good.
-	 */
+	/** Right shift by default. Once rebound, Minecraft's options file keeps the key. */
 	val openGuiKey = KeyMappingHelper.registerKeyMapping(
 		KeyMapping(
 			"key.${Cryptic.MOD_ID}.open_gui",
@@ -146,12 +158,8 @@ object CrypticClient : ClientModInitializer {
 	)
 
 	/**
-	 * Unbound out of the box, unlike the menu's key.
-	 *
-	 * A zoom key is held rather than tapped, so it has to be a key the person
-	 * using it already has a spare thumb or finger on, and there is no answer to
-	 * that which is right for everybody. Binding C — the usual choice — would
-	 * also silently take the key from whatever else claimed it.
+	 * Unbound by default: a held zoom key depends on the player, and binding C would take it from
+	 * whatever else uses it.
 	 */
 	val zoomKey = KeyMappingHelper.registerKeyMapping(
 		KeyMapping(
@@ -162,13 +170,27 @@ object CrypticClient : ClientModInitializer {
 		),
 	)
 
-	/**
-	 * Unbound out of the box, for the same reason as the zoom key.
-	 *
-	 * Registered as KEYSYM only because something has to be the default for a
-	 * bind that has none. The menu will happily rebind it onto a mouse button,
-	 * which arrives through this same mapping system.
-	 */
+	/** Unbound by default, like the zoom key. */
+	val freelookKey = KeyMappingHelper.registerKeyMapping(
+		KeyMapping(
+			"key.${Cryptic.MOD_ID}.freelook",
+			InputConstants.Type.KEYSYM,
+			InputConstants.UNKNOWN.value,
+			keyCategory,
+		),
+	)
+
+	/** Unbound by default, like the zoom key. */
+	val freecamKey = KeyMappingHelper.registerKeyMapping(
+		KeyMapping(
+			"key.${Cryptic.MOD_ID}.freecam",
+			InputConstants.Type.KEYSYM,
+			InputConstants.UNKNOWN.value,
+			keyCategory,
+		),
+	)
+
+	/** Unbound by default, like the zoom key. The menu can rebind it to a mouse button. */
 	val autoClickerKey = KeyMappingHelper.registerKeyMapping(
 		KeyMapping(
 			"key.${Cryptic.MOD_ID}.auto_clicker",
@@ -179,11 +201,8 @@ object CrypticClient : ClientModInitializer {
 	)
 
 	/**
-	 * Unbound out of the box, like the other two.
-	 *
-	 * It is pressed over a slot in the inventory rather than in the world, so it
-	 * can safely share a key with something that only acts in the world — but
-	 * choosing which is not Cryptic's to decide.
+	 * Unbound by default. Pressed over an inventory slot, so it can share a key with something that
+	 * only acts in the world.
 	 */
 	val slotBindKey = KeyMappingHelper.registerKeyMapping(
 		KeyMapping(
@@ -194,12 +213,7 @@ object CrypticClient : ClientModInitializer {
 		),
 	)
 
-	/**
-	 * Unbound out of the box, like the others.
-	 *
-	 * It opens a window, so it wants a key that is free while both hands are on
-	 * the keyboard — and which one that is depends on the rest of the binds.
-	 */
+	/** Unbound by default. */
 	val carryManagerKey = KeyMappingHelper.registerKeyMapping(
 		KeyMapping(
 			"key.${Cryptic.MOD_ID}.carry_manager",
@@ -209,7 +223,7 @@ object CrypticClient : ClientModInitializer {
 		),
 	)
 
-	/** Unbound out of the box, for the same reason as the Carry Manager's. */
+	/** Unbound by default. */
 	val crosshairEditorKey = KeyMappingHelper.registerKeyMapping(
 		KeyMapping(
 			"key.${Cryptic.MOD_ID}.crosshair_editor",
@@ -220,14 +234,10 @@ object CrypticClient : ClientModInitializer {
 	)
 
 	override fun onInitializeClient() {
+		imicro.cryptic.feature.Toasts.initialize()
 		Hud.initialize()
-		// Every module registers before the profile is read. A HUD element that
-		// registers afterwards has its saved placement applied to a list it is
-		// not in yet, and the placement is dropped without a word - which sent
-		// the lag display back to the middle of the screen every session, and
-		// later the quiz timer and the mask timer, because those two were added
-		// below the line rather than above it. There is no line now: the config
-		// is read once everything has said what it owns.
+		// Every module registers before the profile is read; a HUD element registered later loses
+		// its saved placement.
 		DungeonMap.initialize()
 		DungeonScore.initialize()
 		DoorKeys.initialize()
@@ -236,10 +246,11 @@ object CrypticClient : ClientModInitializer {
 		RoomAlerts.initialize()
 		LagDetector.initialize()
 		SmartTickTimer.initialize()
+		imicro.cryptic.feature.F3Features.initialize()
 		SbKick.initialize()
 		DungeonRun.initialize()
-		// Before any module, so the room's secret count is read ahead of the
-		// Secrets counter taking it out of the action bar.
+		// Before any module, so the secret count is read before the Secrets counter strips it from
+		// the action bar.
 		RoomSecrets.initialize()
 		ClassNames.initialize()
 		Etherwarp.initialize()
@@ -261,6 +272,12 @@ object CrypticClient : ClientModInitializer {
 		F7Qol.initialize()
 		AutoGfs.initialize()
 		AutoRequeue.initialize()
+		imicro.cryptic.feature.ClassAbilities.initialize()
+		imicro.cryptic.feature.ItemProtection.initialize()
+		imicro.cryptic.feature.Mining.initialize()
+		imicro.cryptic.feature.Fishing.initialize()
+		imicro.cryptic.feature.Bazaar.initialize()
+		imicro.cryptic.feature.TooltipFeatures.initialize()
 		SpiritBear.initialize()
 		LividSolver.initialize()
 		PositionalMessages.initialize()
@@ -272,11 +289,23 @@ object CrypticClient : ClientModInitializer {
 		MageBeam.initialize()
 		NucleusQol.initialize()
 		CookieReminder.initialize()
+		imicro.cryptic.feature.ConfirmDisconnect.initialize()
+		imicro.cryptic.feature.ChatExtras.initialize()
+		imicro.cryptic.feature.WitherDragons.initialize()
+		imicro.cryptic.feature.Relics.initialize()
+		imicro.cryptic.feature.PartyFinder.initialize()
+		imicro.cryptic.feature.PartyBlacklist.initialize()
+		imicro.cryptic.feature.ItemOutline.touch()
+		imicro.cryptic.feature.CurrentChat.initialize()
+		imicro.cryptic.feature.ClientRestrictions.initialize()
+		imicro.cryptic.feature.PartyFinderPages.initialize()
 		DailyRewards.initialize()
-		// The new menu's shapes are drawn by pipelines registered before the shaders load.
+		// The menu's shape pipelines must be registered before shaders load.
 		imicro.cryptic.render.RoundRect.touch()
 		BlockOverlay.initialize()
 		CarryManager.initialize()
+		imicro.cryptic.feature.SlayerFeatures.initialize()
+		imicro.cryptic.feature.ChocolateFactory.initialize()
 		KeybindManager.initialize()
 		AliasManager.initialize()
 		SoundVolumes.initialize()
@@ -291,14 +320,12 @@ object CrypticClient : ClientModInitializer {
 		PuzzleHud.initialize()
 		DungeonWarpCooldown.initialize()
 		ILoveGlass.initialize()
-		// A new connection is a new server, and its ping and tick rate are its own.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> ServerStats.forget() }
 
-		// Last, so every element and setting above exists to be filled in.
+		// Last, so every element and setting exists to be filled in.
 		ConfigManager.initialize()
 
-		// Two subcommands big enough to live with their modules. Brigadier merges
-		// a second "cryptic" into the first, so these sit beside the rest.
+		// Two subcommands that live with their modules; Brigadier merges them into "cryptic".
 		ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
 			dispatcher.register(
 				ClientCommands.literal("cryptic")
@@ -312,8 +339,8 @@ object CrypticClient : ClientModInitializer {
 			dispatcher.register(
 				ClientCommands.literal("cryptic")
 					.executes {
-						// Opening immediately here races with ChatScreen closing after it submits
-						// the command. The end-of-tick handler below opens it safely instead.
+						// Opening now races with the chat screen closing, so the end-of-tick
+						// handler opens it.
 						openGuiRequested = true
 						1
 					}
@@ -347,14 +374,14 @@ object CrypticClient : ClientModInitializer {
 							}),
 					)
 					.then(
-						// Switches for looking at dungeon-only features outside a
-						// dungeon. They last until the game closes, on purpose.
+						// Switches for trying dungeon-only features outside a dungeon. They last
+						// until the game closes.
 						ClientCommands.literal("debug")
 							.then(imicro.cryptic.debug.ToastCommand.build())
 							.then(ClientCommands.literal("witheroutline").executes { context ->
 								val enabled = DebugOverrides.toggleOutlineEveryWither()
 								val note = if (!WitherOutline.active) {
-									" Turn Wither outline on in F7/M7 QOL to see it."
+									" Turn Wither outline on in F7/M7 Features to see it."
 								} else {
 									""
 								}
@@ -399,8 +426,6 @@ object CrypticClient : ClientModInitializer {
 								context.source.sendFeedback(
 									Component.literal("Leap announcement debug on: announcements are shown to you instead of sent."),
 								)
-								// One straight away, so the wording can be read
-								// back without a teammate to leap to.
 								SpiritLeapOverlay.simulateLeap(Minecraft.getInstance().player?.name?.string ?: "Steve")
 								1
 							})
@@ -484,17 +509,12 @@ object CrypticClient : ClientModInitializer {
 										},
 									),
 								)
-								// The pling too, so it can be heard without a
-								// teammate picking anything up.
 								DoorKeys.play()
 								1
 							})
 							.then(ClientCommands.literal("experiments").executes { context ->
-								// A switch rather than a question, because the
-								// table is a chest and a chest is a screen: chat
-								// cannot be typed into at any of the moments worth
-								// knowing about, so it has to watch instead of
-								// being asked afterwards.
+								// A switch rather than a readout: chat can't be typed into while
+								// the table's chest is open.
 								val watching = ExperimentDebug.toggle()
 								if (!watching) {
 									context.source.sendFeedback(
@@ -523,11 +543,8 @@ object CrypticClient : ClientModInitializer {
 								1
 							})
 							.then(ClientCommands.literal("terminals").executes { context ->
-								// Same reason as the experiment watch: a terminal
-								// is a chest, chat cannot be typed into behind one,
-								// and the simulator drives the same solver without
-								// reproducing the fault — so the difference is in
-								// what Hypixel sends, and that has to be recorded.
+								// A switch for the same reason: chat can't be typed into behind a
+								// terminal, and the simulator doesn't reproduce what Hypixel sends.
 								val watching = TerminalDebug.toggle()
 								context.source.sendFeedback(
 									Component.literal(
@@ -542,26 +559,20 @@ object CrypticClient : ClientModInitializer {
 								1
 							})
 							.then(ClientCommands.literal("pet").executes { context ->
-								// What Hypixel calls the pet following you, which
-								// is what the guardian reminder reads.
 								EquippedPet.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("carry").executes { context ->
-								// Which armour stands sit on a slayer boss, and in
-								// what order, is the one thing the carry tracker
-								// depends on that cannot be checked from outside a
-								// lobby with a boss in it.
+								// The stand offsets the carry tracker depends on can only be
+								// checked in a lobby with a boss.
 								VoidgloomBosses.describe(Minecraft.getInstance()).forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("location").executes { context ->
-								// Whether SkyBlock and the island are being read,
-								// which everything gated on them depends on.
 								SkyblockLocation.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
@@ -590,8 +601,8 @@ object CrypticClient : ClientModInitializer {
 									),
 							)
 							.then(
-								// The daily reward can only be claimed once a day, so the
-								// picker, the reminder and the day can all be tried here.
+								// The daily reward can only be claimed once a day, so the picker,
+								// reminder and day can be tried here.
 								ClientCommands.literal("reward")
 									.then(ClientCommands.literal("sample").executes {
 										DailyRewards.requestOpen(DailyRewards.sampleOffer())
@@ -610,7 +621,7 @@ object CrypticClient : ClientModInitializer {
 										),
 									)
 									.then(ClientCommands.literal("error").executes {
-										// A link that does not exist, to see the failure screen.
+										// A link that doesn't exist, to see the failure screen.
 										DailyRewards.openLink("CRYPTIC0")
 										1
 									})
@@ -633,40 +644,46 @@ object CrypticClient : ClientModInitializer {
 									},
 							)
 							.then(ClientCommands.literal("block").executes { context ->
-								// The block under the crosshair in full, barriers included.
 								imicro.cryptic.debug.BlockInfo.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
+							.then(ClientCommands.literal("tooltip").executes { context ->
+								context.source.sendFeedback(Component.literal(imicro.cryptic.feature.TooltipFeatures.startDump()))
+								1
+							})
+							.then(ClientCommands.literal("detector").executes { context ->
+								NucleusQol.describeDetector().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
 							.then(ClientCommands.literal("sounds").executes { context ->
-								// Which sound Hypixel plays for something can only be heard in a lobby.
 								imicro.cryptic.debug.SoundLog.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
+							.then(ClientCommands.literal("capes").executes { context ->
+								imicro.cryptic.feature.Capes.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
 							.then(ClientCommands.literal("barriers").executes { context ->
-								// Where a crystal's room of barriers is, in each part of
-								// the Hollows, can only be seen from inside a lobby.
 								NucleusQol.describeBarriers().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("crystals").executes { context ->
-								// How a crystal waiting to be picked up looks is
-								// only known from inside a lobby that has one.
 								NucleusQol.describeCrystals().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("timers").executes { context ->
-								// A timer that is not moving looks the same
-								// whether its chat line never came, the server's
-								// ping is not reaching the counter, or the run is
-								// not being read as a run.
 								SmartTickTimer.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
@@ -675,134 +692,124 @@ object CrypticClient : ClientModInitializer {
 							.then(BossTimings.timingCommand())
 							.then(BossTimings.bossLogCommand())
 							.then(ClientCommands.literal("cookie").executes { context ->
-								// The tab list's footer is the only place the
-								// cookie's remaining time is written down, and
-								// what Hypixel puts on which line of it can only
-								// be seen from inside SkyBlock.
 								BoosterCookie.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("mimic").executes { context ->
-								// Which mob Hypixel spawns for the mimic, and what
-								// it carries, is only knowable from inside a run.
 								Highlight.describeMimics().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("blaze").executes { context ->
-								// What every nametag in the room says, and what
-								// the solver reads out of it. The health is the
-								// whole puzzle, and no log ever shows a nametag.
 								BlazeSolver.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("beam").executes { context ->
-								// Whether a mage beam counted as a hit is a
-								// geometry question nothing on screen answers,
-								// and the mark being absent looks the same as
-								// the check never running.
 								MageBeam.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("highlight").executes { context ->
-								// Which entities Cryptic has decided to mark, and
-								// why. A box on something that is not a mob can
-								// be read off here rather than guessed at.
 								Highlight.describeHighlights().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("room").executes { context ->
-								// The room the player is in and the turn that was
-								// applied to it, which is what every puzzle
-								// solver's coordinates are measured from.
 								PuzzleSolver.describeRoom().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("devices").executes { context ->
-								// The names and positions Hypixel gives the
-								// stands behind every terminal, device and lever
-								// are the one thing about Goldor's tower that
-								// cannot be worked out from outside it.
 								Floor7Progress.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("lava").executes { context ->
-								// What lava is being drawn as once every mod
-								// that swaps fluid models has had its say, which
-								// is the one thing looking at the lava cannot
-								// tell you when it looks wrong.
 								LavaToWater.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("f7").executes { context ->
-								// Which Goldor section the Section Complete title
-								// thinks it is on, and what it is still waiting for.
 								F7Qol.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("waypoints").executes { context ->
-								// The room the waypoints are drawn in, which way it
-								// is turned, and how many there are to draw.
 								DungeonWaypoints.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
+							.then(ClientCommands.literal("mining").executes { context ->
+								imicro.cryptic.feature.Mining.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("fishing").executes { context ->
+								imicro.cryptic.feature.Fishing.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("bazaar").executes { context ->
+								imicro.cryptic.feature.Bazaar.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
 							.then(ClientCommands.literal("requeue").executes { context ->
-								// What Auto Requeue is waiting on, if anything.
 								AutoRequeue.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("leap").executes { context ->
-								// Who the leap menu puts in each corner, and where
-								// each face came from, for a menu showing the
-								// wrong heads.
 								SpiritLeapOverlay.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
+							.then(ClientCommands.literal("guilog").executes { context ->
+								context.source.sendFeedback(Component.literal("§8[Cryptic] §7" + imicro.cryptic.debug.GuiLog.toggle()))
+								1
+							})
+							.then(ClientCommands.literal("leap_overlay").executes { context ->
+								context.source.sendFeedback(Component.literal("§8[Cryptic] " + SpiritLeapOverlay.openDebug()))
+								1
+							})
+							.then(ClientCommands.literal("secret_sync").executes { context ->
+								imicro.cryptic.dungeon.SecretSync.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
 							.then(ClientCommands.literal("melody").executes { context ->
-								// Whether the melody relay is connected, and what
-								// it has heard from whom.
 								MelodyHud.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("inventory").executes { context ->
-								// The screen on display and the menu the player
-								// holds are two separate things, and an
-								// inventory that takes no clicks is the two of
-								// them disagreeing. Nothing on screen shows it.
 								InventoryWatch.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("terracotta").executes { context ->
-								// The real thing needs Sadan's room. With this
-								// on, a flower pot placed anywhere starts a
-								// timer, which is enough to see it drawn.
+								// The real thing needs Sadan's room; with this on, any flower pot
+								// starts a timer.
 								val anywhere = DebugOverrides.toggleTerracottaAnywhere()
 								context.source.sendFeedback(
 									Component.literal(
@@ -816,6 +823,19 @@ object CrypticClient : ClientModInitializer {
 								TerracottaTimer.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
+								1
+							})
+							.then(ClientCommands.literal("slayer").executes { context ->
+								val anywhere = DebugOverrides.toggleSlayerAnywhere()
+								context.source.sendFeedback(
+									Component.literal(
+										if (anywhere) {
+											"Slayer Features debug on: runs outside the End, on any stand named like a Voidgloom."
+										} else {
+											"Slayer Features debug off: back to the End only."
+										},
+									),
+								)
 								1
 							})
 							.then(ClientCommands.literal("party").executes { context ->
@@ -835,8 +855,6 @@ object CrypticClient : ClientModInitializer {
 								1
 							})
 							.then(ClientCommands.literal("partyinvite").executes { context ->
-								// An invite from nobody, so the notification
-								// and its two keys can be tried without one.
 								val note = if (!PartyFeatures.module.enabled) {
 									" Turn the Party Features module on to see it."
 								} else {
@@ -846,6 +864,23 @@ object CrypticClient : ClientModInitializer {
 									Component.literal("Showing a party invite. Turn on /cryptic debug party first to keep Y from sending anything.$note"),
 								)
 								PartyFeatures.simulateInvite("Steve")
+								1
+							})
+							.then(ClientCommands.literal("friendrequest").executes { context ->
+								val note = if (!PartyFeatures.module.enabled) {
+									" Turn the Party Features module on to see it."
+								} else {
+									""
+								}
+								context.source.sendFeedback(
+									Component.literal("Showing a friend request. Turn on /cryptic debug party first to keep Y and N from sending anything.$note"),
+								)
+								PartyFeatures.simulateFriendRequest("Steve")
+								1
+							})
+							.then(ClientCommands.literal("teleportlog").executes { context ->
+								imicro.cryptic.debug.TeleportLog.initialize()
+								context.source.sendFeedback(Component.literal(imicro.cryptic.debug.TeleportLog.toggle()))
 								1
 							})
 							.then(ClientCommands.literal("hudsample").executes { context ->
@@ -862,18 +897,12 @@ object CrypticClient : ClientModInitializer {
 								1
 							})
 							.then(ClientCommands.literal("scan").executes { context ->
-								// The world scan is invisible when it works and
-								// invisible when it does not, so it can say so.
 								DungeonFloor.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
 							})
 							.then(ClientCommands.literal("team").executes { context ->
-								// Who the map thinks each head is. The pairing is
-								// by position — the first marker belongs to the
-								// first teammate in the tab list — so the only way
-								// to check it is to see both lists side by side.
 								DungeonTeam.describePairing().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
@@ -894,8 +923,6 @@ object CrypticClient : ClientModInitializer {
 											"Paul: ${if (MayorPaul.known) MayorPaul.active else "not looked up yet"}.",
 									),
 								)
-								// The line itself straight away, so the wording
-								// can be read back outside a run.
 								DungeonScore.preview(Minecraft.getInstance())
 								1
 							})
@@ -937,8 +964,6 @@ object CrypticClient : ClientModInitializer {
 							),
 					)
 					.then(
-						// What is actually installed, which is the first thing
-						// worth knowing when a fix is supposed to have shipped.
 						ClientCommands.literal("version").executes { context ->
 							val mod = FabricLoader.getInstance().getModContainer(Cryptic.MOD_ID).orElse(null)
 							val version = mod?.metadata?.version?.friendlyString ?: "unknown"
@@ -952,14 +977,12 @@ object CrypticClient : ClientModInitializer {
 					)
 					.then(
 						ClientCommands.literal("hud").executes {
-							// Same deferral as the menu: the chat screen is still
-							// closing while this runs.
+							// Deferred like the menu: chat is still closing.
 							hudEditorRequested = true
 							1
 						},
 					)
-					// The Settings tab's managers, which open whether or not their
-					// module is on. Deferred like the rest, for the chat screen.
+					// The Settings tab's managers, which open whether or not their module is on.
 					.then(ClientCommands.literal("keybinds").executes {
 						imicro.cryptic.gui.menu.MenuScreen.request(KeybindManager.module)
 						1
@@ -972,8 +995,8 @@ object CrypticClient : ClientModInitializer {
 						imicro.cryptic.gui.menu.MenuScreen.request(SoundVolumes.module)
 						1
 					})
+					.then(imicro.cryptic.feature.PartyBlacklist.command())
 					.then(ClientCommands.literal("reward").executes {
-						// The last daily reward read, reopened. Deferred past the chat screen.
 						DailyRewards.reopen()
 						1
 					})
@@ -984,8 +1007,6 @@ object CrypticClient : ClientModInitializer {
 					.then(
 						ClientCommands.literal("carry")
 							.executes {
-								// Same deferral again: the window cannot open
-								// while the chat screen is still closing.
 								imicro.cryptic.gui.menu.MenuScreen.request(CarryManager.module)
 								1
 							}
@@ -1019,8 +1040,7 @@ object CrypticClient : ClientModInitializer {
 									.then(
 										ClientCommands.argument("player", StringArgumentType.word())
 											.suggests { _, builder ->
-												// Whoever is in the lobby, which is
-												// usually who is asking.
+												// Whoever is in the lobby, usually who is asking.
 												SharedSuggestionProvider.suggest(
 													Minecraft.getInstance().connection
 														?.onlinePlayers
@@ -1083,7 +1103,6 @@ object CrypticClient : ClientModInitializer {
 					)
 					.then(
 						ClientCommands.literal("termsim").executes {
-							// Same deferral again, for the same reason.
 							termSimRequested = true
 							1
 						},
@@ -1122,27 +1141,33 @@ object CrypticClient : ClientModInitializer {
 			)
 		}
 
+		// "/cc" for everything "/cryptic" does. Registered after both "cryptic" callbacks so the
+		// node exists; a server's own /cc is dropped from completion when its commands arrive.
+		ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
+			val cryptic = dispatcher.root.getChild("cryptic") ?: return@register
+			dispatcher.register(ClientCommands.literal(SHORT_COMMAND).executes(cryptic.command).redirect(cryptic))
+		}
+
 		ClientTickEvents.END_CLIENT_TICK.register { client ->
-			// Which island, and whether it is SkyBlock at all, for the modules that
-			// must not act anywhere else.
 			SkyblockLocation.tick(
 				client,
-				SlotBinds.module.enabled || NucleusQol.module.enabled || CarryManager.module.enabled ||
-					LoadoutManager.needsSkyblock ||
+				SlotBinds.module.enabled || NucleusQol.module.enabled || CarryManager.module.enabled || imicro.cryptic.feature.SlayerFeatures.needsSkyblock || imicro.cryptic.feature.ChocolateFactory.needsSkyblock ||
+					LoadoutManager.needsSkyblock || imicro.cryptic.feature.ItemProtection.module.enabled ||
+					imicro.cryptic.feature.Mining.needsSkyblock || RenderOptimizer.needsSkyblock || imicro.cryptic.feature.Fishing.needsSkyblock || imicro.cryptic.feature.Bazaar.needsSkyblock || imicro.cryptic.feature.TooltipFeatures.needsSkyblock ||
 					KeybindManager.needsSkyblock ||
 					SmoothTeleport.predictive ||
 					DungeonWarpCooldown.module.enabled,
 			)
 			Zoom.tick(client)
-			// One tab-list scan feeds every module that needs to know the party.
+			// One tab-list scan feeds every module that needs the party.
 			DungeonTeam.tick(
 				client,
 				ClassColors.module.enabled || DungeonMap.module.enabled ||
 					TerminalOrder.needsTeamTracking || SpiritLeapOverlay.module.enabled ||
 					F7Qol.module.enabled || MelodyHud.wanted || GyroHelper.module.enabled ||
-					AutoGfs.module.enabled || AutoRequeue.module.enabled || KeybindManager.needsTeam,
+					AutoGfs.module.enabled || AutoRequeue.module.enabled || KeybindManager.needsTeam ||
+					imicro.cryptic.feature.ClassAbilities.module.enabled || imicro.cryptic.feature.PartyKick.needsTeam,
 			)
-			// Which floor the player is on only matters to modules limited to one.
 			DungeonLocation.tick(
 				client,
 				F7Qol.module.enabled || DungeonMap.module.enabled ||
@@ -1153,6 +1178,7 @@ object CrypticClient : ClientModInitializer {
 					HidePlayers.module.enabled || TerminalEsp.module.enabled ||
 					TerminalOrder.module.enabled || DeviceSolver.needsPhaseTracking ||
 					SmartTickTimer.module.enabled || Etherwarp.needsFloorTracking ||
+					imicro.cryptic.feature.F3Features.module.enabled ||
 					PuzzleSolver.module.enabled || BloodCamp.module.enabled ||
 					InvincibilityTimer.module.enabled ||
 					SpiritLeapOverlay.needsDungeon ||
@@ -1165,21 +1191,19 @@ object CrypticClient : ClientModInitializer {
 					SpiritBear.needsDungeon || LividSolver.needsDungeon ||
 					PositionalMessages.needsDungeon || DungeonWaypoints.needsDungeon ||
 					BossWaypoints.needsDungeon || NoItemPlace.needsDungeon || CroesusHelper.module.enabled ||
-					(SlotBinds.module.enabled && SlotBinds.dungeonsOnly.value),
+					(SlotBinds.module.enabled && SlotBinds.dungeonsOnly.value) || imicro.cryptic.feature.WitherDragons.module.enabled ||
+					imicro.cryptic.feature.Relics.module.enabled || imicro.cryptic.feature.ClassAbilities.module.enabled ||
+					imicro.cryptic.feature.ItemProtection.module.enabled,
 			)
-			// Which part of Goldor's tower the player is in, for the modules
-			// whose devices and terminals repeat in every quarter of it.
 			Floor7.tick(
 				client,
 				TerminalEsp.module.enabled || TerminalOrder.module.enabled ||
 					DeviceSolver.needsPhaseTracking || F7Qol.module.enabled || MelodyHud.wanted ||
 					NoItemPlace.module.enabled ||
-					SpiritLeapOverlay.needsFloor7 || ILoveGlass.needsPhase || KeybindManager.needsPhase || SmoothTeleport.predictive,
+					SpiritLeapOverlay.needsFloor7 || ILoveGlass.needsPhase || KeybindManager.needsPhase || SmoothTeleport.predictive ||
+						imicro.cryptic.feature.WitherDragons.needsPhase || imicro.cryptic.feature.Relics.needsPhase,
 			)
-			// What the section has already had done to it, which only matters
-			// to whoever is drawing labels over the things still to do.
 			Floor7Progress.tick(client, TerminalOrder.needsProgressTracking)
-			// The score's ingredients are read once and shared, map included.
 			DungeonStats.tick(
 				client,
 				DungeonMap.module.enabled || RoomAlerts.module.enabled || SmartTickTimer.module.enabled ||
@@ -1199,7 +1223,6 @@ object CrypticClient : ClientModInitializer {
 			MelodyHud.tick()
 			DoorKeys.tick(client)
 			NoDebuff.tick(client)
-			// Which of the four withers is up only matters while they are colored apart.
 			DungeonBoss.tick(client, WitherOutline.needsBossTracking)
 			// Escape closes a terminal without the server saying so.
 			Terminals.tick(client)
@@ -1209,12 +1232,18 @@ object CrypticClient : ClientModInitializer {
 			Highlight.tick(client)
 			Secrets.tick()
 			SlotBinds.tick(client)
+			LeapPreview.tick()
+			imicro.cryptic.feature.ChatExtras.tick()
+			imicro.cryptic.feature.Relics.tick()
+			imicro.cryptic.debug.GuiLog.tick()
+			imicro.cryptic.feature.PartyFinderPages.tick()
 			CookieReminder.tick(client)
 			TimeChanger.tick(client)
 			LavaToWater.tick(client)
 			DoorFix.tick(client)
 			CarryManager.tick(client)
-			// A manager asked for by command or key opens the menu on its page.
+			imicro.cryptic.feature.SlayerFeatures.tick(client)
+			imicro.cryptic.feature.ChocolateFactory.tick(client)
 			imicro.cryptic.gui.menu.MenuScreen.openIfRequested(client)
 			AliasManager.tick(client)
 			WitherCloakEffect.tick(client)
@@ -1225,14 +1254,25 @@ object CrypticClient : ClientModInitializer {
 			ILoveGlass.tick(client)
 			AutoGfs.tick(client)
 			AutoRequeue.tick(client)
+			imicro.cryptic.feature.ClassAbilities.tick(client)
+			imicro.cryptic.feature.ItemProtection.tick(client)
+			imicro.cryptic.feature.Mining.tick(client)
+			imicro.cryptic.feature.Fishing.tick(client)
+			imicro.cryptic.feature.Bazaar.tick(client)
+			imicro.cryptic.feature.TooltipFeatures.tick()
+			imicro.cryptic.feature.QueueScreen.tick(client)
+			imicro.cryptic.feature.PartyKick.tick()
+			imicro.cryptic.feature.Freelook.tick(client)
+			imicro.cryptic.feature.Freecam.tick(client)
+			imicro.cryptic.feature.Capes.tick()
+			imicro.cryptic.feature.ItemOutline.tick(client)
 			LividSolver.tick(client)
 			PositionalMessages.tick(client)
 			DungeonWaypoints.tick(client)
 			BossWaypoints.tick(client)
-			// Asks the server how far away it is, but only while something is
-			// showing the answer.
+			// Asks for the ping only while something shows it.
 			ServerStats.tick(client)
-			// Last, so it sees the menus as every module above has left them.
+			// Last, so it sees the menus as every module left them.
 			InventoryWatch.tick(client)
 
 			while (carryManagerKey.consumeClick()) {

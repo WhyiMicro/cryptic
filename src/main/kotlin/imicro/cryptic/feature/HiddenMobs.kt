@@ -15,19 +15,12 @@ import net.minecraft.world.entity.monster.EnderMan
 import net.minecraft.world.entity.monster.Giant
 
 /**
- * Un-hides the dungeon mobs Hypixel spawns invisible.
- *
- * Ported from NoammAddons, where it sits behind their cheat flag rather than
- * in the ordinary build — worth knowing, since it does show you something the
- * server chose not to draw. What it does not do is invent anything: the
- * entities are already in the client's world, standing where they stand, with
- * only their invisible flag set.
- *
- * A Fel wedged behind a single block is otherwise found by walking into it,
- * and a Shadow Assassin that has blinked out is found by being hit.
+ * Un-hides the dungeon mobs Hypixel spawns invisible (Fels behind a block, blinked Shadow
+ * Assassins). The entities are already in the world; only their invisible flag is cleared. In
+ * NoammAddons this sits behind their cheat flag, since it shows what the server chose not to draw.
  */
 object HiddenMobs {
-	/** The name Hypixel gives its Fels, which is also what turns them upside down. */
+	/** Hypixel names its Fels Dinnerbone, which also turns them upside down. */
 	private const val FEL_NAME = "Dinnerbone"
 
 	private const val SHADOW_ASSASSIN = "Shadow Assassin"
@@ -59,17 +52,13 @@ object HiddenMobs {
 	private val highlightSection = SectionModuleSetting("highlight_section", "Highlight")
 
 	/**
-	 * Boxing the two lives here rather than with the other highlights, because
-	 * revealing a mob and marking it are the same job: an invisible Fel that has
-	 * been un-hidden is still an enderman in a dark room, and a Shadow Assassin
-	 * that has blinked back in is still behind you.
-	 *
-	 * The drawing is still [Highlight]'s — it owns the render pass and there is
-	 * no sense in having two — so these are the settings it asks.
+	 * Boxing lives here too, since revealing a mob and marking it go together; [Highlight] does the
+	 * drawing and reads these settings.
 	 */
 	@JvmField
 	val highlightFels = ToggleModuleSetting(
 		id = "highlight_fels",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Highlight Fels",
 		description = "Boxes them as well as revealing them.",
 	)
@@ -96,6 +85,7 @@ object HiddenMobs {
 	@JvmField
 	val highlightShadowAssassins = ToggleModuleSetting(
 		id = "highlight_shadow_assassins",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Highlight Shadow Assassins",
 		description = "Boxes one after it blinks, which is the moment it is about to be behind you.",
 	)
@@ -119,10 +109,8 @@ object HiddenMobs {
 		visibleIf = { highlightShadowAssassins.value },
 	)
 
-	/** The name a Shadow Assassin's health tag carries, which is how it is known. */
 	const val SHADOW_ASSASSIN_NAME = SHADOW_ASSASSIN
 
-	/** Paired so the Highlight module can draw a box with both halves. */
 	val felColors = BoxColors(felColor, felOutlineColor)
 	val shadowAssassinColors = BoxColors(shadowAssassinColor, shadowAssassinOutlineColor)
 
@@ -138,6 +126,7 @@ object HiddenMobs {
 	@JvmField
 	val module = Module(
 		id = "hidden_mobs",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		name = "Hidden Mobs",
 		description = "Reveals invisible mobs",
 		category = ModuleCategory.DUNGEON,
@@ -146,39 +135,32 @@ object HiddenMobs {
 	)
 
 	/**
-	 * Clears the flag as the entity is about to be drawn.
-	 *
-	 * Asked from the render mixin rather than once a tick, because Hypixel
-	 * re-sends a mob's metadata whenever anything about it changes and every
-	 * one of those packets puts the invisibility back. Deciding at the moment
-	 * of drawing means a packet landing mid-frame cannot flash the mob away
-	 * again, and it costs an instance check only on entities already on screen.
+	 * Clears the flag as the entity is drawn. Hypixel resends metadata (and invisibility) on every
+	 * change, so deciding at draw time means a packet mid-frame can't flash the mob away.
 	 */
 	@JvmStatic
 	fun reveal(entity: Entity) {
-		// Asked of every entity every frame, so the dungeon check goes first:
-		// outside one, nothing else here needs asking.
+		// Asked per entity per frame, so the dungeon check goes first.
 		if (!module.enabled || !DungeonLocation.inDungeon || !entity.isInvisible) return
 		if (!fels.value && !shadowAssassins.value && !stealthyMobs.value) return
 		if (reveals(entity)) entity.isInvisible = false
 	}
 
 	private fun reveals(entity: Entity): Boolean {
-		val name = entity.displayName?.string?.trim()
+		val name = entity.displayName.string.trim()
 
 		if (fels.value && entity is EnderMan) {
 			return name == FEL_NAME
 		}
 
-		// A giant is only a mob when it is wearing something: the ones the
-		// blood room and the Watcher send are invisible and booted, while the
-		// bare ones are scenery Hypixel means to stay hidden.
+		// Only giants wearing something are mobs (the blood room's and the Watcher's); bare ones
+		// are scenery.
 		if (stealthyMobs.value && entity is Giant) {
 			return !entity.getItemBySlot(EquipmentSlot.FEET).isEmpty
 		}
 
 		if (entity is AbstractClientPlayer) {
-			if (shadowAssassins.value && name?.contains(SHADOW_ASSASSIN) == true) return true
+			if (shadowAssassins.value && name.contains(SHADOW_ASSASSIN)) return true
 			return stealthyMobs.value && name in WATCHER_MOBS
 		}
 
@@ -186,11 +168,8 @@ object HiddenMobs {
 	}
 
 	/**
-	 * The Watcher's roster, which arrives as invisible player entities.
-	 *
-	 * NoammAddons downloads this list; it is twenty-three names that change
-	 * when Hypixel adds a mob, so Cryptic keeps its own copy rather than a
-	 * download and a cache for the sake of half a kilobyte.
+	 * The Watcher's roster, which arrives as invisible player entities. NoammAddons downloads this
+	 * list; it's twenty-three names, so Cryptic keeps a copy.
 	 */
 	private val WATCHER_MOBS = setOf(
 		"Revoker", "Psycho", "Reaper", "Cannibal", "Mute", "Ooze", "Putrid", "Freak",

@@ -6,17 +6,8 @@ import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 
 /**
- * The lights device: six levers in Goldor's tower that all have to be flipped
- * on before the section will open.
- *
- * The device is Skyblocker's "Solve Lights On" — the six lever positions are
- * its (Skyblocker is LGPL-3.0, so its coordinates are used and none of its code
- * is); the drawing and the settings around them are Cryptic's own.
- *
- * There is nothing to solve: a lever is either on or it is not, and the only
- * hard part is that six levers on a dark wall are easy to miss one of. So the
- * ones still off are the ones marked, and each one stops being marked the
- * moment it is flicked.
+ * The lights device: six levers in Goldor's tower that must all be on. Marks the ones still off.
+ * Inspired by Skyblocker's "Solve Lights On"; the positions are listed as Skyblocker has them.
  */
 object LightsOn {
 	private val LEVERS = listOf(
@@ -28,13 +19,7 @@ object LightsOn {
 		BlockPos(58, 133, 142),
 	)
 
-	/**
-	 * The levers still switched off, which are the ones worth marking.
-	 *
-	 * A lever that is not there at all is skipped rather than counted as off:
-	 * the wall is out of render distance until somebody walks to it, and a
-	 * highlight on an air block would only point at nothing.
-	 */
+	/** The levers still off. A lever that isn't loaded yet is skipped rather than counted as off. */
 	fun unlit(): List<BlockPos> {
 		val level = Minecraft.getInstance().level ?: return emptyList()
 		return LEVERS.filter { pos ->

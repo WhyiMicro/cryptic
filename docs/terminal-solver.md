@@ -100,12 +100,12 @@ again from the chest. 600ms by default, worth raising on a bad connection.
 
 ## The other switches
 
-**Rubix mode** has three settings. **Fewest clicks** mixes in right clicks for
+**Rubix mode** has three settings. **Normal** mixes in right clicks for
 the panes that are quicker to walk backwards, and asks you to click them that
-way. **Left clicks only** sends every pane the long way round, so nothing needs
+way. **No minus** sends every pane the long way round, so nothing needs
 a right click — more clicks, one button. **One button** is both: the answer
 still takes the fewest clicks, and the right ones are sent for you whichever
-button you press.
+button you press. With Client Restrictions on Legit, No minus is held back.
 
 A pane may only be clicked the way the answer wants it, so a slip of the hand
 cannot lengthen the terminal — except in One button, where either button is

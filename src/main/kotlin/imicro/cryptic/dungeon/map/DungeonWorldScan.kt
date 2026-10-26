@@ -8,42 +8,29 @@ import net.minecraft.world.level.chunk.ChunkAccess
 import net.minecraft.world.level.chunk.status.ChunkStatus
 
 /**
- * Works out which named room is on each tile by looking at the world.
- *
- * Ported from dtMap (BSD 3-Clause, Copyright (c) 2026 rice.who); the full
- * licence is in `licenses/dtMap-LICENSE.txt`. Hypixel builds every Catacombs
- * room from a fixed schematic, so the column of blocks under a tile's middle is
- * a fingerprint of the room: hash it, look the hash up in `rooms.json`, and the
- * room has a name. Doors are read the same way, from the block sitting in the
- * gap between two tiles.
- *
- * This is the half of the map that does not need Hypixel to hand you anything,
- * which is why the floor can be drawn as soon as you walk in rather than when
- * the run starts.
+ * Names each tile's room from the world. Every room is built from a fixed schematic, so the block
+ * column under a tile's middle is a fingerprint: hash it and look it up in `rooms.json`. Doors are
+ * read from the block in the gap between tiles. This works before the run starts. Ported from
+ * dtMap.
  */
 object DungeonWorldScan {
-	/** The hash of a column of nothing, which is every tile off the floor. */
 	private const val AIR_CORE = 48696
 
-	/** Chests move between runs of the same room, so they cannot go in the hash. */
+	/** Chests move between runs of the same room, so they're left out of the hash. */
 	private val blacklisted = arrayOf(Blocks.CHEST, Blocks.TRAPPED_CHEST)
 
-	/** Tiles already settled, either named or known to be off the floor. */
 	private val resolved = BooleanArray(DungeonFloor.GRID * DungeonFloor.GRID)
 
-	/** How many passes have read a tile without recognising what is on it. */
 	private val attempts = IntArray(DungeonFloor.GRID * DungeonFloor.GRID)
 
-	/** After this many failures a tile is given up on as a room Cryptic lacks. */
+	/** After this many failures a tile is left to the map item. */
 	private const val MAX_ATTEMPTS = 5
 
-	/** How often an unfinished scan tries again without being asked to. */
 	private const val RETRY_INTERVAL_TICKS = 20
 
 	private var pending = false
 	private var ticksUntilRetry = 0
 
-	/** True once every tile has been decided, after which the scan idles. */
 	var complete = false
 		private set
 
@@ -55,19 +42,14 @@ object DungeonWorldScan {
 		complete = false
 	}
 
-	/** Chunks arriving is the usual reason there is more of the floor to read. */
 	fun requestScan() {
 		if (!complete) pending = true
 	}
 
 	/**
-	 * Reads whatever chunks have turned up since the last pass.
-	 *
-	 * Tiles whose chunk is still missing are left for a later pass, so this can
-	 * be called every tick and costs nothing once the floor is known. It also
-	 * retries on its own once a second: chunks can finish loading before the
-	 * scoreboard admits you are in a dungeon, and waiting only on chunk arrivals
-	 * would then mean waiting forever.
+	 * Reads whatever chunks have arrived. Missing ones wait for a later pass, so this is cheap
+	 * every tick once the floor is known. Also retries once a second, since chunks can load before
+	 * the sidebar says you're in a dungeon.
 	 */
 	fun scan(level: Level) {
 		if (complete) return
@@ -92,17 +74,15 @@ object DungeonWorldScan {
 
 				val core = coreOf(chunk, world)
 				if (core == null || core == AIR_CORE) {
-					// Nothing stands here: either the void beyond the floor or a
-					// tile this floor does not use.
+					// Nothing here: void beyond the floor, or an unused tile.
 					resolved[x * DungeonFloor.GRID + z] = true
 					continue
 				}
 
 				val data = RoomData.byCore(core)
 				if (data == null) {
-					// Either a room Cryptic has no entry for, or a chunk that has
-					// only just arrived and is still settling. Retry a few times
-					// before writing the tile off to the map item.
+					// A room Cryptic doesn't know, or a chunk still settling; retry a few times
+					// first.
 					if (++attempts[x * DungeonFloor.GRID + z] >= MAX_ATTEMPTS) {
 						resolved[x * DungeonFloor.GRID + z] = true
 					} else {
@@ -114,15 +94,13 @@ object DungeonWorldScan {
 				resolved[x * DungeonFloor.GRID + z] = true
 				changed = true
 
-				// Every tile of one room hashes to the same entry, so a room
-				// already found elsewhere on the grid grows rather than repeats.
+				// Every tile of one room hashes the same, so a room already found grows instead of
+				// repeating.
 				val siblings = DungeonFloor.rooms.firstOrNull { it.data === data }?.tiles.orEmpty()
 				val room = DungeonFloor.claim(siblings + tile, data.type, data.shape)
 				DungeonFloor.describe(room, data)
 
-				// The entrance is where you are standing while the party fills
-				// up, so it goes on the map as seen rather than waiting for a
-				// map item that only arrives when the run starts.
+				// The entrance goes on the map as seen, before the map item arrives.
 				if (room.type == DungeonRoom.Type.ENTRANCE && room.hidden) {
 					room.state = DungeonRoom.State.DISCOVERED
 				}
@@ -138,18 +116,12 @@ object DungeonWorldScan {
 		if (!outstanding) complete = true
 	}
 
-	/** The world position of the middle of a grid tile. */
 	private fun worldCenterOf(tile: Vec2i): Vec2i = Vec2i(
 		DungeonFloor.WORLD_TOP_LEFT + tile.x * DungeonFloor.BLOCKS_PER_TILE,
 		DungeonFloor.WORLD_TOP_LEFT + tile.z * DungeonFloor.BLOCKS_PER_TILE,
 	)
 
-	/**
-	 * The highest block in a column, or null when the column is off the map.
-	 *
-	 * Void air means the chunk is outside the dungeon, which is how the scan
-	 * tells the edge of a small floor from a room it has not seen yet.
-	 */
+	/** The highest block in a column, or null off the floor (void air is outside the dungeon). */
 	private fun topOf(chunk: ChunkAccess, pos: Vec2i): Int? {
 		for (y in 160 downTo 11) {
 			val block = chunk.getBlockState(BlockPos(pos.x and 15, y, pos.z and 15)).block
@@ -160,13 +132,9 @@ object DungeonWorldScan {
 	}
 
 	/**
-	 * Hashes one column of blocks into the number `rooms.json` is keyed by.
-	 *
-	 * The exact recipe matters far more than it looks: it has to match dtMap's
-	 * character for character, because the hashes in the asset were generated by
-	 * it. Each block contributes the first letter of its name, a run of bedrock
-	 * followed by air is padded out, and the height the column starts at is
-	 * written in front.
+	 * Hashes one block column into `rooms.json`'s key. Must match dtMap's recipe exactly, since the
+	 * asset's hashes came from it: each block adds its name's first letter, bedrock followed by air
+	 * is padded, and the starting height is written in front.
 	 */
 	private fun coreOf(chunk: ChunkAccess, pos: Vec2i): Int? {
 		val height = topOf(chunk, pos) ?: return null
@@ -197,12 +165,8 @@ object DungeonWorldScan {
 	}
 
 	/**
-	 * Finds the doors between the rooms the scan has placed.
-	 *
-	 * A doorway is a four-block gap with a distinctive block in it: coal for a
-	 * wither door, red terracotta for the blood door, anything else for a plain
-	 * one. Gaps inside a single large room are skipped, because both sides
-	 * belong to the same room.
+	 * Finds doors: a four-block gap with coal (wither), red terracotta (blood) or anything else
+	 * (normal). Gaps inside one large room are skipped.
 	 */
 	private fun scanDoors(level: Level) {
 		for (x in 0 until DungeonFloor.GRID) {
@@ -233,8 +197,7 @@ object DungeonWorldScan {
 		val chunk = level.getChunk(world.x shr 4, world.z shr 4)
 		val top = topOf(chunk, world) ?: return null
 
-		// A doorway's ceiling is one of two heights; anything else in the gap is
-		// solid ground between two halves of the same structure.
+		// A doorway's ceiling is at one of two heights; anything else is solid ground.
 		if (top != 73 && top != 81) return null
 
 		return when (level.getBlockState(BlockPos(world.x, 69, world.z)).block) {

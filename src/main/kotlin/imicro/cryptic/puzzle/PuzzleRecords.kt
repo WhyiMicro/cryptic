@@ -8,14 +8,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
-/**
- * The fastest each puzzle has ever been solved.
- *
- * The same idea as the terminal records, and a file of its own for the same
- * reason: a personal best is a record of something that happened rather than a
- * preference, and swapping config profiles should not swap away the times.
- * Odin keeps puzzle bests too (BSD 3-Clause, Copyright (c) 2025 odtheking).
- */
+/** Each puzzle's fastest solve. A file of its own, so switching profiles doesn't swap the times. */
 object PuzzleRecords {
 	private val logger = LoggerFactory.getLogger("cryptic/puzzles")
 
@@ -45,12 +38,7 @@ object PuzzleRecords {
 
 	fun best(name: String): Float? = load()[name]
 
-	/**
-	 * Records [seconds] for [name] and hands back the time it beat.
-	 *
-	 * The old best comes back whether or not it was beaten, so the caller can
-	 * say what the time was measured against either way.
-	 */
+	/** Records [seconds] for [name] and returns the old best, beaten or not. */
 	fun record(name: String, seconds: Float): Float? {
 		val previous = load()[name]
 		if (previous == null || seconds < previous) {

@@ -2,14 +2,7 @@ package imicro.cryptic.dungeon.map
 
 import imicro.cryptic.feature.DungeonMap
 
-/**
- * The palette a dungeon map is drawn in.
- *
- * The defaults are dtMap's (BSD 3-Clause, Copyright (c) 2026 rice.who), which
- * are in turn the colours Hypixel paints the map item with, so an untouched map
- * reads the same as the one in your hand. Each is a setting, because which room
- * type should shout at you is a matter of taste and of what you are running.
- */
+/** The dungeon map's palette. Defaults are dtMap's, which match Hypixel's map item. */
 object DungeonMapColors {
 	const val BLOOD = 0xFF0000
 	const val NORMAL = 0x6B3A11
@@ -47,7 +40,6 @@ object DungeonMapColors {
 		},
 	)
 
-	/** How much of its colour a room keeps before anyone has opened it. */
 	fun darken(argb: Int): Int {
 		val amount = (DungeonMap.darkenUnexplored.value / 100.0).toFloat()
 		val alpha = argb and 0xFF000000.toInt()

@@ -14,10 +14,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Two things that are set once a model has finished being posed: the classic
- * blocking arm, and Custom Scale's resized head.
- */
+/** Set after the model is posed: the classic blocking arm, and Custom Scale's head. */
 @Mixin(HumanoidModel.class)
 public abstract class HumanoidModelMixin<T extends HumanoidRenderState> {
     @Shadow public ModelPart rightArm;
@@ -25,12 +22,8 @@ public abstract class HumanoidModelMixin<T extends HumanoidRenderState> {
     @Shadow public ModelPart head;
 
     /**
-     * Resizes the head against the body, which is the whole of the chibi look.
-     *
-     * The tail of the pose, because a model part's scale is reset with the rest
-     * of its pose every frame — setting it anywhere earlier is setting it on
-     * something that is about to be overwritten. Adapted from Athen (BSD
-     * 3-Clause).
+     * Resizes the head for the chibi look, at the end of posing since part scales reset every
+     * frame. Adapted from Athen.
      */
     @Inject(
         method = "setupAnim(Lnet/minecraft/client/renderer/entity/state/HumanoidRenderState;)V",
@@ -43,11 +36,8 @@ public abstract class HumanoidModelMixin<T extends HumanoidRenderState> {
         if (scale == null) return;
         if (!CustomScale.appliesTo(CustomScale.entityOf(avatarState))) return;
 
-        // The head alone, and deliberately not the hat with it. The hat is the
-        // skin's outer head layer, and vanilla has already copied the head's
-        // pose onto it — scale included — by the time this runs, so setting it
-        // again applies the factor twice and the outer layer ends up floating
-        // a long way off the face. Athen scales only the head for this reason.
+        // The head alone: vanilla has already copied the head's scale onto the hat layer, so
+        // scaling the hat too doubles it.
         head.xScale = scale;
         head.yScale = scale;
         head.zScale = scale;

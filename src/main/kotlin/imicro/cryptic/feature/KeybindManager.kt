@@ -18,17 +18,11 @@ import java.util.Collections
 import java.util.IdentityHashMap
 
 /**
- * Keys that run a command or say something in chat.
- *
- * Modelled on Athen's Keybinds (BSD 3-Clause, Copyright (c) 2025-2026 Starred):
- * a binding is one or more keys or mouse buttons held together, the line it
- * sends, and when it is allowed to — outside a menu, inside a chest, on certain
- * islands, floors, classes or Floor 7 phases. A line starting with "/" is a
- * command, which goes through the client's own commands first, so a binding
- * can run `/cryptic` or an alias; anything else is said in chat.
- *
- * The bindings live in `config/cryptic/keybinds.json`, apart from the profile,
- * like the waypoint packs: they are the player's, not a look.
+ * Keys that run a command or say something in chat, modelled on Athen's Keybinds: one or more keys
+ * or mouse buttons held together, the line to send, and when it may fire (outside a menu, in a
+ * chest, on certain islands, floors, classes or F7 phases). Lines starting with "/" go through the
+ * client's commands first, so a binding can run `/cryptic` or an alias. Saved in
+ * `config/cryptic/keybinds.json`, outside profiles.
  */
 object KeybindManager {
 	enum class WorkIn(val title: String) {
@@ -37,10 +31,7 @@ object KeybindManager {
 		EVERYWHERE("Everywhere"),
 	}
 
-	/**
-	 * One binding. Every field has a default so Gson, which builds these
-	 * without calling a constructor, never leaves one null.
-	 */
+	/** One binding. Every field has a default, since Gson skips the constructor. */
 	data class Binding(
 		var keys: MutableList<Int> = mutableListOf(),
 		var command: String = "",
@@ -48,10 +39,8 @@ object KeybindManager {
 		var category: String = "",
 		var workIn: WorkIn = WorkIn.OUTSIDE_GUI,
 		var islands: MutableSet<String> = linkedSetOf(),
-		/** "E", "F1" to "F7", "M1" to "M7". */
 		var floors: MutableSet<String> = linkedSetOf(),
 		var classes: MutableSet<DungeonTeam.DungeonClass> = linkedSetOf(),
-		/** Floor 7's boss phases, 1 to 5. */
 		var phases: MutableSet<Int> = linkedSetOf(),
 	) {
 		fun copy(): Binding = Binding(
@@ -68,7 +57,7 @@ object KeybindManager {
 		val categories: MutableList<Category> = mutableListOf(),
 	)
 
-	/** Islands as the tab list names them, which is what [SkyblockLocation.area] holds. */
+	/** Islands as the tab list names them ([SkyblockLocation.area]). */
 	val ISLANDS = listOf(
 		"Private Island", "Garden", "Hub", "Dungeon Hub", "Catacombs", "The Park", "Spider's Den",
 		"The End", "Crimson Isle", "Kuudra", "Gold Mine", "Deep Caverns", "Dwarven Mines",
@@ -88,14 +77,14 @@ object KeybindManager {
 		id = "keybinds_manager",
 		name = "Keybinds Manager",
 		description = "Keys that run commands",
-		category = ModuleCategory.MISC,
+		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
 	)
 
-	/** Keys and buttons held right now, keys by GLFW code and buttons as [KeybindModuleSetting.mouse] makes them. */
+	/** Keys and buttons held now: keys by GLFW code, buttons as [KeybindModuleSetting.mouse] makes them. */
 	private val held = HashSet<Int>()
 
-	/** Bindings that have fired and wait for one of their keys to come up before they can again. */
+	/** Bindings that fired and wait for a key to come up. */
 	private val fired: MutableSet<Binding> = Collections.newSetFromMap(IdentityHashMap())
 
 	private val file get() = FabricLoader.getInstance().configDir.resolve("cryptic").resolve("keybinds.json")
@@ -109,22 +98,19 @@ object KeybindManager {
 		load()
 	}
 
-	/** Whether anything here has to know the island, the floor, the class or the phase. */
+	/** Whether anything needs the island, floor, class or phase. */
 	val needsSkyblock: Boolean get() = module.enabled && bindings.any { it.islands.isNotEmpty() }
 	val needsDungeon: Boolean get() = module.enabled && bindings.any { it.floors.isNotEmpty() || it.phases.isNotEmpty() || it.classes.isNotEmpty() }
 	val needsTeam: Boolean get() = module.enabled && bindings.any { it.classes.isNotEmpty() }
 	val needsPhase: Boolean get() = module.enabled && bindings.any { it.phases.isNotEmpty() }
 
-	// ---- Input ------------------------------------------------------------
-
-	/** A key going down or up anywhere, from the keyboard mixin. Never kept from the game. */
+	/** A key down or up anywhere, from the keyboard mixin. Never kept from the game. */
 	@JvmStatic
 	fun onKey(key: Int, pressed: Boolean) {
 		if (key == InputConstants.UNKNOWN.value) return
 		if (pressed) press(key) else release(key)
 	}
 
-	/** A mouse button going down or up, from the mouse mixin. */
 	@JvmStatic
 	fun onMouse(button: Int, pressed: Boolean) {
 		val code = KeybindModuleSetting.mouse(button)
@@ -134,7 +120,7 @@ object KeybindManager {
 	private fun press(code: Int) {
 		if (!held.add(code)) return
 		if (!module.enabled || bindings.isEmpty()) return
-		// Cryptic's menu is where keys are being bound and typed, not used.
+		// Cryptic's menu is where keys are bound and typed, not used.
 		if (Minecraft.getInstance().gui.screen() is imicro.cryptic.gui.menu.MenuScreen) return
 
 		val disabled = categories.filter { !it.enabled }.mapTo(HashSet()) { it.name }
@@ -147,8 +133,7 @@ object KeybindManager {
 				held.containsAll(binding.keys) &&
 				allowed(binding)
 		}
-		// Ctrl+K and K both held: only the one that asked for more keys, or K
-		// would go off every time Ctrl+K was meant.
+		// With Ctrl+K and K both held, only the one wanting more keys fires.
 		val chosen = matching.filter { binding ->
 			matching.none { other -> other !== binding && other.keys.size > binding.keys.size && other.keys.containsAll(binding.keys) }
 		}
@@ -163,13 +148,12 @@ object KeybindManager {
 		fired.removeIf { binding -> binding.keys.any { it !in held } }
 	}
 
-	/** Forgets what is held, for when the window loses the keys it would have heard come up. */
+	/** Forgets held keys, for when the window loses their release. */
 	fun releaseAll() {
 		held.clear()
 		fired.clear()
 	}
 
-	/** Whether [binding]'s conditions hold right now. */
 	private fun allowed(binding: Binding): Boolean {
 		val client = Minecraft.getInstance()
 		val screen = client.gui.screen()
@@ -178,8 +162,7 @@ object KeybindManager {
 		when (binding.workIn) {
 			WorkIn.OUTSIDE_GUI -> if (!outside) return false
 			WorkIn.GUI -> if (!inGui) return false
-			// Never while typing: chat, a sign, a search box are all screens
-			// that are not containers.
+			// Never while typing: chat, signs and search boxes are non-container screens.
 			WorkIn.EVERYWHERE -> if (!outside && !inGui) return false
 		}
 
@@ -204,8 +187,8 @@ object KeybindManager {
 	}
 
 	/**
-	 * Sends a binding's line: a command through the client's command dispatcher
-	 * and on to the server, anything else as chat.
+	 * Sends a binding's line: commands through the client dispatcher then the server, anything else
+	 * as chat.
 	 */
 	private fun send(line: String) {
 		val text = line.trim()
@@ -218,9 +201,6 @@ object KeybindManager {
 		}
 	}
 
-	// ---- Editing ------------------------------------------------------------
-
-	/** Adds [binding], or puts it in place of [replacing]. */
 	fun put(binding: Binding, replacing: Binding?) {
 		val index = replacing?.let { old -> bindings.indexOfFirst { it === old } } ?: -1
 		if (index >= 0) bindings[index] = binding else bindings += binding
@@ -234,7 +214,7 @@ object KeybindManager {
 	fun remove(binding: Binding) {
 		bindings.removeIf { it === binding }
 		fired.remove(binding)
-		// A category nothing is in any more goes with its last binding.
+		// A category goes with its last binding.
 		categories.removeIf { category -> bindings.none { it.category == category.name } }
 		save()
 	}
@@ -249,11 +229,9 @@ object KeybindManager {
 		save()
 	}
 
-	/** How a set of keys reads: "LEFT.CONTROL + K". */
+	/** "LEFT.CONTROL + K". */
 	fun describe(keys: List<Int>): String =
 		if (keys.isEmpty()) "None" else keys.joinToString(" + ") { KeybindModuleSetting.nameOf(it) }
-
-	// ---- Storage ------------------------------------------------------------
 
 	private fun load() {
 		runCatching {
@@ -261,10 +239,10 @@ object KeybindManager {
 			val saved = gson.fromJson(Files.readString(file), Saved::class.java) ?: return
 			bindings.clear()
 			categories.clear()
-			// Fields a hand-edited file left out come back as nulls through
-			// Gson, so each binding is rebuilt on its defaults.
+			// Fields a hand-edited file left out come back null, so bindings are rebuilt on their
+			// defaults.
 			saved.bindings.orEmpty().forEach { loaded ->
-				@Suppress("SENSELESS_COMPARISON", "UselessCallOnNotNull")
+				@Suppress("SENSELESS_COMPARISON", "UselessCallOnNotNull", "USELESS_ELVIS")
 				bindings += Binding(
 					keys = loaded.keys.orEmpty().toMutableList(),
 					command = loaded.command.orEmpty(),

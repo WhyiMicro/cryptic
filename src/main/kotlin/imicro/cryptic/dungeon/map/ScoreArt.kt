@@ -8,20 +8,10 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.level.material.MapColor
 
 /**
- * The picture Hypixel puts on the map when a run is over.
- *
- * The end of a run replaces the floor with the score screen: four categories,
- * a grade and a number. There is nothing to read out of it, so it is kept as
- * it arrives and drawn as it is.
- *
- * As one texture, not as rectangles. The first version of this drew the
- * picture as runs of one colour — a few thousand of them for a screen with
- * lettering on it — and every one was a quad, every frame, which cost most of
- * the frame rate at the end of a run. A map is a picture, so it is uploaded
- * once as a picture and drawn with one call after that.
+ * The score screen Hypixel draws on the map when a run ends, uploaded once as a texture and drawn
+ * in one call.
  */
 object ScoreArt {
-	/** One side of the map item, which is square. */
 	const val SIZE = 128
 
 	val TEXTURE: Identifier = Cryptic.id("map/score_art")
@@ -31,13 +21,7 @@ object ScoreArt {
 
 	private var texture: DynamicTexture? = null
 
-	/**
-	 * Takes the colours off a finished run's map and uploads them.
-	 *
-	 * The bytes are map colours rather than pixels — an index into Minecraft's
-	 * own palette, which is what a map item stores — so each one is looked up
-	 * before it goes into the image.
-	 */
+	/** Takes a finished run's map colours (palette indices) and uploads them. */
 	fun capture(colors: ByteArray) {
 		if (colors.size < SIZE * SIZE) return
 
@@ -45,8 +29,7 @@ object ScoreArt {
 		for (y in 0 until SIZE) {
 			for (x in 0 until SIZE) {
 				val packed = colors[y * SIZE + x].toInt() and 0xFF
-				// Nothing painted stays nothing: the map item is bare around
-				// its edges, and a black border is not what the HUD wants.
+				// Unpainted stays transparent, not black.
 				val argb = if (packed == 0) 0 else MapColor.getColorFromPackedId(packed)
 				image.setPixelABGR(x, y, toAbgr(argb))
 			}
@@ -68,7 +51,6 @@ object ScoreArt {
 		texture = null
 	}
 
-	/** Minecraft's map palette is ARGB; a native image wants the bytes the other way. */
 	private fun toAbgr(argb: Int): Int {
 		val alpha = argb ushr 24 and 0xFF
 		val red = argb ushr 16 and 0xFF

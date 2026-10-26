@@ -16,20 +16,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Draws Cryptic's through-the-wall geometry after the translucent terrain.
- *
- * Everything submitted during a frame is sorted into phases, and custom
- * geometry that blends lands in the one drawn <em>before</em> translucent
- * blocks. That is why a line across a sheet of ice, or a countdown seen
- * through glass, came out washed to half strength: the box was drawn, and then
- * the ice was drawn over the top of it.
- *
- * The phase after the terrain is where the game puts its own block outline, so
- * moving ours into it is not a new idea, only the same one applied to the
- * geometry a mod submits. Only the "through walls" pipelines are moved — those
- * are the ones asking to be seen whatever is in front of them. Depth-tested
- * geometry keeps vanilla's ordering, where being behind something means being
- * hidden by it.
+ * Draws Cryptic's through-walls geometry after translucent terrain. Blended custom geometry is
+ * normally drawn before translucent blocks, so ice or glass in front washed it out. Only the
+ * through-walls pipelines move; depth-tested geometry keeps vanilla's order.
  */
 @Mixin(SubmitNodeCollection.class)
 public abstract class SubmitNodeCollectionMixin {
@@ -47,11 +36,7 @@ public abstract class SubmitNodeCollectionMixin {
         info.cancel();
     }
 
-    /**
-     * The same for world text, which carries no render type to recognise it
-     * by — so the caller says so instead, for the one submit it is about to
-     * make. Both happen on the render thread, one immediately after the other.
-     */
+    /** The same for world text, which has no render type, so the caller flags it around the one submit. */
     @Inject(method = "submitText", at = @At("HEAD"), cancellable = true)
     private void cryptic$textOverTerrain(
         PoseStack poseStack,

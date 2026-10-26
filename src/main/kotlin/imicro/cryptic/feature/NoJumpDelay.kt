@@ -4,20 +4,14 @@ import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 
 /**
- * Lets the player jump again the moment they land.
- *
- * Modelled on mitfox's NoJumpDelay (1.8.9), which is a single line — zero the
- * cooldown every tick — and nothing of whose code survives the move: the field
- * it wrote to was `jumpTicks` on `EntityLivingBase`, and it is `noJumpDelay` on
- * `LivingEntity` now. The work is in [imicro.cryptic.mixin.LivingEntityMixin].
- *
- * Vanilla makes you wait ten ticks between jumps, which is half a second of
- * holding space doing nothing on every landing.
+ * Lets you jump again the moment you land, instead of vanilla's ten-tick wait. The idea of mitfox's
+ * NoJumpDelay; the work is in [imicro.cryptic.mixin.LivingEntityMixin].
  */
 object NoJumpDelay {
 	@JvmField
 	val module = Module(
 		id = "no_jump_delay",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		name = "No Jump Delay",
 		description = "Jump again as you land",
 		category = ModuleCategory.GENERAL,

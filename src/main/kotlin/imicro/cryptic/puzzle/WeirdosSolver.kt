@@ -13,48 +13,35 @@ import java.util.concurrent.CopyOnWriteArraySet
 import kotlin.math.floor
 
 /**
- * Which of the three chests the reward is in.
+ * Three Weirdos: which chest holds the reward. Lines are matched against two fixed sets (Odin's):
+ * ones only the truthful weirdo at the right chest says, and ones that rule the speaker out. Chest
+ * hiding and protection are NoammAddons'.
  *
- * The lines and what they mean are Odin's (BSD 3-Clause, Copyright (c) 2025
- * odtheking); how a chest is found, hidden and protected is NoammAddons' (CC0,
- * Noamm9). Each weirdo says one line, and the lines come from two fixed sets:
- * the ones only a truthful weirdo standing in front of the right chest can say,
- * and the ones that give nothing away.
- *
- * A chest is the block one step along from the weirdo who owns it, in the
- * direction the room's schematic calls east. No scan and no written-down
- * positions, which is what the first two attempts here got wrong — and the
- * rounding matters, because every Catacombs coordinate is negative and
- * truncating an entity's position towards zero puts the chest a block out in
- * both directions.
+ * A weirdo's chest is one step east of it in the room's coordinates. Positions are rounded, not
+ * truncated, since Catacombs coordinates are negative.
  */
 object WeirdosSolver {
 	private const val PUZZLE = "Three Weirdos"
 
-	/** The height every chest in the room stands at. */
 	private const val CHEST_Y = 69
 
 	private var correct: BlockPos? = null
 	private val spokeWrong = CopyOnWriteArraySet<BlockPos>()
 
-	/** Chests taken out of the world, to be put back when the room is left. */
 	private val hidden = CopyOnWriteArraySet<BlockPos>()
 
-	/** Every chest the room has, recorded before any of them are hidden. */
 	private val chests = CopyOnWriteArraySet<BlockPos>()
 
-	/** Whether the right chest has already been announced, so it is said once. */
 	private var announced = false
 
-	/** Every line this room has said and what was made of it, for the debug report. */
+	/** Every line heard and what was made of it, for the debug report. */
 	private val heard = java.util.concurrent.CopyOnWriteArrayList<String>()
 
 	fun onRoomEnter(room: DungeonRoom) {
-		// Anything hidden belonged to the room being left, so it goes back.
+		// Leaving the room puts hidden chests back.
 		if (room.data?.name != PUZZLE) reset()
 	}
 
-	/** An NPC line, already split into who said it and what they said. */
 	fun onNpcMessage(npc: String, message: String) {
 		val right = matches(solutions, message)
 		val wrong = !right && matches(wrongLines, message)
@@ -73,11 +60,8 @@ object WeirdosSolver {
 			return
 		}
 
-		// Every time, until all three are accounted for, and before anything is
-		// taken out of the world: what is taken out cannot be found again. The
-		// three stand far enough apart that a box around the first speaker can
-		// miss the last one, and a room where only two chests were ever found
-		// is a room where the third can never be worked out.
+		// Looked for until all three are found, before any are hidden, since a hidden chest can't
+		// be found again.
 		if (chests.size + hidden.size < WEIRDOS) {
 			chests.addAll(findChests(level, speaker.x, speaker.z))
 		}
@@ -95,24 +79,15 @@ object WeirdosSolver {
 	}
 
 	/**
-	 * Fills in what the three lines did not say outright.
-	 *
-	 * Only one weirdo can say a line that names the right chest, so two of the
-	 * three only ever rule themselves out — and a room where the right one
-	 * speaks first leaves the last weirdo with nothing said about its chest at
-	 * all. That chest is not unknown, though: the puzzle has three chests and
-	 * exactly one reward, so knowing the right one makes every other chest
-	 * wrong, and knowing two wrong ones makes the last one right. Working that
-	 * out here rather than per line is what stops a chest being left unmarked.
+	 * Fills in what the lines didn't say: with one reward among three chests, knowing the right one
+	 * makes the others wrong, and two wrong ones make the last right.
 	 */
 	private fun settle() {
 		val known = correct
 		if (known != null) {
 			spokeWrong.addAll(chests.filter { it != known })
 		} else if (chests.size == WEIRDOS && spokeWrong.size == WEIRDOS - 1) {
-			// Only with all three in hand. Two chests and one wrong one leaves
-			// the other looking like the answer, and it is only the answer if
-			// the chest that was never found is not.
+			// Only with all three chests known; otherwise the unfound one could be the answer.
 			correct = chests.firstOrNull { it !in spokeWrong }
 		}
 
@@ -125,11 +100,8 @@ object WeirdosSolver {
 	}
 
 	/**
-	 * Every chest belonging to the puzzle, found around the weirdo who spoke.
-	 *
-	 * The three stand along one wall, so a box around the first speaker that is
-	 * wide enough to reach the other two catches all three chests and nothing
-	 * else: the room has no other chest at this height.
+	 * The puzzle's chests, found in a box around the speaker wide enough for all three. No other
+	 * chest is at that height.
 	 */
 	private fun findChests(level: Level, x: Double, z: Double): List<BlockPos> {
 		val middle = BlockPos(floor(x).toInt(), CHEST_Y, floor(z).toInt())
@@ -144,20 +116,8 @@ object WeirdosSolver {
 	}
 
 	/**
-	 * The chest a weirdo is standing in front of.
-	 *
-	 * Odin's derivation, character for character: take where the weirdo stands,
-	 * read it in the room's own coordinates, step one east *there*, and read it
-	 * back out. Earlier versions here did the step in world coordinates with a
-	 * rotated offset, which is the same arithmetic only if this mod's idea of
-	 * which way the room is turned agrees with Odin's — and there is no reason
-	 * it has to, so the conversion is done the way the room itself does it and
-	 * the question never comes up.
-	 *
-	 * The nearest chest is kept as a last resort for a room whose coordinates
-	 * cannot be worked out at all. It is right whenever the three are spread
-	 * out and wrong when two stand close enough that one's chest is nearer the
-	 * other, which is why it is a last resort and not the rule.
+	 * The chest in front of a weirdo: step one east in room coordinates and convert back, as Odin
+	 * does. The nearest chest is a last resort for a room whose coordinates aren't known.
 	 */
 	private fun chestFor(x: Double, z: Double): BlockPos? {
 		val world = BlockPos(floor(x).toInt(), CHEST_Y, floor(z).toInt())
@@ -176,14 +136,7 @@ object WeirdosSolver {
 			.minByOrNull { (it.x - world.x) * (it.x - world.x) + (it.z - world.z) * (it.z - world.z) }
 	}
 
-	/**
-	 * What the solver has worked out, in words, for `/cryptic debug room`.
-	 *
-	 * This puzzle has been wrong in three different ways now, and each time the
-	 * only thing visible in game was that nothing was marked — which is what a
-	 * line that did not match, a chest in the wrong place and a room whose
-	 * coordinates were not ready all look like from the outside.
-	 */
+	/** For `/cryptic debug room`. */
 	fun describe(): List<String> {
 		fun where(pos: BlockPos?) = pos?.let { "${it.x}, ${it.y}, ${it.z}" } ?: "none"
 		val room = PuzzleRooms.named(PUZZLE)
@@ -199,14 +152,9 @@ object WeirdosSolver {
 	}
 
 	/**
-	 * Takes a wrong chest out of the world
-, on this client only.
-	 *
-	 * NoammAddons' approach, and the only one that worked: a chest is drawn
-	 * from its block entity and from the block it sits in, so refusing to draw
-	 * either one leaves the other. Setting the block to air removes both, and
-	 * it is put back when the room is left. Nothing is sent to the server,
-	 * which never learns the block is gone.
+	 * Removes a wrong chest from this client only, by setting the block to air (a chest is drawn
+	 * from both its block and block entity). Put back when the room is left; the server never
+	 * knows.
 	 */
 	private fun hideWrong(pos: BlockPos) {
 		if (!PuzzleSolver.weirdosHideWrong.value) return
@@ -216,7 +164,6 @@ object WeirdosSolver {
 		hidden.add(pos)
 	}
 
-	/** Puts back every chest this solver took out. */
 	private fun restoreHidden() {
 		val level = Minecraft.getInstance().level
 		if (level != null) {
@@ -237,22 +184,15 @@ object WeirdosSolver {
 		val style = PuzzleSolver.weirdosStyle.selectedIndex
 		correct?.let { PuzzleRender.block(context, it, PuzzleSolver.weirdosColor.argb, style, phase = false) }
 
-		// A chest taken out of the world needs no box, and a box around nothing
-		// is worse than no box at all. One that was meant to be hidden and was
-		// not still does, though - hiding it failed, and silently drawing
-		// neither is how a wrong chest ends up looking like an untouched one.
+		// Hidden chests need no box; one that should have been hidden but wasn't still gets one.
 		spokeWrong.filter { it !in hidden }.forEach {
 			PuzzleRender.block(context, it, PuzzleSolver.weirdosWrongColor.argb, style, phase = false)
 		}
 	}
 
 	/**
-	 * Whether a click on this block should be dropped.
-	 *
-	 * Opening a wrong chest fails the puzzle, and the three stand close enough
-	 * together for that to be an ordinary mis-click. Once the right one is
-	 * known every other chest in the room is wrong; before that, only the ones
-	 * that have given themselves away are stopped.
+	 * Whether to drop a click on this block: once the right chest is known every other one; before
+	 * that, the ones known to be wrong.
 	 */
 	@JvmStatic
 	fun blocksClick(pos: BlockPos): Boolean {
@@ -277,192 +217,172 @@ object WeirdosSolver {
 		chests.clear()
 		announced = false
 		heard.clear()
-		pendingClicks.clear()
-		spots = emptyList()
+		waiting.clear()
+		places = emptyList()
 	}
 
-	// ---- Instant clicks ----------------------------------------------------
+	// ---- Talking before they load ------------------------------------------
 	//
-	// Lumen's Instant Three Weirdos (AGPL-3.0, Lumen contributors). The three
-	// weirdos load in a moment after the room does, and each is talked to by
-	// right-clicking the "CLICK" stand above it. Their places are fixed, so a
-	// box is drawn on each until it is filled, and a right click on a box talks
-	// to that weirdo: at once if its stand is there, or the moment it arrives
-	// if not — up to a second and a half later. Talking to all three before
-	// they have finished loading is the time saved.
+	// The weirdos appear a moment after the room loads. Their spots are known from the start (one
+	// step west of each chest), so a box is drawn on each. Right-clicking a box talks to that
+	// weirdo now, or as soon as its "CLICK" stand appears. The box fills while waiting; a second
+	// click cancels.
 
-	/** Pending clicks: a weirdo's place, by index into [spots], and when it was clicked. */
-	private val pendingClicks = HashMap<Int, Long>()
+	private var places: List<BlockPos> = emptyList()
 
-	/** Where the three weirdos stand, worked out once per room. */
-	private var spots: List<BlockPos> = emptyList()
+	private val waiting = LinkedHashMap<BlockPos, Long>()
 
 	/**
-	 * Where the weirdos stand: one step west of each chest, in the room's own
-	 * coordinates, which is [chestFor] the other way round. The chests are
-	 * there before the weirdos are, so this works before anybody has loaded.
-	 *
-	 * Lumen's three chest places are tried first, and only taken if a chest is
-	 * really in each; otherwise the room is searched for its three.
+	 * Where the weirdos will stand: from the usual chest positions, or a search of the room if the
+	 * chests aren't there.
 	 */
-	private fun weirdoSpots(): List<BlockPos> {
-		if (spots.size == WEIRDOS) return spots
+	private fun standingPlaces(): List<BlockPos> {
+		if (places.size == WEIRDOS) return places
 		val room = PuzzleRooms.named(PUZZLE) ?: return emptyList()
 		val level = Minecraft.getInstance().level ?: return emptyList()
+		val isChest = { pos: BlockPos -> level.getBlockState(pos).block == Blocks.CHEST }
 
-		var found = CHEST_PLACES.mapNotNull { room.getRealCoords(it) }
-			.filter { level.getBlockState(it).block == Blocks.CHEST }
-		if (found.size != WEIRDOS) {
+		var chestsHere = USUAL_CHESTS.mapNotNull(room::getRealCoords).filter(isChest)
+		if (chestsHere.size != WEIRDOS) {
 			val middle = room.getRealCoords(BlockPos(15, CHEST_Y, 15)) ?: return emptyList()
-			found = findChests(level, middle.x + 0.5, middle.z + 0.5)
+			chestsHere = findChests(level, middle.x + 0.5, middle.z + 0.5)
 		}
-		if (found.size != WEIRDOS) return emptyList()
-
-		spots = found.mapNotNull { chest ->
-			room.getRelativeCoords(chest)?.let { room.getRealCoords(it.offset(-1, 0, 0)) }
-		}.takeIf { it.size == WEIRDOS } ?: emptyList()
-		return spots
+		places = chestsHere.mapNotNull { chest -> room.getRelativeCoords(chest)?.west()?.let(room::getRealCoords) }
+			.takeIf { it.size == WEIRDOS }.orEmpty()
+		return places
 	}
 
-	/** The box a weirdo stands in, a player's size. */
-	private fun standBox(spot: BlockPos) =
-		net.minecraft.world.phys.AABB(spot.x + 0.2, spot.y.toDouble(), spot.z + 0.2, spot.x + 0.8, spot.y + 1.8, spot.z + 0.8)
+	private fun bodyAt(place: BlockPos) =
+		net.minecraft.world.phys.AABB(place.x + 0.2, place.y.toDouble(), place.z + 0.2, place.x + 0.8, place.y + 1.8, place.z + 0.8)
 
-	private fun instantActive(): Boolean =
+	private fun talkingEarly(): Boolean =
 		PuzzleSolver.weirdosEnabled.value && PuzzleSolver.weirdosInstant.value && PuzzleRooms.inside(PUZZLE)
 
+	/** The spot under the crosshair within reach, the nearest if two are crossed. */
+	private fun aimedPlace(): BlockPos? {
+		val player = Minecraft.getInstance().player ?: return null
+		val from = player.eyePosition
+		val to = from.add(player.lookAngle.scale(REACH))
+		var best: BlockPos? = null
+		var bestDistance = Double.MAX_VALUE
+		for (place in standingPlaces()) {
+			val hit = bodyAt(place).clip(from, to).orElse(null) ?: continue
+			val distance = from.distanceToSqr(hit)
+			if (distance < bestDistance) {
+				best = place
+				bestDistance = distance
+			}
+		}
+		return best
+	}
+
 	/**
-	 * A right click, before the game does anything with it. True when it was
-	 * aimed at one of the three places, and so was taken here.
+	 * A right click before the game handles it. True when it hit one of the three spots and was
+	 * taken here.
 	 */
 	@JvmStatic
 	fun onUseItem(): Boolean {
-		if (!instantActive()) return false
-		val player = Minecraft.getInstance().player ?: return false
-		val places = weirdoSpots()
-		if (places.isEmpty()) return false
-
-		val eye = player.eyePosition
-		val end = eye.add(player.lookAngle.scale(REACH))
-		val slot = places.indices
-			.mapNotNull { index -> standBox(places[index]).clip(eye, end).orElse(null)?.let { index to eye.distanceToSqr(it) } }
-			.minByOrNull { it.second }?.first ?: return false
-
-		val stand = clickStand(places[slot])
-		if (stand != null) talkTo(stand) else pendingClicks[slot] = System.currentTimeMillis()
+		if (!talkingEarly()) return false
+		val place = aimedPlace() ?: return false
+		val stand = standFor(place)
+		when {
+			stand != null -> talkTo(stand)
+			waiting.remove(place) == null -> waiting[place] = System.currentTimeMillis()
+		}
 		return true
 	}
 
-	/** An entity's data arriving: the moment a stand gets its "CLICK" name. */
+	/** An entity's data arriving: when a stand gets its "CLICK" name. */
 	@JvmStatic
 	fun onEntityData(id: Int) {
-		if (pendingClicks.isEmpty() || !instantActive()) return
-		val level = Minecraft.getInstance().level ?: return
-		val stand = level.getEntity(id) as? ArmorStand ?: return
-		if (!isClickStand(stand)) return
-		val places = weirdoSpots()
-		val slot = places.indices.minByOrNull { stand.position().distanceToSqr(center(places[it])) } ?: return
-		if (stand.position().distanceToSqr(center(places[slot])) > MATCH_DISTANCE_SQ) return
-		if (pendingClicks.remove(slot) != null) talkTo(stand)
+		if (waiting.isEmpty() || !talkingEarly()) return
+		val stand = Minecraft.getInstance().level?.getEntity(id) as? ArmorStand ?: return
+		if (!isTalkStand(stand)) return
+		val place = waiting.keys.firstOrNull { standsAt(stand, it) } ?: return
+		waiting.remove(place)
+		talkTo(stand)
 	}
 
-	/** Each tick: clicks that have waited too long go, and any whose stand is now here are sent. */
+	/** Drops waits that ran out or whose weirdo arrived. */
 	fun tick() {
-		if (pendingClicks.isEmpty()) return
-		if (!instantActive()) {
-			pendingClicks.clear()
+		if (waiting.isEmpty()) return
+		if (!talkingEarly()) {
+			waiting.clear()
 			return
 		}
 		val now = System.currentTimeMillis()
-		pendingClicks.entries.removeIf { now - it.value > PENDING_MILLIS }
-		val places = weirdoSpots()
-		pendingClicks.keys.toList().forEach { slot ->
-			val stand = places.getOrNull(slot)?.let(::clickStand) ?: return@forEach
-			pendingClicks.remove(slot)
+		val iterator = waiting.entries.iterator()
+		while (iterator.hasNext()) {
+			val (place, clickedAt) = iterator.next()
+			if (now - clickedAt > ARRIVAL_WAIT_MILLIS) {
+				iterator.remove()
+				continue
+			}
+			val stand = standFor(place) ?: continue
+			iterator.remove()
 			talkTo(stand)
 		}
 	}
 
-	private fun center(spot: BlockPos) = net.minecraft.world.phys.Vec3(spot.x + 0.5, spot.y.toDouble(), spot.z + 0.5)
-
-	private fun isClickStand(stand: ArmorStand): Boolean =
+	private fun isTalkStand(stand: ArmorStand): Boolean =
 		stand.customName?.string?.contains("CLICK", ignoreCase = true) == true
 
-	/** The "CLICK" stand over a weirdo's place, if it has arrived. */
-	private fun clickStand(spot: BlockPos): ArmorStand? {
-		val level = Minecraft.getInstance().level ?: return null
-		val middle = center(spot)
-		return level.getEntitiesOfClass(ArmorStand::class.java, standBox(spot).inflate(1.0), ::isClickStand)
-			.map { it to it.position().distanceToSqr(middle) }
-			.filter { it.second <= MATCH_DISTANCE_SQ }
-			.minByOrNull { it.second }?.first
+	private fun standsAt(stand: ArmorStand, place: BlockPos): Boolean {
+		val dx = stand.x - (place.x + 0.5)
+		val dz = stand.z - (place.z + 0.5)
+		return dx * dx + dz * dz <= SAME_PLACE_SQ
 	}
 
-	/** Right-clicks [stand], the way the game would, if it is within reach. */
+	private fun standFor(place: BlockPos): ArmorStand? =
+		Minecraft.getInstance().level
+			?.getEntitiesOfClass(ArmorStand::class.java, bodyAt(place).inflate(1.0)) { isTalkStand(it) && standsAt(it, place) }
+			?.firstOrNull()
+
+	/** Right-clicks [stand] as the game would, if in reach. */
 	private fun talkTo(stand: ArmorStand) {
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return
 		val target = stand.boundingBox.center
-		if (player.eyePosition.distanceToSqr(target) > REACH * REACH) return
+		if (player.eyePosition.distanceTo(target) > REACH) return
 		client.gameMode?.interact(player, stand, net.minecraft.world.phys.EntityHitResult(stand, target), net.minecraft.world.InteractionHand.MAIN_HAND)
 	}
 
-	/** The placeholder boxes, on every place nobody is standing in yet. */
+	/** A box on each empty spot, filled while a click waits. */
 	private fun renderPlaceholders(context: LevelRenderContext) {
-		if (!instantActive()) return
+		if (!talkingEarly()) return
 		val client = Minecraft.getInstance()
 		val level = client.level ?: return
 		val player = client.player ?: return
-		weirdoSpots().forEach { spot ->
-			val box = standBox(spot)
-			val occupied = level.getEntitiesOfClass(net.minecraft.world.entity.player.Player::class.java, box.inflate(0.6)) { it !== player }.isNotEmpty()
-			if (!occupied) PuzzleRender.box(context, box, PuzzleSolver.weirdosPlaceholderColor.argb, PuzzleRender.STYLE_BOTH, phase = true)
+		for (place in standingPlaces()) {
+			val body = bodyAt(place)
+			val taken = level.getEntitiesOfClass(net.minecraft.world.entity.player.Player::class.java, body.inflate(0.6)) { it !== player }.isNotEmpty()
+			if (taken) continue
+			val style = if (place in waiting) PuzzleRender.STYLE_FILLED else PuzzleRender.STYLE_BOTH
+			PuzzleRender.box(context, body, PuzzleSolver.weirdosPlaceholderColor.argb, style, phase = true)
 		}
 	}
 
-	/** Lumen's chest places, in the room's own coordinates. */
-	private val CHEST_PLACES = listOf(BlockPos(14, CHEST_Y, 24), BlockPos(16, CHEST_Y, 25), BlockPos(18, CHEST_Y, 24))
+	/** The three chests in every Three Weirdos room, in room coordinates. */
+	private val USUAL_CHESTS = listOf(BlockPos(14, CHEST_Y, 24), BlockPos(16, CHEST_Y, 25), BlockPos(18, CHEST_Y, 24))
 
-	/** A right click's reach, and the reach a click is sent from. */
 	private const val REACH = 5.0
 
-	/** How long a click on a weirdo that has not loaded yet is held for it. */
-	private const val PENDING_MILLIS = 1500L
+	private const val ARRIVAL_WAIT_MILLIS = 4000L
 
-	/** How near its place a stand has to be to be that weirdo's. */
-	private const val MATCH_DISTANCE_SQ = 2.25
+	/** How far from a spot's middle its stand can be, squared, sideways only. */
+	private const val SAME_PLACE_SQ = 1.0
 
 
-	/**
-	 * Change the block, light it, do not tell the server.
-	 *
-	 * Two and sixteen: the first asks for the change to be drawn, the second
-	 * keeps it off the wire.
-	 */
-	/** How far from the weirdo who spoke the room's chests are looked for. */
+	/** Block update flags: draw the change, don't send it to the server. */
 	private const val ROOM_SEARCH = 14
 
-	/** How many of them there are, which is what the name says. */
 	private const val WEIRDOS = 3
 
 	private const val UPDATE_FLAGS = 19
 
 	/**
-	 * A line with everything that varies about it taken out.
-	 *
-	 * Colour codes first, and they are the whole story. Hypixel colours the
-	 * name of the weirdo a line is *about*, and writes that colour as a code in
-	 * the middle of the sentence — so every line naming somebody carried two
-	 * codes inside it and matched nothing, while the lines naming nobody matched
-	 * fine. That is exactly the shape of this puzzle's failures: never all three
-	 * weirdos, never the same two, and never anything visibly wrong.
-	 *
-	 * Then punctuation, case, spacing and the shape of the apostrophe, none of
-	 * which carries meaning and all of which Hypixel is inconsistent about. Odin
-	 * and NoammAddons get away with writing punctuation into their patterns only
-	 * because they leave the full stops unescaped, so each one quietly matches
-	 * any character — a bug that happens to make the pattern tolerant. Taking it
-	 * out of both sides does the same job on purpose.
+	 * A line with what varies removed: colour codes first (Hypixel colours weirdo names
+	 * mid-sentence, which broke matching), then punctuation, case, spacing and apostrophe style.
 	 */
 	private fun normalize(text: String): String = text
 		.replace(FORMATTING, "")
@@ -477,7 +397,6 @@ object WeirdosSolver {
 	private val PUNCTUATION = Regex("[.,!?;]")
 	private val WHITESPACE = Regex("\\s+")
 
-	/** A line of the riddle, with `%s` wherever a weirdo's name appears. */
 	private fun line(template: String): Regex =
 		Regex(normalize(template).split("%s").joinToString(".+") { Regex.escape(it) })
 
@@ -486,7 +405,6 @@ object WeirdosSolver {
 		return patterns.any { it.matches(normalized) }
 	}
 
-	/** Lines only the weirdo in front of the right chest can say. */
 	private val solutions = listOf(
 		line("The reward is not in my chest!"),
 		line("At least one of them is lying, and the reward is not in %s's chest."),
@@ -496,7 +414,6 @@ object WeirdosSolver {
 		line("Both of them are telling the truth. Also, %s has the reward in their chest."),
 	)
 
-	/** Lines that rule their speaker out. */
 	private val wrongLines = listOf(
 		line("One of us is telling the truth!"),
 		line("They are both telling the truth. The reward isn't in %s's chest."),

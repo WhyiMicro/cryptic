@@ -17,14 +17,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Grows the hitboxes of the blocks dungeon secrets hide behind.
- *
- * All four report a shape far smaller than the block they occupy, which is what
- * makes clicking one at a run unreliable. A full block is not always the right
- * answer though: a button keeps its depth so it cannot be clicked through the
- * wall it is stuck to, and a skull only grows if it is one of the two Hypixel
- * actually hides secrets in. Only the shape this client tests against changes;
- * the server decides whether the interaction lands.
+ * Grows the hitboxes of the blocks secrets hide behind, which are much smaller than their block. A
+ * button keeps its depth so it can't be clicked through the wall, and only the two skulls Hypixel
+ * uses grow. Client-side only; the server still decides.
  */
 public final class SecretHitboxMixins {
     private SecretHitboxMixins() {

@@ -12,54 +12,37 @@ import net.minecraft.world.item.TooltipFlag
 import org.lwjgl.glfw.GLFW
 
 /**
- * Works the Experimentation Table between games: picks them, stakes them,
- * renews them and re-opens the table.
+ * Works the Experimentation Table between games: picks the next game, its stake, renews, and
+ * reopens the table. Solving is [ExperimentTracker]'s job and clicking inside a game is
+ * [ExperimentSolver]'s.
  *
- * The solving is [ExperimentTracker]'s job and the clicking inside a game is
- * [ExperimentSolver]'s; this is only the part that gets from one game to the
- * next. Followed from RBDT V5's `AutoExperiments` (`V5-Client/V5`, ChatTriggers
- * for 1.8.9 — read, not ported), which is where every slot number and every
- * line of lore below came from.
- *
- * Those numbers *were* guesses from a mod nine versions old. They are not any
- * more: a dump taken off a real table confirmed every one of them — the games at
- * 22, 29 and 33, the renew button at 31, the bottle shop at 50, and the stake
- * buttons in the order they are listed here. The lore strings match too.
- *
- * What is still worth being careful about is that this menu spends things.
- * Buying experience is off until asked for, and anything unrecognised stops the
- * run rather than being clicked past, because the cost of guessing wrong here is
- * coins rather than a wasted click.
+ * Slot numbers and lore follow RBDT V5's `AutoExperiments` (read, not ported) and were confirmed
+ * against a real table. This menu spends things, so buying experience is off unless asked for, and
+ * anything unrecognised stops the run.
  */
 object ExperimentRunner {
-	/** The table's own menu: which game each button opens. */
+	/** The table's buttons for each game. */
 	private const val SLOT_SUPERPAIRS = 22
 	private const val SLOT_CHRONOMATRON = 29
 	private const val SLOT_RENEW = 31
 	private const val SLOT_ULTRASEQUENCER = 33
 	private const val SLOT_BOTTLE_MENU = 50
 
-	/**
-	 * Where the table reports each game as done. V5 reads completion from these
-	 * and clicks the buttons above, which are different slots — kept as it has
-	 * them, because a menu nobody here can open is not one to second-guess.
-	 */
+	/** Where the table reports each game as done (separate slots from the buttons, as V5 has them). */
 	private const val SLOT_CHRONOMATRON_STATUS = 21
 	private const val SLOT_ULTRASEQUENCER_STATUS = 23
 
-	/** The bottle shop, for buying the levels a stake needs. */
 	private const val SLOT_GRAND_BOTTLE = 12
 	private const val SLOT_TITANIC_BOTTLE = 14
 
-	/** Where Superpairs offers its winnings. */
 	private const val SLOT_REWARD = 13
 
-	/** Stake buttons, richest first, so the best affordable one is taken. */
+	/** Stake buttons, richest first. */
 	private val CHRONOMATRON_STAKES = listOf(24, 23, 22, 21, 20)
 	private val ULTRASEQUENCER_STAKES = listOf(23, 22, 21)
 	private val SUPERPAIRS_STAKES = listOf(32, 31, 30, 23, 22, 21)
 
-	/** The richest Chronomatron stake, which is the one that raises the target. */
+	/** The richest Chronomatron stake, which raises the target. */
 	private const val MAX_ENCHANTING_STAKE = 24
 
 	private const val LORE_LOCKED = "Enchanting level too low!"
@@ -76,20 +59,17 @@ object ExperimentRunner {
 	private val RENEWS_TODAY = Regex("""renewed\s*(\d+)\s*/\s*(\d+)\s*charges""", RegexOption.IGNORE_CASE)
 	private val OWN_LEVEL = Regex("""Your\s+Exp\s+Level:\s*(\d+)""", RegexOption.IGNORE_CASE)
 
-	/** How many renews this run has spent, against the slider's allowance. */
 	var renewsUsed = 0
 		private set
 
-	/** True once the richest Chronomatron stake was taken, which is worth more rounds. */
 	private var maxEnchanting = false
 
-	/** The level a stake wanted and could not have, or zero. */
+	/** The level a stake wanted and couldn't afford, or zero. */
 	private var buyingLevel = 0
 	private var boughtBottle = false
 
 	private var nextActionAt = 0L
 
-	/** Set when the table has nothing left to give, so nothing keeps clicking. */
 	var finished = false
 		private set
 
@@ -97,7 +77,6 @@ object ExperimentRunner {
 
 	private enum class ReopenStage { NONE, CLOSING, OPENING }
 
-	/** What the runner last decided, said as it happens while watching. */
 	var status: String = "idle"
 		private set(value) {
 			field = value
@@ -117,17 +96,9 @@ object ExperimentRunner {
 	}
 
 	/**
-	 * How many rounds the open game is worth playing.
-	 *
-	 * The two answers are the point of the **Play for** setting. Playing for
-	 * experience means going as deep as the game goes, because the levels are in
-	 * the later rounds. Playing for items means going no deeper than the chain
-	 * the add-ons ask for and spending what is left on Superpairs, which is the
-	 * only one of the three that pays in enchanted books — and every round past
-	 * that chain is a chance to lose a run that has already earned its keep.
-	 *
-	 * Each serum drunk takes a round off the chain, which is what that slider is
-	 * for, and is why it only matters in the items mode.
+	 * How many rounds the open game is worth. For experience: as deep as it goes. For items: only
+	 * the chain the add-ons need (minus a round per serum), then the rest goes to Superpairs, the
+	 * only game paying in books.
 	 */
 	fun targetRounds(handler: ExperimentHandler): Int {
 		val serums = ExperimentSolver.serums.value.toInt()
@@ -136,21 +107,13 @@ object ExperimentRunner {
 				if (ExperimentSolver.huntingItems) ((if (maxEnchanting) 12 else 9) - serums).coerceAtLeast(1) else 15
 			ExperimentRules.Game.ULTRASEQUENCER ->
 				if (ExperimentSolver.huntingItems) ((if (maxEnchanting) 9 else 7) - serums).coerceAtLeast(1) else 20
-			// Superpairs is played out: every pair is another chance at a book.
 			ExperimentRules.Game.SUPERPAIRS -> Int.MAX_VALUE
 		}
 	}
 
 	private var wasRunning = false
 
-	/**
-	 * The settings a decision to stop could have depended on.
-	 *
-	 * Every reason this gives up on is a reason that one of these could make
-	 * untrue — "Renews is set to 0" stops being a reason the moment it is set to
-	 * one. Toggling the whole module off and on to be asked again is not an
-	 * answer, so changing any of them is taken as being asked again.
-	 */
+	/** The settings a decision to stop depended on; changing any of them retries. */
 	private fun settingsFingerprint(): String =
 		"${ExperimentSolver.renews.value}|${ExperimentSolver.buyExperience.value}|" +
 			"${ExperimentSolver.focus.selectedIndex}|${ExperimentSolver.serums.value}|" +
@@ -159,11 +122,8 @@ object ExperimentRunner {
 	private var lastSettings = ""
 
 	/**
-	 * The last click sent, and the state of the menu when it went.
-	 *
-	 * Together these answer "has this click been tried against this exact menu
-	 * already", which is the question that stops the runner clicking a menu that
-	 * is not listening.
+	 * The last click and the menu state it was sent against, so the same click isn't resent to a
+	 * menu that hasn't answered.
 	 */
 	private var lastClickSlot = -1
 	private var lastClickRevision = -1
@@ -178,36 +138,16 @@ object ExperimentRunner {
 		lastClickAt = 0L
 	}
 
-	/**
-	 * True while the runner is the one closing the menu.
-	 *
-	 * Everything else that closes it is the player, and a player who shuts the
-	 * table has stopped wanting it worked — so the two have to be told apart.
-	 */
+	/** True while the runner itself is closing the menu, to tell it apart from the player closing it. */
 	private var closingSelf = false
 
-	/** The pet whose bonus these games are worth running with. */
 	private const val GUARDIAN = "Guardian"
 
-	/** Vanilla title timing, so the reminder looks like any other. */
 	private const val TITLE_FADE_TICKS = 5
 	private const val TITLE_STAY_TICKS = 50
 
-	/**
-	 * A menu opening, from [ExperimentTracker].
-	 *
-	 * Two things hang off it: a new menu is a click that worked, so the stuck
-	 * counter goes back to zero; and the table being opened by hand is the
-	 * player asking for another go, which is worth honouring for the same reason
-	 * a changed setting is.
-	 */
-	/**
-	 * The menu going away with nobody here having asked for it.
-	 *
-	 * Which is to say: the player shut it. Pressing escape on something working
-	 * on your behalf means stop, so it stops — and it says why, rather than
-	 * looking like it crashed.
-	 */
+	/** A menu opening: the last click worked, and opening the table by hand asks for another go. */
+	/** The player closed the menu, so the run stops and says why. */
 	fun onMenuClosed() {
 		if (closingSelf) {
 			closingSelf = false
@@ -229,8 +169,7 @@ object ExperimentRunner {
 	fun tick(client: Minecraft) {
 		val running = ExperimentSolver.module.enabled && ExperimentSolver.runTable.value
 
-		// Switching it back on is how a run that stopped itself is started again,
-		// so the renew count and the "finished" flag go with it.
+		// Switching it back on restarts a run that stopped itself.
 		if (running && !wasRunning) reset()
 		wasRunning = running
 
@@ -266,34 +205,24 @@ object ExperimentRunner {
 			title == "Superpairs Rewards" -> claimReward(client, items)
 			title == "Bottles of Enchanting" -> buyLevels(client, items)
 			title == "Experimentation Table" || title.endsWith("Stakes") -> decide(client, title, items)
-			// A game is open: the solver is playing it, and this only decides when
-			// enough rounds have been won to walk away with the reward.
+			// A game is open; the solver plays it and this only decides when to leave.
 			ExperimentTracker.current != null -> leaveWhenDone(client)
-			// Anything else is a menu with no rule for it, which is worth saying
-			// out loud — a title that has changed since 1.8.9 looks from the
-			// outside exactly like the runner doing nothing at all.
+			// Said out loud, since a menu with no rule looks the same as the runner doing nothing.
 			else -> ExperimentDebug.note("no rule for menu \"$title\", standing by")
 		}
 	}
 
-	/**
-	 * The table's own menu: renew if it needs it, otherwise take the first game
-	 * that is not finished.
-	 */
+	/** The table's menu: renew if needed, otherwise open the first unfinished game. */
 	private fun decide(client: Minecraft, title: String, items: List<ItemStack>) {
 		if (remindAboutGuardian(client)) return
 
 		val renewAt = renewSlot(items)
 		if (renewAt != null) {
 			val asked = ExperimentSolver.renews.value.toInt()
-			// The button itself keeps the real count — "You've renewed 1/3
-			// charges today!" — and it survives relogging, where a counter kept
-			// here does not. Whichever of the two allows less is the one to obey,
-			// so the slider can only ever ask for fewer than the game permits.
+			// The button's own count ("You've renewed 1/3 charges today!") survives relogging; obey
+			// whichever allows fewer.
 			val today = renewsToday(items.getOrNull(renewAt))
-			// What the slider still allows, not what it allows in total: leaving
-			// the renews already spent out of this let a run set to one renew keep
-			// renewing for as long as the day's charges lasted.
+			// What the slider still allows, after the renews already spent.
 			val left = asked - renewsUsed
 			val allowed = if (today != null) minOf(left, today.second - today.first) else left
 
@@ -322,8 +251,7 @@ object ExperimentRunner {
 			return
 		}
 
-		// A stake picker is the same menu with a different name, and the richest
-		// one that is not locked is the one worth taking.
+		// A stake picker: take the richest unlocked stake.
 		if (title.contains("Chronomatron") && title.contains("Stakes")) {
 			pickStake(client, items, CHRONOMATRON_STAKES)
 			return
@@ -353,16 +281,9 @@ object ExperimentRunner {
 	}
 
 	/**
-	 * Shuts the table if the Guardian is not the pet that is out.
-	 *
-	 * The Guardian's experience bonus applies to what these games pay, so a
-	 * session run on the wrong pet is a session's worth of it thrown away — and
-	 * it is the kind of mistake that is only noticed afterwards.
-	 *
-	 * Only ever fires on a pet that was *seen* and was something else. A pet
-	 * that cannot be found is a pet whose tag was out of range or not sent yet,
-	 * and closing somebody's table over that would be worse than never closing
-	 * it. Returns true when it acted.
+	 * Closes the table if a pet other than the Guardian is out, since its experience bonus is what
+	 * these games pay into. Only fires on a pet seen to be something else. Returns true when it
+	 * acted.
 	 */
 	private fun remindAboutGuardian(client: Minecraft): Boolean {
 		if (!ExperimentSolver.guardianReminder.value) return false
@@ -388,10 +309,7 @@ object ExperimentRunner {
 		stop("no stake available")
 	}
 
-	/**
-	 * Superpairs asks for experience up front, so a stake it cannot afford is
-	 * worth a trip to the bottle shop rather than giving up on.
-	 */
+	/** Superpairs needs experience up front, so an unaffordable stake means a trip to the bottle shop. */
 	private fun pickSuperpairsStake(client: Minecraft, items: List<ItemStack>) {
 		for (slot in SUPERPAIRS_STAKES) {
 			val stack = items.getOrNull(slot) ?: continue
@@ -415,14 +333,7 @@ object ExperimentRunner {
 		stop("no Superpairs stake available")
 	}
 
-	/**
-	 * Whether the table is offering a renew.
-	 *
-	 * The button is looked for by name across the whole menu rather than only in
-	 * the slot 1.8.9 had it in — the slot numbers here are the least trustworthy
-	 * thing in this file, and a button that has moved is exactly the failure
-	 * that reads as "it is not renewing".
-	 */
+	/** The renew button, found by name anywhere in the menu. */
 	private fun renewSlot(items: List<ItemStack>): Int? {
 		items.getOrNull(SLOT_RENEW)?.let {
 			if (namesRenew(it)) return SLOT_RENEW
@@ -435,10 +346,6 @@ object ExperimentRunner {
 		return null
 	}
 
-	/**
-	 * How many of today's renews are gone and how many there are, straight off
-	 * the button: "You've renewed 1/3 charges today!".
-	 */
 	private fun renewsToday(stack: ItemStack?): Pair<Int, Int>? {
 		val match = RENEWS_TODAY.find(loreOf(stack)) ?: return null
 		val used = match.groupValues[1].toIntOrNull() ?: return null
@@ -472,12 +379,8 @@ object ExperimentRunner {
 	}
 
 	/**
-	 * Whether it is allowed to go shopping for the levels something wants.
-	 *
-	 * Off by default and stated as a reason rather than a silent refusal: the
-	 * bottles are bought from the bazaar with coins, and a Titanic one — which is
-	 * what a 350-level stake needs — runs to hundreds of thousands. Spending that
-	 * is not something to do on the player's behalf without being asked.
+	 * Whether buying levels is allowed. Off by default, and said as a reason: a Titanic bottle
+	 * costs hundreds of thousands of coins.
 	 */
 	private fun mayBuy(levels: Int): Boolean {
 		if (!ExperimentSolver.buyExperience.value) {
@@ -523,24 +426,14 @@ object ExperimentRunner {
 		startReopen()
 	}
 
-	/**
-	 * Walks away once the game has given up what it is worth.
-	 *
-	 * Every round past the target is a chance to lose the lot, and the reward is
-	 * already banked, so there is nothing to gain by going on. Each serum drunk
-	 * takes one round off that target, which is what the slider is for.
-	 */
+	/** Leaves once the target round has been played; every round past it risks the reward. */
 	private fun leaveWhenDone(client: Minecraft) {
 		val handler = ExperimentTracker.current ?: return
-		// How many rounds are done is the length of the sequence learned so far,
-		// which is read off the board rather than off a header nobody verified.
+		// Rounds done is the length of the sequence learned so far.
 		val round = handler.roundsDone()
 		val target = targetRounds(handler)
 
-		// Leave the moment the target round has been *played out*, not when the
-		// next one starts. Waiting for the round after to appear meant sitting
-		// through its whole reveal before closing, which is both a wait for
-		// nothing and one more round of risk on a run already worth keeping.
+		// Leave as soon as the target round is played out, not when the next one starts.
 		if (round < target) return
 		if (round == target && !handler.waiting) return
 
@@ -554,11 +447,8 @@ object ExperimentRunner {
 	}
 
 	/**
-	 * Closes the menu and opens the table again.
-	 *
-	 * The second half is a right click sent the way [imicro.cryptic.feature.AutoClicker]
-	 * sends one — queued onto the use mapping, so Minecraft decides what it hit
-	 * — rather than an interact packet aimed at a block this has not looked for.
+	 * Closes the menu and reopens the table, with a right click queued on the use key so Minecraft
+	 * decides what it hits.
 	 */
 	private fun reopen(client: Minecraft) {
 		when (reopenStage) {
@@ -593,15 +483,8 @@ object ExperimentRunner {
 			return
 		}
 
-		// One click per state of the menu, and no more.
-		//
-		// A click that lands changes something — a new window, or the contents of
-		// this one. Until that happens the menu has not answered, and sending the
-		// same click again is what makes Hypixel start refusing them out loud.
-		// Counting the repeats was not enough: four of them is still four clicks
-		// and four refusals. So a click on the same slot is simply not sent again
-		// while the menu is exactly as it was, and if it stays that way for long
-		// enough the table is closed and reopened, which is what a person does.
+		// One click per menu state. Resending to a menu that hasn't answered makes Hypixel refuse
+		// clicks, so a repeat is held back, and if the menu stays stuck the table is reopened.
 		if (slot == lastClickSlot && ExperimentTracker.revision == lastClickRevision) {
 			if (System.currentTimeMillis() - lastClickAt > STUCK_MILLIS) {
 				status = "menu ignored the click on slot $slot, reopening the table"
@@ -620,12 +503,7 @@ object ExperimentRunner {
 		nextActionAt = System.currentTimeMillis() + delay()
 	}
 
-	/**
-	 * Gives up, loudly enough to be found in the debug line.
-	 *
-	 * Everything this drives costs something to get wrong, so anything it does
-	 * not recognise stops it rather than being clicked past.
-	 */
+	/** Stops the run with a reason, rather than clicking past something unknown. */
 	private fun stop(reason: String) {
 		finished = true
 		status = "stopped: $reason"
@@ -641,7 +519,6 @@ object ExperimentRunner {
 		return lore.contains(LORE_COMPLETED) || lore.contains(LORE_ADDON_LOCKED)
 	}
 
-	/** Every line of an item's tooltip, run together, with the colours stripped. */
 	private fun loreOf(stack: ItemStack?): String {
 		if (stack == null || stack.isEmpty) return ""
 		val player = Minecraft.getInstance().player

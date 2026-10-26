@@ -9,7 +9,13 @@ import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import net.minecraft.client.Minecraft
 import net.minecraft.core.component.DataComponents
-import net.minecraft.core.particles.ParticleOptions
+import imicro.cryptic.skyblock.SkyblockLocation
+import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket
+import net.minecraft.world.entity.Display
+import net.minecraft.world.inventory.Slot
+import net.minecraft.world.level.block.LeavesBlock
+import net.minecraft.world.level.block.RotatedPillarBlock
+import net.minecraft.world.level.block.SoundType
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.Entity
@@ -23,24 +29,12 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
 
 /**
- * Stops the game drawing things a dungeon run never needs to see.
- *
- * Ported from Odin's and NoammAddons' modules of the same name (BSD 3-Clause,
- * Copyright (c) 2025 odtheking; CC0, Noamm9). Most of it works on the packet
- * rather than the renderer: an entity that is never added to the world costs
- * nothing to not draw, which is where the name comes from. The rest is decided
- * as the entity's render state is built.
- *
- * Everything here is off by default. Each switch hides something real, and
- * which of them are noise rather than information depends on what you are
- * doing.
+ * Stops drawing things a dungeon run doesn't need. Mostly works on packets (an entity never added
+ * costs nothing); the rest is decided as render states are built. Everything is off by default.
+ * From Odin's and NoammAddons' Render Optimizer, with ideas from NoFrills' No Render.
  */
 object RenderOptimizer {
-	/**
-	 * Hypixel's own skulls, identified by the texture they carry rather than by
-	 * name, because the armour stand wearing one is not otherwise labelled.
-	 * These three are Odin's.
-	 */
+	/** Hypixel's skull textures, the only way to identify these armour stands. Odin's three. */
 	private const val HEALER_FAIRY_TEXTURE =
 		"ewogICJ0aW1lc3RhbXAiIDogMTcxOTQ2MzA5MTA0NywKICAicHJvZmlsZUlkIiA6ICIyNjRkYzBlYjVlZGI0ZmI3OTgxNWIyZGY1NGY0OTgyNCIsCiAgInByb2ZpbGVOYW1lIiA6ICJxdWludHVwbGV0IiwKICAic2lnbmF0dXJlUmVxdWlyZWQiIDogdHJ1ZSwKICAidGV4dHVyZXMiIDogewogICAgIlNLSU4iIDogewogICAgICAidXJsIiA6ICJodHRwOi8vdGV4dHVyZXMubWluZWNyYWZ0Lm5ldC90ZXh0dXJlLzJlZWRjZmZjNmExMWEzODM0YTI4ODQ5Y2MzMTZhZjdhMjc1MmEzNzZkNTM2Y2Y4NDAzOWNmNzkxMDhiMTY3YWUiCiAgICB9CiAgfQp9"
 
@@ -51,8 +45,8 @@ object RenderOptimizer {
 		"ewogICJ0aW1lc3RhbXAiIDogMTcxOTg1NzI3NzI0OSwKICAicHJvZmlsZUlkIiA6ICIxODA1Y2E2MmM0ZDI0M2NiOWQxYmY4YmM5N2E1YjgyNCIsCiAgInByb2ZpbGVOYW1lIiA6ICJSdWxsZWQiLAogICJzaWduYXR1cmVSZXF1aXJlZCIgOiB0cnVlLAogICJ0ZXh0dXJlcyIgOiB7CiAgICAiU0tJTiIgOiB7CiAgICAgICJ1cmwiIDogImh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvMzdkODM2NzQ5MjZiODk3MTRlNmI1YTU1NDcwNTAxYzA0YjA2NmRkODdiZjZjMzM1Y2RkYzZlNjBhMWExYTVmNSIKICAgIH0KICB9Cn0="
 
 	/**
-	 * A nametag reading zero health, in the two shapes Hypixel writes it: with
-	 * a level prefix and a fraction, or bare. NoammAddons' patterns.
+	 * Zero-health nametags in Hypixel's two formats (with a level and fraction, or bare).
+	 * NoammAddons' patterns.
 	 */
 	private val zeroHealthPatterns = listOf(
 		Regex("^§.\\[§.Lv\\d+§.] §.+ (?:§.)+0§f/.+§c❤$"),
@@ -62,6 +56,64 @@ object RenderOptimizer {
 	private val entitiesSection = SectionModuleSetting("entities_section", "Entities")
 	private val abilitiesSection = SectionModuleSetting("abilities_section", "Abilities")
 	private val fireSection = SectionModuleSetting("fire_section", "Fire")
+	private val worldSection = SectionModuleSetting("world_section", "World")
+	private val screenSection = SectionModuleSetting("screen_section", "Screen")
+
+	@JvmField
+	val hideDeathPuffs = ToggleModuleSetting(
+		id = "hide_death_puffs",
+		label = "Hide death puffs",
+		description = "Hides the little cloud a mob leaves when it dies.",
+	)
+
+	@JvmField
+	val hideBreakParticles = ToggleModuleSetting(
+		id = "hide_break_particles",
+		label = "Hide block break particles",
+		description = "Hides the bits a block throws while it's mined and when it breaks.",
+	)
+
+	@JvmField
+	val hideTreeBits = ToggleModuleSetting(
+		id = "hide_tree_bits",
+		label = "Hide tree bits",
+		description = "Hides the wood and leaf pieces a chopped tree drops on Galatea, the Hub and the Park.",
+	)
+
+	@JvmField
+	val hideVignette = ToggleModuleSetting(
+		id = "hide_vignette",
+		label = "Hide vignette",
+		description = "Hides the dark edges of the screen.",
+	)
+
+	@JvmField
+	val hideEffectIcons = ToggleModuleSetting(
+		id = "hide_effect_icons",
+		label = "Hide effect icons",
+		description = "Hides the potion effect icons in the top right corner.",
+	)
+
+	@JvmField
+	val hideEmptyTooltips = ToggleModuleSetting(
+		id = "hide_empty_tooltips",
+		label = "Hide empty tooltips",
+		description = "Shows no tooltip over items without a name, such as the glass panes filling SkyBlock menus.",
+	)
+
+	@JvmField
+	val hideBossBar = ToggleModuleSetting(
+		id = "hide_boss_bar",
+		label = "Hide boss bar",
+		description = "Hides the boss health bar at the top of the screen. Features reading it keep working.",
+	)
+
+	@JvmField
+	val hideCheapCoins = ToggleModuleSetting(
+		id = "hide_cheap_coins",
+		label = "Hide cheap coins",
+		description = "Hides the small coin piles mobs drop on the ground.",
+	)
 
 	@JvmField
 	val hideFallingBlocks = ToggleModuleSetting(
@@ -198,6 +250,7 @@ object RenderOptimizer {
 			hideZeroHealth,
 			hidePlayerArrows,
 			hideGroundArrows,
+			hideDeathPuffs,
 			abilitiesSection,
 			hideExplosionParticles,
 			hideArcherPassive,
@@ -208,12 +261,18 @@ object RenderOptimizer {
 			hideFireOnEntities,
 			hideFireOverlay,
 			fireOverlayOpacity,
+			worldSection,
+			hideBreakParticles,
+			hideTreeBits,
+			hideCheapCoins,
+			screenSection,
+			hideVignette,
+			hideEffectIcons,
+			hideEmptyTooltips,
+			hideBossBar,
 		),
 	)
 
-	// ---- Packets ---------------------------------------------------------
-
-	/** True when an entity of [type] should never reach the world at all. */
 	@JvmStatic
 	fun blocksSpawn(type: EntityType<*>): Boolean {
 		if (!module.enabled) return false
@@ -225,32 +284,91 @@ object RenderOptimizer {
 		}
 	}
 
+	/** Read on the network thread first; must not throw. */
 	@JvmStatic
-	fun blocksParticle(particle: ParticleOptions): Boolean {
-		if (!module.enabled || !hideExplosionParticles.value) return false
-		val type = particle.type
-		return type == ParticleTypes.EXPLOSION || type == ParticleTypes.EXPLOSION_EMITTER
+	fun blocksParticle(packet: ClientboundLevelParticlesPacket): Boolean {
+		if (!module.enabled) return false
+		val type = packet.particle.type
+		if (hideExplosionParticles.value && (type == ParticleTypes.EXPLOSION || type == ParticleTypes.EXPLOSION_EMITTER)) return true
+		return hideDeathPuffs.value && type == ParticleTypes.POOF && isDeathPuff(packet)
+	}
+
+	/** One puff, still, nudged by a hair on every axis: a death, not a spell's cloud. */
+	private fun isDeathPuff(packet: ClientboundLevelParticlesPacket): Boolean {
+		if (packet.count != 1 || packet.maxSpeed != 0f) return false
+		return listOf(packet.xDist, packet.yDist, packet.zDist).all { it != 0f && it > -0.1f && it < 0.1f }
+	}
+
+	val needsSkyblock: Boolean get() = module.enabled && hideTreeBits.value
+
+	private val TREE_AREAS = setOf("Galatea", "Hub", "The Park")
+
+	private fun isTreeBit(entity: Display.BlockDisplay): Boolean {
+		if (SkyblockLocation.area !in TREE_AREAS) return false
+		val state = entity.blockState
+		val block = state.block
+		if (block is LeavesBlock) return true
+		if (block !is RotatedPillarBlock) return false
+		val sound = state.soundType
+		return sound == SoundType.WOOD || sound == SoundType.CHERRY_WOOD || sound == SoundType.BAMBOO_WOOD || sound == SoundType.NETHER_WOOD
+	}
+
+	@JvmStatic
+	fun hidesBreakParticles(): Boolean = module.enabled && hideBreakParticles.value
+
+	@JvmStatic
+	fun hidesVignette(): Boolean = module.enabled && hideVignette.value
+
+	@JvmStatic
+	fun hidesEffectIcons(): Boolean = module.enabled && hideEffectIcons.value
+
+	@JvmStatic
+	fun hidesBossBar(): Boolean = module.enabled && hideBossBar.value
+
+	/**
+	 * The two coin-pile heads Hypixel drops (the textures SkyHanni and Skytils know as COINS_1 and
+	 * COINS_2), matched by their skin's id so a re-signed texture still counts.
+	 */
+	private val COIN_SKINS = listOf(
+		"16b90f4fa3ec106bfef21f3b75f541a18e4757674f7d58250fa7e74952f087dc",
+		"ccbcce22af559ed6ba6038845db38ccbca2e62b77b87a26a06657109ce0efba6",
+	)
+
+	/** Whether each texture seen is a coin pile, so each is decoded once. */
+	private val coinTextures = HashMap<String, Boolean>()
+
+	private fun isCheapCoin(entity: net.minecraft.world.entity.item.ItemEntity): Boolean {
+		val item = entity.item
+		if (item.item != Items.PLAYER_HEAD) return false
+		val texture = skullTexture(item) ?: return false
+		return coinTextures.getOrPut(texture) {
+			val decoded = runCatching { String(java.util.Base64.getDecoder().decode(texture)) }.getOrDefault("")
+			COIN_SKINS.any { it in decoded }
+		}
+	}
+
+	/** Whether the hovered [slot]'s tooltip is an empty box. */
+	@JvmStatic
+	fun hidesTooltip(slot: Slot?): Boolean {
+		if (!module.enabled || !hideEmptyTooltips.value || slot == null || !slot.hasItem()) return false
+		return slot.item.hoverName.string.isBlank()
 	}
 
 	/**
-	 * Whether the entity carrying this nametag should go.
-	 *
-	 * The tag is the only thing that says what an armour stand is holding up, so
-	 * a mob that is already dead — and the orbs and fairies that are only ever
-	 * decoration — are recognised by reading it.
+	 * Whether the entity carrying this nametag should go: dead mobs, and decorative orbs and
+	 * fairies, are recognised by their tag.
 	 */
 	@JvmStatic
 	fun hidesNameTag(name: Component): Boolean {
 		if (!module.enabled || !hideZeroHealth.value) return false
 		val text = name.string
-		// Asked of every nametag update, and a mob being hit updates its tag
-		// every time: both patterns end on the heart after a zero, so anything
-		// that does not is turned away before a pattern is tried.
+		// Checked on every nametag update, so anything not ending on a zero and a heart is turned
+		// away before the patterns.
 		if (!text.endsWith("§c❤") || !text.contains("0§")) return false
 		return zeroHealthPatterns.any { it.matches(text) }
 	}
 
-	/** The archer passive is a floating item rather than a mob, so it is read off the item it holds. */
+	/** The archer passive is a floating item, read off the item it holds. */
 	@JvmStatic
 	fun hidesHeldItem(item: ItemStack): Boolean {
 		if (!module.enabled || !hideArcherPassive.value) return false
@@ -258,7 +376,6 @@ object RenderOptimizer {
 		return !item.isEmpty && item.item == Items.BONE_MEAL
 	}
 
-	/** Whether a piece of equipment marks its wearer as something to drop. */
 	@JvmStatic
 	fun hidesEquipment(slot: EquipmentSlot, item: ItemStack): Boolean {
 		if (!module.enabled || item.isEmpty) return false
@@ -282,29 +399,25 @@ object RenderOptimizer {
 			?.firstOrNull()
 			?.value
 
-	/** Takes an entity out of the world on the client thread, where that is safe. */
+	/** Removes an entity on the client thread, where that's safe. */
 	@JvmStatic
 	fun discard(entityId: Int) {
 		val client = Minecraft.getInstance()
 		client.execute { client.level?.removeEntity(entityId, Entity.RemovalReason.DISCARDED) }
 	}
 
-	// ---- Rendering -------------------------------------------------------
-
 	/**
-	 * Whether [entity] should be left undrawn.
-	 *
-	 * A mob is dead well before it is gone: the server keeps it around for the
-	 * topple, and in a busy room that is a lot of corpses. The armour stand
-	 * holding its nametag is a separate entity and is judged separately, so the
-	 * body can go while the tag stays.
+	 * Whether [entity] should be left undrawn. Dead mobs linger for their topple animation; their
+	 * nametag stand is judged separately, so the body can go while the tag stays.
 	 */
 	@JvmStatic
 	fun hidesEntity(entity: Entity): Boolean {
 		if (!module.enabled) return false
 
-		// An arrow that has landed is scenery, and a bow with any fire rate at
-		// all leaves a floor full of it.
+		if (hideTreeBits.value && entity is Display.BlockDisplay && isTreeBit(entity)) return true
+		if (hideCheapCoins.value && entity is net.minecraft.world.entity.item.ItemEntity && isCheapCoin(entity)) return true
+
+		// Landed arrows are scenery, and fast bows leave a floor full of them.
 		if (hideGroundArrows.value && entity is AbstractArrow) {
 			if ((entity as AbstractArrowAccessor).`cryptic$isInGround`()) return true
 		}
@@ -315,14 +428,8 @@ object RenderOptimizer {
 	}
 
 	/**
-	 * A nametag counts as belonging to a corpse when the thing under it is one.
-	 * Hypixel stands its tags a block above the mob they name.
-	 *
-	 * Asked of every armour stand every frame, so it must not search the world
-	 * itself: that was one search per nametag per frame, and in a crowd of
-	 * mobs — Bal's blazes in the Crystal Hollows — a frame of searches. The
-	 * dying mobs are found once a tick in [tick] instead, and there are almost
-	 * never any, so this is usually one empty-list check.
+	 * A nametag belongs to a corpse when the mob a block under it is one. Asked per stand per
+	 * frame, so dying mobs are found once a tick in [tick] instead of searching here.
 	 */
 	private fun standIsOverACorpse(stand: ArmorStand): Boolean {
 		val corpses = dyingBoxes
@@ -331,11 +438,10 @@ object RenderOptimizer {
 		return corpses.any { it.intersects(below) }
 	}
 
-	/** Where every dying mob is, as of the last tick, for [standIsOverACorpse]. */
 	@Volatile
 	private var dyingBoxes: List<net.minecraft.world.phys.AABB> = emptyList()
 
-	/** Finds the dying mobs, once a tick, only while the setting that needs them is on. */
+	/** Finds dying mobs once a tick, only while the setting needing them is on. */
 	fun tick(client: net.minecraft.client.Minecraft) {
 		val level = client.level
 		if (level == null || !module.enabled || !hideDeathAnimation.value || !hideDyingArmorStands.value) {
@@ -360,7 +466,7 @@ object RenderOptimizer {
 	@JvmStatic
 	fun hidesFireOverlay(): Boolean = module.enabled && hideFireOverlay.value
 
-	/** What the screen's fire is drawn at, where 1 is the game's own. */
+	/** The screen fire's strength, 1 being the game's own. */
 	@JvmStatic
 	fun fireOverlayAlpha(): Float =
 		if (!module.enabled) 1f else (fireOverlayOpacity.value / 100.0).toFloat()

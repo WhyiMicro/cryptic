@@ -9,12 +9,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Drops the arrows stuck in a player's body.
- *
- * Answered as a count rather than by cancelling the layer, because the count
- * is what the layer is asking for: zero arrows is a thing it already knows how
- * to draw, and every other mod wrapping the same layer still sees a sane
- * answer.
+ * Drops the arrows stuck in a player's body by answering zero, so other mods wrapping the layer
+ * still see a sane count.
  */
 @Mixin(ArrowLayer.class)
 public abstract class ArrowLayerMixin {

@@ -12,36 +12,20 @@ import net.minecraft.world.phys.Vec3
 import java.util.Locale
 
 /**
- * Which lever to pull on the Water Board, and when.
+ * Water Board: which lever to pull, and when. The layout and which outlets are shut pick an answer
+ * from Odin's sheet: times per lever, where zero means before the water and anything else that many
+ * seconds after.
  *
- * The answers are Odin's (BSD 3-Clause, Copyright (c) 2025 odtheking): the board
- * is one of four layouts, which three of its five outlets are shut decides the
- * answer, and the pair is a key into the answer sheet. The sheet gives a list of
- * times per lever — zero means pull it before the water is let in, anything else
- * means that many seconds after.
- *
- * How the answer is kept up to date is Skyblocker's (LGPL-3.0, its
- * WaterboardOneFlow): each lever keeps the list of pulls it still owes, and
- * pulling it crosses the first one off. A lever pulled before the water that
- * was not meant to be gets a pull added back, to put it right. And solving —
- * the first time, and every time the board is reset — reads where each gate
- * actually is, so a board that has been half played is solved from where it
- * stands rather than from where it started.
- *
- * Once solved, the gates are watched rather than the clicks: a gate block
- * leaving or coming back to its starting place is a pull, whoever made it, so a
- * teammate's pull counts the same as yours. After the water is let in, a pull
- * the plan did not want, one made well early, or one that is overdue puts the
- * board off plan, which is said at once — the timed part of an answer cannot
- * be corrected from the middle, and the way back is resetting the board.
+ * Each lever's owed pulls are crossed off as it's pulled (an idea from Skyblocker). Solving reads
+ * where each gate actually is, so a half-played board is solved from where it stands. Gates are
+ * watched rather than clicks, so a teammate's pull counts too. After the water starts, a pull off
+ * plan is reported at once; the fix is resetting the board.
  */
 object WaterSolver {
 	private const val PUZZLE = "Water Board"
 
-	/** The top middle of the board, which every gate's starting place is measured from. */
 	private val WATER_ENTRANCE = BlockPos(15, 78, 26)
 
-	/** Which of the five outlets are shut, which the answer sheet is keyed by. */
 	private enum class Outlet(val pos: BlockPos) {
 		PURPLE(BlockPos(15, 56, 19)),
 		ORANGE(BlockPos(15, 56, 18)),
@@ -49,7 +33,6 @@ object WaterSolver {
 		GREEN(BlockPos(15, 56, 16)),
 		RED(BlockPos(15, 56, 15));
 
-		/** An outlet is out when there is something standing in its slot. */
 		val extended: Boolean
 			get() {
 				val real = PuzzleRooms.real(PUZZLE, pos) ?: return false
@@ -59,14 +42,9 @@ object WaterSolver {
 	}
 
 	/**
-	 * The seven levers, in the order the answer sheet names them.
-	 *
-	 * [start] is where the lever's gate block stands on a fresh board, one place
-	 * per layout, measured from [WATER_ENTRANCE] — Skyblocker's table. A gate
-	 * block missing from its starting place is a gate that has been moved, which
-	 * is how a lever that has been pulled is told from one that has not: more
-	 * reliable than the lever's own switch, and unaffected by who pulled it.
-	 * Null where a layout has no such gate to watch.
+	 * The seven levers in the answer sheet's order. [start] is where each gate block stands on a
+	 * fresh board, per layout, measured from [WATER_ENTRANCE] (data from Skyblocker). A gate
+	 * missing from its start has been pulled. Null where a layout has no gate to watch.
 	 */
 	private enum class Lever(val relative: BlockPos, val key: String, val block: Block?, val start: List<BlockPos?>) {
 		COAL(
@@ -98,43 +76,29 @@ object WaterSolver {
 		val pos: BlockPos?
 			get() = PuzzleRooms.real(PUZZLE, relative)
 
-		/** "Coal", "Diamond": for saying which lever went wrong. */
 		val title: String
 			get() = if (this == CLAY) "Terracotta" else name.lowercase(Locale.ROOT).replaceFirstChar { it.titlecase(Locale.ROOT) }
 	}
 
-	/** The layout, 0 to 3, or -1 before the board has been read. */
 	private var pattern = -1
 
-	/** Every lever's pulls still owed, soonest first. Empty until solved. */
 	private val solution = LinkedHashMap<Lever, MutableList<Double>>()
 
-	/** Set when a solve could not happen yet, so it is tried again until it can. */
 	private var awaitingSolve = true
 
-	/**
-	 * Set by a reset that found water on the board, which is nearly every
-	 * reset: the water takes seconds to drain once the board is reset. The
-	 * solve waits for it, says so over the water lever, and says so in chat
-	 * when the answer is ready — before, the answer just appeared on its own a
-	 * few seconds after the reset seemed to have done nothing.
-	 */
+	/** Set by a reset with water on the board: the solve waits for it to drain and says so. */
 	private var waitingForDrain = false
 
-	/** The tick the water was let in on, or -1 while it has not been. */
 	private var waterAt = -1
 	private var ticks = 0
 
-	/** Each watched gate as last seen: true while it is away from where it starts. */
 	private val gateMoved = HashMap<Lever, Boolean>()
 
-	/** Why the board has gone off plan, once it has, or null while it is on it. */
 	private var offPlan: String? = null
 
 	/**
-	 * Solves the board if it has not been solved, and is quiet about why not;
-	 * once it has, notices the water being let in by somebody else. Called four
-	 * times a second while standing in the room.
+	 * Solves the board if needed, and notices a teammate letting the water in. Runs four times a
+	 * second in the room.
 	 */
 	fun scan() {
 		if (awaitingSolve) {
@@ -144,14 +108,7 @@ object WaterSolver {
 		watchForWater()
 	}
 
-	/**
-	 * The water running with no click of yours to have started it: a
-	 * teammate's. Seen a whole round trip after it happened — the click's way
-	 * there and the board's way back — so the clock is set back by the ping,
-	 * which is the one case it needs to be. When you pull the water yourself,
-	 * the clock starts at your click, and every timed pull after it travels the
-	 * same way your click did, so the two delays cancel out.
-	 */
+	/** Water started by a teammate is seen a round trip late, so the clock is set back by the ping. */
 	private fun watchForWater() {
 		if (waterAt != -1 || solution.isEmpty()) return
 		val room = PuzzleRooms.named(PUZZLE) ?: return
@@ -161,11 +118,7 @@ object WaterSolver {
 		solution[Lever.WATER]?.let { if (it.isNotEmpty()) it.removeAt(0) }
 	}
 
-	/**
-	 * Watches the gates, once a tick. A gate block leaving its starting place,
-	 * or coming back to it, is its lever being pulled — by you or anybody — and
-	 * is counted as the pull, made a round trip before it could be seen.
-	 */
+	/** Watches the gates each tick: a gate leaving or returning to its start is a pull, by anyone. */
 	fun tick() {
 		if (solution.isEmpty()) return
 		val room = PuzzleRooms.named(PUZZLE) ?: return
@@ -182,20 +135,17 @@ object WaterSolver {
 		if (waterAt != -1 && offPlan == null) checkOverdue(room, lag)
 	}
 
-	/** Where [lever]'s gate block starts on this layout, if it has one to watch. */
 	private fun gatePos(room: imicro.cryptic.dungeon.map.DungeonRoom, lever: Lever): BlockPos? {
 		if (lever.block == null || pattern < 0) return null
 		val offset = lever.start.getOrNull(pattern) ?: return null
 		return room.getRealCoords(WATER_ENTRANCE.offset(offset))
 	}
 
-	/** Any pull the plan owes that is well past due. */
 	private fun checkOverdue(room: imicro.cryptic.dungeon.map.DungeonRoom, lag: Int) {
 		solution.forEach { (lever, times) ->
 			if (lever == Lever.WATER) return@forEach
 			val first = times.firstOrNull() ?: return@forEach
 			val due = waterAt + (first * 20).toInt()
-			// A watched gate is only seen to move a round trip after the pull.
 			val seenLate = if (gatePos(room, lever) != null) lag else 0
 			val late = ticks - due - seenLate
 			if (late > LATE_TICKS) {
@@ -205,7 +155,6 @@ object WaterSolver {
 		}
 	}
 
-	/** The ping in ticks, rounded, or nothing before it has been measured. */
 	private fun pingTicks(): Int {
 		val ping = ServerStats.ping
 		return if (ping <= 0) 0 else (ping + 25) / 50
@@ -218,22 +167,16 @@ object WaterSolver {
 	}
 
 	/**
-	 * Works out the answer from the board as it stands.
-	 *
-	 * Refuses while there is water on the board, because the answer is timed
-	 * from the water being let in and a board already running has a clock this
-	 * cannot see; the outlets only read true once it has drained, too. Then the
-	 * layout and the shut outlets pick the answer, and every gate is checked
-	 * against where it started — which is what makes this the same thing on a
-	 * fresh board and on one left half played.
+	 * Works out the answer from the board as it stands. Refused while water is running, since the
+	 * timing starts from the water and outlets only read right once it drains. Gates are checked
+	 * against their starts, so fresh and half-played boards are handled the same way.
 	 */
 	private fun solve(loud: Boolean) {
 		val room = PuzzleRooms.named(PUZZLE) ?: return
 		val level = Minecraft.getInstance().level ?: return
 
 		if (WaterPreview.boardState(room, level).running) {
-			// Said once per reset; the solve is tried again every scan and
-			// goes through, out loud, as soon as the water has gone.
+			// Said once per reset; the solve retries every scan.
 			if (loud && !waitingForDrain) say("§eWaiting for the water to drain§7 — the board is solved as soon as it has. Turn the water off if it is still on.")
 			if (loud) waitingForDrain = true
 			return
@@ -264,10 +207,8 @@ object WaterSolver {
 		val plain = answersFor(read, false, openKey)
 		val quick = if (PuzzleSolver.waterOptimized.value) answersFor(read, true, openKey) else null
 
-		// The optimised route is only taken when it can actually be played: some
-		// of its patterns put two pulls a third of a second apart, which is a
-		// solution on paper and a failed board in practice. The gap you are
-		// willing to work to is yours to set.
+		// The optimised route is only used if its tightest gap is at least your setting; some
+		// patterns need pulls a third of a second apart.
 		val gap = PuzzleSolver.waterMinGap.value
 		val answers = when {
 			quick == null -> plain
@@ -293,7 +234,7 @@ object WaterSolver {
 		waitingForDrain = false
 
 		val corrected = matchGates(room, level)
-		// Where every gate stands now, for the watch that counts pulls from here.
+		// Where every gate stands now, for counting pulls from here.
 		offPlan = null
 		gateMoved.clear()
 		Lever.entries.forEach { lever ->
@@ -309,13 +250,8 @@ object WaterSolver {
 	}
 
 	/**
-	 * Puts the answer in step with where the gates actually are.
-	 *
-	 * Skyblocker's rule, per lever: a gate that has moved from its starting
-	 * place has had its lever pulled. If the answer's first pull for it is one
-	 * made before the water, that pull is already done and comes off. If it is
-	 * not, the lever was pulled when it should not have been, and a pull goes
-	 * on the front to put it back. Returns how many levers were found moved.
+	 * Lines the answer up with the gates: a moved gate whose first pull was a before-water one has
+	 * that pull done; otherwise a pull is added to undo it. Returns how many levers had moved.
 	 */
 	private fun matchGates(room: imicro.cryptic.dungeon.map.DungeonRoom, level: net.minecraft.world.level.Level): Int {
 		var moved = 0
@@ -336,12 +272,7 @@ object WaterSolver {
 	private fun answersFor(pattern: Int, optimised: Boolean, openKey: String): Map<String, List<Double>>? =
 		PuzzleAssets.water[optimised.toString()]?.get(pattern.toString())?.get(openKey)
 
-	/**
-	 * The shortest wait between two timed pulls in a solution.
-	 *
-	 * Pulls at zero are the ones made before the water is let in — as many as
-	 * you like, as fast as you like — so only the timed ones are measured.
-	 */
+	/** The shortest wait between two timed pulls; pulls at zero don't count. */
 	private fun tightestGap(answers: Map<String, List<Double>>): Double {
 		val timed = answers.values.flatten().filter { it > 0.0 }.sorted()
 		if (timed.size < 2) return Double.MAX_VALUE
@@ -351,10 +282,8 @@ object WaterSolver {
 	private fun Double.toFixed(): String = String.format(Locale.ROOT, "%.1f", this)
 
 	/**
-	 * A lever you pulled. A lever whose gate is watched is left to the watch,
-	 * which sees the pull whoever made it and only once it has really happened;
-	 * the water lever, and a lever this layout gives no gate to watch, are
-	 * counted from the click.
+	 * A lever you pulled. Watched gates are left to the watch; the water lever and unwatched levers
+	 * count from the click.
 	 */
 	fun onLeverUsed(pos: BlockPos) {
 		if (solution.isEmpty()) return
@@ -365,13 +294,9 @@ object WaterSolver {
 	}
 
 	/**
-	 * One pull of [lever], made on tick [at].
-	 *
-	 * Skyblocker's rule before the water: a lever the answer did not want pulled
-	 * gets a pull added to put it back, otherwise the first pull it owed is
-	 * crossed off. The water lever starts the clock. After the water, the pull is
-	 * held to the plan: one it had no pull left for, or one made well before its
-	 * time, puts the board off plan.
+	 * One pull of [lever] on tick [at]. Before the water: an unwanted pull gets an undo added,
+	 * otherwise its first pull is crossed off; the water lever starts the clock. After the water: a
+	 * pull with none owed, or well early, is off plan.
 	 */
 	private fun credit(lever: Lever, at: Int) {
 		val times = solution.getOrPut(lever) { mutableListOf() }
@@ -411,8 +336,7 @@ object WaterSolver {
 		}
 		if (pattern == -1 || solution.isEmpty()) return
 
-		// Off plan, the countdowns are a plan for a board that is not there any
-		// more; only the way back is shown.
+		// Off plan, only the way back is shown.
 		if (offPlan != null) {
 			Lever.WATER.pos?.let {
 				PuzzleRender.text(context, "§c§lOFF PLAN", Vec3(it.x + 0.5, it.y + 2.0, it.z + 0.5))
@@ -421,8 +345,8 @@ object WaterSolver {
 			return
 		}
 
-		// Everything still to do, soonest first. The water lever's own zero comes
-		// after every other lever's, since those are made before it is.
+		// Everything still to do, soonest first; the water lever's zero comes after every other
+		// zero.
 		val remaining = solution
 			.flatMap { (lever, times) -> times.map { lever to it } }
 			.sortedWith(
@@ -448,9 +372,6 @@ object WaterSolver {
 			}
 		}
 
-		// The lever itself, in the same two colours the tracers use: a line
-		// arriving at a wall of six identical levers still leaves you picking
-		// one of them by eye.
 		if (PuzzleSolver.waterLeverHighlight.value) {
 			val style = PuzzleSolver.waterLeverStyle.selectedIndex
 			first?.let { PuzzleRender.shape(context, it, PuzzleSolver.waterTracerFirst.argb, style) }
@@ -462,7 +383,6 @@ object WaterSolver {
 			times.forEachIndexed { index, time ->
 				val inTicks = (time * 20).toInt()
 				val label = when {
-					// The water waits for every pull made before it.
 					lever == Lever.WATER && time == 0.0 && nextLever != Lever.WATER -> "§c§lWAIT"
 					waterAt == -1 && inTicks == 0 -> "§a§lPULL"
 					waterAt == -1 -> "§e${time}s"
@@ -482,13 +402,7 @@ object WaterSolver {
 		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §7$text"))
 	}
 
-	/**
-	 * Solves the board again from where it stands — Skyblocker's reset.
-	 *
-	 * Nothing about the last attempt is kept: the water, the outlets and every
-	 * gate are read afresh, so a lever pulled by hand, one pulled at the wrong
-	 * time, and one Hypixel put back are all accounted for the same way.
-	 */
+	/** Solves again from the board as it stands; nothing from the last attempt is kept. */
 	fun reset() {
 		pattern = -1
 		solution.clear()
@@ -500,12 +414,7 @@ object WaterSolver {
 		solve(loud = true)
 	}
 
-	/**
-	 * The chest in the room, which is how the board is restarted in game.
-	 *
-	 * NoammAddons' idea: you reset the puzzle by opening its chest, so the
-	 * solver may as well reset itself then too.
-	 */
+	/** Opening the room's chest resets the puzzle in game, so the solver resets too (NoammAddons' idea). */
 	fun onChestUsed(pos: BlockPos) {
 		if (!PuzzleRooms.inside(PUZZLE)) return
 		val level = Minecraft.getInstance().level ?: return
@@ -513,7 +422,6 @@ object WaterSolver {
 		reset()
 	}
 
-	/** Forgets the room entirely, for a floor that is being left. */
 	fun forget() {
 		pattern = -1
 		solution.clear()
@@ -524,12 +432,7 @@ object WaterSolver {
 		waitingForDrain = false
 	}
 
-	/**
-	 * What the solver can see, in words, for `/cryptic debug room`.
-	 *
-	 * Each gate against its starting place, and the pulls each lever still owes,
-	 * so a wrong answer can be traced to the one reading that was wrong.
-	 */
+	/** Each gate against its start, and each lever's owed pulls, for `/cryptic debug room`. */
 	fun describe(): List<String> {
 		val lines = mutableListOf("Water board: layout $pattern, ${if (solution.isEmpty()) "not solved" else "solved"}")
 		val room = PuzzleRooms.named(PUZZLE)
@@ -553,12 +456,10 @@ object WaterSolver {
 		return lines
 	}
 
-	/** Enough to put the water lever's zero after every other zero, and before any real time. */
+	/** Puts the water lever's zero after every other zero. */
 	private const val WATER_LAST = 0.001
 
-	/** How early a timed pull may be, in ticks, before the board is called off plan. */
 	private const val EARLY_TICKS = 20
 
-	/** How late a timed pull may be, in ticks, before the board is called off plan. */
 	private const val LATE_TICKS = 30
 }

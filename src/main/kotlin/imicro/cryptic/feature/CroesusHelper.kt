@@ -8,8 +8,6 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
-import imicro.cryptic.hud.Hud
-import imicro.cryptic.hud.HudElement
 import imicro.cryptic.mixin.ContainerScreenAccessor
 import imicro.cryptic.skyblock.ItemPrices
 import imicro.cryptic.skyblock.SkyblockItem
@@ -29,34 +27,23 @@ import net.minecraft.world.item.component.CustomData
 import java.util.Locale
 
 /**
- * What each dungeon chest is worth, and which runs at Croesus still have one
- * worth opening.
+ * What each dungeon and Kuudra chest is worth, and which Croesus runs still have one worth opening.
+ * Inspired by the Croesus and chest profit features of Odin, Skyblocker, NoammAddons and SkyHanni;
+ * the Kuudra Key's price is Odin's (Vesuvius). Prices are Odin's seven-day averages via
+ * [ItemPrices].
  *
- * Put together from five mods that each do part of it: the run colours from
- * Odin's Croesus (BSD 3-Clause, Copyright (c) 2025 odtheking) and
- * Skyblocker's Croesus Helper (LGPL-3.0), the chest values from Odin's,
- * Skyblocker's Croesus Profit and NoammAddons' Chest Profit (CC0), and the two
- * profit lists drawn the way SkyHanni's Instance Chest Profit draws them
- * (LGPL-2.1), down to its colours and its number format. Prices are Odin's
- * seven-day averages, through [ItemPrices].
- *
- * Three screens are read. Croesus' list of runs; one run's six chests, each
- * with what is in it and what it costs in its description; and a chest
- * itself, which is the same screen at Croesus and in the boss room after a
- * run. Whether a run is still worth a Dungeon Chest Key cannot be read off the
- * list — only off the run's own screen — so a run's chests are remembered once
- * it has been looked at, by its page and slot in the list, as SkyHanni tells
- * runs apart.
+ * Three screens are read: Croesus's run list, a run's chests (contents and cost in each
+ * description: six for a dungeon, Free and Paid for Kuudra), and a chest itself (the same at
+ * Croesus, in the boss room and at Kuudra). Whether a run is worth a key only shows on its own
+ * screen, so a run's chests are remembered once looked at, by page and slot.
  */
 object CroesusHelper {
-	// ---- Settings --------------------------------------------------------
-
 	@JvmField
 	val highlightRuns = ToggleModuleSetting(
 		id = "highlight_runs",
 		label = "Highlight runs",
 		defaultValue = true,
-		description = "Colours each run at Croesus: not opened, worth a Dungeon Chest Key, or done.",
+		description = "Colours each run at Croesus, dungeon and Kuudra alike: not opened, worth a key, or done.",
 	)
 
 	@JvmField
@@ -76,7 +63,7 @@ object CroesusHelper {
 		min = 100.0,
 		max = 500.0,
 		step = 25.0,
-		description = "How much a chest has to make after its coins and the price of a Dungeon Chest Key to be worth the key.",
+		description = "How much a chest has to make after its cost (coins and a Dungeon Chest Key, or its Kuudra Key) to be worth opening.",
 	)
 
 	@JvmField
@@ -92,7 +79,7 @@ object CroesusHelper {
 		id = "profit_in_title",
 		label = "Profit in the chest",
 		defaultValue = true,
-		description = "Writes a chest's profit beside its title when you open it, at Croesus or in the boss room.",
+		description = "Writes a chest's profit beside its title when you open it, at Croesus, in the boss room or at Kuudra.",
 	)
 
 	@JvmField
@@ -100,8 +87,8 @@ object CroesusHelper {
 		id = "profit_hud",
 		label = "Profit overlays",
 		defaultValue = true,
-		description = "SkyHanni's two lists: every chest of a run at Croesus, and what one chest holds when you open it. " +
-			"Hover a chest in the first for what is in it.",
+		description = "A list beside the chest screen: a run's chests at Croesus, best first, or what one chest holds when you open it. " +
+			"Hover a chest in the run's list for what is in it.",
 	)
 
 	private val colorSection = SectionModuleSetting("color_section", "Colors")
@@ -146,20 +133,39 @@ object CroesusHelper {
 		),
 	)
 
-	// ---- Screens ---------------------------------------------------------
+	/** "Croesus", or "(2/3) Croesus" past the first page; Vesuvius on the Crimson Isle keeps the Kuudra chests the same way. */
+	private val CROESUS_TITLE = Regex("""^(?:\((\d+)/\d+\) )?(?:Croesus|Vesuvius)$""")
 
-	/** "Croesus", or "(2/3) Croesus" past the first page. */
-	private val CROESUS_TITLE = Regex("""^(?:\((\d+)/\d+\) )?Croesus$""")
+	/** Vesuvius lists only Kuudra runs, so its slots don't line up with the runs kept for Croesus. */
+	private fun isVesuvius(title: String) = title.endsWith("Vesuvius")
 
-	/** One run's chests: "Catacombs - Floor VII", "Master Catacombs - Floor VII". */
-	private val RUN_TITLE = Regex("""^(?:Master )?Catacombs - .*$""")
+	private val RUN_TITLE = Regex("""^(?:(?:Master )?Catacombs|Kuudra) - .*$""")
 
-	/** A chest itself, which the run's screen calls "Bedrock" and the chest's own screen may call "Bedrock Chest". */
+	/** A chest: "Bedrock" on the run's screen, possibly "Bedrock Chest" on its own. */
 	private val CHEST_TITLE = Regex("""^(Wood|Gold|Diamond|Emerald|Obsidian|Bedrock)(?: Chest)?$""")
+
+	/** A Kuudra chest's screen; Hypixel sometimes doubles the word ("Paid Chest Chest"). */
+	private val KUUDRA_CHEST_TITLE = Regex("""^(Free|Paid) Chest(?: Chest)?$""")
 
 	private val CHEST_NAME = Regex("""^(Wood|Gold|Diamond|Emerald|Obsidian|Bedrock)$""")
 
-	private val RUN_NAMES = setOf("The Catacombs", "Master Mode The Catacombs")
+	/** Kuudra's two chests on its run screen, by type. */
+	private val KUUDRA_CHEST_NAME = Regex("""^(Free|Paid) Chest$""")
+
+	private val RUN_NAMES = setOf("The Catacombs", "Master Mode The Catacombs", KUUDRA_RUN)
+
+	private const val KUUDRA_RUN = "Kuudra's Hollow"
+
+	/** How [CroesusRuns] files every Kuudra run; Croesus's list doesn't say the tier. */
+	private const val KUUDRA_FLOOR = "K"
+
+	/** Hypixel's line when Kuudra dies, which puts the run on Croesus's list. */
+	private const val KUUDRA_DOWN = "KUUDRA DOWN!"
+
+	private var kuudraDownAt = 0L
+
+	/** Buttons in a chest that are not loot. */
+	private val NOT_LOOT = setOf("Reroll Shard", "Reroll Chest")
 
 	private val OPENED_CHEST = Regex("""^Opened Chest: (\w+)""")
 
@@ -170,6 +176,7 @@ object CroesusHelper {
 	private val COINS = Regex("""^([\d,]+) Coins$""")
 	private val ESSENCE = Regex("""^(\w+) Essence x(\d+)$""")
 	private val SHARD = Regex("""^(.+) Shard(?: x(\d+))?$""")
+	private val AMOUNT = Regex("""^(.+) x(\d+)$""")
 	private val BOOK = Regex("""^Enchanted Book \((.+) ([IVXL]+|\d+)\)$""")
 	private val FORMATTING = Regex("§.")
 
@@ -177,10 +184,8 @@ object CroesusHelper {
 	private const val KEY_LABEL = "§9Dungeon Chest Key"
 
 	/**
-	 * Drops whose names are not their ids. Every other name is turned into its
-	 * id the way the ids are written — "Fifth Master Star" is
-	 * FIFTH_MASTER_STAR — which is right for nearly everything else. From
-	 * Skyblocker's table and Odin's replacements.
+	 * Drops whose names aren't their ids; other names convert directly ("Fifth Master Star" is
+	 * FIFTH_MASTER_STAR). Hypixel's ids, as Skyblocker and Odin list them.
 	 */
 	private val NAME_IDS = mapOf(
 		"Necromancer's Brooch" to "NECROMANCER_BROOCH",
@@ -206,9 +211,47 @@ object CroesusHelper {
 		"Watcher Disc" to "DUNGEON_DISC_3",
 		"Old Disc" to "DUNGEON_DISC_4",
 		"Necron Disc" to "DUNGEON_DISC_5",
+		"Aurora Staff" to "RUNIC_STAFF",
+		"Hellstorm Wand" to "HELLSTORM_STAFF",
+		"Dusty Travel Scroll to the Kuudra Skull" to "NETHER_FORTRESS_BOSS_TRAVEL_SCROLL",
 	)
 
-	/** The colour Hypixel names each chest in, which is SkyHanni's too. */
+	/** Kuudra's books whose enchant is named differently from its id. */
+	private val BOOK_IDS = mapOf(
+		"Strong Vitality" to "STRONG_MANA",
+		"Vivacious Vitality" to "FEROCIOUS_MANA",
+		"Hardened Vitality" to "HARDENED_MANA",
+		"Vampiric Vitality" to "MANA_VAMPIRE",
+	)
+
+	/**
+	 * A Kuudra Key's cost: coins, then Enchanted Red Sand or Mycelium (whichever is cheaper) and
+	 * two Corrupted Nether Stars. Odin's figures; the coins are before faction discounts.
+	 */
+	private class KuudraKey(val coins: Double, val material: Int)
+
+	private val KUUDRA_KEYS = mapOf(
+		"Kuudra Key" to KuudraKey(155_200.0, 2),
+		"Hot Kuudra Key" to KuudraKey(310_400.0, 4),
+		"Burning Kuudra Key" to KuudraKey(582_000.0, 16),
+		"Fiery Kuudra Key" to KuudraKey(1_164_000.0, 40),
+		"Infernal Kuudra Key" to KuudraKey(2_328_000.0, 80),
+	)
+
+	private fun kuudraKeyPrice(name: String): Double {
+		val key = KUUDRA_KEYS[name] ?: return 0.0
+		val material = listOfNotNull(ItemPrices.price("ENCHANTED_RED_SAND"), ItemPrices.price("ENCHANTED_MYCELIUM")).minOrNull() ?: 0.0
+		return key.coins + material * key.material + (ItemPrices.price("CORRUPTED_NETHER_STAR") ?: 0.0) * 2
+	}
+
+	/** A cost line in a chest's description, as a negative value, or null when it isn't one. */
+	private fun costOf(line: String): Double? {
+		COINS.matchEntire(line)?.let { return -it.groupValues[1].replace(",", "").toDouble() }
+		if (line == "Dungeon Chest Key") return -keyPrice()
+		if (line in KUUDRA_KEYS) return -kuudraKeyPrice(line)
+		return null
+	}
+
 	private val CHEST_COLORS = mapOf(
 		"Wood" to "§f",
 		"Gold" to "§6",
@@ -216,50 +259,47 @@ object CroesusHelper {
 		"Emerald" to "§2",
 		"Obsidian" to "§5",
 		"Bedrock" to "§8",
+		"Free" to "§a",
+		"Paid" to "§6",
 	)
 
-	// ---- What has been read ----------------------------------------------
-
-	/** One line of a chest: an item and what it sells for, or a cost and what it takes. */
 	data class Entry(val label: Component, val value: Double)
 
-	/** One chest: what is in it, and what opening it costs. */
 	data class Chest(
 		val type: String,
 		val slot: Int,
 		val items: List<Entry>,
 		val costs: List<Entry>,
 		val opened: Boolean,
+		/** Kuudra's chests carry their own key in their cost, and never need a dungeon key. */
+		val kuudra: Boolean = false,
 	) {
 		val revenue: Double get() = items.sumOf { it.value }
 		val cost: Double get() = costs.sumOf { it.value }
 		val profit: Double get() = revenue + cost
 
-		/** The profit if this chest were opened as a run's second, with a key. */
+		/** The profit if opened as a run's second chest, with a key. */
 		val profitWithKey: Double
 			get() = if (hasKey) profit else profit - keyPrice()
 
-		/** Whether a Dungeon Chest Key is already among its costs. */
-		val hasKey: Boolean get() = costs.any { clean(it.label.string) == "Dungeon Chest Key" }
+		val hasKey: Boolean get() = kuudra || costs.any { clean(it.label.string) == "Dungeon Chest Key" }
 
-		/** The chest's name in its colour. */
 		val name: String get() = (CHEST_COLORS[type] ?: "§f") + type
 	}
 
-	/** The run just clicked in the list, waiting for its screen to open: its place in [CroesusRuns], and its floor. */
+	/** The run just clicked, until its screen opens: its place in [CroesusRuns] and its floor. */
 	private var pendingRun: Pair<Int, String>? = null
 
-	/** Whether this dungeon's end has been written into [CroesusRuns] yet. */
 	private var endRecorded = false
 
-	/** The chests of the run screen open now, worked out once per tick. */
+	/** The open run screen's chests, worked out once per tick. */
 	private var runChests: List<Chest> = emptyList()
 
-	/** The chest screen open now, and what its screen is called. */
+	/** The open chest screen, and its title. */
 	private var openChest: Chest? = null
 	private var openChestTitle = ""
 
-	/** Every chest's profit looked at in this dungeon, by its screen's name. */
+	/** Every chest's profit seen in this dungeon, by screen name. */
 	private val dungeonChests = LinkedHashMap<String, Double>()
 
 	private var initialized = false
@@ -267,7 +307,6 @@ object CroesusHelper {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(ProfitElement)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ ->
 			dungeonChests.clear()
 			costMemory.keys.removeIf { it.startsWith("dungeon|") }
@@ -278,11 +317,9 @@ object CroesusHelper {
 
 	private fun minProfit(): Double = minKeyProfit.value * 1000.0
 
-	// ---- Ticking ---------------------------------------------------------
-
 	fun tick(client: Minecraft) {
-		// Whether or not the module is on: the list has to follow Croesus's
-		// own, and a run left out would shift every run after it.
+		// Recorded whether or not the module is on: the list must follow Croesus's, and a missed
+		// run shifts every later one.
 		if (DungeonRun.ended && DungeonLocation.inDungeon) {
 			if (!endRecorded && DungeonLocation.floor > 0) {
 				CroesusRuns.onRunFinished((if (DungeonLocation.masterMode) "M" else "F") + DungeonLocation.floor)
@@ -299,7 +336,7 @@ object CroesusHelper {
 		val title = clean(screen.title.string)
 		val croesus = CROESUS_TITLE.matches(title)
 		val run = RUN_TITLE.matches(title)
-		val chest = CHEST_TITLE.matchEntire(title)
+		val chest = CHEST_TITLE.matchEntire(title) ?: KUUDRA_CHEST_TITLE.matchEntire(title)
 		if (!croesus && !run && chest == null) return
 		ItemPrices.ensureFetched()
 
@@ -313,30 +350,22 @@ object CroesusHelper {
 		screen.menu.slots.filter { it.container !is Inventory }
 
 	/**
-	 * The chests of the run screen open now, by slot, kept for as long as that
-	 * screen is open.
-	 *
-	 * A chest clicked is taken onto the cursor for a moment before the server
-	 * opens it, and its slot reads empty in between: worked out afresh from
-	 * what is in the slots, the highlight jumped to the second-best chest for
-	 * that moment. An empty slot keeps the chest it last held.
+	 * The open run screen's chests by slot. A clicked chest briefly reads empty while on the
+	 * cursor, so an empty slot keeps its last chest (otherwise the highlight jumped to the second
+	 * best).
 	 */
 	private val runSlots = HashMap<Int, Chest>()
 	private var runSlotsScreen: Any? = null
 
 	/**
-	 * What each chest cost, remembered from when it showed its price. Once a
-	 * chest is opened its description no longer says what it cost, and a
-	 * revisit counted it as free: an 8m chest that cost 1m showed 8m.
-	 * Kept by the run being looked at, or by the dungeon for the chests in the
-	 * boss room, and only for this session.
+	 * What each chest cost, remembered from when it showed its price; an opened chest no longer
+	 * shows its cost. Kept per run (or per dungeon for boss-room chests), for the session.
 	 */
 	private val costMemory = HashMap<String, List<Entry>>()
 
 	private fun costKey(type: String): String =
 		(if (DungeonLocation.inDungeon) "dungeon" else pendingRun?.first?.toString() ?: "croesus") + "|" + type
 
-	/** The chest's costs, or what it was remembered to cost when it no longer says. */
 	private fun withRememberedCost(chest: Chest): Chest {
 		val key = costKey(chest.type)
 		if (chest.costs.isNotEmpty()) {
@@ -354,16 +383,17 @@ object CroesusHelper {
 		for (slot in containerSlots(screen)) {
 			val stack = slot.item
 			if (stack.isEmpty) continue
-			val type = clean(stack.hoverName.string)
-			if (stack.item != Items.PLAYER_HEAD || !CHEST_NAME.matches(type)) {
+			val name = clean(stack.hoverName.string)
+			val kuudra = KUUDRA_CHEST_NAME.matchEntire(name)
+			if (stack.item != Items.PLAYER_HEAD || (kuudra == null && !CHEST_NAME.matches(name))) {
 				runSlots.remove(slot.index)
 				continue
 			}
-			runSlots[slot.index] = chestFromLore(type, slot.index, stack)
+			runSlots[slot.index] = chestFromLore(kuudra?.groupValues?.get(1) ?: name, slot.index, stack, kuudra != null)
 		}
 		val chests = runSlots.values.sortedBy { it.slot }
-		// Past the first chest, every other one takes a key as well, whether
-		// or not its description has caught up and says so.
+		// After the first chest, every other one needs a key, whether or not its description says
+		// so yet.
 		val anyOpened = chests.any { it.opened }
 		runChests = chests.map { chest ->
 			withRememberedCost(
@@ -372,15 +402,14 @@ object CroesusHelper {
 			)
 		}
 
-		// Only with prices: a run judged on a table that has not arrived yet
-		// would be remembered as worth nothing.
+		// Only with prices, or the run would be remembered as worthless.
 		if (!ItemPrices.loaded) return
 		pendingRun?.let { (index, floor) ->
 			if (runChests.isNotEmpty()) CroesusRuns.learn(index, floor, runChests.associate { it.type to it.profitWithKey })
 		}
 	}
 
-	private fun chestFromLore(type: String, slot: Int, stack: ItemStack): Chest {
+	private fun chestFromLore(type: String, slot: Int, stack: ItemStack, kuudra: Boolean = false): Chest {
 		val items = ArrayList<Entry>()
 		val costs = ArrayList<Entry>()
 		var inContents = false
@@ -396,13 +425,13 @@ object CroesusHelper {
 				nameValue(line)?.let { items += Entry(component, it) }
 				continue
 			}
-			COINS.matchEntire(line)?.let { costs += Entry(component, -it.groupValues[1].replace(",", "").toDouble()) }
-			if (line == "Dungeon Chest Key") costs += Entry(component, -keyPrice())
+			costOf(line)?.let { costs += Entry(component, it) }
 		}
-		return Chest(type, slot, items, costs, opened)
+		return Chest(type, slot, items, costs, opened, kuudra)
 	}
 
 	private fun readChest(screen: AbstractContainerScreen<*>, type: String, title: String) {
+		val kuudra = type == "Free" || type == "Paid"
 		val items = LinkedHashMap<String, Entry>()
 		val costs = ArrayList<Entry>()
 		var costRead = false
@@ -411,24 +440,21 @@ object CroesusHelper {
 			val stack = slot.item
 			if (stack.isEmpty || isPane(stack)) continue
 			if (stack.item == Items.CHEST) {
-				// The button that opens the chest, which is where the cost is written.
+				// The button that opens the chest carries the cost.
 				val lore = loreComponents(stack)
 				if (lore.none { clean(it.string) == "Cost" }) continue
 				costRead = true
-				lore.forEach { component ->
-					val line = clean(component.string)
-					COINS.matchEntire(line)?.let { costs += Entry(component, -it.groupValues[1].replace(",", "").toDouble()) }
-					if (line == "Dungeon Chest Key") costs += Entry(component, -keyPrice())
-				}
+				lore.forEach { component -> costOf(clean(component.string))?.let { costs += Entry(component, it) } }
 				continue
 			}
-			// The same item twice is one line, as SkyHanni adds them up.
+			if (clean(stack.hoverName.string) in NOT_LOOT) continue
+			// The same item twice is one line.
 			val entry = stackValue(stack) ?: continue
 			val key = entry.label.string
 			items[key] = items[key]?.let { it.copy(value = it.value + entry.value) } ?: entry
 		}
 		if (!costRead && items.isEmpty()) return
-		val chest = withRememberedCost(Chest(type, -1, items.values.toList(), costs, false))
+		val chest = withRememberedCost(Chest(type, -1, items.values.toList(), costs, false, kuudra))
 		openChest = chest
 		openChestTitle = title
 		if (DungeonLocation.inDungeon && ItemPrices.loaded) dungeonChests[title] = chest.profit
@@ -436,9 +462,7 @@ object CroesusHelper {
 
 	private fun isPane(stack: ItemStack): Boolean = BuiltInRegistries.ITEM.getKey(stack.item).path.endsWith("stained_glass_pane")
 
-	// ---- Values ----------------------------------------------------------
-
-	/** An item in an open chest, which has its id. Null for anything without a price. */
+	/** An item in an open chest, by its id. Null without a price. */
 	private fun stackValue(stack: ItemStack): Entry? {
 		val name = clean(stack.hoverName.string)
 		ESSENCE.matchEntire(name)?.let { match ->
@@ -448,7 +472,7 @@ object CroesusHelper {
 		}
 		val id = SkyblockItem.id(stack).removePrefix("STARRED_")
 		if (id == "ENCHANTED_BOOK") {
-			// A book is called "Enchanted Book"; its first line says which.
+			// A book is called "Enchanted Book"; its first lore line says which.
 			val label = loreComponents(stack).firstOrNull() ?: stack.hoverName
 			val enchants = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().getCompoundOrEmpty("enchantments")
 			val enchant = enchants.keySet().firstOrNull() ?: return null
@@ -462,7 +486,8 @@ object CroesusHelper {
 	/** An item written by name, as a run's screen lists them. */
 	private fun nameValue(line: String): Double? {
 		BOOK.matchEntire(line)?.let { match ->
-			val enchant = match.groupValues[1].uppercase(Locale.ROOT).replace(" ", "_")
+			val named = match.groupValues[1]
+			val enchant = BOOK_IDS[named] ?: named.uppercase(Locale.ROOT).replace(" ", "_")
 			val level = romanToInt(match.groupValues[2])
 			return ItemPrices.price("ENCHANTED_BOOK-$enchant-$level")
 				?: ItemPrices.price("ENCHANTED_BOOK-ULTIMATE_$enchant-$level")
@@ -477,8 +502,13 @@ object CroesusHelper {
 			val count = match.groupValues[2].toIntOrNull() ?: 1
 			ItemPrices.price(id)?.let { return it * count }
 		}
-		// A pet comes as "[Lvl 1] Spirit", and is not worth reading for.
+		// A pet ("[Lvl 1] Spirit") isn't worth pricing.
 		if (line.startsWith("[Lvl")) return null
+		// A stack written with its count ("Kuudra Teeth x4").
+		AMOUNT.matchEntire(line)?.let { match ->
+			val each = nameValue(match.groupValues[1]) ?: return null
+			return each * match.groupValues[2].toInt()
+		}
 		val name = line.replace("✪", "").trim().removePrefix("Shiny ")
 		val id = NAME_IDS[name] ?: name.uppercase(Locale.ROOT).replace("'", "").replace(" -", "").replace(" ", "_")
 		return ItemPrices.price(id)
@@ -502,14 +532,27 @@ object CroesusHelper {
 
 	private fun clean(text: String): String = text.replace(FORMATTING, "").trim()
 
-	// ---- Highlights ------------------------------------------------------
+	/**
+	 * Kuudra dying puts a run at the front of Croesus's list, like a finished dungeon, so it's
+	 * recorded to keep the list in step.
+	 */
+	@JvmStatic
+	fun onSystemChat(content: Component, overlay: Boolean) {
+		if (overlay || clean(content.string) != KUUDRA_DOWN) return
+		val now = System.currentTimeMillis()
+		// The line can arrive twice; one run is one entry.
+		if (now - kuudraDownAt < 60_000L) return
+		kuudraDownAt = now
+		Minecraft.getInstance().execute { CroesusRuns.onRunFinished(KUUDRA_FLOOR) }
+	}
 
-	/** A click in the run list: remembers which run is about to open. */
+	/** A click in the run list: remembers which run is opening. */
 	@JvmStatic
 	fun onSlotClicked(slotId: Int) {
 		if (!module.enabled || slotId < 0) return
 		val screen = Minecraft.getInstance().gui.screen() as? AbstractContainerScreen<*> ?: return
 		val page = CROESUS_TITLE.matchEntire(clean(screen.title.string))?.groupValues?.get(1) ?: return
+		if (isVesuvius(clean(screen.title.string))) return
 		val slot = screen.menu.slots.getOrNull(slotId) ?: return
 		val stack = slot.item
 		if (clean(stack.hoverName.string) !in RUN_NAMES) return
@@ -517,8 +560,9 @@ object CroesusHelper {
 		pendingRun = index to floorOf(stack)
 	}
 
-	/** A run's floor the way [CroesusRuns] keeps it, "M7" or "F5", read off its entry. */
+	/** A run's floor as [CroesusRuns] keeps it ("M7", "F5"). */
 	private fun floorOf(stack: ItemStack): String {
+		if (clean(stack.hoverName.string) == KUUDRA_RUN) return KUUDRA_FLOOR
 		val master = clean(stack.hoverName.string).startsWith("Master")
 		val number = lore(stack).firstNotNullOfOrNull { FLOOR_LINE.find(it) }?.groupValues?.get(1)?.let(::romanToInt) ?: 0
 		return (if (master) "M" else "F") + number
@@ -526,7 +570,7 @@ object CroesusHelper {
 
 	private val FLOOR_LINE = Regex("""^Floor ([IVX]+)""")
 
-	/** Draws a colour behind a slot's item, before the game draws the item. */
+	/** Draws a colour behind a slot's item. */
 	@JvmStatic
 	fun drawSlotHighlight(context: GuiGraphicsExtractor, slot: Slot) {
 		if (!module.enabled || slot.container is Inventory) return
@@ -547,6 +591,11 @@ object CroesusHelper {
 		if (clean(stack.hoverName.string) !in RUN_NAMES) return null
 		val lines = lore(stack)
 		if (lines.any { it == NO_MORE }) return doneColor.argb
+		// Kuudra's tooltip never says "No chests opened yet!", and only one of its chests can be
+		// opened, so it's either untouched or done.
+		if (clean(stack.hoverName.string) == KUUDRA_RUN) {
+			return if (lines.any { OPENED_CHEST.containsMatchIn(it) }) doneColor.argb else unopenedColor.argb
+		}
 		if (lines.any { it == UNOPENED }) return unopenedColor.argb
 		val opened = lines.firstNotNullOfOrNull { OPENED_CHEST.find(it)?.groupValues?.get(1) } ?: return null
 		val profits = CroesusRuns.indexOf(page.toIntOrNull() ?: 1, slot.index)?.let { CroesusRuns.at(it, floorOf(stack)) }?.keyProfits
@@ -560,8 +609,13 @@ object CroesusHelper {
 		val chest = runChests.firstOrNull { it.slot == slot.index } ?: return null
 		if (chest.opened) return doneColor.argb
 		val unopened = runChests.filter { !it.opened }
+		if (chest.kuudra) {
+			// One chest per Kuudra run: the better one, until either is opened.
+			if (runChests.any { it.opened }) return null
+			return if (unopened.maxByOrNull { it.profit } === chest && chest.profit > 0) unopenedColor.argb else null
+		}
 		if (runChests.none { it.opened }) {
-			// The first chest is the most profitable one; a second is worth its key on top.
+			// The first chest is the most profitable; a second is worth its key on top.
 			val ranked = unopened.sortedByDescending { it.profit }
 			if (ranked.firstOrNull() === chest && chest.profit > 0) return unopenedColor.argb
 			if (ranked.getOrNull(1) === chest && chest.profitWithKey >= minProfit()) return keyColor.argb
@@ -571,77 +625,92 @@ object CroesusHelper {
 		return if (best === chest && chest.profitWithKey >= minProfit()) keyColor.argb else null
 	}
 
-	// ---- Numbers, SkyHanni's way -----------------------------------------
-
 	/**
-	 * SkyHanni's short number: one decimal kept, and cut rather than rounded,
-	 * only while it still says something — under 10k, under 100M — so 1.3M,
-	 * 263k and 1M rather than 1.30M, 263.4k and 1.00M.
+	 * A short number of at most three figures, trailing zeros dropped (1.3M, 263k, 12.3k, 9.87k,
+	 * 1M). Truncated, so a chest never looks worth more than it is.
 	 */
-	private fun compact(input: Double): String {
+	private fun short(input: Double): String {
+		if (input < 0) return "-" + short(-input)
 		val value = input.toLong()
-		if (value < 0) return "-" + compact(-input)
 		if (value < 1000) return value.toString()
-		val (divideBy, suffix) = when {
-			value >= 1_000_000_000_000L -> 1_000_000_000_000L to "T"
-			value >= 1_000_000_000L -> 1_000_000_000L to "B"
-			value >= 1_000_000L -> 1_000_000L to "M"
-			else -> 1_000L to "k"
+		val (unit, suffix) = UNITS.first { value >= it.first }
+		val whole = value / unit
+		val decimals = when {
+			whole >= 100 -> 0
+			whole >= 10 -> 1
+			else -> 2
 		}
-		val truncated = value / (divideBy / 10)
-		val truncatedAt = when (suffix) {
-			"M" -> 1000
-			"B" -> 1_000_000
-			else -> 100
+		var scaled = value * POWERS[decimals] / unit
+		var places = decimals
+		while (places > 0 && scaled % 10 == 0L) {
+			scaled /= 10
+			places--
 		}
-		val hasDecimal = truncated < truncatedAt && truncated % 10 != 0L
-		return if (hasDecimal) "${truncated / 10.0}$suffix" else "${truncated / 10}$suffix"
+		val text = if (places == 0) scaled.toString() else scaled.toString().padStart(places + 1, '0').let {
+			it.dropLast(places) + "." + it.takeLast(places)
+		}
+		return text + suffix
 	}
 
-	/** Gold for a gain, red for a loss: SkyHanni's coin colour. */
-	private fun coin(value: Double): String = (if (value < 0) "§c" else "§6") + compact(value)
+	private val UNITS = listOf(1_000_000_000_000L to "T", 1_000_000_000L to "B", 1_000_000L to "M", 1_000L to "k")
+	private val POWERS = longArrayOf(1, 10, 100)
+
+	private fun signed(value: Double): String = if (value < 0) "§c${short(value)}" else "§a+${short(value)}"
 
 	private fun text(legacy: String): Component = Component.literal(legacy)
 
-	private fun join(label: Component, legacy: String): Component = Component.empty().append(label).append(text(legacy))
+	/** One list row: words left, a value aligned right. A [rule] row is a thin divider. */
+	private class Row(val left: Component, val right: Component? = null, val rule: Boolean = false) {
+		constructor(left: String, right: String? = null) : this(text(left), right?.let(::text))
 
-	// ---- The overlays ----------------------------------------------------
+		companion object {
+			val RULE = Row(Component.empty(), rule = true)
+		}
+	}
 
-	/** "Croesus Profit Overlay": a run's chests, each with its profit. */
-	private fun overviewLines(chests: List<Chest>): List<Component> =
-		listOf(text("§6§lCroesus Profit Overlay")) + chests.map { text("${it.name}§r: ${coin(it.profit)}") }
+	/** A run's unopened chests, best first, the one worth opening starred. */
+	private fun overviewRows(chests: List<Chest>): List<Row> = buildList {
+		add(Row("§6§lChests"))
+		val ranked = chests.sortedByDescending { it.profit }
+		ranked.forEachIndexed { index, chest ->
+			val star = if (index == 0 && chest.profit > 0) " §e★" else ""
+			add(Row("${chest.name}$star", signed(chest.profit)))
+		}
+		val key = keyPrice()
+		if (key > 0) {
+			add(Row.RULE)
+			add(Row("§7Chest Key", "§7${short(key)}"))
+		}
+	}
 
-	/** What hovering a chest in the overview shows. */
+	private fun overviewOrder(chests: List<Chest>): List<Chest> = chests.sortedByDescending { it.profit }
+
 	private fun overviewTip(chest: Chest): List<Component> = buildList {
-		add(text("${chest.name}:"))
-		chest.items.forEach { add(Component.literal(" ").append(it.label).append(text("§r: ${coin(it.value)}"))) }
-		add(text("Cost: ${coin(chest.cost)}"))
-		add(text("Profit: ${coin(chest.profit)} §f(Pre Cost Profit ${coin(chest.revenue)}§f)"))
+		add(text(chest.name))
+		chest.items.forEach { add(Component.empty().append(it.label).append(text(" §7${short(it.value)}"))) }
+		if (chest.costs.isNotEmpty()) add(text("§7Costs ${signed(chest.cost)}"))
+		add(text("§7Profit ${signed(chest.profit)}"))
 	}
 
-	/** "Obsidian Profit": one chest, its revenue, its cost and what is left. */
-	private fun chestLines(title: String, chest: Chest): List<Component> = buildList {
-		add(text("§d§l$title Profit"))
-		add(text(""))
-		add(text("§a§lTotal Revenue §a${coin(chest.revenue)}"))
-		chest.items.forEach { add(join(it.label, " §a${coin(it.value)}")) }
-		if (chest.costs.isNotEmpty()) {
-			add(text(" "))
-			add(text("§c§lTotal Cost §c${coin(chest.cost)}"))
-			chest.costs.forEach { add(join(it.label, " §c${coin(it.value)}")) }
-		}
-		val color = if (chest.profit < 0) "§c" else "§a"
-		add(text(""))
-		add(text("$color§lProfit $color${coin(chest.profit)}"))
-		// In a dungeon, every chest looked at so far, as SkyHanni lists them.
-		if (DungeonLocation.inDungeon && dungeonChests.isNotEmpty()) {
-			add(text(""))
-			add(text("§d§lAll Chest Profits"))
-			dungeonChests.entries.sortedByDescending { it.value }.forEach { add(text("${it.key} ${coin(it.value)}")) }
+	/** One chest: each item and its value, the costs, and the profit. */
+	private fun chestRows(title: String, chest: Chest): List<Row> = buildList {
+		add(Row("§d§l$title"))
+		chest.items.sortedByDescending { it.value }.forEach { add(Row(it.label, text(signed(it.value)))) }
+		chest.costs.forEach { add(Row(it.label, text(signed(it.value)))) }
+		add(Row.RULE)
+		add(Row("§lProfit", "§l" + signed(chest.profit)))
+		// In a dungeon, every chest seen so far, to compare.
+		if (DungeonLocation.inDungeon && dungeonChests.size > 1) {
+			add(Row.RULE)
+			add(Row("§7This run"))
+			dungeonChests.entries.sortedByDescending { it.value }.forEach { (name, profit) ->
+				val mark = if (name == title) "§f› " else "§7"
+				add(Row(mark + name.removeSuffix(" Chest"), signed(profit)))
+			}
 		}
 	}
 
-	/** The profit by a chest's title, and SkyHanni's lists beside the window. */
+	/** The profit beside a chest's title, and the profit list beside the window. */
 	@JvmStatic
 	fun renderOverlay(screen: Screen, context: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
 		if (!module.enabled || screen !is AbstractContainerScreen<*>) return
@@ -649,116 +718,85 @@ object CroesusHelper {
 		val accessor = screen as? ContainerScreenAccessor
 		if (profitInTitle.value && chest != null && accessor != null) {
 			val font = Minecraft.getInstance().font
-			val text = "Profit: " + coin(chest.profit)
+			val text = signed(chest.profit)
 			val x = accessor.`cryptic$leftPos`() + accessor.`cryptic$imageWidth`() - 8 - font.width(text)
 			context.text(font, text, x, accessor.`cryptic$topPos`() + 6, -1, false)
 		}
 		if (!profitHud.value || !ItemPrices.loaded) return
 
 		if (chest != null) {
-			drawBeside(context, accessor, ProfitElement, chestLines(openChestTitle, chest))
+			drawBeside(context, accessor, chestRows(openChestTitle, chest))
 			return
 		}
 		val shown = runChests.filter { !it.opened }
 		if (shown.isEmpty()) return
-		val placed = drawBeside(context, accessor, ProfitElement, overviewLines(shown))
-		// The row under the mouse, past the heading, shows that chest's contents.
+		val placed = drawBeside(context, accessor, overviewRows(shown))
+		// The hovered row (after the heading) shows that chest's contents.
 		val row = placed.rowAt(mouseX, mouseY) ?: return
-		val hovered = shown.getOrNull(row - 1) ?: return
+		val hovered = overviewOrder(shown).getOrNull(row - 1) ?: return
 		context.setComponentTooltipForNextFrame(Minecraft.getInstance().font, overviewTip(hovered), mouseX, mouseY)
 	}
 
-	/** Where a list ended up on screen, to tell which of its rows the mouse is on. */
 	private class Placed(val x: Float, val y: Float, val scale: Float, val width: Int, val rows: Int) {
 		fun rowAt(mouseX: Int, mouseY: Int): Int? {
 			if (mouseX < x || mouseX > x + width * scale) return null
-			val row = ((mouseY - y) / (ROW_HEIGHT * scale)).toInt()
-			return if (mouseY >= y && row in 0 until rows) row else null
+			val inside = (mouseY - y) / scale
+			val row = (inside / ROW_HEIGHT).toInt()
+			return if (inside >= 0 && row in 0 until rows) row else null
 		}
 	}
 
+	private val ROW_HEIGHT get() = Minecraft.getInstance().font.lineHeight + 2
+
+	private const val COLUMN_GAP = 12
+	private const val WINDOW_GAP = 8
+
+	/** The smallest the list shrinks to when there's little room beside the window. */
+	private const val MIN_SCALE = 0.5f
+
+	private const val RULE_COLOR = 0x40FFFFFF
+
 	/**
-	 * Draws a list where it was placed, or beside the window when that would
-	 * put it under the window — shrunk if even beside it there is not the room.
+	 * Draws the list left of the window, centred on the window's middle (a run's window and a
+	 * chest's differ in height). Shrunk only when the gap is too narrow.
 	 */
-	private fun drawBeside(context: GuiGraphicsExtractor, accessor: ContainerScreenAccessor?, element: ListElement, lines: List<Component>): Placed {
-		element.lines = lines
-		val width = element.width
-		var x = (element.x * context.guiWidth()).toFloat()
-		val y = (element.y * context.guiHeight()).toFloat()
-		var scale = element.scale.toFloat()
-		val left = accessor?.`cryptic$leftPos`()?.toFloat()
-		val right = left?.plus(accessor.`cryptic$imageWidth`())
-		if (left != null && right != null && x < right && x + width * scale > left) {
-			scale = minOf(scale, (left - 8f) / width.coerceAtLeast(1)).coerceAtLeast(0.4f)
-			x = maxOf(2f, left - width * scale - 6f)
-		}
+	private fun drawBeside(context: GuiGraphicsExtractor, accessor: ContainerScreenAccessor?, rows: List<Row>): Placed {
+		val font = Minecraft.getInstance().font
+		val width = contentWidth(font, rows)
+		val height = rows.size * ROW_HEIGHT - 2
+		val left = accessor?.`cryptic$leftPos`() ?: (context.guiWidth() / 2 - 88)
+		val top = accessor?.`cryptic$topPos`() ?: (context.guiHeight() / 2 - 83)
+		val windowHeight = accessor?.`cryptic$imageHeight`() ?: 166
+
+		val room = (left - WINDOW_GAP - 2).toFloat()
+		val scale = if (width <= room) 1f else (room / width.coerceAtLeast(1)).coerceAtLeast(MIN_SCALE)
+		val x = maxOf(2f, left - WINDOW_GAP - width * scale)
+		val y = top + windowHeight / 2f - height * scale / 2f
+
 		val pose = context.pose()
 		pose.pushMatrix()
 		pose.translate(x, y)
 		pose.scale(scale, scale)
-		element.render(context)
-		pose.popMatrix()
-		return Placed(x, y, scale, width, lines.size)
-	}
-
-	/** SkyHanni's rows: the font's height and one pixel between them. */
-	private val ROW_HEIGHT get() = Minecraft.getInstance().font.lineHeight + 1
-
-	/**
-	 * A list drawn over a chest screen. Only placed through the HUD editor:
-	 * outside a chest screen there is nothing for it to show, as in SkyHanni.
-	 */
-	private abstract class ListElement(id: String, name: String) : HudElement(id, name, 0.02, 0.25) {
-		private val font get() = Minecraft.getInstance().font
-
-		/** What was last drawn, which is also what gives the element its size. */
-		var lines: List<Component> = emptyList()
-
-		abstract fun sample(): List<Component>
-
-		private fun shown(): List<Component> = lines.ifEmpty { sample() }
-
-		override val width: Int get() = shown().maxOf { font.width(it) }
-		override val height: Int get() = shown().size * ROW_HEIGHT
-
-		override fun isVisible(): Boolean = false
-
-		override fun showInEditor(): Boolean = module.enabled && profitHud.value
-
-		override fun render(context: GuiGraphicsExtractor) = draw(context, lines)
-
-		override fun renderExample(context: GuiGraphicsExtractor) = draw(context, sample())
-
-		private fun draw(context: GuiGraphicsExtractor, lines: List<Component>) {
-			lines.forEachIndexed { i, line -> context.text(font, line, 0, i * ROW_HEIGHT, -1) }
+		rows.forEachIndexed { i, row ->
+			val rowY = i * ROW_HEIGHT
+			if (row.rule) {
+				val middle = rowY + (ROW_HEIGHT - 2) / 2
+				context.fill(0, middle, width, middle + 1, RULE_COLOR)
+				return@forEachIndexed
+			}
+			context.text(font, row.left, 0, rowY, -1)
+			row.right?.let { context.text(font, it, width - font.width(it), rowY, -1) }
 		}
+		pose.popMatrix()
+		return Placed(x, y, scale, width, rows.size)
 	}
 
-	/**
-	 * The one profit list: the run's chests at Croesus, or the breakdown of the
-	 * chest that is open. Only one is ever on screen, so they share a place;
-	 * two elements meant placing the same list twice. Keeps the overview's id,
-	 * so where it was placed is where both now go.
-	 */
-	private object ProfitElement : ListElement("croesus_overview", "Croesus Profit") {
-		override fun sample(): List<Component> = overviewLines(SAMPLE_CHESTS)
-	}
-
-	private val SAMPLE_CHESTS: List<Chest> by lazy {
-		listOf(
-			Chest("Gold", 0, emptyList(), listOf(Entry(text("§6227,000 Coins"), -227_000.0)), false),
-			Chest("Diamond", 1, emptyList(), listOf(Entry(text("§6329,000 Coins"), -329_000.0)), false),
-			Chest(
-				"Obsidian", 2,
-				listOf(
-					Entry(text("§d§lLast Stand I"), 55_000.0),
-					Entry(text("§9Overload I"), 867_000.0),
-					Entry(text("§dWither Essence §8x71"), 175_000.0),
-				),
-				listOf(Entry(text(KEY_LABEL), -263_000.0)),
-				false,
-			),
-		)
+	/** Wide enough for the longest valued words, a gap and the longest value, or for an unvalued row. */
+	private fun contentWidth(font: net.minecraft.client.gui.Font, rows: List<Row>): Int {
+		val valued = rows.filter { it.right != null }
+		val words = valued.maxOfOrNull { font.width(it.left) } ?: 0
+		val values = valued.maxOfOrNull { font.width(it.right!!) } ?: 0
+		val lone = rows.filter { it.right == null }.maxOfOrNull { font.width(it.left) } ?: 0
+		return maxOf(lone, if (values > 0) words + COLUMN_GAP + values else words)
 	}
 }

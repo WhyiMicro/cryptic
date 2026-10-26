@@ -11,6 +11,7 @@ import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionContext
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
@@ -25,11 +26,9 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * Replaces Hypixel's Creeper Veil charged-creeper overlay with orbiting shields.
- *
- * The behavior is adapted for modern Minecraft from NotEnoughUpdates' original
- * WitherCloakChanger. Detection happens during client ticks, while all live-world
- * values needed for drawing are copied during Fabric's render extraction phase.
+ * Replaces Hypixel's Creeper Veil charged-creeper overlay with orbiting shields. The veil is
+ * noticed by Hypixel's chat line, the invisible creeper being drawn, or a slow scan for it. The
+ * shield texture is NotEnoughUpdates'.
  */
 object WitherCloakEffect {
 	private val shieldCount = SliderModuleSetting(
@@ -59,7 +58,7 @@ object WitherCloakEffect {
 		step = 0.1,
 	)
 
-	/** How big each shield is: its width and its height together, so it keeps its shape. */
+	/** Each shield's size, width and height together. */
 	private val shieldSize = SliderModuleSetting(
 		id = "shield_size",
 		label = "Shield Size",
@@ -69,7 +68,7 @@ object WitherCloakEffect {
 		step = 0.05,
 	)
 
-	/** How far above your feet the ring sits, in blocks. Below zero sinks it. */
+	/** How far above your feet the ring sits, in blocks. */
 	private val shieldHeight = SliderModuleSetting(
 		id = "shield_height",
 		label = "Shield Height",
@@ -87,14 +86,11 @@ object WitherCloakEffect {
 		description = "Leaves the cloak as Hypixel draws it everywhere but the Catacombs.",
 	)
 
-	/** True while the floor has to be read for this, for [imicro.cryptic.CrypticClient]. */
 	val needsDungeon: Boolean get() = module.enabled && dungeonsOnly.value
 
 	/**
-	 * Whether the shields take the creeper's place right now.
-	 *
-	 * Everything that used to ask whether the module was on asks this instead,
-	 * so that outside a dungeon it behaves exactly as if it were off.
+	 * Whether the shields replace the creeper right now; outside a dungeon (when limited) it
+	 * behaves as off.
 	 */
 	private val active: Boolean
 		get() = module.enabled &&
@@ -127,7 +123,7 @@ object WitherCloakEffect {
 		ClientReceiveMessageEvents.CHAT.register { message, _, _, _, _ ->
 			onGameMessage(message.string)
 		}
-		LevelRenderEvents.END_EXTRACTION.register(::extractRenderState)
+		LevelExtractionEvents.END_EXTRACTION.register(::extractRenderState)
 		LevelRenderEvents.COLLECT_SUBMITS.register(::submitRenderState)
 	}
 
@@ -146,18 +142,14 @@ object WitherCloakEffect {
 
 		val now = System.currentTimeMillis()
 
-		// A developer override stands in for Hypixel's veil, so the shields can
-		// be looked at without a charged creeper to trigger them.
 		if (DebugOverrides.forceWitherCloak) {
 			cloakActive = true
 			lastCloakCreeperSeenAt = now
 			return
 		}
 
-		// Walking every loaded entity is only the fallback detection path: chat
-		// messages and the creeper render layer both activate the effect the
-		// moment they see it. Scanning a few times a second rather than every
-		// tick stays well inside the grace periods used below.
+		// The scan is only a fallback; chat and the render layer activate it at once. A few times a
+		// second stays inside the grace periods below.
 		if (ticksUntilScan-- <= 0) {
 			ticksUntilScan = SCAN_INTERVAL_TICKS
 
@@ -182,7 +174,6 @@ object WitherCloakEffect {
 		}
 	}
 
-	/** Called by the creeper power-layer mixin to prevent the vanilla overlay overlapping ours. */
 	@JvmStatic
 	fun shouldHideVanillaPower(state: CreeperRenderState): Boolean {
 		if (!active || !state.isPowered) return false
@@ -199,8 +190,8 @@ object WitherCloakEffect {
 		if (looksLikeCloakCreeper) {
 			lastCloakCreeperSeenAt = now
 			if (now - lastDeactivatedAt >= VANILLA_OVERLAY_GRACE_PERIOD_MS) cloakActive = true
-			// Hypixel can keep the marker creeper for a fraction of a second after
-			// deactivation. Keep its vanilla layer hidden without reactivating ours.
+			// Hypixel can keep the creeper a moment after it ends; keep its layer hidden without
+			// reactivating.
 			return true
 		}
 		return false
@@ -261,7 +252,9 @@ object WitherCloakEffect {
 			poseStack,
 			RenderTypes.entityTranslucentEmissive(TEXTURE),
 		) { pose, consumer ->
-			val baseAngle = (((System.currentTimeMillis() / 30.0) * snapshot.speed * -0.5) % 360.0) * DEGREES_TO_RADIANS
+			// Positive speeds turn clockwise seen from above.
+			val seconds = (System.currentTimeMillis() % SPIN_PERIOD_MS) / 1000.0
+			val baseAngle = -seconds * snapshot.speed * DEGREES_PER_SECOND_PER_SPEED * DEGREES_TO_RADIANS
 			val angleStep = (2.0 * PI) / snapshot.count
 			for (index in 0 until snapshot.count) {
 				drawShield(consumer, pose, baseAngle + angleStep * index, snapshot.distance, snapshot.size, snapshot.height)
@@ -289,7 +282,7 @@ object WitherCloakEffect {
 		vertex(consumer, pose, rightX, top, rightZ, 1f, 0f, radialX, radialZ)
 		vertex(consumer, pose, leftX, top, leftZ, 0f, 0f, radialX, radialZ)
 
-		// The image must remain visible from both sides while it orbits the camera.
+		// Visible from both sides as it orbits.
 		vertex(consumer, pose, rightX, bottom, rightZ, 1f, 1f, -radialX, -radialZ)
 		vertex(consumer, pose, leftX, bottom, leftZ, 0f, 1f, -radialX, -radialZ)
 		vertex(consumer, pose, leftX, top, leftZ, 0f, 0f, -radialX, -radialZ)
@@ -347,6 +340,12 @@ object WitherCloakEffect {
 	private const val CREEPER_GRACE_PERIOD_MS = 2_000L
 	private const val VANILLA_OVERLAY_GRACE_PERIOD_MS = 300L
 	private const val DEGREES_TO_RADIANS = PI / 180.0
+
+	private const val DEGREES_PER_SECOND_PER_SPEED = 50.0 / 3.0
+
+	/** The clock is taken modulo this to keep the angle small; every speed turns whole circles in it. */
+	private const val SPIN_PERIOD_MS = 21_600_000L
+	/** A shield's size in blocks at Shield Size 1. */
 	private const val SHIELD_WIDTH = 0.8
 	private const val SHIELD_HEIGHT = 2.0
 	private const val FULL_BRIGHT_LIGHT = 0x00F000F0

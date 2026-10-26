@@ -27,22 +27,14 @@ import net.minecraft.world.level.block.state.BlockState
 import java.util.Locale
 
 /**
- * Thorn's Spirit Bear, on Floor 4: how close it is to spawning, and where it is.
- *
- * Odin's Spirit Bear and NoammAddons' F4 Features (BSD 3-Clause, Copyright (c)
- * 2025 odtheking; CC0, Noamm9). Every spirit animal killed in Thorn's arena
- * lights one of the sea lanterns ringing it — twenty-five on Floor 4, thirty
- * in Master Mode — and the last one lighting starts the bear's spawn, 68
- * server ticks later. So the ring is a progress bar the game already draws,
- * just one nobody can read from the middle of the fight; the HUD reads it.
- *
- * The highlights are NoammAddons': Thorn himself (a ghast), the Spirit Bear
- * (a player-shaped NPC by that name), and the stand holding the Spirit Bow.
+ * Thorn's Spirit Bear on Floor 4: spawn progress and where it is. Each spirit kill lights a sea
+ * lantern around the arena (25 on F4, 30 on M4); the last starts the bear's spawn 68 ticks later.
+ * Highlights Thorn, the bear and the Spirit Bow stand. From Odin's Spirit Bear and NoammAddons' F4
+ * Features.
  */
 object SpiritBear {
 	private const val SPAWN_TICKS = 68L
 
-	/** The lantern that lights last, which is the one that starts the spawn. */
 	private val LAST_LANTERN = BlockPos(7, 77, 34)
 
 	@JvmField
@@ -106,8 +98,8 @@ object SpiritBear {
 	@JvmField
 	val module = Module(
 		id = "spirit_bear",
-		name = "Spirit Bear",
-		description = "F4 bear spawn and marks",
+		name = "F4/M4 Features",
+		description = "Spirit Bear and Thorn",
 		category = ModuleCategory.FLOOR_7,
 		supportsKeybind = false,
 		settings = listOf(
@@ -116,13 +108,10 @@ object SpiritBear {
 		),
 	)
 
-	/** Lanterns lit so far. */
 	private var lit = 0
 
-	/** The server tick the bear spawns on, or 0 while it is not coming. */
 	private var spawnAt = 0L
 
-	/** True once the last lantern has lit and the bear is up (or coming). */
 	private var spawning = false
 
 	private var initialized = false
@@ -143,15 +132,11 @@ object SpiritBear {
 
 	private val inBoss: Boolean get() = module.enabled && DungeonLocation.floor == 4 && DungeonRun.inBoss
 
-	/** True while the floor has to be read for this module. */
 	val needsDungeon: Boolean get() = module.enabled
 
 	private val lanterns: Set<BlockPos> get() = if (DungeonLocation.masterMode) M4_LANTERNS else F4_LANTERNS
 
-	/**
-	 * A block the server has set, with what was there before. A lantern going
-	 * from coal to sea lantern is a kill counted, and back is one taken away.
-	 */
+	/** A lantern turning from coal to sea lantern is a kill counted, and back is one undone. */
 	@JvmStatic
 	fun onBlockChanged(pos: BlockPos, old: BlockState, new: BlockState) {
 		if (!inBoss || pos !in lanterns) return
@@ -173,7 +158,6 @@ object SpiritBear {
 		}
 	}
 
-	/** The outline colour for [entity], or [EntityRenderState.NO_OUTLINE]. */
 	@JvmStatic
 	fun outlineColorFor(entity: Entity): Int {
 		if (!inBoss) return EntityRenderState.NO_OUTLINE
@@ -188,7 +172,6 @@ object SpiritBear {
 		return ARGB.opaque(color)
 	}
 
-	/** What the HUD says: lanterns, a countdown, or that the bear is up. */
 	private fun status(): Pair<String, Int> {
 		if (!spawning) return "$lit/${lanterns.size}" to 0xFFFF55FF.toInt()
 		val left = spawnAt - ServerTicks.total

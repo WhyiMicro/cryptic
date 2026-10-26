@@ -21,27 +21,13 @@ import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.network.chat.Component
 
 /**
- * Works out the score the run is heading for, and says so.
+ * The score the run is heading for. Hypixel only shows it at the end, but publishes every number
+ * it's made of during the run ([DungeonStats]). Ported from dtMap (score maths from Odin).
  *
- * Ported from dtMap (BSD 3-Clause, Copyright (c) 2026 rice.who), whose score
- * arithmetic came from Odin (BSD 3-Clause, Copyright (c) 2026 odtheking); the
- * full licence is in `licenses/dtMap-LICENSE.txt`. Hypixel only tells you the
- * score once the run is over, by which point knowing it is no use — the numbers
- * it is made of are all published while you play, and [DungeonStats] collects
- * them.
- *
- * The line can sit under the map or anywhere else on the HUD, and can announce
- * itself to the party when it crosses 270 or 300.
- *
- * There is no module here any more. The score was a card whose switch only ever
- * wanted to be on whenever the map's was, and whose announcements said the same
- * things [RoomAlerts] was already saying — the mimic ended up on two cards at
- * once. So the drawing settings are listed on the map's card and the
- * announcements on the alerts card, and each half is gated by the module it now
- * belongs to.
+ * No module of its own: drawing settings are on the map's card, announcements on Room Alerts, each
+ * gated by that module.
  */
 object DungeonScore {
-	/** Long enough to read a three-digit number, and no longer. */
 	private const val TITLE_FADE_IN_TICKS = 0
 	private const val TITLE_STAY_TICKS = 25
 	private const val TITLE_FADE_OUT_TICKS = 10
@@ -54,7 +40,7 @@ object DungeonScore {
 		description = "Whether the score follows the map or is placed on its own.",
 	)
 
-	/** True while the score is drawn by the map rather than by its own element. */
+	/** True while the map draws the score instead of its own element. */
 	private val attached: Boolean get() = placement.selectedIndex == 0
 
 	@JvmField
@@ -128,12 +114,7 @@ object DungeonScore {
 		description = "A party message for every bat you kill.",
 	)
 
-	/**
-	 * What each alert says, under the alert itself: one field per title and
-	 * per announcement, shown while that alert is on. They used to share two
-	 * fields behind a "Custom wording" switch, which made the mimic and a
-	 * prince impossible to word apart.
-	 */
+	/** A text field for one alert's wording, shown while that alert is on. */
 	private fun wording(id: String, default: String, owner: ToggleModuleSetting, title: Boolean) = TextModuleSetting(
 		id = id,
 		label = if (title) "Title" else "Message",
@@ -169,15 +150,7 @@ object DungeonScore {
 	private val title270Text = wording("title_270_text", "270", title270, title = true)
 	private val title300Text = wording("title_300_text", "300", title300, title = true)
 
-	/**
-	 * The score's own settings, which [DungeonMap] lists.
-	 *
-	 * The score has no module of its own any more: it is a line under the map,
-	 * drawn from the same numbers the map is, and a card for it on the Dungeon
-	 * page was a switch that only ever wanted to be on whenever the map was.
-	 * The settings are declared here because this is the code that reads them,
-	 * and listed there because that is the card they belong on.
-	 */
+	/** The score's settings, listed on [DungeonMap]'s card. */
 	val scoreSettings: List<ModuleSetting> = listOf(
 		SectionModuleSetting("score_section", "Score"),
 		placement,
@@ -187,15 +160,7 @@ object DungeonScore {
 		showAtEnd,
 	)
 
-	/**
-	 * The announcements, which [RoomAlerts] lists.
-	 *
-	 * They sat here because the score is what notices a run crossing 270, and
-	 * they belong on the alerts card because what they *do* is announce a thing
-	 * — which is the whole of what that module is for. Keeping them apart from
-	 * the titles on the same card was how the mimic ended up on two cards at
-	 * once.
-	 */
+	/** The announcements, listed on [RoomAlerts]' card. */
 	val announcementSettings: List<ModuleSetting> = listOf(
 		announceMimic.withMore(announceMimicText),
 		announcePrince.withMore(announcePrinceText),
@@ -204,10 +169,8 @@ object DungeonScore {
 		announce300.withMore(announce300Text),
 	)
 
-	/** The two titles the score puts on your own screen, listed under Titles. */
 	val titleSettings: List<ModuleSetting> = listOf(title270.withMore(title270Text), title300.withMore(title300Text))
 
-	/** Everything above that a Reset button should put back. */
 	fun resetSettings() {
 		(scoreSettings + announcementSettings + titleSettings).flatMap { listOf(it) + it.more }.forEach {
 			when (it) {
@@ -223,11 +186,7 @@ object DungeonScore {
 	private var sent270 = false
 	private var sent300 = false
 
-	/**
-	 * Whether the 300 title has been shown, kept apart from [sent300] because a
-	 * teammate's mod can say so first — and when it does, the title is worth
-	 * having then rather than a moment later when this run's own sum agrees.
-	 */
+	/** Whether the 300 title was shown, separate from [sent300] since a teammate's mod may say it first. */
 	private var shown300Title = false
 
 	val element: HudElement = ScoreElement()
@@ -248,12 +207,8 @@ object DungeonScore {
 	}
 
 	/**
-	 * A teammate's mod saying the run has reached 300.
-	 *
-	 * Their sum can land a moment before this one — a secret they found shows in
-	 * their tab list first — so the title goes up now. This run's own party
-	 * message still waits for this run's own sum, so it never claims a number it
-	 * has not seen.
+	 * A teammate's mod announcing 300. Their sum may land first, so the title shows now; our own
+	 * party message still waits for our own sum.
 	 */
 	fun onTeammateReached300() {
 		if (!RoomAlerts.module.enabled || !DungeonLocation.inDungeon || shown300Title) return
@@ -262,11 +217,8 @@ object DungeonScore {
 	}
 
 	/**
-	 * Announces the run's first 270 and first 300, if either is asked for.
-	 *
-	 * The crossing itself is noticed whether or not anything is switched on to
-	 * report it, because the party message and the title are two ways of saying
-	 * the same thing and one must not be able to swallow the other's moment.
+	 * Announces the run's first 270 and 300. The crossing is tracked regardless, so the message and
+	 * title can't swallow each other's moment.
 	 */
 	fun tick(client: Minecraft) {
 		if (!RoomAlerts.module.enabled || !DungeonLocation.inDungeon) return
@@ -288,53 +240,36 @@ object DungeonScore {
 		}
 	}
 
-	/**
-	 * Puts the score on screen for a moment.
-	 *
-	 * Where the party message tells everybody else, this tells you — and it is
-	 * separate because the two are wanted at different times: a message is worth
-	 * sending once, a title is worth seeing every run.
-	 */
+	/** Puts the score on your screen briefly; separate from the party message, which only goes once. */
 	private fun showTitle(client: Minecraft, text: String) {
 		client.gui.hud.setTimes(TITLE_FADE_IN_TICKS, TITLE_STAY_TICKS, TITLE_FADE_OUT_TICKS)
 		client.gui.hud.setTitle(Component.literal(text))
-		// The same pling the room titles get: these are titles on the same
-		// card, and one of them making a sound while the other does not is
-		// exactly the sort of thing that reads as a fault.
+		// The same sound as the room titles on this card.
 		RoomAlerts.playAlertSound(client)
 	}
 
 	/**
-	 * The mimic dying, announced once.
-	 *
-	 * Called from [imicro.cryptic.dungeon.DungeonStats], which is where the
-	 * death is noticed, rather than from a chat line — because there is no chat
-	 * line, and a party where nobody says so is exactly the party this is for.
+	 * The mimic dying, announced once. Called from [imicro.cryptic.dungeon.DungeonStats], since
+	 * there's no chat line for it.
 	 */
 	fun onMimicKilled() {
 		if (!RoomAlerts.module.enabled || !announceMimic.value) return
 		announce(Minecraft.getInstance(), announceMimicText.value)
 	}
 
-	/** The same for a Prince, which Hypixel does announce but only to you. */
+	/** A Prince dying, which Hypixel tells only you. */
 	fun onPrinceKilled() {
 		if (!RoomAlerts.module.enabled || !announcePrince.value) return
 		announce(Minecraft.getInstance(), announcePrinceText.value)
 	}
 
-	/**
-	 * And for the run's first bat, which is its one bonus point. Later bats are
-	 * worth nothing, so nothing is said about them.
-	 */
+	/** The run's first bat, worth one bonus point; later ones are worth nothing. */
 	fun onBatKilled() {
 		if (!RoomAlerts.module.enabled || !announceBat.value) return
 		announce(Minecraft.getInstance(), announceBatText.value)
 	}
 
-	/**
-	 * A title as typed, with `&` colour codes turned into the game's own, and
-	 * [default] in front when it names no colour of its own.
-	 */
+	/** A title as typed, `&` codes converted, with [default] in front when it has no colour. */
 	fun colored(text: String, default: String): String {
 		val coded = text.replace(COLOR_CODE) { "§" + it.groupValues[1] }
 		return if (coded.startsWith("§")) coded else default + coded
@@ -346,8 +281,7 @@ object DungeonScore {
 		val message = text.trim()
 		if (message.isEmpty()) return
 
-		// The debug switch shows the announcement to the player instead of
-		// sending it, so the wording can be checked without a party.
+		// The debug switch shows the announcement instead of sending it.
 		if (DebugOverrides.previewScoreMessage) {
 			client.gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §7Party chat: §f$message"))
 			return
@@ -356,39 +290,33 @@ object DungeonScore {
 		client.connection?.sendCommand("pc $message")
 	}
 
-	/** Shows the line the announcements would send, for `/cryptic debug score`. */
 	fun preview(client: Minecraft) {
 		client.gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §f${secretsLine()}   ${bonusLine()}"))
 	}
 
 	/**
-	 * True while the score has anything to draw at all.
-	 *
-	 * The boss room is the one place it can be switched off on its own, because
-	 * it is the one place the map is not there to switch off with it.
+	 * True while the score has anything to draw. The boss room can switch it off on its own, since
+	 * the map isn't there.
 	 */
 	private val wanted: Boolean
 		get() = DungeonMap.module.enabled && DungeonLocation.inDungeon &&
 			(!DungeonRun.inBoss || showInBoss.value || (DungeonRun.ended && showAtEnd.value))
 
-	/** True while the boss has made the second line's numbers final. */
+	/** True once the boss has made the second line's numbers final. */
 	private val minimal: Boolean get() = DungeonRun.inBoss && minimalInBoss.value
 
-	/** How much taller the map element is because the score sits under it. */
 	fun attachedHeight(): Int =
 		if (DungeonMap.module.enabled && attached) Minecraft.getInstance().font.lineHeight * lineCount() + 5 else 0
 
 	private fun lineCount(): Int = if (minimal) 1 else 2
 
 	/**
-	 * True while the map element is carrying the score.
-	 *
-	 * The map hides itself in the boss room but the score need not, so the
-	 * element stays on screen for it even once its floor is gone.
+	 * True while the map element carries the score. The map hides in the boss room but the score
+	 * need not, so the element stays.
 	 */
 	fun attachedVisible(): Boolean = wanted && attached
 
-	/** Drawn by the map element, centred under it, when that is where it lives. */
+	/** Drawn centred under the map element when it lives there. */
 	fun renderAttached(context: GuiGraphicsExtractor, width: Int, height: Int) {
 		if (!attachedVisible()) return
 		drawLines(context, width / 2, height + 3, firstLine(), secondLine())
@@ -398,7 +326,6 @@ object DungeonScore {
 
 	private fun secondLine(): String = if (minimal) "" else bonusLine()
 
-	/** Everything the second line tracks is settled by the boss, so it goes. */
 	private fun minimalLine(): String {
 		val score = DungeonStats.score
 		val color = if (score < 270) "c" else if (score < 300) "e" else "a"
@@ -418,7 +345,7 @@ object DungeonScore {
 		}
 	}
 
-	/** Found, still needed, and how many the floor holds, then the score itself. */
+	/** Found, still needed, and the floor's total, then the score. */
 	private fun secretsLine(): String {
 		val score = DungeonStats.score
 		val color = if (score < 270) "c" else if (score < 300) "e" else "a"
@@ -427,41 +354,30 @@ object DungeonScore {
 	}
 
 	/**
-	 * The bonus points still on the table, and nothing else.
-	 *
-	 * Everything already earned is in the score above, so the second line only
-	 * lists what is missing: deaths taken, the mimic and the prince not yet
-	 * killed, and crypts short of five.
-	 *
-	 * Each one leaves the line entirely once done rather than staying on as a
-	 * green tick. A tick is a thing to read and then decide is not a problem; an
-	 * absence is nothing to read at all, and this line is looked at mid-run to
-	 * answer "what is left".
-	 *
-	 * The bat is not listed. Killing one is a secret like any other, and is
-	 * counted as one; the bonus point Hypixel also gives for it is still in the
-	 * score, but a line of its own for it was one more thing to read that the
-	 * secrets count already covers.
+	 * The bonus points still available: deaths taken, mimic and prince not yet killed, crypts short
+	 * of five. Each entry disappears once done, so the line answers "what's left". The bat isn't
+	 * listed; it counts as a secret.
 	 */
 	private fun bonusLine(): String = buildString {
-		// Deaths are a penalty rather than a task, so nothing is owed at zero
-		// and the entry stays out of the way.
+		// Deaths are a penalty, so nothing shows at zero.
 		if (DungeonStats.deaths > 0) append("§7D: §c${DungeonStats.deaths}   ")
 		if (DungeonLocation.floor >= 6 && !DungeonStats.mimicKilled) append("§7M: §c✖   ")
 		if (princePossible() && !DungeonStats.princeKilled) append("§7P: §c✖   ")
 		if (DungeonStats.crypts < MAX_CRYPTS) append("§c${DungeonStats.crypts}§7/§a$MAX_CRYPTS")
 	}.trim()
 
-	/** The crypts that count towards the score; any past this are worth nothing. */
+	/** Crypts that count; more are worth nothing. */
 	private const val MAX_CRYPTS = 5
 
-	/** A Prince only spawns in certain rooms, which the world scan can name. */
+	/** A Prince only spawns in certain rooms, which the scan can name. */
 	private fun princePossible(): Boolean = DungeonFloor.rooms.any { it.data?.prince == true }
 
 	private const val EXAMPLE_SECRETS = "§b10§7-§e12§7-§c55   §a300"
 	private const val EXAMPLE_BONUS = "§7D: §c1   §7M: §a✔   §7P: §c✖   §c0§7/§a5"
 
 	private class ScoreElement : HudElement("dungeon_score", "Dungeon Score", 0.02, 0.45, 1.0) {
+		override val layer get() = imicro.cryptic.gui.ModuleCategory.DUNGEON
+
 		private val font get() = Minecraft.getInstance().font
 
 		override val width: Int get() = font.width(EXAMPLE_BONUS)
@@ -469,10 +385,7 @@ object DungeonScore {
 
 		override fun isVisible(): Boolean = wanted && !attached
 
-		/**
-		 * Set to follow the map, the score has no placement of its own, so the
-		 * editor has nothing to offer for it but a frame that moves nothing.
-		 */
+		/** Following the map, the score has no placement of its own. */
 		override fun showInEditor(): Boolean = DungeonMap.module.enabled && !attached
 
 		override fun render(context: GuiGraphicsExtractor) {

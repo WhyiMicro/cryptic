@@ -35,33 +35,24 @@ import net.minecraft.world.level.block.Blocks
 import java.util.Locale
 
 /**
- * Finds the real Livid among the nine on Floor 5, and boxes it.
- *
- * Odin's Livid Solver and NoammAddons' (BSD 3-Clause, Copyright (c) 2025
- * odtheking; CC0, Noamm9). Livid splits into nine copies, each named for a
- * colour, and only one can be hurt. Hypixel gives it away above the arena: a
- * block of wool in the ceiling is dyed the real one's colour. Reading that
- * block is the whole solve; the rest is making the answer easy to aim at.
- *
- * The invulnerability timer is theirs too: Livid cannot be hurt for 340 server
- * ticks after his greeting, which is when an Ice Spray lands best.
+ * Finds the real Livid among the nine on Floor 5 and boxes it. The wool block in the arena ceiling
+ * is dyed the real one's colour. Also times the 340 ticks after his greeting during which he can't
+ * be hurt (when Ice Spray lands best). From Odin's and NoammAddons' solvers.
  */
 object LividSolver {
 	private const val STYLE_OUTLINE = 0
 	private const val STYLE_FILL = 1
 
-	/** How long Livid shrugs off damage after his greeting. */
 	private val INVULNERABLE_TICKS: Long get() = Timing.LIVID.ticks.toLong()
 
 	private const val GREETING =
 		"[BOSS] Livid: Welcome, you've arrived right on time. I am Livid, the Master of Shadows."
 
-	/** Odin reads the ceiling wool here, NoammAddons three blocks along; either says it. */
+	/** Odin reads the ceiling wool at the first, NoammAddons at the second. */
 	private val WOOL_POSITIONS = listOf(BlockPos(5, 108, 43), BlockPos(5, 108, 40))
 
 	private val FORMATTING = Regex("§.")
 
-	/** Each Livid's name and the wool, and colour, that gives it away. */
 	private enum class Livid(val title: String, val color: Int, val wool: () -> Block) {
 		VENDETTA("Vendetta", 0xFFFFFF, { Blocks.WOOL.white() }),
 		CROSSED("Crossed", 0xFF55FF, { Blocks.WOOL.magenta() }),
@@ -175,8 +166,8 @@ object LividSolver {
 	@JvmField
 	val module = Module(
 		id = "livid_solver",
-		name = "Livid Solver",
-		description = "Finds the real Livid on F5",
+		name = "F5/M5 Features",
+		description = "Finds the real Livid",
 		category = ModuleCategory.FLOOR_7,
 		supportsKeybind = false,
 		settings = listOf(
@@ -190,10 +181,9 @@ object LividSolver {
 	private var current: Livid? = null
 	private var announced: Livid? = null
 
-	/** The real Livid's entity, once it is in range. */
 	private var entityId: Int? = null
 
-	/** The server tick Livid becomes vulnerable on, or 0 when no timer is running. */
+	/** The server tick Livid becomes vulnerable, or 0 when no timer runs. */
 	private var vulnerableAt = 0L
 
 	private var initialized = false
@@ -214,7 +204,6 @@ object LividSolver {
 		vulnerableAt = 0L
 	}
 
-	/** True while the floor has to be read for this module. */
 	val needsDungeon: Boolean get() = module.enabled
 
 	private val inBoss: Boolean get() = module.enabled && DungeonLocation.floor == 5 && DungeonRun.inBoss
@@ -226,7 +215,7 @@ object LividSolver {
 		}
 		val level = client.level ?: return
 
-		// The ceiling says which; it can change once, when the copies split.
+		// The ceiling can change once, when the copies split.
 		WOOL_POSITIONS.firstNotNullOfOrNull { pos ->
 			val block = level.getBlockState(pos).block
 			Livid.entries.firstOrNull { it.wool() == block }
@@ -258,7 +247,6 @@ object LividSolver {
 		}
 	}
 
-	/** A chat packet, on the client thread. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay || !module.enabled || DungeonLocation.floor != 5) return
@@ -267,7 +255,7 @@ object LividSolver {
 		}
 	}
 
-	/** Whether [entity] is one of the copies, or a copy's name tag, that Hide wrong Livids drops. */
+	/** Whether [entity] is a wrong copy (or its name tag) that Hide wrong Livids drops. */
 	@JvmStatic
 	fun hides(entity: Entity): Boolean {
 		if (!hideWrong.value || !inBoss) return false
@@ -285,8 +273,7 @@ object LividSolver {
 	private fun render(context: LevelRenderContext) {
 		if (!inBoss) return
 		val client = Minecraft.getInstance()
-		// Blind at the start of the fight, when every copy is the same and
-		// nothing can be told apart yet.
+		// Blind at the start, when the copies can't be told apart yet.
 		if (client.player?.hasEffect(MobEffects.BLINDNESS) == true) return
 		val entity = entityId?.let { client.level?.getEntity(it) } as? AbstractClientPlayer ?: return
 		if (entity.isDeadOrDying) return

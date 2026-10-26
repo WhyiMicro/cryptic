@@ -13,12 +13,8 @@ import javax.imageio.ImageIO
 import kotlin.math.roundToInt
 
 /**
- * Cryptic's mark, top left of the menu.
- *
- * Drawn the way [BakedFont] draws text: scaled down by Java2D to exactly the
- * number of real pixels it covers, then put on the screen one texel to one
- * pixel. Squeezing the 128-pixel original on the GPU would sample every few
- * pixels and leave the crescent's thin tips broken.
+ * Cryptic's mark, top left of the menu. Downscaled by Java2D to the exact pixel size, like
+ * [BakedFont], so the crescent's thin tips survive.
  */
 object MenuLogo {
 	private const val SOURCE = "/assets/cryptic/logo.png"
@@ -30,7 +26,7 @@ object MenuLogo {
 	private var bakedSize = 0
 	private var id: Identifier? = null
 
-	/** Draws the mark [size] design pixels square at [x], [y], white at [color]'s alpha. */
+	/** Draws the mark [size] design pixels square, white at [color]'s alpha. */
 	fun draw(graphics: GuiGraphicsExtractor, x: Float, y: Float, size: Float, color: Int) {
 		val ppu = UiText.pixelsPerUnit
 		val pixels = (size * ppu).roundToInt().coerceAtLeast(1)
@@ -51,8 +47,7 @@ object MenuLogo {
 		if (pixels == bakedSize) return id
 		val source = original ?: return null
 		val scaled = BufferedImage(pixels, pixels, BufferedImage.TYPE_INT_ARGB)
-		// Area averaging first, so every source pixel counts; bicubic alone
-		// still skips some at a five-to-one shrink.
+		// Area averaging first, so every source pixel counts at a five-to-one shrink.
 		val smooth = source.getScaledInstance(pixels, pixels, java.awt.Image.SCALE_AREA_AVERAGING)
 		scaled.createGraphics().apply {
 			setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
@@ -63,7 +58,6 @@ object MenuLogo {
 		val image = NativeImage(pixels, pixels, true)
 		for (py in 0 until pixels) for (px in 0 until pixels) {
 			val argb = scaled.getRGB(px, py)
-			// NativeImage is ABGR.
 			val abgr = (argb and 0xFF00FF00.toInt()) or ((argb shr 16) and 0xFF) or ((argb and 0xFF) shl 16)
 			image.setPixelABGR(px, py, abgr)
 		}

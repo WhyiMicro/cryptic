@@ -22,21 +22,12 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Cryptic's new menu: a launcher-style window of module cards, the way Lunar
- * and Badlion lay theirs out, drawn entirely through Minecraft's own GUI
- * renderer so it runs on Vulkan as well as OpenGL.
- *
- * The tabs filter, the search narrows the list, the cards scroll, a card's
- * switch turns its module on and off and its star pins it to Favorites. Along
- * the top right are the HUD editor, the settings and a close button. A card's
- * "⋮" (or a right click) opens the module's settings in place of the grid,
- * with a way back in the top left.
- *
- * Everything is laid out in design pixels at 1080p and scaled to the window,
- * so the menu is the same size on screen whatever the GUI scale is.
+ * Cryptic's menu: a launcher-style window of module cards, drawn through Minecraft's own GUI
+ * renderer so it works on Vulkan as well as OpenGL. Tabs filter, search narrows, cards toggle and
+ * can be starred into Favorites; "⋮" or a right click opens a module's settings in place. Laid out
+ * in 1080p design pixels and scaled to the window.
  */
 class MenuScreen : Screen(Component.literal("Cryptic")) {
-	/** A tab is a word, or an icon in its place. */
 	private class Tab(val label: String, val icon: String? = null, val filter: (Module) -> Boolean)
 
 	private val tabs = listOf(
@@ -63,7 +54,7 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 	private var scrollTarget = 0f
 	private var maxScroll = 0f
 
-	/** The pill under the chosen tab glides to it rather than jumping. */
+	/** The pill under the chosen tab glides to it. */
 	private var tabPillX = Float.NaN
 	private var tabPillW = 0f
 	private var tabPillAlpha = 1f
@@ -73,13 +64,14 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 	private var selectingSearch = false
 	private val scrollbar = Scrollbar()
 
-	/**
-	 * The module whose settings are showing in place of the grid, if any. It
-	 * outlives the screen, so the menu opens again on the module it was shut on.
-	 */
-	private var page: ModulePage? = lastPage?.let { id -> ModuleRegistry.byId[id]?.let(::ModulePage) }
+	/** The module whose settings are showing, if any. Outlives the screen, so the menu reopens on it. */
+	private var page: ModulePage? = lastPage?.let { id -> ModuleRegistry.byId[id]?.let(::ModulePage) }?.also {
+		// A manager's page opens on its settings rather than its window when asked.
+		if (openOnSettings) it.openSettings()
+		openOnSettings = false
+	}
 		set(value) {
-			// Leaving a module, rather than closing the menu on it, folds its rows up.
+			// Leaving a module (not closing the menu) folds its rows up.
 			if (field !== value) field?.onClose(keepExpanded = false)
 			field = value
 			lastPage = value?.module?.id
@@ -94,13 +86,12 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 	override fun isPauseScreen() = false
 
 	override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, a: Float) {
-		// Asked for directly rather than through vanilla's check, which goes by the
-		// Menu Background Blur option; the strength is Cryptic's own (see GameRendererMixin).
+		// Asked for directly, since vanilla's check uses the Menu Background Blur option; the
+		// strength is Cryptic's own (see GameRendererMixin).
 		if (ClickGui.backgroundBlur.value) graphics.blurBeforeThisStratum()
 		graphics.fill(0, 0, width, height, 0x88000000.toInt())
 	}
 
-	/** Design pixels per GUI unit: 1080p design, whatever the GUI scale. */
 	private fun scale(): Float {
 		val window = minecraft.window
 		return (window.screenHeight / DESIGN_HEIGHT) / window.guiScale.toFloat()
@@ -129,9 +120,7 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		val winY = (viewH - winH) / 2f + (1f - reveal) * 14f
 		val alpha = reveal
 
-		// The window: the body and a hairline edge, with corners rounded about as
-		// much as a Windows 11 window's. The shadow has no offset, so it rings the
-		// window evenly rather than dropping below it.
+		// The window body and edge, rounded like a Windows 11 window, with an even shadow.
 		RoundRect.shadow(graphics, winX, winY, winX + winW, winY + winH, fade(WINDOW_SHADOW, alpha), WINDOW_RADIUS, 24f)
 		RoundRect.fill(graphics, winX, winY, winX + winW, winY + winH, fade(MenuStyle.WINDOW_BG, alpha), WINDOW_RADIUS)
 		RoundRect.outline(graphics, winX, winY, winX + winW, winY + winH, fade(MenuStyle.WINDOW_EDGE, alpha), WINDOW_RADIUS, 1f)
@@ -140,10 +129,8 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 
 		val rowY = winY + 62f
 		val contentBox = Box(winX + 20f, winY + 112f, winW - 40f, winH - 112f - 20f)
-		// The grid scrolls through more of the window than it rests in: from just
-		// under the tabs to just inside the bottom edge, so cards fade out near
-		// the window's edge instead of being cut off at the padding. The left
-		// side has no scrollbar to make room for, so it sits closer too.
+		// The grid scrolls from just under the tabs to just inside the bottom edge, so cards fade
+		// at the window's edge instead of being cut at the padding.
 		gridBox = Box(winX + GRID_LEFT, winY + GRID_TOP, winW - GRID_LEFT - 20f, winH - GRID_TOP - GRID_BOTTOM)
 
 		val current = page
@@ -165,18 +152,15 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 
 		graphics.pose().popMatrix()
 
-		// Switches flipped here are saved like any other change.
 		ConfigManager.autosave()
 	}
 
-	/** Cryptic's crescent, filling the 17-pixel square the old mark sat in. */
 	private fun drawLogo(graphics: GuiGraphicsExtractor, x: Float, y: Float, alpha: Float) {
 		val size = 26f
 		val centre = 17f / 2f
 		MenuLogo.draw(graphics, x + centre - size / 2f, y + centre - size / 2f, size, fade(MenuStyle.TEXT, alpha))
 	}
 
-	/** "← Back", where the logo sits while a module's settings are showing. */
 	private fun drawBack(graphics: GuiGraphicsExtractor, x: Float, y: Float, mx: Float, my: Float, dt: Float, alpha: Float) {
 		val size = 13f
 		val w = 12f + 13f + 8f + UiText.width("Back", size, UiText.Face.MEDIUM) + 12f
@@ -189,12 +173,11 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		UiText.draw(graphics, "Back", box.x + 12f + 13f + 8f, box.y + (box.h - size) / 2f, size, color, UiText.Face.MEDIUM)
 	}
 
-	/** Edit HUD, Settings and Close, right to left from [right], as icon buttons. */
+	/** Edit HUD, Settings and Close, right to left from [right]. */
 	private fun drawHeaderButtons(graphics: GuiGraphicsExtractor, right: Float, y: Float, mx: Float, my: Float, dt: Float, alpha: Float) {
 		headerHits.clear()
 		val size = 30f
-		// The cross's own right edge lines up with [right], the end of the search
-		// bar, rather than its hit box: the box is wider than the glyph.
+		// The cross's own right edge lines up with the search bar's end.
 		var x = right - UiText.width(Icons.XMARK, CLOSE_ICON, UiText.Face.ICON) / 2f - size / 2f
 		for (button in listOf(HeaderButton.CLOSE, HeaderButton.SETTINGS, HeaderButton.HUD)) {
 			val box = Box(x, y, size, size)
@@ -206,7 +189,6 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 				HeaderButton.SETTINGS -> Icons.GEAR
 				HeaderButton.CLOSE -> Icons.XMARK
 			}
-			// No box under the pointer: the icon itself answers, Close in red.
 			val hovered = if (button == HeaderButton.CLOSE) MenuStyle.DANGER else MenuStyle.TEXT
 			val color = if (active) MenuStyle.TEXT else blend(MenuStyle.MUTED, hovered, lift)
 			UiText.drawIconCentered(graphics, glyph, box.x, box.y, size, if (button == HeaderButton.CLOSE) CLOSE_ICON else 14f, fade(color, alpha))
@@ -234,8 +216,7 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 			cursor += w + 4f
 		}
 
-		// The pill steps aside while the settings or a search are showing,
-		// since neither is one of the tabs.
+		// The pill steps aside while settings or a search are showing.
 		val pillShown = !showingSettings && search.isEmpty
 		if (tabPillX.isNaN()) {
 			tabPillX = chosenX
@@ -255,7 +236,6 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 				else -> MenuStyle.MUTED
 			}
 			if (tab.icon != null) {
-				// Filled while it is the tab you are on, an outline otherwise.
 				UiText.drawIconCentered(
 					graphics, tab.icon, box.x + (box.w - box.h) / 2f, box.y, box.h, 14f,
 					fade(if (chosen) MenuStyle.STAR else color, alpha), outline = !chosen,
@@ -275,20 +255,17 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 			graphics, Icons.SEARCH, box.right - box.h, box.y, box.h, 13f,
 			fade(if (searchFocused) MenuStyle.TEXT else MenuStyle.MUTED, alpha),
 		)
-		// The field stops short of the magnifier.
 		val field = Box(box.x, box.y, box.w - box.h + 8f, box.h)
 		search.draw(graphics, field, SEARCH_TEXT, MenuStyle.TEXT, searchFocused, alpha, dt, placeholder = "Search modules")
 	}
 
 	/**
-	 * The cards, scrolled and clipped to [box]. They rest [insetTop] below its
-	 * top and, scrolled to the end, [insetBottom] above its bottom; in between
-	 * they pass through that space, which is where the fades are.
+	 * The cards, scrolled and clipped to [box], resting [insetTop] and [insetBottom] inside it,
+	 * where the fades are.
 	 */
 	private fun drawGrid(graphics: GuiGraphicsExtractor, box: Box, insetTop: Float, insetBottom: Float, mx: Float, my: Float, dt: Float, alpha: Float) {
 		cardHits.clear()
-		// Each list keeps its own place: a tab left and come back to, or the
-		// menu shut and opened again, is where it was.
+		// Each list keeps its own scroll position.
 		val key = listKey()
 		if (key != shownList) {
 			shownList?.let { listScrolls[it] = scrollTarget }
@@ -332,7 +309,6 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		MenuStyle.drawScrollFades(graphics, box, scroll, maxScroll, alpha, topRamp = insetTop, bottomRamp = insetBottom)
 		graphics.disableScissor()
 
-		// From the first row's resting place down to just inside the window's edge.
 		scrollbar.draw(graphics, x + w + Scrollbar.GAP, y, box.bottom - SCROLLBAR_BOTTOM - y, contentH, scroll, maxScroll, mx, my, dt, alpha)
 	}
 
@@ -354,7 +330,6 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		val fill = if (on) blend(MenuStyle.cardOn(), MenuStyle.cardOnHover(), lift) else blend(MenuStyle.CARD_OFF, MenuStyle.CARD_OFF_HOVER, lift)
 		RoundRect.fill(graphics, x, y, x + w, y + h, fade(fill, alpha), 0f)
 
-		// Icon, top left.
 		UiText.drawIcon(graphics, iconFor(module), x + 18f, y + 18f, 17f, fade(if (on) MenuStyle.TEXT else MenuStyle.ICON_OFF, alpha))
 
 		// Along the top right: the star, the switch, then the "⋮".
@@ -379,8 +354,7 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 
 		val star = Box(starRight - 22f, y + 14f, 22f, 22f)
 		val favorite = MenuPrefs.isFavorite(module.id)
-		// The empty star only shows on a card under the pointer, so a grid of
-		// cards is not a grid of stars; a filled one always shows.
+		// The empty star only shows under the pointer; a filled one always shows.
 		val starColor = when {
 			favorite -> MenuStyle.STAR
 			pointerInGrid && star.contains(mx, my) -> MenuStyle.TEXT
@@ -388,18 +362,13 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		}
 		UiText.drawIconCentered(graphics, Icons.STAR, star.x, star.y, star.w, 14f, fade(starColor, alpha), outline = !favorite)
 
-		// Name and description, bottom left.
 		val textW = w - 36f
-		UiText.draw(
-			graphics, UiText.fit(module.name, NAME_TEXT, textW, UiText.Face.MEDIUM),
-			x + 18f, y + h - 52f, NAME_TEXT, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM,
-		)
+		val name = UiText.fit(module.name, NAME_TEXT, textW, UiText.Face.MEDIUM)
+		UiText.draw(graphics, name, x + 18f, y + h - 52f, NAME_TEXT, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
 		UiText.draw(graphics, UiText.fit(module.description, DESC_TEXT, textW), x + 18f, y + h - 30f, DESC_TEXT, fade(muted, alpha))
 
 		cardHits += CardHit(module, card, star, toggle, more)
 	}
-
-	// ---- Input -----------------------------------------------------------
 
 	private fun designX(x: Double) = (x / scale()).toFloat()
 	private fun designY(y: Double) = (y / scale()).toFloat()
@@ -410,7 +379,7 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		val current = page
 		val button = event.button()
 
-		// A bind on the page waiting for its key takes any button first.
+		// A bind waiting for its key takes any button first.
 		if (current != null && current.capturingKeys && button != 0) {
 			current.mouseClicked(mx, my, button)
 			return true
@@ -433,7 +402,6 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		}
 
 		if (current != null) {
-			// Back, or the mouse's own back button, as in a browser.
 			if ((button == 0 && backBox.contains(mx, my)) || button == GLFW.GLFW_MOUSE_BUTTON_4) {
 				page = null
 				return true
@@ -446,7 +414,7 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 			val wasFocused = searchFocused
 			searchFocused = searchBox.contains(mx, my)
 			if (searchFocused) {
-				// A double click takes the whole query, the way a browser's address bar does.
+				// A double click selects the whole query.
 				if (doubleClick) search.selectAll() else search.pointAt(mx, extend = wasFocused && event.hasShiftDown())
 				selectingSearch = true
 				return true
@@ -474,7 +442,6 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 				hit.more.contains(mx, my) -> open(hit.module)
 				hit.toggle?.contains(mx, my) == true -> hit.module.enabled = !hit.module.enabled
 				hit.module.cardAction != null -> hit.module.cardAction.invoke()
-				// Clicking the rest of the card toggles it too, unless that is turned off.
 				hit.module.supportsToggle && ClickGui.leftClickToggles.value -> hit.module.enabled = !hit.module.enabled
 			}
 			return true
@@ -525,13 +492,11 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		val current = page
 		if (current != null) {
 			if (current.keyPressed(event)) return true
-			// Escape with nothing on the page to cancel shuts the menu; the menu
-			// opens on this module again next time, and Back is the way out of it.
+			// Escape with nothing to cancel closes the menu, which reopens on this module.
 			return super.keyPressed(event)
 		}
 
 		val control = (event.modifiers() and GLFW.GLFW_MOD_CONTROL) != 0
-		// Ctrl+F, or Ctrl+A over the cards, takes you to the search with what is in it selected.
 		if (control && (event.key() == GLFW.GLFW_KEY_F || (event.key() == GLFW.GLFW_KEY_A && !searchFocused))) {
 			searchFocused = true
 			search.selectAll()
@@ -539,7 +504,7 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		}
 		if (searchFocused) {
 			when (event.key()) {
-				// The first Escape leaves the field; the next one closes the menu.
+				// The first Escape leaves the field; the next closes the menu.
 				GLFW.GLFW_KEY_ESCAPE, GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> searchFocused = false
 				else -> {
 					search.keyPressed(event)
@@ -554,7 +519,7 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		val codePoint = event.codepoint()
 		page?.let { return it.charTyped(codePoint) }
 		if (codePoint < ' '.code) return false
-		// Typing anywhere in the menu goes to the search, as in a launcher.
+		// Typing anywhere goes to the search.
 		searchFocused = true
 		search.charTyped(codePoint)
 		return true
@@ -565,14 +530,12 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		super.onClose()
 	}
 
-	/** Which list the grid is showing, for remembering each one's scroll. */
 	private fun listKey(): String = when {
 		!search.isEmpty -> "search:" + search.text.trim().lowercase()
 		showingSettings -> "settings"
 		else -> "tab:$selectedTab"
 	}
 
-	/** The list whose place [scroll] is, once the grid has been drawn. */
 	private var shownList: String? = null
 
 	override fun removed() {
@@ -595,16 +558,18 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 
 	private fun visibleModules(): List<Module> {
 		val query = search.text.trim()
+		// Client Restrictions hides what's above the chosen level.
+		val all = ModuleRegistry.modules.filter { it.allowed }
 		val modules = when {
-			query.isNotEmpty() -> ModuleRegistry.modules.filter {
+			query.isNotEmpty() -> all.filter {
 				it.name.contains(query, ignoreCase = true) || it.description.contains(query, ignoreCase = true)
 			}
-			showingSettings -> ModuleRegistry.modules.filter { it.category == ModuleCategory.MISC }
-			else -> ModuleRegistry.modules.filter(tabs[selectedTab].filter)
+			showingSettings -> all.filter { it.category == ModuleCategory.MISC }
+			else -> all.filter(tabs[selectedTab].filter)
 		}
 		return when (ClickGui.sorting.selectedIndex) {
 			ClickGui.SORT_Z_TO_A -> modules.sortedByDescending(Module::sortKey)
-			// The longest name first, measured as drawn rather than by counting letters.
+			// Longest name first, measured as drawn.
 			ClickGui.SORT_WIDTH -> modules.sortedWith(compareByDescending<Module> { UiText.width(it.name, NAME_TEXT, UiText.Face.MEDIUM) }.thenBy(Module::sortKey))
 			else -> modules.sortedBy(Module::sortKey)
 		}
@@ -619,26 +584,25 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 	}
 
 	companion object {
-		/** Kept for the session, so the menu opens where it was left. */
 		private var selectedTab = 1
 
-		/** The module page the menu was shut on, by id, so it opens there again. */
 		private var lastPage: String? = null
 
-		/** Each list's scroll, by [listKey], for the length of the game. */
 		private val listScrolls = HashMap<String, Float>()
 
 		private var requested = false
 
 		/**
-		 * Asks for the menu to open at the next tick, on [module]'s page when one is
-		 * given. Deferred because a command runs while the chat screen is still
-		 * closing, and a screen opened then is closed with it.
+		 * Opens the menu next tick, on [module]'s page if given. Deferred because a command runs
+		 * while chat is still closing, which would close the new screen too.
 		 */
-		fun request(module: Module? = null) {
+		fun request(module: Module? = null, settings: Boolean = false) {
 			if (module != null) lastPage = module.id
+			openOnSettings = settings
 			requested = true
 		}
+
+		private var openOnSettings = false
 
 		fun openIfRequested(client: net.minecraft.client.Minecraft) {
 			if (!requested) return
@@ -647,8 +611,8 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		}
 
 		/**
-		 * The blur strength to hand the renderer this frame: Click GUI's, while this
-		 * menu is open with the blur on, and nought (leave vanilla's alone) otherwise.
+		 * The blur strength for this frame: Click GUI's while this menu is open with blur on,
+		 * otherwise zero (vanilla's own).
 		 */
 		@JvmStatic
 		fun blurRadius(): Int {
@@ -670,16 +634,18 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		private const val ROW_HEIGHT = 30f
 		private const val CLOSE_ICON = 15f
 
-		/** The grid's scroll area against the window: its left edge, its top (just under the tab row) and its bottom margin. */
+		/** The grid's scroll area: left edge, top (just under the tabs), bottom margin. */
 		private const val GRID_LEFT = 12f
 		private const val GRID_TOP = 96f
 		private const val GRID_BOTTOM = 3f
 
-		/** Where the cards rest inside that area: the first row this far below its top, the last row this far above its bottom. */
+		/**
+		 * Where the cards rest inside it: first row this far below its top, last row this far above
+		 * its bottom.
+		 */
 		private const val GRID_REST_TOP = 8f
 		private const val GRID_REST_BOTTOM = 12f
 
-		/** The scrollbar stops this far above the scroll area's bottom, about as far in as it sits from the right edge. */
 		private const val SCROLLBAR_BOTTOM = 5f
 
 		private const val CARD_MIN_W = 200f

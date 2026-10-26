@@ -16,45 +16,23 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Draws boxes in world space, for modules that highlight a position.
+ * Draws boxes, lines and text in world space for highlighting features.
  *
- * Everything here is submitted during a level-render event, where the pose
- * stack is still camera-relative, so each call translates by the negated
- * camera position before emitting absolute world coordinates.
- *
- * Since 26.2 nothing is written into a buffer here. The level hands out a
- * [SubmitNodeCollector] instead, and geometry is queued on it with a snapshot
- * of the pose, to be drawn later in the frame. The vertex-building code is
- * unchanged — it simply runs when the queue is drained rather than now — so
- * everything captured by it must be a value, never state that could move on
- * in the meantime.
- *
- * Which means the *when* matters. The queue is drained once, at the top of
- * `LevelRenderer.render`, before a single pass of the frame is drawn, so
- * anything submitted from an event that fires while the frame is being drawn —
- * `AFTER_TRANSLUCENT_TERRAIN` and the rest — waits in the queue until the next
- * frame and is then drawn against that frame's camera. A box submitted that
- * way sits one frame of movement away from where it belongs, which is
- * invisible standing still and grows with speed. Callers register on
- * `LevelRenderEvents.COLLECT_SUBMITS`, which fires while the level is still
- * collecting, and the camera read below is then the one the frame's matrices
- * are built from.
+ * Since 26.2, geometry is queued on a [SubmitNodeCollector] and drawn later in the frame, so
+ * everything captured must be a plain value. Callers must submit from
+ * `LevelRenderEvents.COLLECT_SUBMITS`: anything submitted later in the frame waits for the next one
+ * and lags a frame behind the camera.
  */
 object WorldRender {
-	/** Lifts faces off the block they trace, so the two do not z-fight. */
 	private const val SURFACE_OFFSET = 0.002f
 
-	/** Shrinks Minecraft's font to roughly nameplate size at one block away. */
 	private const val TEXT_SCALE = 0.025f
 
-	/** World text is lit by its own color, never by the block it stands on. */
 	private const val FULL_BRIGHT_LIGHT = 0xF000F0
 
 	/**
-	 * Outlines and/or fills one block.
-	 *
-	 * [fullBlock] traces a whole cube rather than the block's own shape, which
-	 * keeps the highlight readable on slabs, stairs and other partial blocks.
+	 * Outlines and/or fills one block. [fullBlock] traces a whole cube, which reads better on slabs
+	 * and stairs.
 	 */
 	fun drawBlock(
 		poseStack: PoseStack,
@@ -89,11 +67,7 @@ object WorldRender {
 		)
 	}
 
-	/**
-	 * Outlines and/or fills an arbitrary box in world coordinates, for
-	 * highlighting something that is not a block — a dropped item, a mob, or
-	 * whatever an invisible armour stand is carrying.
-	 */
+	/** Outlines and/or fills any box in world coordinates. */
 	fun drawBox(
 		poseStack: PoseStack,
 		collector: SubmitNodeCollector,
@@ -110,35 +84,23 @@ object WorldRender {
 		phase: Boolean,
 		lineWidth: Float,
 		faces: Int = ALL_FACES,
-		tucked: Int = 0,
 	) {
 		if (!outline && !fill) return
 
-		val client = Minecraft.getInstance()
-		val camera = client.gameRenderer.mainCamera().position()
-		val centerX = (minX + maxX) / 2 - camera.x
-		val centerY = (minY + maxY) / 2 - camera.y
-		val centerZ = (minZ + maxZ) / 2 - camera.z
-		val distance = Math.sqrt(centerX * centerX + centerY * centerY + centerZ * centerZ)
-		// How far a tucked side is drawn inside its block: half a line, at this
-		// distance, so the line's own width stays on the block's visible face.
-		val tuck = if (tucked == 0) 0f else {
-			val pixel = 2.0 * distance * Math.tan(Math.toRadians(client.options.fov().get() / 2.0)) / client.window.height.coerceAtLeast(1)
-			((lineWidth / 2.0 + 0.25) * pixel).coerceIn(0.004, 0.25).toFloat()
-		}
+		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
 		poseStack.pushPose()
 		poseStack.translate(-camera.x, -camera.y, -camera.z)
 		if (fill) {
 			val layer = if (phase) CrypticRenderLayers.FILLED_THROUGH_WALLS else CrypticRenderLayers.FILLED
 			collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
-				consumer.addFilledBox(pose, minX, minY, minZ, maxX, maxY, maxZ, fillArgb, faces and tucked.inv(), tucked, tuck)
+				consumer.addFilledBox(pose, minX, minY, minZ, maxX, maxY, maxZ, fillArgb, faces)
 			}
 		}
 
 		if (outline) {
 			val layer = if (phase) CrypticRenderLayers.LINES_THROUGH_WALLS else CrypticRenderLayers.LINES
 			collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
-				consumer.addBoxOutline(pose, minX, minY, minZ, maxX, maxY, maxZ, outlineArgb, lineWidth, tucked, tuck)
+				consumer.addBoxOutline(pose, minX, minY, minZ, maxX, maxY, maxZ, outlineArgb, lineWidth)
 			}
 		}
 
@@ -146,10 +108,8 @@ object WorldRender {
 	}
 
 	/**
-	 * Draws a line from the player's view to a point in the world.
-	 *
-	 * It starts a little in front of the eyes rather than at them, because a
-	 * line beginning exactly at the near plane is clipped into nothing.
+	 * A line from the view to a point, starting a little in front of the eyes so the near plane
+	 * doesn't clip it.
 	 */
 	fun drawTracer(
 		poseStack: PoseStack,
@@ -182,13 +142,7 @@ object WorldRender {
 		poseStack.popPose()
 	}
 
-	/**
-	 * Draws a line through a list of world positions.
-	 *
-	 * One submit for the whole path rather than one per segment, because the
-	 * queue is drained in order and a path split across submits is a path that
-	 * can be drawn with something else in the middle of it.
-	 */
+	/** A line through a list of positions, in one submit so nothing is drawn in the middle of it. */
 	fun drawLine(
 		poseStack: PoseStack,
 		collector: SubmitNodeCollector,
@@ -221,14 +175,7 @@ object WorldRender {
 		poseStack.popPose()
 	}
 
-	/**
-	 * Draws one line whose two ends are different colours.
-	 *
-	 * The colours are put on the vertices rather than drawn as a run of short
-	 * lines, so the gradient is the one the graphics card interpolates for
-	 * free — which is smooth at any length and costs exactly as much as a
-	 * plain line.
-	 */
+	/** One line with a different colour at each end, interpolated by the GPU. */
 	fun drawGradientLine(
 		poseStack: PoseStack,
 		collector: SubmitNodeCollector,
@@ -256,13 +203,7 @@ object WorldRender {
 		poseStack.popPose()
 	}
 
-	/**
-	 * Draws a ring lying flat around a point, for an ability with a radius.
-	 *
-	 * Enough segments that the corners stop reading as corners at the ten-block
-	 * radius this is mostly used at; a circle that looks like a polygon reads as
-	 * a smaller circle than it is.
-	 */
+	/** A flat ring around a point, with enough segments to look round at ten blocks. */
 	fun drawCircle(
 		poseStack: PoseStack,
 		collector: SubmitNodeCollector,
@@ -284,10 +225,8 @@ object WorldRender {
 	private const val CIRCLE_SEGMENTS = 64
 
 	/**
-	 * Draws a short open cylinder: a ring at [center], another [height] above
-	 * it, and a line joining the two at every segment. Odin's `drawCylinder`
-	 * (BSD 3-Clause, Copyright (c) 2025 odtheking), which is what makes a
-	 * positional message read as a band you stand in rather than a thin hoop.
+	 * A short open cylinder: rings at [center] and [height] above, joined at every segment. After
+	 * Odin's `drawCylinder`.
 	 */
 	fun drawCylinder(
 		poseStack: PoseStack,
@@ -327,18 +266,54 @@ object WorldRender {
 	}
 
 	/**
-	 * Draws text that stands at a world position and faces the camera.
-	 *
-	 * The camera's own orientation is applied so the label stays readable from
-	 * any angle, and the Y scale is negated because text is laid out downwards
-	 * while world space grows upwards.
-	 *
-	 * [argb] is the colour a part of [text] that carries none of its own is
-	 * drawn in — and, whatever the parts carry, its **alpha** is the alpha they
-	 * are all drawn at. Minecraft combines the two that way round
-	 * (`ARGB.color(alpha(base), style.color)`), which is what makes fading a
-	 * label of several colours a matter of one number rather than of rebuilding
-	 * every part of it.
+	 * A filled open cylinder: a wall [height] tall around [center], and a disc across its foot. Either
+	 * colour can be fully transparent to leave that part out.
+	 */
+	fun drawFilledCylinder(
+		poseStack: PoseStack,
+		collector: SubmitNodeCollector,
+		center: Vec3,
+		radius: Double,
+		height: Double,
+		wallArgb: Int,
+		floorArgb: Int,
+		phase: Boolean,
+		segments: Int = 48,
+	) {
+		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
+		poseStack.pushPose()
+		poseStack.translate(-camera.x, -camera.y, -camera.z)
+		val layer = if (phase) CrypticRenderLayers.FILLED_THROUGH_WALLS else CrypticRenderLayers.FILLED
+		val cx = center.x.toFloat()
+		val cy = center.y.toFloat()
+		val cz = center.z.toFloat()
+		val top = (center.y + height).toFloat()
+		collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
+			for (step in 0 until segments) {
+				val a1 = step * 2.0 * Math.PI / segments
+				val a2 = (step + 1) * 2.0 * Math.PI / segments
+				val x1 = cx + (cos(a1) * radius).toFloat()
+				val z1 = cz + (sin(a1) * radius).toFloat()
+				val x2 = cx + (cos(a2) * radius).toFloat()
+				val z2 = cz + (sin(a2) * radius).toFloat()
+				// Both windings, so the wall shows from inside and out.
+				if ((wallArgb ushr 24) != 0) {
+					consumer.addQuad(pose, x1, cy, z1, x2, cy, z2, x2, top, z2, x1, top, z1, wallArgb)
+					consumer.addQuad(pose, x1, cy, z1, x1, top, z1, x2, top, z2, x2, cy, z2, wallArgb)
+				}
+				if ((floorArgb ushr 24) != 0) {
+					consumer.addQuad(pose, cx, cy, cz, x2, cy, z2, x1, cy, z1, cx, cy, cz, floorArgb)
+					consumer.addQuad(pose, cx, cy, cz, x1, cy, z1, x2, cy, z2, cx, cy, cz, floorArgb)
+				}
+			}
+		}
+		poseStack.popPose()
+	}
+
+	/**
+	 * Text at a world position, facing the camera. [argb] colours parts that have no colour of
+	 * their own, and its alpha applies to every part, so a multi-coloured label fades with one
+	 * number.
 	 */
 	fun drawText(
 		poseStack: PoseStack,
@@ -364,13 +339,12 @@ object WorldRender {
 		poseStack.scale(TEXT_SCALE * scale, -TEXT_SCALE * scale, TEXT_SCALE * scale)
 
 		val halfWidth = font.width(text) / 2f
-		// Text asked to be read through walls is also asked to be read through
-		// ice and glass, which means being drawn after them.
+		// Text read through walls must also be drawn after ice and glass.
 		CrypticRenderLayers.textOverTerrain = seeThrough
 		collector.submitText(
 			poseStack,
 			-halfWidth,
-			// Centred, the text sits with its middle on the point rather than its top.
+			// Centred, the text's middle sits on the point.
 			if (centered) -(font.lineHeight - 1) / 2f else 0f,
 			text.visualOrderText,
 			dropShadow,
@@ -394,18 +368,10 @@ object WorldRender {
 		z2: Double,
 		argb: Int,
 		faces: Int = ALL_FACES,
-		tucked: Int = 0,
-		tuck: Float = 0f,
 	) {
-		// A side that is left out is also not pushed outwards: two boxes that
-		// meet there would otherwise overlap by the offset, and the strip where
-		// they overlap is drawn twice and shows as a line. A tucked side is
-		// pulled in, so the faces beside it stop short of the block next door.
-		fun out(face: Int) = when {
-			(tucked and face) != 0 -> -tuck
-			(faces and face) != 0 -> SURFACE_OFFSET
-			else -> 0f
-		}
+		// A left-out side isn't pushed outwards, or two boxes meeting there overlap and show a
+		// line.
+		fun out(face: Int) = if ((faces and face) != 0) SURFACE_OFFSET else 0f
 		val minX = x1.toFloat() - out(FACE_WEST)
 		val minY = y1.toFloat() - out(FACE_DOWN)
 		val minZ = z1.toFloat() - out(FACE_NORTH)
@@ -421,7 +387,7 @@ object WorldRender {
 		if ((faces and FACE_EAST) != 0) addQuad(pose, maxX, minY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, maxX, minY, maxZ, argb)
 	}
 
-	/** The sides of a filled box, for leaving out the ones that touch another. */
+	/** The sides of a filled box, for leaving out the ones touching another. */
 	const val FACE_DOWN = 1
 	const val FACE_UP = 2
 	const val FACE_NORTH = 4
@@ -440,18 +406,13 @@ object WorldRender {
 		z2: Double,
 		argb: Int,
 		lineWidth: Float,
-		tucked: Int = 0,
-		tuck: Float = 0f,
 	) {
-		// A side against a solid block is drawn just inside it, so the edge's
-		// width does not show on the block beside it.
-		fun out(face: Int) = if ((tucked and face) != 0) -tuck else SURFACE_OFFSET
-		val minX = x1.toFloat() - out(FACE_WEST)
-		val minY = y1.toFloat() - out(FACE_DOWN)
-		val minZ = z1.toFloat() - out(FACE_NORTH)
-		val maxX = x2.toFloat() + out(FACE_EAST)
-		val maxY = y2.toFloat() + out(FACE_UP)
-		val maxZ = z2.toFloat() + out(FACE_SOUTH)
+		val minX = x1.toFloat() - SURFACE_OFFSET
+		val minY = y1.toFloat() - SURFACE_OFFSET
+		val minZ = z1.toFloat() - SURFACE_OFFSET
+		val maxX = x2.toFloat() + SURFACE_OFFSET
+		val maxY = y2.toFloat() + SURFACE_OFFSET
+		val maxZ = z2.toFloat() + SURFACE_OFFSET
 
 		addLine(pose, minX, minY, minZ, maxX, minY, minZ, argb, lineWidth)
 		addLine(pose, maxX, minY, minZ, maxX, minY, maxZ, argb, lineWidth)
@@ -477,7 +438,6 @@ object WorldRender {
 		x4: Float, y4: Float, z4: Float,
 		argb: Int,
 	) {
-		// The filled pipeline draws triangles, so each face is two of them.
 		addVertex(pose, x1, y1, z1).setColor(argb)
 		addVertex(pose, x2, y2, z2).setColor(argb)
 		addVertex(pose, x3, y3, z3).setColor(argb)
@@ -494,13 +454,7 @@ object WorldRender {
 		lineWidth: Float,
 	) = addLine(pose, x1, y1, z1, x2, y2, z2, argb, argb, lineWidth)
 
-	/**
-	 * One line segment, with a colour at each end.
-	 *
-	 * A single colour is the same call with the same colour twice: everything
-	 * between the two vertices is the graphics card's own interpolation, which
-	 * is what makes a gradient cost nothing.
-	 */
+	/** One line segment with a colour at each end. */
 	private fun VertexConsumer.addLine(
 		pose: PoseStack.Pose,
 		x1: Float, y1: Float, z1: Float,

@@ -15,21 +15,15 @@ import net.minecraft.world.entity.Entity
 import kotlin.math.roundToInt
 
 /**
- * Restyles the name tags floating over heads, and gives the player a name of
- * their own to wear.
- *
- * The name is Cryptic's, not the server's: nobody else sees it. Wherever the
- * game would show the player's real name to the player themselves — over their
- * head, in the tab list, in a line of chat — it is swapped for this one, so the
- * name does not change depending on where it is read. The look settings apply
- * to every tag on screen, including the class labels [ClassNames] draws, so the
- * two cannot end up styled differently.
+ * Restyles name tags over heads, and gives you a name only you see. Your real name is swapped for
+ * it wherever the game shows it to you (over your head, tab list, chat). The style settings apply
+ * to every tag, including [ClassNames]' labels.
  */
 object CustomNametags {
-	/** Hypixel writes colors the way signs do, with a code after a section sign. */
+	/** The `&` codes people type, as on signs. */
 	private val COLOR_CODE = Regex("&([0-9a-fk-orA-FK-OR])")
 
-	/** Vanilla's own name tag background, so the slider starts where the game is. */
+	/** Vanilla's own tag background, so the slider starts there. */
 	private const val DEFAULT_BACKGROUND_OPACITY = 25.0
 
 	private val yourNameSection = SectionModuleSetting("your_name_section", "Your name")
@@ -103,28 +97,21 @@ object CustomNametags {
 		if (initialized) return
 		initialized = true
 
-		// Hypixel sends its chat as system messages, which is the half of the
-		// chat API a client is allowed to rewrite.
+		// Hypixel's chat arrives as system messages, which a client may rewrite.
 		ClientReceiveMessageEvents.MODIFY_GAME.register { message, _ -> decorate(message) }
 	}
 
-	/** The name to wear, or null when the module is off or the field is empty. */
 	private fun customName(): Component? {
 		if (!module.enabled || !customName.value) return null
 		val text = customTag.value.trim()
 		if (text.isEmpty()) return null
-		// A reset closes the name off, so its colors cannot run into whatever
-		// the game prints after it.
+		// A reset ends the name, so its colours don't run into what follows.
 		return Component.literal(colored(text) + "§r")
 	}
 
 	/**
-	 * Whether the game should name the player to themselves after all.
-	 *
-	 * Asked by the render mixin in place of vanilla's answer, which is always
-	 * no. Saying yes hands the job back to the game, so the tag drawn is the
-	 * display name the server dressed the player in — rank, colours, SkyBlock
-	 * level and all — rather than a bare username reassembled here.
+	 * Whether the game should name the player to themselves (vanilla always says no). Yes hands it
+	 * back to the game, so the tag is the server's display name with rank and level.
 	 */
 	@JvmStatic
 	fun showsOwnNameTag(entity: Entity): Boolean {
@@ -132,28 +119,22 @@ object CustomNametags {
 		return entity === Minecraft.getInstance().player
 	}
 
-	/**
-	 * The name to draw over the player instead of the server's, or null to keep
-	 * whatever the game worked out.
-	 */
+	/** The name over the player instead of the server's, or null to keep the game's. */
 	@JvmStatic
 	fun tagFor(entity: Entity): Component? {
 		if (!showsOwnNameTag(entity)) return null
 		return customName()
 	}
 
-	/** The tab list entry to show in place of [original], or null to leave it. */
 	@JvmStatic
 	fun tabName(uuid: java.util.UUID, original: Component): Component? {
 		val player = Minecraft.getInstance().player ?: return null
 		if (player.uuid != uuid) return null
 		val name = customName() ?: return null
-		// Hypixel decorates the row with rank and level, and only the name
-		// inside it is the player's to change.
+		// Hypixel decorates the row with rank and level; only the name inside changes.
 		return replaceName(original, player.gameProfile.name, name)
 	}
 
-	/** A chat line with the player's own name swapped for the one they chose. */
 	@JvmStatic
 	fun decorate(message: Component): Component {
 		val player = Minecraft.getInstance().player ?: return message
@@ -161,14 +142,12 @@ object CustomNametags {
 		return replaceName(message, player.gameProfile.name, name)
 	}
 
-	/** Whether name tags are drawn with a shadow, asked once per tag drawn. */
 	@JvmStatic
 	fun dropShadow(original: Boolean): Boolean = if (module.enabled) dropShadow.value else original
 
 	/**
-	 * The plate behind a name tag. Vanilla packs the opacity it took from the
-	 * video settings into the alpha byte and leaves the rest black, so only
-	 * that byte is replaced.
+	 * The plate behind a name tag. Vanilla packs its opacity into the alpha byte, so only that byte
+	 * is replaced.
 	 */
 	@JvmStatic
 	fun backgroundColor(original: Int): Int {
@@ -176,7 +155,6 @@ object CustomNametags {
 		return (backgroundAlpha() shl 24) or (original and 0xFFFFFF)
 	}
 
-	/** The same plate colour, for labels Cryptic draws itself. */
 	@JvmStatic
 	fun backgroundArgb(): Int = if (module.enabled) backgroundAlpha() shl 24 else 0
 
@@ -184,11 +162,8 @@ object CustomNametags {
 		(backgroundOpacity.value / 100.0 * 255.0).roundToInt().coerceIn(0, 255)
 
 	/**
-	 * Rebuilds [message] with every mention of [name] replaced.
-	 *
-	 * The tree is walked rather than flattened, because a chat line carries its
-	 * colors and its click handlers in the styles of its parts, and flattening
-	 * it to a string would throw all of that away.
+	 * Rebuilds [message] with every mention of [name] replaced, walking the tree to keep colours
+	 * and click handlers.
 	 */
 	private fun replaceName(message: Component, name: String, replacement: Component): Component {
 		val contents = message.contents
@@ -217,6 +192,5 @@ object CustomNametags {
 		return rebuilt
 	}
 
-	/** Turns the ampersand codes people type into the ones the font reads. */
 	private fun colored(text: String): String = COLOR_CODE.replace(text) { "§${it.groupValues[1]}" }
 }

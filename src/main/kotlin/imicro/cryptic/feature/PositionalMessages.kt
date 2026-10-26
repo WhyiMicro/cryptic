@@ -34,22 +34,11 @@ import java.util.Locale
 import kotlin.math.floor
 
 /**
- * Says something in party chat when you reach a place.
- *
- * Odin's Positional Messages (BSD 3-Clause, Copyright (c) 2025 odtheking):
- * "at" a point, within a radius, or "in" a box between two corners, each with
- * a delay, a colour to draw it in and the message. The classic use is the
- * Floor 7 boss — "At Goldor's entrance", "In core" — where saying so by hand
- * means typing while running.
- *
- * Odin suggested the coordinates to type as the corner of the block you were
- * standing on, so a circle typed in from the suggestions sat half a block off
- * from where you had been standing. Here x and z are suggested rounded to
- * the nearest half block of where you stand, and `add here` takes the same
- * position, so the circle is centred on the spot you picked.
- *
- * The list is kept in its own file rather than in a profile, so switching
- * profiles does not lose it: `config/cryptic/positional-messages.json`.
+ * Says something in party chat when you reach a place: "at" a point within a radius, or "in" a box
+ * between two corners, each with a delay, colour and message. From Odin's Positional Messages.
+ * Suggested coordinates round x and z to the nearest half block of where you stand (Odin used the
+ * block corner), so circles centre on you. Saved in `config/cryptic/positional-messages.json`,
+ * outside profiles.
  */
 object PositionalMessages {
 	@JvmField
@@ -110,9 +99,8 @@ object PositionalMessages {
 	)
 
 	/**
-	 * One message. "At" ones have a [distance] and no second corner; "in" ones
-	 * have the second corner and no distance. [send] false draws it without
-	 * ever saying it, for marking a spot.
+	 * One message. "At" has a [distance] and no second corner; "in" has the corner and no distance.
+	 * [send] false only draws it, to mark a spot.
 	 */
 	data class PosMessage(
 		val x: Double,
@@ -132,7 +120,7 @@ object PositionalMessages {
 		val argb: Int get() = 0xFF000000.toInt() or (COLORS[color.lowercase(Locale.ROOT)] ?: 0xFFFFFF)
 	}
 
-	/** Minecraft's own sixteen, by the names Odin takes. */
+	/** Minecraft's sixteen colours, by Odin's names. */
 	private val COLORS = linkedMapOf(
 		"darkblue" to 0x0000AA, "darkgreen" to 0x00AA00, "darkaqua" to 0x00AAAA, "darkred" to 0xAA0000,
 		"darkpurple" to 0xAA00AA, "gold" to 0xFFAA00, "gray" to 0xAAAAAA, "darkgray" to 0x555555,
@@ -142,10 +130,10 @@ object PositionalMessages {
 
 	private val messages = mutableListOf<PosMessage>()
 
-	/** Messages already said in this world, so each is said once. */
+	/** Messages already sent in this world; each is sent once. */
 	private val sent = HashSet<PosMessage>()
 
-	/** Messages waiting out their delay: the message, and the client tick to say it on. */
+	/** Messages waiting out their delay, with the client tick to send on. */
 	private val pending = mutableListOf<Pair<PosMessage, Long>>()
 	private var ticks = 0L
 
@@ -185,7 +173,6 @@ object PositionalMessages {
 		}.onFailure { Cryptic.LOGGER.error("Could not save positional messages", it) }
 	}
 
-	/** True while the floor and the boss have to be read for this module. */
 	val needsDungeon: Boolean get() = module.enabled && onlyBoss.value
 
 	private fun active(): Boolean =
@@ -242,7 +229,7 @@ object PositionalMessages {
 				)
 			} else {
 				val radius = message.distance ?: continue
-				// Odin's band: two rings and the uprights between them, depth-tested.
+				// Odin's band: two rings and the uprights between, depth-tested.
 				WorldRender.drawCylinder(
 					context.poseStack(), context.submitNodeCollector(),
 					Vec3(message.x, message.y, message.z), radius, height.value, message.argb, 5f, false,
@@ -255,8 +242,8 @@ object PositionalMessages {
 					poseStack = context.poseStack(),
 					collector = context.submitNodeCollector(),
 					orientation = orientation,
-					// Always white, whatever colour the circle is: a dark circle's colour
-					// is unreadable as text, which is how Odin draws it too.
+					// Always white; a dark circle's colour is unreadable as text (Odin does the
+					// same).
 					text = Component.literal(message.message),
 					x = at.x,
 					y = at.y,
@@ -268,16 +255,11 @@ object PositionalMessages {
 		}
 	}
 
-	// ---- /cryptic posmsg -------------------------------------------------
-
 	private fun feedback(context: CommandContext<FabricClientCommandSource>, text: String) {
 		context.source.sendFeedback(Component.literal("§8[Cryptic] §7$text"))
 	}
 
-	/**
-	 * Where you stand, with x and z rounded to the nearest half block: 139.2 is
-	 * 139, 139.42 is 139.5. Close enough to type, and the circle lands on you.
-	 */
+	/** Where you stand, x and z rounded to the nearest half block (139.2 to 139, 139.42 to 139.5). */
 	private fun here(): Vec3? {
 		val player = Minecraft.getInstance().player ?: return null
 		return Vec3(halfStep(player.x), floor(player.y), halfStep(player.z))
@@ -321,7 +303,7 @@ object PositionalMessages {
 		return 1
 	}
 
-	/** delay, then colour, then send, then the message: the tail every form of `add` shares. */
+	/** delay, colour, send, message: the tail every form of `add` shares. */
 	private fun <T : ArgumentBuilder<FabricClientCommandSource, T>> T.tail(
 		build: (CommandContext<FabricClientCommandSource>) -> PosMessage?,
 	): T = then(

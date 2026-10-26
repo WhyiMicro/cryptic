@@ -1,13 +1,8 @@
 package imicro.cryptic.dungeon.map
 
 /**
- * A stand-in dungeon map item, painted the way Hypixel paints one.
- *
- * The real map only exists inside a run, which makes both placing the HUD and
- * checking that the reader works into things you cannot do without queueing a
- * dungeon. This paints the same pixels a floor would — a room grid with types
- * and states, doors in the gaps between them — so `/cryptic debug map` can put
- * a believable map on screen anywhere.
+ * A stand-in dungeon map item, painted like Hypixel's, so `/cryptic debug map` can show a
+ * believable map anywhere.
  */
 object SampleDungeonMap {
 	private const val SIZE = 128
@@ -15,7 +10,7 @@ object SampleDungeonMap {
 	private const val ROOM = 16
 	private const val STRIDE = ROOM + 4
 
-	/** Room colours as they appear on the item, by tile. */
+	/** Room colours on the item, by tile. */
 	private const val ENTRANCE = 30
 	private const val NORMAL = 63
 	private const val PUZZLE = 66
@@ -25,7 +20,7 @@ object SampleDungeonMap {
 	private const val FAIRY = 82
 	private const val UNKNOWN = 85
 
-	/** State colours, stamped in the middle of a room. */
+	/** State colours, stamped in a room's middle. */
 	private const val CLEARED = 34
 	private const val GREEN = 30
 	private const val UNOPENED = 85
@@ -48,7 +43,7 @@ object SampleDungeonMap {
 		Tile(2, 0, BLOOD, null),
 	)
 
-	/** A 1x2 room, to prove that joined tiles are read as one room. */
+	/** A 1×2 room, to check that joined tiles read as one. */
 	private val joined = listOf(Tile(1, 2, NORMAL, CLEARED), Tile(0, 2, NORMAL, CLEARED))
 
 	fun colors(): ByteArray {
@@ -59,8 +54,6 @@ object SampleDungeonMap {
 			tile.state?.let { stamp(colors, tile.x, tile.z, it) }
 		}
 
-		// The joined pair share the gap between them, which is what tells the
-		// reader they are one room rather than two that happen to touch.
 		connect(colors, 0, 2, true, NORMAL)
 
 		doors(colors)
@@ -85,7 +78,6 @@ object SampleDungeonMap {
 		}
 	}
 
-	/** Paints the gap between two tiles, either as a door or as one room. */
 	private fun connect(colors: ByteArray, tileX: Int, tileZ: Int, horizontal: Boolean, color: Int) {
 		val baseX = START + tileX * STRIDE
 		val baseZ = START + tileZ * STRIDE
@@ -100,7 +92,6 @@ object SampleDungeonMap {
 		}
 	}
 
-	/** A door is only the middle of a gap, leaving the rest of it bare. */
 	private fun door(colors: ByteArray, tileX: Int, tileZ: Int, horizontal: Boolean, color: Int) {
 		val baseX = START + tileX * STRIDE
 		val baseZ = START + tileZ * STRIDE

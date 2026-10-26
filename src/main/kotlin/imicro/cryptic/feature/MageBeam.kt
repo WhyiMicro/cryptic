@@ -28,17 +28,10 @@ import net.minecraft.world.phys.Vec3
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * Draws the mage beam as a line instead of a trail of sparks.
- *
- * Ported from Odin's Mage Beam and NoammAddons' (BSD 3-Clause, Copyright (c)
- * 2025 odtheking; CC0, Noamm9). The ability itself is invisible: what Hypixel
- * sends is a run of firework particles along the path and a sheep at your feet
- * to make the noise. Both are read here — the particles become the two ends of
- * a line, and the sheep can be dropped before it is ever added to the world.
- *
- * Particles arrive several to a tick and in the order they were fired, so a
- * point continuing the direction of the last one belongs to the same beam, and
- * anything else starts a new one.
+ * Draws the mage beam as a line instead of sparks. Hypixel sends a run of firework particles along
+ * the path and a sheep at your feet for the sound; the particles become the line's two ends, and
+ * the sheep can be hidden. Particles arrive several a tick in firing order, so a point continuing
+ * the last one's direction belongs to the same beam. From Odin's and NoammAddons' Mage Beam.
  */
 object MageBeam {
 	@JvmField
@@ -252,11 +245,8 @@ object MageBeam {
 	)
 
 	/**
-	 * One cast: the points it has been seen at, and when they arrived.
-	 *
-	 * The two ends are worked out from where the player is rather than from the
-	 * order the points arrived in, because a beam fired towards you and one
-	 * fired away from you send their particles in opposite orders.
+	 * One cast: the points seen and when. The ends are worked out from the player's position, since
+	 * beams fired toward or away from you arrive in opposite orders.
 	 */
 	private class Beam(first: Vec3, val bornAt: Int) {
 		val points = CopyOnWriteArrayList<Vec3>().apply { add(first) }
@@ -264,7 +254,7 @@ object MageBeam {
 		var near: Vec3 = first
 		var far: Vec3 = first
 
-		/** Whether the far end stopped on something alive rather than on a wall. */
+		/** Whether the far end stopped on something alive rather than a wall. */
 		var hitMob = false
 
 		fun measure(from: Vec3) {
@@ -289,7 +279,7 @@ object MageBeam {
 			far = furthest
 		}
 
-		/** True while a new point carries on in the direction this beam runs, close behind its last one. */
+		/** True while a new point continues this beam's direction, close behind its last one. */
 		fun continues(point: Vec3): Boolean {
 			val last = points.last()
 			if (last.distanceToSqr(point) > MAX_GAP * MAX_GAP) return false
@@ -321,9 +311,8 @@ object MageBeam {
 
 
 	fun tick(client: Minecraft) {
-		// Only in a dungeon, where the ability's beam is read from at all. The
-		// mob snapshot below walks every entity in the world each tick, which
-		// is nothing in a dungeon room and a lot in a crowd of island mobs.
+		// Only in a dungeon: the mob snapshot below walks every entity each tick, which is costly
+		// in island crowds.
 		if (!module.enabled || !DungeonLocation.inDungeon) {
 			if (beams.isNotEmpty()) beams.clear()
 			if (recentBoxes.isNotEmpty()) recentBoxes = emptyList()
@@ -334,8 +323,8 @@ object MageBeam {
 		val life = duration.value.toInt()
 		beams.removeAll { ticks - it.bornAt > life }
 
-		// Before the beams are measured, so a beam fired this tick is tested
-		// against a world that still has in it whatever the beam just killed.
+		// Before measuring beams, so a beam fired this tick is tested against a world that still
+		// has what it killed.
 		snapshotMobs(client)
 
 		val player = client.player ?: return
@@ -346,25 +335,18 @@ object MageBeam {
 		}
 	}
 
-	/**
-	 * One of the ability's particles. Returns true when the game should not
-	 * draw it, which is what leaves only the line behind.
-	 */
+	/** One of the ability's particles. True when the game shouldn't draw it. */
 	@JvmStatic
 	fun onParticle(packet: ClientboundLevelParticlesPacket): Boolean {
 		if (!module.enabled || !DungeonLocation.inDungeon) return false
 		if (packet.particle.type != ParticleTypes.FIREWORK) return false
-		// Nothing to draw, so nothing to record: the sparks just go.
 		if (hideBeam.value) return true
 
 		val point = Vec3(packet.x, packet.y, packet.z)
-		// Hypixel sends each beam twice; a point that is already on one is the
-		// second copy of it.
+		// Hypixel sends each beam twice; a point already on a beam is the copy.
 		if (beams.none { point in it.points }) {
-			// Any beam still arriving, not only the newest. Other fireworks come
-			// in between a beam's sparks — the dragons' in the last part of Floor 7
-			// — and with only the newest tried, every spark of the beam started a
-			// beam of its own, too short to draw.
+			// Any beam still arriving, not just the newest: other fireworks (the F7 dragons')
+			// arrive between a beam's sparks.
 			val recent = beams.lastOrNull { ticks - it.lastTick <= 1 && it.continues(point) }
 			if (recent != null) {
 				recent.points.add(point)
@@ -374,22 +356,15 @@ object MageBeam {
 			}
 		}
 
-		// Nothing else happens here, and that is deliberate. This runs on the
-		// network thread, where anything that throws is answered by Minecraft
-		// dropping the connection, so it only records the point. Whether the
-		// beam hit anything is worked out on the game thread's tick, which tests
-		// every beam against the last second of mob positions anyway.
+		// This runs on the network thread, where a throw drops the connection, so it only records
+		// the point. Hits are worked out on the game thread's tick.
 		return hideParticles.value
 	}
 
 	/**
-	 * The sheep the ability spawns to make its noise, which nobody looks at.
-	 *
-	 * Left in the world and only not drawn, rather than dropped as it spawns,
-	 * so its hitbox can still be shown. Every sheep in a dungeon, as Devonian's
-	 * Hide Sheeps has it: there is no other sheep in one, and the old test —
-	 * one spawned within three blocks of your feet — let a teammate's through,
-	 * and your own whenever you were moving as you cast.
+	 * The ability's sheep, which nobody looks at. Left in the world and only undrawn, so its hitbox
+	 * can still show. Every sheep in a dungeon goes (an idea from Devonian's Hide Sheeps); there
+	 * are no others.
 	 */
 	@JvmStatic
 	fun hidesSheep(entity: Entity): Boolean =
@@ -431,7 +406,6 @@ object MageBeam {
 		}
 	}
 
-	/** An outline where each sheep stands, drawn between ticks where it is moving. */
 	private fun drawSheepHitboxes(context: LevelRenderContext) {
 		val client = Minecraft.getInstance()
 		val level = client.level ?: return
@@ -464,18 +438,8 @@ object MageBeam {
 	}
 
 	/**
-	 * Whether the beam stopped on something alive rather than on a wall.
-	 *
-	 * The last stretch of the beam is tested, not its last spark. A beam stops
-	 * at the surface of what it hit, and a point on a surface is as easily a
-	 * hair outside the box as a hair inside it — which is why testing the point
-	 * alone answered yes only sometimes, on hits that all looked the same. A
-	 * short segment back along the beam crosses the box whichever side of the
-	 * surface the spark landed on.
-	 *
-	 * Armour stands are skipped, because a dungeon is full of them holding name
-	 * tags and none of them is what was aimed at. Once true it stays true,
-	 * since a mob killed by the beam stops existing a moment later.
+	 * Whether the beam stopped on something alive. Armour stands are skipped (dungeons are full of
+	 * nametag stands). Once true it stays true, since a killed mob disappears a moment later.
 	 */
 	private fun endsOnMob(beam: Beam): Boolean {
 		val direction = beam.far.subtract(beam.near)
@@ -483,37 +447,21 @@ object MageBeam {
 		if (length < START_SKIP) return false
 		val along = direction.scale(1.0 / length)
 
-		// The whole beam past the first block or so, not just the far end. A
-		// beam that passes through a mob and carries on to the wall behind it
-		// has hit that mob, and testing only the last stretch calls that a miss
-		// — which is most of what "sometimes" meant. The first stretch is left
-		// out because it starts inside you, where anything standing next to you
-		// would count for nothing you did.
+		// The whole beam past the first block or so: a beam passing through a mob into the wall
+		// still hit it. The first stretch starts inside you, so it doesn't count.
 		val start = beam.near.add(along.scale(START_SKIP))
 		val end = beam.far
 
-		// Every snapshot, not just the newest. A mob this beam killed is not in
-		// the world by the time anything gets to look for it, and a check that
-		// only ever sees the living was never really testing whether the beam
-		// hit something — only whether what it hit survived.
+		// Every snapshot, not just the newest: a mob this beam killed is already gone from the
+		// world.
 		return recentBoxes.any { snapshot -> snapshot.any { crosses(it, start, end) } }
 	}
 
 	/**
-	 * Where everything alive was, over the last few ticks.
-	 *
-	 * Kept so a beam can be tested against the world as it was when the beam
-	 * was fired rather than as it is once the beam has finished with it. Boxes
-	 * rather than entities, because an entity that has been removed stops
-	 * reporting where it used to be.
-	 *
-	 * Replaced whole every tick rather than added to and trimmed, and never
-	 * changed once built. This was a queue edited in place, and a queue edited
-	 * on the game thread while the network thread was reading it handed the
-	 * reader a slot that had just been emptied — an exception inside a packet
-	 * handler, which Minecraft answers by dropping the connection. That was the
-	 * kick in the blood room, where more beams are fired than anywhere else. A
-	 * list that is only ever swapped for a new one cannot be caught half-built.
+	 * Where everything alive was over the last few ticks, as boxes, so beams are tested against the
+	 * world as it was when fired. Replaced whole each tick and never modified: an in-place queue
+	 * read from the network thread once threw inside a packet handler and disconnected the player
+	 * in the blood room.
 	 */
 	@Volatile
 	private var recentBoxes: List<List<AABB>> = emptyList()
@@ -529,20 +477,14 @@ object MageBeam {
 		recentBoxes = (recentBoxes + listOf(boxes)).takeLast(MEMORY_TICKS)
 	}
 
-	/**
-	 * A cross at the end of a beam, drawn square-on to it.
-	 *
-	 * The two strokes are laid out across the beam's own direction rather than
-	 * across the screen, so the mark sits on the end of the line from wherever
-	 * it is looked at instead of flattening into it.
-	 */
+	/** A cross at a beam's end, laid out across the beam's direction so it reads from any angle. */
 	private fun drawMarker(context: LevelRenderContext, beam: Beam, argb: Int) {
 		val direction = beam.far.subtract(beam.near)
 		if (direction.lengthSqr() < 1e-6) return
 		val forward = direction.normalize()
 
-		// Any vector not running along the beam will do to build the other two
-		// from; the upright one does, except for a beam fired straight up.
+		// Any vector not along the beam builds the other two; up works unless the beam goes
+		// straight up.
 		val reference = if (kotlin.math.abs(forward.y) < 0.9) Vec3(0.0, 1.0, 0.0) else Vec3(1.0, 0.0, 0.0)
 		val right = forward.cross(reference).normalize()
 		val up = forward.cross(right).normalize()
@@ -569,29 +511,22 @@ object MageBeam {
 	private const val HITBOX_OUTLINE = 0
 	private const val HITBOX_FILL = 1
 
-	/** How far off the end of a beam a mob still counts as the thing it hit. */
+	/** How far past a beam's end a mob still counts as hit. */
 	private const val HIT_SLACK = 1.0
 
-	/** How much of the beam nearest you is not counted, being where you stand. */
+	/** How much of the beam nearest you is ignored. */
 	private const val START_SKIP = 1.5
 
 	/**
-	 * Whether a line meets a box, counting a line that begins or ends inside it.
-	 *
-	 * `AABB.clip` answers where a ray *enters* a box, so it says no for a line
-	 * that starts already inside one - which is the case whenever a beam stops
-	 * within the thing it hit rather than on its surface.
+	 * Whether a line meets a box, including one starting or ending inside it (`AABB.clip` says no
+	 * for those).
 	 */
 	private fun crosses(box: AABB, from: Vec3, to: Vec3): Boolean =
 		box.contains(from) || box.contains(to) || box.clip(from, to).isPresent
 
 	/**
-	 * What the beams look like from in here, for `/cryptic debug beam`.
-	 *
-	 * Whether the mark is drawn comes down to a geometry question nothing on
-	 * screen reports the answer to, so the answer is printed: how long each
-	 * beam is, whether it was judged a hit, and how many remembered mobs were
-	 * anywhere near it.
+	 * Each beam's length, whether it was judged a hit, and how many remembered mobs were near it,
+	 * for `/cryptic debug beam`.
 	 */
 	fun describe(): List<String> {
 		if (beams.isEmpty()) return listOf("Mage beam: nothing on screen.")
@@ -614,24 +549,23 @@ object MageBeam {
 		return lines
 	}
 
-	/** How near the end of a beam a remembered box is worth reporting, squared. */
+	/** How near a beam's end a remembered box is reported, squared. */
 	private const val NEAR_REPORT = 25.0
 
 	/** How many ticks of the world a beam may be tested against. */
 	private const val MEMORY_TICKS = 20
 
-	/** The same colour at part of its alpha, for a beam on its way out. */
+	/** The colour at part of its alpha, for a fading beam. */
 	private fun faded(argb: Int, strength: Float): Int {
 		val alpha = (ARGB.alpha(argb) * strength).toInt().coerceIn(0, 255)
 		return ARGB.color(alpha, argb)
 	}
 
-	/** How straight a point has to carry on to belong to the same beam. */
+	/** How straight a point must continue to belong to the same beam. */
 	private const val STRAIGHT = 0.99
 
-	/** How far apart two sparks of one beam can be. */
 	private const val MAX_GAP = 5.0
 
-	/** Fewer points than this is a stray spark rather than a cast. */
+	/** Fewer points than this is a stray spark. */
 	private const val MIN_POINTS = 3
 }

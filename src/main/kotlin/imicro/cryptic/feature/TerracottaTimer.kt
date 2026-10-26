@@ -22,34 +22,24 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Counts down to each terracotta in Sadan's room coming back to life.
- *
- * Ported from Odin's Terracotta Timer (BSD 3-Clause, Copyright (c) 2025
- * odtheking) and NoammAddons' (CC0, Noamm9), which agree on everything that
- * matters. A terracotta that is killed is not gone: Hypixel leaves a flower pot
- * where it fell and stands it back up fifteen seconds later — twelve in Master
- * Mode — and the first phase of the fight is mostly a matter of knowing which
- * ones are about to. The pot appearing is the only announcement there is, so
- * that is what starts the clock.
- *
- * Counted in server ticks rather than in seconds, like every other countdown
- * in a dungeon: when the server lags, the terracotta is late by exactly as much
- * as the timer is.
+ * Counts down each terracotta in Sadan's room coming back. A killed terracotta leaves a flower pot
+ * and stands back up 15 seconds later (12 in Master Mode); the pot appearing starts the clock.
+ * Counted in server ticks, so lag delays both equally. From Odin's and NoammAddons' Terracotta
+ * Timer.
  */
 object TerracottaTimer {
 	private const val FLOOR = 6
 
-	/** How long a terracotta stays down, in server ticks. */
 	private const val RESPAWN_TICKS = 300
 	private const val RESPAWN_TICKS_MASTER = 240
 
-	/** Sadan ending the phase, which is every terracotta waking at once. */
+	/** Sadan ending the phase, which wakes every terracotta. */
 	private const val PHASE_END = "[BOSS] Sadan: ENOUGH!"
 
 	/** NoammAddons waits this long after the line before dropping the timers. */
 	private const val PHASE_END_TICKS = 10
 
-	/** Odin's thresholds, in seconds: green while there is time, red when there is not. */
+	/** Odin's thresholds: green while there's time, red when not. */
 	private const val SOON_SECONDS = 5.0
 	private const val IMMINENT_SECONDS = 2.0
 
@@ -105,15 +95,11 @@ object TerracottaTimer {
 	)
 
 	/**
-	 * Where each terracotta fell, and how many server ticks until it is back.
-	 *
-	 * Written by the client thread when a pot appears and counted down by the
-	 * network thread, so it is a map that can take both and a counter per entry
-	 * that can be decremented without a lock.
+	 * Where each terracotta fell and ticks until it's back. Written on the client thread, counted
+	 * down on the network thread.
 	 */
 	private val respawning = ConcurrentHashMap<BlockPos, AtomicInteger>()
 
-	/** Counts down to the timers being dropped once Sadan has ended the phase. */
 	@Volatile
 	private var clearIn = -1
 
@@ -138,26 +124,20 @@ object TerracottaTimer {
 		clearIn = -1
 	}
 
-	/** Sadan's room, on either difficulty. The debug switch stands in for it elsewhere. */
+	/** Sadan's room, either difficulty; the debug switch stands in elsewhere. */
 	private fun inSadanFight(): Boolean =
 		DebugOverrides.terracottaAnywhere ||
 			(DungeonLocation.inDungeon && DungeonLocation.floor == FLOOR && DungeonRun.inBoss)
 
-	/**
-	 * Whether a block change is worth looking at.
-	 *
-	 * Asked for every block that changes anywhere, so it is two booleans and
-	 * nothing else.
-	 */
+	/** Whether a block change is worth looking at. Asked for every change, so it's two booleans. */
 	@JvmStatic
 	fun isWatching(): Boolean = module.enabled && inSadanFight()
 
-	/** A flower pot appearing, which is a terracotta going down. */
+	/** A flower pot appearing: a terracotta going down. */
 	@JvmStatic
 	fun onPotPlaced(pos: BlockPos) {
 		val ticks = if (DungeonLocation.masterMode) RESPAWN_TICKS_MASTER else RESPAWN_TICKS
-		// The same pot is set more than once as the chunk catches up, and the
-		// first of them is the one that was on time.
+		// The same pot is set more than once as the chunk catches up; the first was on time.
 		respawning.putIfAbsent(pos.immutable(), AtomicInteger(ticks))
 	}
 
@@ -174,12 +154,7 @@ object TerracottaTimer {
 		respawning.entries.removeIf { it.value.decrementAndGet() <= 0 }
 	}
 
-	/**
-	 * Counts on the client's own ticks where there is no server clock to count.
-	 *
-	 * Only for the debug switch: a single-player world sends no per-tick ping,
-	 * so a timer started there would otherwise sit at its first number forever.
-	 */
+	/** Counts client ticks for the debug switch, since singleplayer sends no per-tick ping. */
 	fun tick() {
 		if (DebugOverrides.terracottaAnywhere && !ServerTicks.available) onServerTick()
 	}
@@ -187,8 +162,7 @@ object TerracottaTimer {
 	private fun render(context: LevelRenderContext) {
 		if (!module.enabled || respawning.isEmpty()) return
 		if (!inSadanFight()) {
-			// Left the room with timers still running: they describe a fight
-			// that is not this one any more.
+			// Left the room with timers running; they're for another fight.
 			forget()
 			return
 		}
@@ -220,7 +194,7 @@ object TerracottaTimer {
 		else -> RED
 	}
 
-	/** What is being counted, for `/cryptic debug terracotta`. */
+	/** For `/cryptic debug terracotta`. */
 	fun describe(): List<String> {
 		val lines = mutableListOf(
 			"§8[Cryptic] §7Terracotta Timer: module ${if (module.enabled) "§aon" else "§coff"}§7, " +

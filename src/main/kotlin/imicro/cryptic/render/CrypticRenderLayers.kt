@@ -12,12 +12,8 @@ import net.minecraft.client.renderer.rendertype.RenderType
 import java.util.Optional
 
 /**
- * World-space pipelines Cryptic draws its own geometry with.
- *
- * Vanilla has no depth-less line or box pipeline, so the "through walls" halves
- * are the ordinary ones with the depth-stencil state dropped. Pipelines are
- * collected while the game is starting, so [touch] is called from client init
- * rather than waiting for the first frame that draws one.
+ * World pipelines for Cryptic's own geometry. The "through walls" ones are vanilla's without depth
+ * testing. [touch] registers them during client init.
  */
 object CrypticRenderPipelines {
 	val FILLED: RenderPipeline = RenderPipelines.register(
@@ -51,10 +47,8 @@ object CrypticRenderPipelines {
 	)
 
 	/**
-	 * Drawn only where something is in front: the depth test turned round, so
-	 * a box shows through walls and nowhere else. 26.x keeps depth reversed,
-	 * nearer being greater, so "behind" is less-than. Custom Block Highlight's
-	 * "Only Concealed" (GPL-3, Tektonikal).
+	 * Drawn only where something is in front. Depth is reversed in 26.x (nearer is greater), so
+	 * "behind" is less-than.
 	 */
 	val FILLED_BEHIND: RenderPipeline = RenderPipelines.register(
 		RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET).apply {
@@ -72,11 +66,9 @@ object CrypticRenderPipelines {
 		}.build(),
 	)
 
-	/** Loads this object, and with it registers every pipeline above. */
 	fun touch() = Unit
 }
 
-/** The render types [WorldRender] buffers its geometry into. */
 object CrypticRenderLayers {
 	val FILLED: RenderType = RenderType.create(
 		"cryptic_filled",
@@ -109,22 +101,14 @@ object CrypticRenderLayers {
 	)
 
 	/**
-	 * Whether this is one of the layers that should be drawn last.
-	 *
-	 * Asked by the submit mixin for every piece of custom geometry in the
-	 * frame, so it is two identity comparisons and nothing else.
+	 * Whether this layer is drawn last. Asked for every custom geometry submit, so it is just two
+	 * identity checks.
 	 */
 	@JvmStatic
 	fun drawsOverTerrain(type: RenderType): Boolean =
 		type === FILLED_THROUGH_WALLS || type === LINES_THROUGH_WALLS || type === FILLED_BEHIND || type === LINES_BEHIND
 
-	/**
-	 * Set for the length of one text submit, when that text is Cryptic's and
-	 * meant to be read through whatever is in front of it.
-	 *
-	 * A flag rather than a render type because text carries none: the caller
-	 * sets it, submits, and clears it, all on the render thread.
-	 */
+	/** Set around one text submit that should be read through what's in front of it. */
 	@JvmStatic
 	var textOverTerrain: Boolean = false
 

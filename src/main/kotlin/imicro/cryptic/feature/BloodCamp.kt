@@ -35,22 +35,10 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /**
- * Where the Watcher's mobs are going to stop, and when.
- *
- * Ported from NoammAddons' Blood Camp (CC0, Noamm9). Camping the blood room
- * means standing where the next wave will arrive and hitting it the moment it
- * gets there, and both halves of that are guesswork: the mobs spawn out of
- * sight and walk in, and the Watcher moves the wave on after a length of time
- * nothing announces.
- *
- * Both are worked out from what the server already sends. A mob's walk is a
- * straight line, so the direction of its first few movement packets says where
- * it will end up; the Watcher's speed is the gap between his greeting and the
- * wave starting, which is a number Hypixel rolls per run.
- *
- * The mobs are recognised by the heads they wear rather than by name, because
- * an armour stand carrying one is not otherwise labelled. Those texture lists
- * are NoammAddons' too.
+ * Where the Watcher's mobs will stop, and when. Mobs spawn out of sight and walk in a straight
+ * line, so their first movement packets give the landing spot; the Watcher's wave timing is
+ * measured from his greeting. Mobs are recognised by their skull textures (NoammAddons' lists).
+ * Ported from NoammAddons' Blood Camp.
  */
 object BloodCamp {
 	@JvmField
@@ -331,28 +319,25 @@ object BloodCamp {
 	val module: Module = Module(
 		id = "blood_camp",
 		name = "Blood Camp",
-		description = "Times and boxes blood mobs",
+		description = "Blood mob times and boxes",
 		category = ModuleCategory.DUNGEON,
 		supportsKeybind = false,
 		settings = configurable + reset,
 	)
 
 	/**
-	 * One mob on its way in.
-	 *
-	 * [start] is where it was first seen and [heading] the sum of every step it
-	 * has taken since, which is a direction once there is more than one of them.
-	 * A mob that has only just appeared has no heading and so no end point yet.
+	 * One incoming mob. [start] is where it was first seen; [heading] sums its steps since, giving
+	 * a direction once there's more than one.
 	 */
 	private class BloodMob(val start: Vec3, val bornAt: Long, val firstWave: Boolean) {
 		var last: Vec3 = start
 		var heading: Vec3 = Vec3.ZERO
 		var end: Vec3? = null
 
-		/** How far it moves per millisecond, for the box that leads it. */
+		/** Movement per millisecond, for the box that leads it. */
 		var speed: Vec3 = Vec3.ZERO
 
-		/** Where its two boxes were drawn last, so they can be smoothed. */
+		/** Where its two boxes were last drawn, for smoothing. */
 		var lastEnd: Vec3? = null
 		var lastAhead: Vec3? = null
 	}
@@ -360,16 +345,16 @@ object BloodCamp {
 	private val mobs = LinkedHashMap<ArmorStand, BloodMob>()
 	private var watcher: Zombie? = null
 
-	/** Hypixel's own clock, counted from the ping the way every timer here is. */
+	/** Hypixel's clock, counted from the per-tick ping. */
 	private var ticks = 0L
 
-	/** When the Watcher first spoke, which is what his speed is measured from. */
+	/** When the Watcher first spoke, which his timing is measured from. */
 	private var greetedAt: Long? = null
 
-	/** True until the first wave has been sent, which walks in further. */
+	/** True until the first wave is sent, which walks in further. */
 	private var firstWave = true
 
-	/** Ticks until the kill title, or zero when there is none coming. */
+	/** Ticks until the kill title, or zero. */
 	private var titleIn = 0
 
 	private var initialized = false
@@ -395,18 +380,14 @@ object BloodCamp {
 		titleIn = 0
 	}
 
-	/** Whether anything here has a reason to be watching packets right now. */
+	/** Whether anything here needs to watch packets right now. */
 	private fun tracking(): Boolean =
 		module.enabled && DungeonLocation.inDungeon && !DungeonRun.inBoss
 
 
 	/**
-	 * Writes the mobs left into the Watcher's boss bar.
-	 *
-	 * Odin's trick: Hypixel gives the bar as a fraction and never says of what,
-	 * but the wave is twelve mobs plus the floor number, so the fraction can be
-	 * turned back into a count. Below a twentieth the bar is rounding noise
-	 * rather than a mob, and is left alone.
+	 * Writes the mobs left into the Watcher's boss bar (Odin's trick): the bar is a fraction of
+	 * twelve mobs plus the floor number. Below a twentieth it's rounding noise.
 	 */
 	@JvmStatic
 	fun labelWatcherBar(event: BossEvent) {
@@ -433,33 +414,22 @@ object BloodCamp {
 				client.gui.hud.setTitle(Component.literal(killTitleText()))
 			}
 
-			// A mob whose armour stand has gone has been killed, or its wave
-			// has been moved on; either way there is nothing left to time.
+			// A mob whose armour stand is gone was killed or moved on.
 			mobs.entries.removeIf { it.key.isRemoved }
 			if (watcher?.isRemoved == true) watcher = null
 		}
 	}
 
 	/**
-	 * What the kill title says, and in what colour.
-	 *
-	 * The wording is NoammAddons' until you change it. A title is read out of
-	 * the corner of an eye in the middle of a fight, so which words do that
-	 * best is personal; the colour is rounded to the sixteen a title can
-	 * actually be written in.
+	 * The kill title's text and colour: NoammAddons' wording unless changed, the colour rounded to
+	 * the sixteen a title can use.
 	 */
 	private fun killTitleText(): String {
 		val text = customTitle.value.trim().ifEmpty { DEFAULT_KILL_TITLE }
 		return colorCode(titleColor.argb) + "§l" + text
 	}
 
-	/**
-	 * The nearest of Minecraft's sixteen colours to a chosen one.
-	 *
-	 * A title takes a colour code rather than a colour, so the picker has to be
-	 * rounded to the palette the game will accept. Distance is measured in
-	 * plain RGB, which is close enough across sixteen well-spread colours.
-	 */
+	/** The nearest of Minecraft's sixteen colours, by plain RGB distance, since titles take colour codes. */
 	private fun colorCode(argb: Int): String {
 		val red = (argb shr 16) and 0xFF
 		val green = (argb shr 8) and 0xFF
@@ -481,7 +451,6 @@ object BloodCamp {
 
 	private const val DEFAULT_KILL_TITLE = "Kill Mobs"
 
-	/** Minecraft's palette, which is all a title can be written in. */
 	private val CHAT_COLORS = listOf(
 		"§0" to 0x000000, "§1" to 0x0000AA, "§2" to 0x00AA00, "§3" to 0x00AAAA,
 		"§4" to 0xAA0000, "§5" to 0xAA00AA, "§6" to 0xFFAA00, "§7" to 0xAAAAAA,
@@ -493,10 +462,8 @@ object BloodCamp {
 		if (!tracking()) return
 		if (!line.startsWith(WATCHER_PREFIX)) return
 
-		// The Watcher letting you through is the end of the camp, and the one
-		// moment in the room worth looking up for. Checked before the greeting:
-		// the first thing he says is taken as his greeting, so for anyone who
-		// walked in after it, this line was being used up as one.
+		// The Watcher letting you through ends the camp. Checked before the greeting: for someone
+		// arriving after it, his first line was being taken as the greeting.
 		if (line == DONE_MESSAGE) {
 			if (doneTitle.value) {
 				val client = Minecraft.getInstance()
@@ -508,9 +475,8 @@ object BloodCamp {
 
 		if (greetedAt == null) {
 			greetedAt = ticks
-			// Since SkyBlock 0.27.2 the Watcher moves his first wave on a fixed
-			// time after his greeting, as Odin now counts it, rather than on a
-			// time read off how soon the wave came.
+			// Since SkyBlock 0.27.2 the first wave moves on a fixed time after the greeting, as
+			// Odin counts it.
 			if (killTitle.value) {
 				titleIn = Timing.WATCHER_MOVE.ticks
 				Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
@@ -546,12 +512,7 @@ object BloodCamp {
 		if (sendSpeed.value) client.connection?.sendCommand("pc ${title.replace(Regex("§."), "")}")
 	}
 
-	/**
-	 * The Watcher himself, found by the head he is wearing.
-	 *
-	 * Called for every equipment packet, so the cheap tests come first: he is
-	 * only looked for while there is not one already, and only in a dungeon.
-	 */
+	/** The Watcher, found by his skull. Called for every equipment packet, so the cheap tests come first. */
 	@JvmStatic
 	fun onEquipment(entityId: Int, slot: EquipmentSlot, stack: ItemStack) {
 		if (!tracking() || watcher != null) return
@@ -563,12 +524,8 @@ object BloodCamp {
 	}
 
 	/**
-	 * One step of a mob's walk in.
-	 *
-	 * Taken off the packet rather than off the entity, because the entity is
-	 * moved by interpolation: what the server actually said is one step per
-	 * tick, and a direction built out of those is straight where one built out
-	 * of drawn positions wobbles.
+	 * One step of a mob's walk, from the packet rather than the interpolated entity, so the
+	 * direction is straight.
 	 */
 	@JvmStatic
 	fun onEntityMove(packet: ClientboundMoveEntityPacket) {
@@ -580,8 +537,7 @@ object BloodCamp {
 
 		val level = Minecraft.getInstance().level ?: return
 		val entity = packet.getEntity(level) as? ArmorStand ?: return
-		// Only the stands standing on the Watcher's own mobs, which is what
-		// keeps the room's nametags and the party out of it.
+		// Only stands on the Watcher's own mobs, which keeps nametags and the party out.
 		val boss = watcher ?: return
 		if (boss.distanceToSqr(entity) > WATCHER_RADIUS_SQUARED) return
 
@@ -589,11 +545,8 @@ object BloodCamp {
 		if (!head.`is`(Items.PLAYER_HEAD)) return
 		if (SkyblockItem.skullTexture(head) !in mobSkulls) return
 
-		// Where the server has put it, which this packet has just been decoded
-		// into. Not the entity's own position plus the step: that is where it is
-		// drawn, a tick or two behind while it glides towards the server's, and
-		// at a blood mob's pace that put every landing spot half a block short.
-		// Odin reads the same value, at the point it is handed to interpolation.
+		// Where the server put it, just decoded from this packet. The drawn position lags a tick or
+		// two, which put every landing spot half a block short. Odin reads the same value.
 		val moved = entity.positionCodec.base
 
 		val mob = mobs.getOrPut(entity) { BloodMob(moved, ticks, firstWave) }
@@ -602,23 +555,18 @@ object BloodCamp {
 		if (step.lengthSqr() > 0) mob.heading = mob.heading.add(step)
 		if (mob.heading.lengthSqr() <= 0) return
 
-		// Blocks per millisecond since it was first seen, for the box that leads it by your ping.
+		// Blocks per millisecond since first seen, for the box that leads it by your ping.
 		val millis = (ticks - mob.bornAt) * MILLIS_PER_TICK
 		if (millis > 0) mob.speed = moved.subtract(mob.start).scale(1.0 / millis)
 
-		// The walk is the same length every time, so where it ends is the start
-		// plus that many blocks in the direction it is going.
+		// The walk is the same length every time: start plus that many blocks along its heading.
 		val reach = if (mob.firstWave) FIRST_WAVE_REACH else LATER_WAVE_REACH
 		mob.end = mob.start.add(mob.heading.normalize().scale(reach))
 	}
 
 	/**
-	 * The two boxes and the countdown, drawn Odin's way.
-	 *
-	 * A mob on its way in gets two: where it is, moved forward by however far
-	 * your hits are behind you, and where it will stop. Once those two are the
-	 * same place there is only one box left, in a colour of its own, and that
-	 * is the moment to swing.
+	 * The two boxes and the countdown, Odin's way: a box where the mob is plus your ping's worth of
+	 * lead, and one where it will stop. Once they meet, one box in its own colour says swing now.
 	 */
 	private fun render(context: LevelRenderContext) {
 		if (!tracking() || !showMobs.value || mobs.isEmpty()) return
@@ -632,9 +580,8 @@ object BloodCamp {
 		mobs.forEach { (stand, mob) ->
 			val end = mob.end ?: return@forEach
 
-			// Milliseconds until it lands, on Hypixel's clock rather than the
-			// client's: the tick it spawns on is a setting because Hypixel
-			// picks one between thirty-seven and forty-one.
+			// Milliseconds until it lands, on Hypixel's clock. The spawn tick is a setting, since
+			// Hypixel picks 37 to 41.
 			val since = (ticks - mob.bornAt) * MILLIS_PER_TICK
 			val left = (if (mob.firstWave) FIRST_WAVE_MILLIS else 0) +
 				(spawnTick.value * MILLIS_PER_TICK) - since + tickOffset.value
@@ -643,8 +590,7 @@ object BloodCamp {
 			val landing = interpolated(mob.lastEnd, end, partial)
 			mob.lastEnd = end
 
-			// Where a hit of yours would land, which is ahead of where the mob
-			// is drawn by exactly as long as the packet takes to arrive.
+			// Where your hit lands: ahead of the drawn mob by your ping.
 			val speed = mob.speed
 			val ahead = Vec3(
 				stand.x + speed.x * lead,
@@ -686,7 +632,7 @@ object BloodCamp {
 		}
 	}
 
-	/** One of the boxes: a cube of the chosen size, at head height. */
+	/** A cube of the chosen size at head height. */
 	private fun drawCube(context: LevelRenderContext, at: Vec3, half: Double, size: Double, argb: Int) {
 		if (((argb ushr 24) and 0xFF) == 0) return
 		WorldRender.drawBox(
@@ -708,12 +654,8 @@ object BloodCamp {
 	}
 
 	/**
-	 * Part of the way from where a box was to where it is.
-	 *
-	 * Positions arrive once a tick and frames are drawn far more often than
-	 * that, so without this the boxes step twenty times a second. Odin offers
-	 * the same choice for the same reason: the smoothing is a guess between two
-	 * known points, and a guess is slightly wrong.
+	 * Between where a box was and where it is, since positions arrive per tick and frames come
+	 * faster. Optional, as in Odin, since it's a guess.
 	 */
 	private fun interpolated(from: Vec3?, to: Vec3, partial: Float): Vec3 {
 		if (!interpolate.value || from == null) return to
@@ -724,13 +666,7 @@ object BloodCamp {
 		)
 	}
 
-	/**
-	 * The colour of a mob's countdown, which is either flat or a fade.
-	 *
-	 * Green while there is time and red as it runs out, mixed rather than
-	 * switched so the change is something you notice out of the corner of an
-	 * eye without having to read the number.
-	 */
+	/** A countdown's colour: flat, or fading green to red so the change catches the eye. */
 	private fun countdownArgb(secondsLeft: Double): Int {
 		if (!countdownColors.value) return timerColor.argb
 
@@ -738,7 +674,6 @@ object BloodCamp {
 		return blend(nearColor.argb, farColor.argb, part.toFloat())
 	}
 
-	/** [amount] of the way from [from] to [to], channel by channel. */
 	private fun blend(from: Int, to: Int, amount: Float): Int {
 		fun mix(shift: Int): Int {
 			val a = (from shr shift) and 0xFF
@@ -751,20 +686,19 @@ object BloodCamp {
 	private fun seconds(value: Double, places: Int): String =
 		if (places > 0) String.format(Locale.ROOT, "%.${places}f", value) else ceil(value).toInt().toString()
 
-	/** Your own latency, which is how far ahead of the server a swing lands. */
+	/** Your latency: how far ahead of the server a swing lands. */
 	private fun ping(): Int {
 		val client = Minecraft.getInstance()
 		val uuid = client.player?.uuid ?: return 0
 		return client.connection?.getPlayerInfo(uuid)?.latency ?: 0
 	}
 
-	/** A wave is this many mobs plus the floor number, which is Odin's count: 12 before SkyBlock 0.27.2. */
+	/** A wave is this many mobs plus the floor number (Odin's count; 12 before SkyBlock 0.27.2). */
 	private const val WAVE_BASE = 8
 
-	/** Below this the bar is rounding noise rather than a mob left standing. */
+	/** Below this the bar is rounding noise. */
 	private const val WATCHER_BAR_FLOOR = 0.05f
 
-	/** How long the "Blood done" title holds, and how long it takes to fade, in ticks. */
 	private const val DONE_TITLE_STAY_TICKS = 30
 	private const val DONE_TITLE_FADE_TICKS = 10
 
@@ -772,24 +706,23 @@ object BloodCamp {
 	private const val WAVE_MESSAGE = "[BOSS] The Watcher: Let's see how you can handle this."
 	private const val DONE_MESSAGE = "[BOSS] The Watcher: You have proven yourself. You may pass."
 
-	/** How near the Watcher one of his mobs stands, squared. */
+	/** How near the Watcher his mobs stand, squared. */
 	private const val WATCHER_RADIUS_SQUARED = 400.0
 
-	/** How far a mob walks in, which is further on the first wave. */
+	/** How far a mob walks in; further on the first wave. */
 	private const val FIRST_WAVE_REACH = 16.1
 	private const val LATER_WAVE_REACH = 11.9
 
-	/** The first wave walks in two seconds later than the ones after it. */
+	/** The first wave arrives two seconds later than the rest. */
 	private const val FIRST_WAVE_MILLIS = 2_000
 
-	/** How long the countdown takes to run from one colour to the other. */
 	private const val COUNTDOWN_FADE_SECONDS = 2.0
 	private const val MILLIS_PER_TICK = 50
 
-	/** How high the cube sits, which is where the mob's head arrives. */
+	/** The cube's height: where the mob's head arrives. */
 	private const val BOX_HEIGHT = 1.5
 
-	/** The Watcher's own heads, which is how he is told from any other zombie. */
+	/** The Watcher's skulls. */
 	private val watcherSkulls = setOf(
 		"ewogICJ0aW1lc3RhbXAiIDogMTY5NzMwOTQxNzI1NiwKICAicHJvZmlsZUlkIiA6ICJjYjYxY2U5ODc4ZWI0NDljODA5MzliNWYxNTkwMzE1MiIsCiAgInByb2ZpbGVOYW1lIiA6ICJWb2lkZWRUcmFzaDUxODUiLAogICJzaWduYXR1cmVSZXF1aXJlZCIgOiB0cnVlLAogICJ0ZXh0dXJlcyIgOiB7CiAgICAiU0tJTiIgOiB7CiAgICAgICJ1cmwiIDogImh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvNTY2MmI2ZmI0YjhiNTg2ZGM0Y2RmODAzYjA0NDRkOWI0MWQyNDVjZGY2NjhkYWIzOGZhNmMwNjRhZmU4ZTQ2MSIsCiAgICAgICJtZXRhZGF0YSIgOiB7CiAgICAgICAgIm1vZGVsIiA6ICJzbGltIgogICAgICB9CiAgICB9CiAgfQp9",
 		"ewogICJ0aW1lc3RhbXAiIDogMTcxOTYwNjM1MjMyMiwKICAicHJvZmlsZUlkIiA6ICI3MmY5MTdjNWQyNDU0OTk0YjlmYzQ1YjVhM2YyMjIzMCIsCiAgInByb2ZpbGVOYW1lIiA6ICJUaGF0X0d1eV9Jc19NZSIsCiAgInNpZ25hdHVyZVJlcXVpcmVkIiA6IHRydWUsCiAgInRleHR1cmVzIiA6IHsKICAgICJTS0lOIiA6IHsKICAgICAgInVybCIgOiAiaHR0cDovL3RleHR1cmVzLm1pbmVjcmFmdC5uZXQvdGV4dHVyZS8yNzM5ZDdmNGU2NmE3ZGIyZWE2Y2Q0MTRlNGM0YmE0MWRmN2E5MjQ1NWM5ZmM0MmNhYWIwMTQ2NjVjMzY3YWQ1IiwKICAgICAgIm1ldGFkYXRhIiA6IHsKICAgICAgICAibW9kZWwiIDogInNsaW0iCiAgICAgIH0KICAgIH0KICB9Cn0=",
@@ -802,7 +735,7 @@ object BloodCamp {
 		"ewogICJ0aW1lc3RhbXAiIDogMTcxOTYwNjIzOTU4NiwKICAicHJvZmlsZUlkIiA6ICJhYWZmMDUwYTExOTk0NzM1YjEyNDVlNDk0MGFlZjY4NCIsCiAgInByb2ZpbGVOYW1lIiA6ICJMYXN0SW1tb3J0YWwiLAogICJzaWduYXR1cmVSZXF1aXJlZCIgOiB0cnVlLAogICJ0ZXh0dXJlcyIgOiB7CiAgICAiU0tJTiIgOiB7CiAgICAgICJ1cmwiIDogImh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvZTVjMWRjNDdhMDRjZTU3MDAxYThiNzI2ZjAxOGNkZWY0MGI3ZWE5ZDdiZDZkODM1Y2E0OTVhMGVmMTY5Zjg5MyIsCiAgICAgICJtZXRhZGF0YSIgOiB7CiAgICAgICAgIm1vZGVsIiA6ICJzbGltIgogICAgICB9CiAgICB9CiAgfQp9"
 	)
 
-	/** The heads his mobs wear, which is how a wave is told from the scenery. */
+	/** The skulls his mobs wear. */
 	private val mobSkulls = setOf(
 		"eyJ0aW1lc3RhbXAiOjE1ODYwNDEwNjQwNTAsInByb2ZpbGVJZCI6ImRhNDk4YWM0ZTkzNzRlNWNiNjEyN2IzODA4NTU3OTgzIiwicHJvZmlsZU5hbWUiOiJOaXRyb2hvbGljXzIiLCJzaWduYXR1cmVSZXF1aXJlZCI6dHJ1ZSwidGV4dHVyZXMiOnsiU0tJTiI6eyJ1cmwiOiJodHRwOi8vdGV4dHVyZXMubWluZWNyYWZ0Lm5ldC90ZXh0dXJlLzVhNzk4NjBhY2E3OTk0MDdjMGZhYTEwYjFiYmNmNDI5OThmYWQ0ZWJjZjMxZDdhMjE0MTgwODI2YjRhYzk0ZTEifX19",
 		"eyJ0aW1lc3RhbXAiOjE1ODYwNDExODY2MzYsInByb2ZpbGVJZCI6ImRhNDk4YWM0ZTkzNzRlNWNiNjEyN2IzODA4NTU3OTgzIiwicHJvZmlsZU5hbWUiOiJOaXRyb2hvbGljXzIiLCJzaWduYXR1cmVSZXF1aXJlZCI6dHJ1ZSwidGV4dHVyZXMiOnsiU0tJTiI6eyJ1cmwiOiJodHRwOi8vdGV4dHVyZXMubWluZWNyYWZ0Lm5ldC90ZXh0dXJlLzQ3NzQ4NzExOTBjODc4YzlhMmM0NDk2YzFlMTAyNTdjNmM0ZWExMzgwN2Q3MmMxNWQ3YWM2YWIzYTdhOWE4ZGMifX19",

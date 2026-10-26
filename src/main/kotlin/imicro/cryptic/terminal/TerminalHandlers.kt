@@ -12,20 +12,15 @@ import net.minecraft.world.level.block.StainedGlassPaneBlock
 import org.lwjgl.glfw.GLFW
 import kotlin.math.abs
 
-/**
- * The six solvers, ported from Odin (BSD 3-Clause, Copyright (c) 2025
- * odtheking). Each is asked for a solution whenever a slot of the open terminal
- * changes, and for a colour whenever one of its slots is drawn.
- */
+/** The six terminal solvers, ported from Odin. */
 
-/** Marked as taken by Hypixel, which it does by adding an enchantment glint. */
+/** Hypixel marks a taken item with an enchantment glint. */
 private fun ItemStack.isMarked(): Boolean =
 	components.has(DataComponents.ENCHANTMENT_GLINT_OVERRIDE)
 
 private fun ItemStack.paneColor(): DyeColor? =
 	((item as? BlockItem)?.block as? StainedGlassPaneBlock)?.color
 
-/** Every red pane is wrong and has to be turned green. */
 class PanesHandler : TerminalHandler(TerminalType.PANES) {
 	override fun solve(items: List<ItemStack>, updatedIndex: Int): List<Int> =
 		items.mapIndexedNotNull { index, item ->
@@ -36,13 +31,8 @@ class PanesHandler : TerminalHandler(TerminalType.PANES) {
 }
 
 /**
- * Click the ten panes in the order of the numbers on them. Fourteen before
- * SkyBlock 0.27.2.
- *
- * The stack size is the number, so sorting by it is the whole solve. Only the
- * first of the remaining clicks is allowed, because clicking out of order
- * resets the puzzle — and a predicted click always takes the front of the
- * queue for the same reason.
+ * Click ten numbered panes in order (fourteen before SkyBlock 0.27.2). The stack size is the
+ * number. Only the next click is allowed, since out of order resets the puzzle.
  */
 class NumbersHandler : TerminalHandler(TerminalType.NUMBERS) {
 	override fun solve(items: List<ItemStack>, updatedIndex: Int): List<Int> =
@@ -58,18 +48,16 @@ class NumbersHandler : TerminalHandler(TerminalType.NUMBERS) {
 
 	override fun highlight(slotIndex: Int): SlotOverlay {
 		val position = solution.indexOf(slotIndex)
-		// Only the next three are worth aiming at; the rest keep their number
-		// so the run can be read ahead, but nothing is painted under it.
+		// Only the next three are coloured; the rest keep their number so the run can be read
+		// ahead.
 		val color = when (position) {
 			0 -> TerminalSolver.orderColor1.argb
 			1 -> TerminalSolver.orderColor2.argb
 			2 -> TerminalSolver.orderColor3.argb
 			else -> UNPAINTED
 		}
-		// The label is the number written on the pane, not how far down the
-		// remaining list it is, so it keeps counting up as the puzzle empties.
-		// Unless the numbers are switched off, which leaves the three colours to
-		// say the order on their own.
+		// The label is the pane's own number. With numbers hidden, the three colours show the order
+		// alone.
 		if (TerminalSolver.hideNumbers.value) return SlotOverlay(color)
 		return SlotOverlay(color, (abs((solution.size - GRID_SLOTS) - position) + 1).toString())
 	}
@@ -77,28 +65,20 @@ class NumbersHandler : TerminalHandler(TerminalType.NUMBERS) {
 	private companion object {
 		const val GRID_SLOTS = 10
 
-		/** Fully transparent: the label still draws, the highlight does not. */
+		/** Transparent: the label draws, the highlight doesn't. */
 		const val UNPAINTED = 0
 	}
 }
 
 /**
- * Cycle every pane to one colour, in as few clicks as possible.
- *
- * The five colours are a loop: a left click steps forward, a right click steps
- * back. Odin's current solver prices every candidate colour once the board has
- * finished arriving and keeps whichever costs fewest clicks, counting a pane
- * more than two steps away as a cheaper walk backwards — unless **Rubix mode**
- * says left clicks only, in which case everything goes the long way round.
- *
- * The colour is locked the first time the last pane of the grid arrives, so a
- * re-solve halfway through the puzzle cannot change its mind and undo the
- * clicks already made.
+ * Cycle every pane to one colour in as few clicks as possible. The five colours loop: left steps
+ * forward, right steps back. Each candidate colour is priced once the board is complete and the
+ * cheapest kept; **Rubix mode** "No minus" forces left clicks only. The colour is locked when the grid's
+ * last pane arrives, so a re-solve can't undo clicks already made.
  */
 class RubixHandler : TerminalHandler(TerminalType.RUBIX) {
 	private var lockedColor: DyeColor? = null
 
-	/** Slots the answer wants clicked backwards, which is a right click. */
 	private val rightClickSlots = HashSet<Int>()
 
 	override fun solve(items: List<ItemStack>, updatedIndex: Int): List<Int> {
@@ -118,10 +98,7 @@ class RubixHandler : TerminalHandler(TerminalType.RUBIX) {
 		return clicks.flatMap { (slotIndex, count) -> List(abs(count)) { slotIndex } }
 	}
 
-	/**
-	 * How many clicks each pane needs to reach [goal], signed: positive is
-	 * forward and negative is backward.
-	 */
+	/** Clicks each pane needs to reach [goal], signed: positive forward, negative backward. */
 	private fun clicksFor(goal: DyeColor, panes: List<Pair<Int, DyeColor>>): Map<Int, Int> {
 		val goalIndex = ORDER.indexOf(goal)
 		return panes.associate { (slotIndex, color) ->
@@ -130,17 +107,12 @@ class RubixHandler : TerminalHandler(TerminalType.RUBIX) {
 		}.filterValues { it != 0 }
 	}
 
-	/** Forward steps around the loop, which is what a left click moves. */
 	private fun stepsBetween(from: Int, to: Int): Int =
 		if (from > to) (to + ORDER.size) - from else to - from
 
 	/**
-	 * A pane may only be clicked the way the answer wants it, which is what
-	 * stops a slip of the hand sending it the long way round.
-	 *
-	 * **One button** is the exception: either button is accepted on any pane,
-	 * because the button that goes out is chosen by [buttonFor] rather than by
-	 * the hand.
+	 * A pane can only be clicked the way the answer wants. In **One button** either button works,
+	 * since [buttonFor] picks the real one.
 	 */
 	override fun canClick(slotIndex: Int, button: Int): Boolean {
 		if (slotIndex !in solution) return false
@@ -149,10 +121,8 @@ class RubixHandler : TerminalHandler(TerminalType.RUBIX) {
 	}
 
 	/**
-	 * In **One button** the answer picks the button: a pane that is quicker
-	 * backwards is right-clicked whichever way it was clicked, and every other
-	 * pane is left-clicked. Anywhere else the hand decides and this only maps a
-	 * left click onto the middle click Hypixel expects.
+	 * In **One button**, the answer picks the button: right for panes quicker backwards, left
+	 * otherwise. Elsewhere the hand decides.
 	 */
 	override fun buttonFor(slotIndex: Int, requested: Int): Int {
 		if (!TerminalSolver.rubixOneButton) return super.buttonFor(slotIndex, requested)
@@ -176,7 +146,6 @@ class RubixHandler : TerminalHandler(TerminalType.RUBIX) {
 	}
 
 	private companion object {
-		/** The last slot of the three-by-three grid, so the board is complete. */
 		const val LAST_PANE_SLOT = 32
 
 		val ORDER = listOf(DyeColor.ORANGE, DyeColor.YELLOW, DyeColor.GREEN, DyeColor.BLUE, DyeColor.RED)
@@ -184,16 +153,10 @@ class RubixHandler : TerminalHandler(TerminalType.RUBIX) {
 }
 
 /**
- * Click every item whose name starts with a given letter.
- *
- * Hypixel marks an item as taken by adding an enchantment glint, so the solve
- * is a name test plus a glint test. A handful of items carry that component
- * already and would be invisible to the solver, so a slot that has been clicked
- * is remembered until it comes back from the server, and then written off as
- * taken whatever it looks like.
+ * Click every item whose name starts with a letter. Taken items glint, but some items glint
+ * already, so a clicked slot is remembered until the server answers and then counts as taken.
  */
 class StartsWithHandler(private val letter: String) : TerminalHandler(TerminalType.STARTS_WITH) {
-	/** Slot to "has the server answered for it yet". */
 	private val clickedOverrides = HashMap<Int, Boolean>()
 
 	override fun solve(items: List<ItemStack>, updatedIndex: Int): List<Int> {
@@ -215,7 +178,6 @@ class StartsWithHandler(private val letter: String) : TerminalHandler(TerminalTy
 	override fun highlight(slotIndex: Int) = SlotOverlay(TerminalSolver.startsWithColor.argb)
 
 	private companion object {
-		/** Items that glint before anyone has touched them. */
 		val ALWAYS_GLINTING = BuiltInRegistries.ITEM
 			.filter { it.components().has(DataComponents.ENCHANTMENT_GLINT_OVERRIDE) }
 			.toSet() + Items.GOLDEN_APPLE
@@ -223,11 +185,8 @@ class StartsWithHandler(private val letter: String) : TerminalHandler(TerminalTy
 }
 
 /**
- * Click every item of one dye colour.
- *
- * Names are the only clue, and several of them do not contain the colour at
- * all — lapis is the blue one, cocoa the brown one — so each colour carries the
- * prefixes it can appear under.
+ * Click every item of one dye colour, matched by name. Some names don't contain the colour (lapis
+ * is blue, cocoa brown), so each colour lists its prefixes.
  */
 class SelectAllHandler(color: DyeColor) : TerminalHandler(TerminalType.SELECT) {
 	private val prefixes = when (color) {
@@ -253,16 +212,12 @@ class SelectAllHandler(color: DyeColor) : TerminalHandler(TerminalType.SELECT) {
 }
 
 /**
- * Press the button as the moving pane crosses the marked column.
- *
- * Unlike the other five this has no solution to work towards: it is a moving
- * target, so the grid is drawn whole, with a resting colour under the slots
- * that are not lit. The solution holds three things — the marker's column, the
- * note's position, and the button itself, but only while the two line up.
+ * Press the button as the moving pane crosses the marked column. No solution to work towards: the
+ * grid is drawn whole, and the solution holds the marker's column, the note, and the button while
+ * they line up.
  */
 class MelodyHandler : TerminalHandler(TerminalType.MELODY) {
 	init {
-		// A new melody starts its count of rows again.
 		MelodyHud.onTerminalOpened()
 	}
 
@@ -270,46 +225,32 @@ class MelodyHandler : TerminalHandler(TerminalType.MELODY) {
 		val magenta = items.indexOfFirst { it.item == Items.STAINED_GLASS_PANE.magenta() }
 		val lime = items.indexOfLast { it.item == Items.STAINED_GLASS_PANE.lime() }
 		val button = items.indexOfLast { it.item == Items.DYED_TERRACOTTA.lime() }
-		// The one lit button is the row being played, which is how far the
-		// melody has got; the party is told as it moves down, and the relay
-		// as the note moves along.
+		// The lit button is the row being played; the party and the relay are told as it moves.
 		MelodyHud.onOwnBoard(magenta, lime, button)
 
 		return buildList {
 			if (lime >= 0) add(lime)
-			// The marker is shown above the rows and again below them, as Odin
-			// draws it since the board lost a row.
+			// The marker shows above and below the rows, as Odin draws it.
 			if (magenta >= 0) {
 				add(magenta)
 				if (magenta / 9 == 0) add(magenta + 9 * (BOTTOM_ROW))
 			}
-			// The button only counts once the note has reached the column the
-			// marker sits in, which is the moment to press it.
+			// The button counts once the note reaches the marker's column.
 			if (button >= 0 && lime >= 0 && magenta >= 0 && lime % 9 == magenta % 9) add(button)
 		}
 	}
 
-	/**
-	 * The three buttons are always pressable, and pressing one at the wrong
-	 * moment is how melody is failed — so the answer is not allowed to say
-	 * otherwise, and the press is the player's to time.
-	 */
+	/** The buttons are always pressable; timing the press is the player's job. */
 	override fun canClick(slotIndex: Int, button: Int): Boolean = slotIndex in BUTTON_SLOTS
 
-	// No simulateClick override, on purpose: the base one takes the pressed
-	// button out of the answer, so with Client prediction on it goes dark the
-	// instant it is pressed rather than a round trip later. This used to opt
-	// out ("the note moves whether or not the button was pressed"), which is
-	// true of the note but not of the button — and the button staying lit for
-	// the length of your ping after you hit it is what made melody feel slower
-	// than Odin's, which never opted out.
+	// No simulateClick override on purpose: the base one darkens the button the instant it's
+	// pressed rather than a ping later.
 
 	override fun overlay(slotIndex: Int): SlotOverlay? {
 		val row = slotIndex / 9
 		val column = slotIndex % 9
 		val lit = slotIndex in solution
 		return when {
-			// The rows above and below are the marker, only drawn where it is.
 			row == 0 || row == BOTTOM_ROW -> if (lit) SlotOverlay(TerminalSolver.melodyColumnColor.argb) else null
 			row !in PLAY_ROWS -> null
 			column == BUTTON_COLUMN || column in NOTE_COLUMNS ->
@@ -323,7 +264,7 @@ class MelodyHandler : TerminalHandler(TerminalType.MELODY) {
 	override fun highlight(slotIndex: Int) = SlotOverlay(TerminalSolver.melodyPointerColor.argb)
 
 	private companion object {
-		/** Three rows to play since SkyBlock 0.27.2, between the marker's two rows. */
+		/** Three rows to play since SkyBlock 0.27.2. */
 		val BUTTON_SLOTS = setOf(16, 25, 34)
 		val PLAY_ROWS = 1..3
 		const val BOTTOM_ROW = 4

@@ -11,18 +11,10 @@ import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * The Sound Manager: a volume for every sound, from silent to twice as loud.
- *
- * NoammAddons' Sound Manager (CC0, Copyright (c) Noamm9), with its window
- * opening whether or not the module is on — turning a module on only to reach
- * the place where it is set up is a step nobody needs. With the module off,
- * the volumes are kept and nothing is changed.
- *
- * Applied by scaling what a sound instance reports as its volume. Minecraft
- * caps that at full, so more than 100% only helps a sound that plays quieter
- * than full to begin with — which most of Hypixel's do.
- *
- * Kept in `config/cryptic/sound-volumes.json`, by sound id, in percent.
+ * The Sound Manager: a volume per sound, silent to twice as loud. NoammAddons' Sound Manager; its
+ * page opens whether or not the module is on, and with it off nothing changes. Applied by scaling
+ * the instance's reported volume, which Minecraft caps at full, so above 100% only helps sounds
+ * that play quieter (most of Hypixel's). Saved in `config/cryptic/sound-volumes.json`.
  */
 object SoundVolumes {
 	@JvmField
@@ -30,14 +22,13 @@ object SoundVolumes {
 		id = "sound_manager",
 		name = "Sound Manager",
 		description = "Turn any sound up or down",
-		category = ModuleCategory.MISC,
+		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
 	)
 
-	/** Percent by sound id. Read from the sound thread as well as the game's, so concurrent. */
+	/** Percent by sound id, read from the sound thread too. */
 	val volumes = ConcurrentHashMap<String, Int>()
 
-	/** The last sounds played, newest last, by id. */
 	private val recent = LinkedHashSet<String>()
 	private val recentLock = Any()
 
@@ -52,7 +43,7 @@ object SoundVolumes {
 		load()
 	}
 
-	/** What to multiply [instance]'s volume by: 1 for a sound left alone. */
+	/** What to multiply [instance]'s volume by; 1 for untouched sounds. */
 	@JvmStatic
 	fun factor(instance: SoundInstance): Float {
 		if (!module.enabled || volumes.isEmpty()) return 1f
@@ -60,7 +51,6 @@ object SoundVolumes {
 		return percent / 100f
 	}
 
-	/** A sound starting, from the sound manager, for the Recent list. */
 	@JvmStatic
 	fun onPlay(instance: SoundInstance) {
 		val id = instance.identifier.toString()
@@ -71,7 +61,6 @@ object SoundVolumes {
 		}
 	}
 
-	/** The recent sounds, newest first. */
 	fun recent(): List<String> = synchronized(recentLock) { recent.toList().asReversed() }
 
 	fun percent(id: String): Int = volumes[id] ?: 100

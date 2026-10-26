@@ -6,18 +6,16 @@ import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.minecraft.network.chat.Component
 
 /**
- * The action bar's "2/3 Secrets", read once for everything that wants it.
+ * The action bar's "2/3 Secrets", read once for both the dungeon map and the Secrets module's
+ * movable counter. Read from the packet, since other mods (SkyHanni, Odin) can hide or rewrite the
+ * action bar before Fabric's message event sees it; the event only takes the count out of the
+ * bar for the movable counter.
  *
- * Hypixel counts a room's secrets in the action bar while you stand in it, and
- * two things want that number: the dungeon map, which files it against the
- * room, and the Secrets module's movable counter, which takes it out of the
- * action bar and draws it wherever it was placed. Taking it out has to come
- * after reading it, and has to happen before anything else sees the message —
- * a reader registered after the strip would find nothing to read — so both are
- * done here, in that order, at the one point where a message can be changed.
+ * Right after you walk into a room the bar still shows the last room's count. A different total
+ * gives that away, but two rooms with the same total don't, so the first reading after entering a
+ * room is dropped when its total matches the one before (Odin's rule, BSD-3).
  */
 object RoomSecrets {
-	/** The last count Hypixel gave, or -1 before there has been one. */
 	@Volatile
 	var found = -1
 		private set
@@ -26,10 +24,16 @@ object RoomSecrets {
 	var total = -1
 		private set
 
-	/** When the count was last seen, which is how long it is worth showing. */
 	@Volatile
 	var seenAt = 0L
 		private set
+
+	/** Set on walking into a room: the next reading may still be the last room's. */
+	@Volatile
+	private var enteredRoom = false
+
+	/** The total the bar showed last, stale or not. */
+	private var lastTotal = -1
 
 	private var initialized = false
 
@@ -39,40 +43,58 @@ object RoomSecrets {
 
 		ClientReceiveMessageEvents.MODIFY_GAME.register { message, overlay ->
 			if (!overlay || !DungeonLocation.inDungeon) return@register message
-			read(message)
+			strip(message)
 		}
 	}
 
-	private fun read(message: Component): Component {
-		val raw = message.string
-		// The colour codes come off before the numbers are read: Hypixel writes
-		// "§74/4 Secrets", and a digit pattern reading that raw takes the 7 out
-		// of the grey colour code as part of the number.
-		val match = COUNT.find(raw.replace(FORMATTING, "")) ?: return message
-		found = match.groupValues[1].toIntOrNull() ?: return message
-		total = match.groupValues[2].toIntOrNull() ?: return message
+	/** An action bar from the server, either packet. Client thread. */
+	@JvmStatic
+	fun onActionBar(message: Component) {
+		if (!DungeonLocation.inDungeon) return
+		// Codes come off first: in "§74/4 Secrets" the 7 belongs to the colour code.
+		val match = COUNT.find(message.string.replace(FORMATTING, "")) ?: return
+		val count = match.groupValues[1].toIntOrNull() ?: return
+		val of = match.groupValues[2].toIntOrNull() ?: return
+		val sameTotal = of == lastTotal
+		lastTotal = of
+		if (enteredRoom) {
+			enteredRoom = false
+			if (sameTotal) return
+		}
+		found = count
+		total = of
 		seenAt = System.currentTimeMillis()
+		DungeonMap.onRoomSecretCount(count, of)
+	}
 
-		DungeonMap.onRoomSecretCount(found)
-
-		if (!Secrets.movesCounter) return message
-		// The rest of the action bar is kept as it was sent, colour codes and
-		// all; only the count and the gap in front of it go.
+	private fun strip(message: Component): Component {
+		val raw = message.string
+		if (!Secrets.movesCounter || !COUNT.containsMatchIn(raw.replace(FORMATTING, ""))) return message
+		// The rest of the action bar keeps its codes; only the count and the gap before it go.
 		val rest = raw.replace(SEGMENT, "")
 		return if (rest.isBlank()) Component.empty() else Component.literal(rest)
+	}
+
+	/** You walked into another room. From the dungeon map's room tracking. */
+	fun onRoomEntered() {
+		enteredRoom = true
+		// The last room's count isn't this one's.
+		found = -1
+		total = -1
+		seenAt = 0L
 	}
 
 	fun reset() {
 		found = -1
 		total = -1
 		seenAt = 0L
+		enteredRoom = false
+		lastTotal = -1
 	}
 
 	private val FORMATTING = Regex("§.")
 
-	/** "2/3 Secrets", once the colours are gone. */
 	private val COUNT = Regex("""(\d+)/(\d+) Secrets""")
 
-	/** The same with its colour codes and the spaces before it, as it sits in the raw text. */
 	private val SEGMENT = Regex("""\s*(?:§.)*\d+(?:§.)*/(?:§.)*\d+(?:§.)*\s*(?:§.)*Secrets""")
 }

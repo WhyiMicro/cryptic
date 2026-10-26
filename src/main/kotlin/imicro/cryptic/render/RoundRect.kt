@@ -20,16 +20,9 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Rounded rectangles, outlines and soft shadows in GUI space, drawn by a
- * shader rather than out of filled rows.
- *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking), whose
- * `RoundedRectRenderer` this is, less its textured variant. Each shape is one
- * quad handed to Minecraft's own GUI renderer as a render-state element; the
- * fragment shader (`shaders/include/round_rect.glsl`) works out how much of
- * each pixel lies inside the rounded box, so the edge fades instead of
- * stepping. Going through Minecraft's pipeline rather than a library of its
- * own is what lets the new menu run on Vulkan as well as OpenGL.
+ * Rounded rectangles, outlines and soft shadows in GUI space, drawn by a shader through Minecraft's
+ * own GUI renderer, so the menu works on Vulkan as well as OpenGL. Ported from Odin's
+ * `RoundedRectRenderer`; the shader is `shaders/include/round_rect.glsl`.
  */
 object RoundRect {
 	private const val AA_PADDING = 2f
@@ -38,7 +31,7 @@ object RoundRect {
 	private const val MAX_RADIUS = 255f / RADIUS_SCALE
 	private const val ALPHA_MASK = 0xFF shl 24
 
-	/** Position, colour, then the shape's own numbers smuggled through the spare attributes. */
+	/** Position, colour, then the shape's own numbers passed through the spare attributes. */
 	private val FORMAT: VertexFormat = VertexFormat.builder(0)
 		.addAttribute(DefaultVertexFormat.POSITION_SEMANTIC_NAME, GpuFormat.RGB32_FLOAT)
 		.addAttribute(DefaultVertexFormat.COLOR_SEMANTIC_NAME, GpuFormat.RGBA8_UNORM)
@@ -61,14 +54,12 @@ object RoundRect {
 			.build(),
 	)
 
-	/** Registers the pipelines while the game starts, before the shaders are loaded. */
 	fun touch() = Unit
 
-	/** A filled rounded rectangle. */
 	fun fill(graphics: GuiGraphicsExtractor, x0: Float, y0: Float, x1: Float, y1: Float, color: Int, radius: Float) =
 		emit(graphics, x0, y0, x1, y1, color, color, color, color, radius, radius, radius, radius, 0f, AA_PADDING, SHAPE)
 
-	/** The same, with each corner rounded on its own (top left, top right, bottom right, bottom left). */
+	/** Each corner rounded on its own: top left, top right, bottom right, bottom left. */
 	fun fill(
 		graphics: GuiGraphicsExtractor,
 		x0: Float, y0: Float, x1: Float, y1: Float,
@@ -76,11 +67,10 @@ object RoundRect {
 		topLeft: Float, topRight: Float, bottomRight: Float, bottomLeft: Float,
 	) = emit(graphics, x0, y0, x1, y1, color, color, color, color, topLeft, topRight, bottomRight, bottomLeft, 0f, AA_PADDING, SHAPE)
 
-	/** A top-to-bottom gradient. */
 	fun gradient(graphics: GuiGraphicsExtractor, x0: Float, y0: Float, x1: Float, y1: Float, top: Int, bottom: Int, radius: Float) =
 		emit(graphics, x0, y0, x1, y1, top, top, bottom, bottom, radius, radius, radius, radius, 0f, AA_PADDING, SHAPE)
 
-	/** A colour per corner, blended across the shape: what a colour picker's square is made of. */
+	/** A colour per corner, blended across: a colour picker's square. */
 	fun fillCorners(
 		graphics: GuiGraphicsExtractor,
 		x0: Float, y0: Float, x1: Float, y1: Float,
@@ -88,22 +78,19 @@ object RoundRect {
 		radius: Float,
 	) = emit(graphics, x0, y0, x1, y1, topLeftColor, topRightColor, bottomRightColor, bottomLeftColor, radius, radius, radius, radius, 0f, AA_PADDING, SHAPE)
 
-	/** Only the edge, [width] wide, drawn inside the rectangle. */
+	/** Only the edge, [width] wide, inside the rectangle. */
 	fun outline(graphics: GuiGraphicsExtractor, x0: Float, y0: Float, x1: Float, y1: Float, color: Int, radius: Float, width: Float) =
 		emit(graphics, x0, y0, x1, y1, color, color, color, color, radius, radius, radius, radius, width, AA_PADDING, SHAPE)
 
 	/**
-	 * The checkerboard a see-through colour is shown over, in [cell]-sized
-	 * squares, clipped to the rounded shape so it has the same corners as the
-	 * colour drawn on top of it. Drawn by its own shader (`round_rect_checker`).
-	 * [tint] (RGB) multiplies both tones, so a darker board is one quad too.
+	 * The checkerboard behind a see-through colour, in [cell]-sized squares, clipped to the same
+	 * corners. [tint] darkens both tones.
 	 */
 	fun checker(graphics: GuiGraphicsExtractor, x0: Float, y0: Float, x1: Float, y1: Float, radius: Float, cell: Float, alpha: Float = 1f, tint: Int = 0xFFFFFF) {
 		val color = ((alpha.coerceIn(0f, 1f) * 255f).toInt() shl 24) or (tint and 0xFFFFFF)
 		emit(graphics, x0, y0, x1, y1, color, color, color, color, radius, radius, radius, radius, cell, AA_PADDING, CHECKER)
 	}
 
-	/** A soft shadow that fades out over [blur] around the rectangle. */
 	fun shadow(graphics: GuiGraphicsExtractor, x0: Float, y0: Float, x1: Float, y1: Float, color: Int, radius: Float, blur: Float) =
 		emit(graphics, x0, y0, x1, y1, color, color, color, color, radius, radius, radius, radius, blur, AA_PADDING + blur, SHADOW)
 
@@ -153,9 +140,8 @@ object RoundRect {
 	private val NO_TEXTURE: TextureSetup = TextureSetup.noTexture()
 
 	/**
-	 * The pose the shape was submitted under, copied: the stack it came from is
-	 * changed again before the element is turned into vertices. Consecutive
-	 * shapes under one pose share the copy.
+	 * The pose the shape was submitted under, copied, since the stack changes before the element is
+	 * drawn. Shapes under one pose share the copy.
 	 */
 	private var cachedPose: Matrix3x2f? = null
 

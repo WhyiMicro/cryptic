@@ -13,6 +13,8 @@ you into a real run.
 Most are **toggles**: run the command once to turn the override on, run it again
 to turn it off. The chat reply always says which state you landed in.
 
+`/cc` is short for `/cryptic` everywhere, so `/cc debug floor 7` works as well.
+
 ---
 
 ## The floor override
@@ -103,10 +105,10 @@ tracking, and this is what says whether they still hold.
 Prints the sidebar's objective name and what Cryptic reads as SkyBlock, the
 current island, and the zone the sidebar's ⏣ line names.
 
-Slot Binds and Nucleus QoL both refuse to act off SkyBlock, and Nucleus QoL
+Slot Binds and Nucleus Features both refuse to act off SkyBlock, and Nucleus Features
 outside the Crystal Hollows, so when one of them does nothing this says whether
 the place was misread. The scan only runs while one of those two modules is on,
-so with both off it reports nothing. Within the Hollows Nucleus QoL goes by
+so with both off it reports nothing. Within the Hollows Nucleus Features goes by
 where you stand rather than the zone: the crystal slots show inside the square
 from 462 to 564 on x and z, and you count as in the Mines of Divan within 60
 blocks of its middle, found from the Keepers' nametags or the Jade pedestal (or
@@ -118,7 +120,7 @@ only work there.
 ```
 
 Makes Cryptic read you as in the Crystal Hollows, in the zone named — "Crystal
-Nucleus", "Mines of Divan" and so on — so Nucleus QoL can be checked anywhere.
+Nucleus", "Mines of Divan" and so on — so Nucleus Features can be checked anywhere.
 The same zone again turns it off.
 
 ```
@@ -155,12 +157,57 @@ at, and for one this also gives the whole room of barriers it belongs to, its
 size and corners, and outlines it for a minute.
 
 ```
+/cryptic debug tooltip
+```
+
+For the next 30 seconds, every new tooltip you hover is added to
+`config/cryptic/debug/tooltips.txt`: each line as shown, then each of its
+pieces with its colour and style. It is the text as drawn, after other mods
+have changed it.
+
+```
+/cryptic debug detector
+```
+
+What the Metal Detector solver knows: whether it thinks you're in the Mines of
+Divan and why, the Jade crystal space and the base the treasure spots are
+measured from, how far away that base is, the last readings, and how many
+spots fit the last still reading from where you stand.
+
+```
+/cryptic debug secret_sync
+```
+
+Whether the Dungeon Map's "Share secrets through Odin" is connected to Odin's
+relay for this lobby, how many updates it sent, and how many teammates' counts
+it took.
+
+```
 /cryptic debug sounds
 ```
 
 The last 20 sounds the server played, newest first: each one's id, pitch and
 volume, how long ago, and whether it was played on an entity. Muting a sound
 needs its exact id, so run this straight after hearing it.
+
+Each line ends with what became of the sound:
+
+- **played**, with its sound category's volume setting and the volume it
+  played at;
+- **dropped by** or **muted by** a feature (Teleport Features, Terminal Solver, Bow
+  Tweaks or Nucleus Features), when Cryptic stopped it;
+- **not started**, when the game itself refused it;
+- **no play seen**, when the packet arrived but nothing tried to play it.
+
+For a sound you expected and didn't hear, this tells you whether the server
+sent it at all, and whether Cryptic or a volume setting silenced it.
+
+```
+/cryptic debug capes
+```
+
+How many players Capes has looked up, how many have a cape from a cape mod, how
+many lookups are still running, and whether your own cape image is set.
 
 ```
 /cryptic debug barriers
@@ -172,7 +219,7 @@ how far away they are.
 
 Every crystal outside the nucleus sits in a space of barriers 11 blocks across,
 13 high and 11 deep, part of which is the crystal's glass while it is there.
-Nucleus QoL follows barriers and glass together, measures the barriers, and
+Nucleus Features follows barriers and glass together, measures the barriers, and
 takes anything within a couple of blocks of that size as a crystal's space,
 drawn at exactly 11 × 13 × 11. It looks in the Mines of Divan, Goblin Queen's
 Den, the Jungle Temple, the Lost Precursor City and Khazad-dûm, and remembers
@@ -183,7 +230,7 @@ space says so here.
 /cryptic debug crystals
 ```
 
-Prints what Nucleus QoL has worked out — whether you are in the Hollows, the
+Prints what Nucleus Features has worked out — whether you are in the Hollows, the
 nucleus and the Mines of Divan, where it found the mines' middle, how many
 places the treasure could be and how many treasure chests it is following —
 then every armour stand, item display and dropped item within 32 blocks: its
@@ -374,7 +421,7 @@ Holds the Creeper Veil shields on without waiting for Hypixel to grant it.
 /cryptic debug leapmessage
 ```
 
-Shows Spirit Leap Overlay's leap announcements to you instead of sending them to party chat, and
+Shows Spirit Leap Features' leap announcements to you instead of sending them to party chat, and
 prints one immediately so the wording can be read back without a teammate to
 leap to.
 
@@ -448,12 +495,41 @@ tried. Turn `/cryptic debug party` on first, or pressing Y sends a real
 `/party accept`.
 
 ```
+/cryptic debug friendrequest
+```
+
+Raises a friend request from nobody, with its Y to accept and N to deny. Turn
+`/cryptic debug party` on first, or the keys send a real `/friend accept` or
+`/friend deny`.
+
+```
+/cryptic debug teleportlog
+```
+
+Records teleports on a real server, for working on Smooth teleport and Fake
+zpew. Run it once to start, teleport around as you normally would, then run it
+again to stop. While it records, it keeps every teleport click with the
+rotation it carries, what was predicted from where, every position packet the
+server sends with what it changed, and every frame's real and drawn position
+for three seconds after each click. The file is `logs/cryptic-teleport.log` in
+the game folder. Nothing is sent anywhere.
+
+```
 /cryptic debug terracotta
 ```
 
 Lets the Terracotta Timer run anywhere and prints what it is counting. The real
 thing needs Sadan's room; with this on, any flower pot placed starts a timer, and
 the countdown runs on the client's own ticks where there is no server clock.
+
+```
+/cryptic debug slayer
+```
+
+Lets Slayer Features run outside the End. Any armour stand named like a
+Voidgloom's name tag (`Voidgloom Seraph IV 50 Hits`) riding a mob, or spawned
+just after one, counts as a boss, and beacons and skulls are looked for
+wherever you are.
 
 ```
 /cryptic debug lava
@@ -471,7 +547,7 @@ something after Cryptic changed it.
 /cryptic debug f7
 ```
 
-Prints which Goldor section the F7/M7 QOL Section Complete title thinks it is
+Prints which Goldor section the F7/M7 Features Section Complete title thinks it is
 on, and which of its two halves it is still waiting for: every terminal, device
 and lever done, and the gate blown.
 
@@ -513,7 +589,7 @@ row, and what they last said in party chat.
 ```
 
 Gives the Blessing Display, the Spring Boots Helper, the Puzzle HUD, the Dungeon
-Warp Cooldown, the Melody HUD and the F7/M7 QOL titles made-up numbers to show,
+Warp Cooldown, the Melody HUD and the F7/M7 Features titles made-up numbers to show,
 so they can be seen and placed without a blessing, a pair of boots or a boss.
 
 ---
@@ -567,6 +643,21 @@ them could be checked against a real table, so one run with this on is enough to
 correct every slot number and every line of lore at once.
 
 Run one experiment with it switched on, then send the log.
+
+## Recording Hypixel's menus
+
+```
+/cryptic debug guilog
+```
+
+Run it once to start and again to stop. While it records, it notes every screen
+that opens, each chest's contents once they stop changing (slot, item, name and
+lore with their colour codes), what a sign shows when it opens, and every click
+and sign answer sent. Stopping writes it all to `logs/cryptic-gui.log`.
+
+This is how screens drawn over Hypixel's menus get built, such as the Party
+Finder's create and search pages: go through the menu once with it on, then send
+the file.
 
 ---
 

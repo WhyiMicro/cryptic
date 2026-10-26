@@ -7,136 +7,156 @@ import net.minecraft.core.BlockPos
 import net.minecraft.world.entity.monster.Silverfish
 import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.Vec3
-import java.util.ArrayDeque
 
 /**
- * The way out for the silverfish on the ice path.
+ * Ice Path: the way out for the silverfish. A push slides it until something stops it, so the
+ * fewest slides to the gap are found with a breadth-first search over where each slide ends.
  *
- * Ported from Skyblocker (LGPL-3.0). The room is a seventeen-by-seventeen grid
- * of ice with blocks placed on it, and the silverfish slides in whatever
- * direction it is pushed until something stops it — so the puzzle is a maze
- * where every move runs to the wall. A breadth-first search over those slides
- * finds the shortest way to the gap it has to leave through, and the answer is
- * drawn as the line it will travel.
- *
- * Both the board and the fish are re-read every tick, and the search is only
- * run again when one of them has actually changed.
+ * Room coordinates: x 7 to 23, z 8 to 24, the gap at x 14 to 16 on the z = 24 side. Re-read every
+ * tick; the search reruns only when the board changes or the fish comes to rest. While it slides
+ * the route stays as it was, and the stretch it's sliding along turns the moving colour.
  */
 object SilverfishSolver {
 	private const val PUZZLE = "Ice Path"
-	private const val SIZE = 17
 
-	/** True where something is standing on the ice. */
-	private val board = Array(SIZE) { BooleanArray(SIZE) }
+	private const val MIN_X = 7
+	private const val MAX_X = 23
+	private const val MIN_Z = 8
+	private const val MAX_Z = 24
+	private const val ICE_Y = 67
+	private val EXIT_X = 14..16
+	private const val EXIT_Z = MAX_Z
 
-	private var fish: Cell? = null
-	private val path = mutableListOf<Cell>()
+	private const val WIDTH = MAX_X - MIN_X + 1
+	private const val DEPTH = MAX_Z - MIN_Z + 1
 
-	/** A square of the grid: the row runs along Z, the column along X. */
-	private data class Cell(val row: Int, val column: Int)
+	private fun square(x: Int, z: Int) = (x - MIN_X) + (z - MIN_Z) * WIDTH
+	private fun xOf(square: Int) = MIN_X + square % WIDTH
+	private fun zOf(square: Int) = MIN_Z + square / WIDTH
+
+	private val blocked = BooleanArray(WIDTH * DEPTH)
+
+	private var fish = -1
+
+	/** The squares each slide ends on, starting with the fish's. Empty when there is no way out. */
+	private var route: List<Int> = emptyList()
+
+	private val STEPS = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1)
+
+	/** Whether the fish moved lately, and when it last did; a slide's ticks aren't all moves. */
+	private var moving = false
+	private var lastMovedTick = 0L
+	private var ticks = 0L
+
+	/** Ticks without a move before the fish counts as stopped. */
+	private const val REST_TICKS = 3
 
 	fun tick() {
 		if (!PuzzleSolver.silverfishEnabled.value) return
 		val room = PuzzleRooms.named(PUZZLE) ?: return
 		val level = Minecraft.getInstance().level ?: return
 
-		var boardChanged = false
-		for (row in 0 until SIZE) {
-			for (column in 0 until SIZE) {
-				val real = room.getRealCoords(BlockPos(23 - column, 67, 24 - row)) ?: return
-				val blocked = !level.getBlockState(real).isAir
-				if (board[row][column] != blocked) {
-					board[row][column] = blocked
-					boardChanged = true
-				}
+		var changed = false
+		for (z in MIN_Z..MAX_Z) for (x in MIN_X..MAX_X) {
+			val world = room.getRealCoords(BlockPos(x, ICE_Y, z)) ?: return
+			val now = !level.getBlockState(world).isAir
+			val index = square(x, z)
+			if (blocked[index] != now) {
+				blocked[index] = now
+				changed = true
 			}
 		}
 
-		val middle = room.getRealCoords(BlockPos(15, 66, 16)) ?: return
-		val silverfish = level.getEntitiesOfClass(
-			Silverfish::class.java,
-			AABB.ofSize(Vec3.atCenterOf(middle), 16.0, 16.0, 16.0),
-		) { true }.firstOrNull() ?: return
-
-		val relative = room.getRelativeCoords(silverfish.blockPosition()) ?: return
-		val cell = Cell(24 - relative.z, 23 - relative.x)
-		if (cell.row !in 0 until SIZE || cell.column !in 0 until SIZE) return
-
-		val fishMoved = cell != fish
-		if (fishMoved) fish = cell
-		if (fishMoved || boardChanged) solve()
-	}
-
-	/**
-	 * The shortest run of slides to the gap.
-	 *
-	 * Each step slides until the next square is blocked or the grid runs out,
-	 * which is what the fish actually does, so the path drawn is the path it
-	 * will take rather than a route through open squares.
-	 */
-	private fun solve() {
-		val start = fish ?: return
-		val visited = HashSet<Cell>()
-		val queue = ArrayDeque<List<Cell>>()
-		queue.add(listOf(start))
-		visited.add(start)
-
-		while (queue.isNotEmpty()) {
-			val route = queue.poll()
-			val at = route.last()
-			// The way out is the middle of the far wall.
-			if (at.row == 0 && at.column in 7..9) {
-				path.clear()
-				path.addAll(route)
-				return
-			}
-
-			slide(at, 1, 0)?.let { enqueue(visited, queue, route, it) }
-			slide(at, -1, 0)?.let { enqueue(visited, queue, route, it) }
-			slide(at, 0, 1)?.let { enqueue(visited, queue, route, it) }
-			slide(at, 0, -1)?.let { enqueue(visited, queue, route, it) }
+		val middle = room.getRealCoords(BlockPos(15, ICE_Y - 1, 16)) ?: return
+		val silverfish = level.getEntitiesOfClass(Silverfish::class.java, AABB.ofSize(Vec3.atCenterOf(middle), 16.0, 16.0, 16.0)).firstOrNull() ?: return
+		val at = room.getRelativeCoords(silverfish.blockPosition()) ?: return
+		if (at.x !in MIN_X..MAX_X || at.z !in MIN_Z..MAX_Z) return
+		ticks++
+		if (silverfish.position().distanceToSqr(silverfish.xo, silverfish.yo, silverfish.zo) > 1e-4) lastMovedTick = ticks
+		moving = ticks - lastMovedTick < REST_TICKS
+		val now = square(at.x, at.z)
+		if (now != fish) {
+			fish = now
+			// Mid-slide the route is kept; it's worked out again where the fish stops.
+			if (!moving) changed = true
+		} else if (!moving && route.firstOrNull() != fish) {
+			changed = true
 		}
+		if (changed) route = findRoute(fish)
 	}
 
-	/** Where a push in one direction leaves the fish, or null if it cannot move. */
-	private fun slide(from: Cell, rowStep: Int, columnStep: Int): Cell? {
-		var row = from.row
-		var column = from.column
+	/** Whether the fish lies on the first slide of the route, between its ends. */
+	private fun onFirstSlide(): Boolean {
+		if (route.size < 2 || fish < 0) return false
+		val (ax, az) = xOf(route[0]) to zOf(route[0])
+		val (bx, bz) = xOf(route[1]) to zOf(route[1])
+		val (fx, fz) = xOf(fish) to zOf(fish)
+		return (ax == bx && fx == ax && fz in minOf(az, bz)..maxOf(az, bz)) ||
+			(az == bz && fz == az && fx in minOf(ax, bx)..maxOf(ax, bx))
+	}
+
+	/** Where a push along (dx, dz) stops, or -1 if the fish can't move that way. */
+	private fun slideEnd(from: Int, dx: Int, dz: Int): Int {
+		var x = xOf(from)
+		var z = zOf(from)
 		while (true) {
-			val nextRow = row + rowStep
-			val nextColumn = column + columnStep
-			if (nextRow !in 0 until SIZE || nextColumn !in 0 until SIZE) break
-			if (board[nextRow][nextColumn]) break
-			row = nextRow
-			column = nextColumn
+			val nx = x + dx
+			val nz = z + dz
+			if (nx !in MIN_X..MAX_X || nz !in MIN_Z..MAX_Z || blocked[square(nx, nz)]) break
+			x = nx
+			z = nz
 		}
-		return if (row == from.row && column == from.column) null else Cell(row, column)
+		val end = square(x, z)
+		return if (end == from) -1 else end
 	}
 
-	private fun enqueue(
-		visited: MutableSet<Cell>,
-		queue: ArrayDeque<List<Cell>>,
-		route: List<Cell>,
-		next: Cell,
-	) {
-		if (!visited.add(next)) return
-		queue.add(route + next)
+	private fun isExit(square: Int) = zOf(square) == EXIT_Z && xOf(square) in EXIT_X
+
+	private fun findRoute(start: Int): List<Int> {
+		if (start < 0) return emptyList()
+		val cameFrom = IntArray(WIDTH * DEPTH) { -2 }
+		cameFrom[start] = -1
+		val queue = ArrayDeque<Int>()
+		queue.addLast(start)
+		while (queue.isNotEmpty()) {
+			val at = queue.removeFirst()
+			if (isExit(at)) {
+				val path = ArrayList<Int>()
+				var step = at
+				while (step >= 0) {
+					path += step
+					step = cameFrom[step]
+				}
+				return path.asReversed()
+			}
+			for ((dx, dz) in STEPS) {
+				val next = slideEnd(at, dx, dz)
+				if (next < 0 || cameFrom[next] != -2) continue
+				cameFrom[next] = at
+				queue.addLast(next)
+			}
+		}
+		return emptyList()
 	}
 
 	fun render(context: LevelRenderContext) {
-		if (!PuzzleSolver.silverfishEnabled.value || path.size < 2) return
+		if (!PuzzleSolver.silverfishEnabled.value || route.size < 2) return
 		val room = PuzzleRooms.named(PUZZLE) ?: return
-
-		val points = path.mapNotNull { cell ->
-			room.getRealCoords(BlockPos(23 - cell.column, 67, 24 - cell.row))?.let(Vec3::atCenterOf)
-		}
+		val points = route.mapNotNull { room.getRealCoords(BlockPos(xOf(it), ICE_Y, zOf(it)))?.let(Vec3::atCenterOf) }
 		if (points.size < 2) return
+		if (moving && onFirstSlide()) {
+			// The slide under way in the moving colour, the rest as usual.
+			PuzzleRender.line(context, points.take(2), PuzzleSolver.silverfishMovingColor.argb, phase = false, lineWidth = 3f)
+			if (points.size > 2) PuzzleRender.line(context, points.drop(1), PuzzleSolver.silverfishColor.argb, phase = false, lineWidth = 3f)
+			return
+		}
 		PuzzleRender.line(context, points, PuzzleSolver.silverfishColor.argb, phase = false, lineWidth = 3f)
 	}
 
 	fun reset() {
-		board.forEach { it.fill(false) }
-		fish = null
-		path.clear()
+		blocked.fill(false)
+		fish = -1
+		route = emptyList()
+		moving = false
 	}
 }

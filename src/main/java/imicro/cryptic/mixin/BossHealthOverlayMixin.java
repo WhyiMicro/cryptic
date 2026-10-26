@@ -9,13 +9,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Writes a mob count into the Watcher's boss bar, for Blood Camp.
- *
- * Odin's hook (BSD 3-Clause, Copyright (c) 2025 odtheking). The bar is a
- * fraction of a wave nobody is told the size of, and the name is the only
- * place the count can be put where it is already being looked at.
- */
+/** Writes a mob count into the Watcher's boss bar, for Blood Camp. Odin's hook. */
 @Mixin(BossHealthOverlay.class)
 public abstract class BossHealthOverlayMixin {
     @Inject(

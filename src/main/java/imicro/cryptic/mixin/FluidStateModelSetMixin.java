@@ -9,7 +9,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Hands back water's model when the game asks for lava's, for Lava to Water. */
 @Mixin(FluidStateModelSet.class)
 public abstract class FluidStateModelSetMixin {
     @Inject(method = "get", at = @At("RETURN"), cancellable = true)

@@ -8,12 +8,8 @@ import net.fabricmc.loader.api.FabricLoader
 import java.nio.file.Files
 
 /**
- * What the menu remembers about how you use it, rather than about how the mod
- * is set up: the modules pinned to Favorites.
- *
- * Kept in its own file (`config/cryptic/menu.json`) rather than in a profile,
- * for the same reason a folded group is not: switching profile changes what
- * the mod does, not where you keep things in its menu.
+ * What the menu remembers about how you use it (favorites), in `config/cryptic/menu.json` rather
+ * than a profile.
  */
 object MenuPrefs {
 	private val path = FabricLoader.getInstance().configDir.resolve("cryptic").resolve("menu.json")

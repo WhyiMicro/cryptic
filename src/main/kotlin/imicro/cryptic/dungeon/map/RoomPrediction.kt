@@ -4,33 +4,20 @@ import imicro.cryptic.dungeon.DungeonStats
 import imicro.cryptic.feature.DungeonMap
 
 /**
- * Guesses what a room you have not opened yet must be.
- *
- * Ported from dtMap (BSD 3-Clause, Copyright (c) 2026 rice.who); the full
- * licence is in `licenses/dtMap-LICENSE.txt`. Hypixel paints every unopened
- * room the same grey, but it does not generate them freely: a floor has exactly
- * one miniboss room and one trap room, a known number of puzzles, and the
- * puzzles are packed into one column of single-tile rooms. Count what is
- * already open against what the floor must contain and the grey squares often
- * have only one thing they can be.
- *
- * The guess only means anything while the map is being revealed as you explore;
- * with the whole floor shown there is nothing left to guess at.
+ * Guesses what an unopened room must be. Every unopened room is the same grey, but a floor has
+ * exactly one miniboss and one trap, a known number of puzzles, and puzzles packed into one column
+ * of single-tile rooms. Counting what's open against what must exist often leaves one possibility.
+ * Only meaningful while exploring. Ported from dtMap.
  */
 object RoomPrediction {
-	/** The column of one-tile rooms puzzles are packed into, or -1 for none. */
 	var column = -1
 
-	/** How much of the column before the special one has been seen. */
 	private var discoveredBeforeColumn = 0
 
-	/** One-tile rooms known to be in the special column. */
 	private var columnRoomCount = 0
 
-	/** One-tile rooms it is certain are single tiles, wherever they are. */
 	private var known1x1s = 0
 
-	/** The one-tile rooms already opened, which is what narrows the rest down. */
 	private val opened1x1s = mutableSetOf<DungeonRoom>()
 
 	fun reset() {
@@ -41,10 +28,7 @@ object RoomPrediction {
 		opened1x1s.clear()
 	}
 
-	/**
-	 * Some floors put the puzzle column at a fixed place, which is worth knowing
-	 * before a single room has been opened.
-	 */
+	/** Some floors fix the puzzle column's position. */
 	fun applyFloorLayout(floor: Int, size: Vec2i) {
 		column = if ((floor == 5 || floor == 6) && size.x == 6 && size.z == 6) {
 			5
@@ -55,10 +39,7 @@ object RoomPrediction {
 		}
 	}
 
-	/**
-	 * Re-reads the floor and writes each closed one-tile room's possibilities
-	 * onto it. Called after either source has changed something.
-	 */
+	/** Re-reads the floor and writes each shut one-tile room's possibilities onto it. */
 	fun update() {
 		val size = DungeonFloor.size
 
@@ -78,8 +59,8 @@ object RoomPrediction {
 						continue
 					}
 
-					// A room is only certainly one tile once every tile it could
-					// have grown into is on the map as something else.
+					// Only certainly one tile once every tile it could extend into is something
+					// else.
 					if (x != size.x - 1 && x + 1 != column && !isSeen(x + 1, z)) continue
 					if (x != 0 && !isSeen(x - 1, z)) continue
 					if (z != size.z - 1 && !isSeen(x, z + 1)) continue
@@ -99,8 +80,7 @@ object RoomPrediction {
 			}
 		}
 
-		// Every puzzle plus the miniboss and the trap accounts for all of them,
-		// which means the special column has nothing left to hide.
+		// Every puzzle plus the miniboss and trap are accounted for: the column has nothing left.
 		if (known1x1s == DungeonStats.puzzleCount + 2) {
 			discoveredBeforeColumn = size.z
 		} else if (column != -1) {
@@ -119,7 +99,6 @@ object RoomPrediction {
 		}
 	}
 
-	/** True when the tile beside a closed room is itself already accounted for. */
 	private fun isSeen(x: Int, z: Int): Boolean {
 		val room = DungeonFloor.roomAt(Vec2i(x, z)) ?: return false
 		if (room.hidden) return false
@@ -128,16 +107,11 @@ object RoomPrediction {
 	}
 
 	/**
-	 * The types a closed one-tile room could still be, best first.
-	 *
-	 * The reasoning is dtMap's, and it is all counting: yellow is generated
-	 * before orange, the puzzle column holds exactly the puzzles, and each of
-	 * the miniboss and trap rooms exists exactly once.
+	 * The types a shut one-tile room could still be, best first (dtMap's counting: yellow is
+	 * generated before orange, the column holds the puzzles, miniboss and trap exist once each).
 	 */
 	private fun guessFor(room: DungeonRoom): List<DungeonRoom.Type> {
 		val puzzleCount = DungeonStats.puzzleCount
-		// A special column that exists holds at least one room, even if none of
-		// them has been seen yet.
 		val columnRooms = if (column != -1 && columnRoomCount == 0) 1 else columnRoomCount
 
 		if (room.specialTile) {
@@ -167,8 +141,8 @@ object RoomPrediction {
 			}
 		}
 
-		// The miniboss room is generated before the trap room, so a column one
-		// longer than the puzzle count spends that extra room on the miniboss.
+		// The miniboss is generated before the trap, so a column one longer than the puzzles spends
+		// the extra on the miniboss.
 		if (columnRooms == puzzleCount + 1) return listOf(DungeonRoom.Type.CHAMPION)
 
 		if (opened1x1s.count { it.type == DungeonRoom.Type.CHAMPION || it.type == DungeonRoom.Type.TRAP } == 2) {

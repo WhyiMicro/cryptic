@@ -10,19 +10,11 @@ import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.player.Player
 
 /**
- * Stops drawing the other players standing on top of you.
- *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking). A crowded
- * room is mostly other people's armour, and in a fight the one thing you need
- * to see is what is behind them. Hiding them is a purely local decision —
- * everyone is still there, still being hit, still able to hit back.
- *
- * Only real players go. Hypixel's mob NPCs are player entities too, told apart
- * by the version of their uuid: a real account's is version four, and anything
- * the server invented is version two.
+ * Stops drawing other players near you (still there and still hittable). Ported from Odin. Only
+ * real players: Hypixel's NPCs are player entities with version-two uuids; real accounts are
+ * version four.
  */
 object HidePlayers {
-	/** What a real account's uuid is versioned as. */
 	private const val REAL_PLAYER_UUID_VERSION = 4
 
 	@JvmField
@@ -62,10 +54,7 @@ object HidePlayers {
 		settings = listOf(onlyInDungeons, hideAll, distance),
 	)
 
-	/**
-	 * Whether [entity] should be left undrawn. Asked once per player per frame,
-	 * so the tests that rule most entities out come first.
-	 */
+	/** Asked per player per frame, so the cheapest tests come first. */
 	@JvmStatic
 	fun hides(entity: Entity): Boolean {
 		if (!module.enabled || entity !is Player) return false

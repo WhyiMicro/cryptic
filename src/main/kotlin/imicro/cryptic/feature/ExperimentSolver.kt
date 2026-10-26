@@ -21,20 +21,13 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.world.inventory.ContainerInput
 
 /**
- * Solves the Experimentation Table's games, plays them, and can work the table
- * between them.
- *
- * The rules are in [imicro.cryptic.experiment.ExperimentRules] and the loop
- * between games is [ExperimentRunner]; this is the part the player sees. Each
- * slot still to click is painted and numbered over the real chest rather than
- * in place of it — unlike the terminal solver, the board here is worth looking
- * at, because what it shows is what has to be remembered.
+ * Solves and plays the Experimentation Table's games, and can work the table between them. Rules
+ * are in [imicro.cryptic.experiment.ExperimentRules], the loop in [ExperimentRunner]. Slots to
+ * click are painted and numbered over the chest, since the board is what has to be remembered.
  */
 object ExperimentSolver {
-	/** How wide a chest slot is, which is what gets painted. */
 	private const val SLOT_SIZE = 16
 
-	/** Indices into [focus]. */
 	private const val FOCUS_XP = 0
 	private const val FOCUS_ITEMS = 1
 
@@ -156,6 +149,7 @@ object ExperimentSolver {
 	@JvmField
 	val module = Module(
 		id = "experiment_solver",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		name = "Experiment Solver",
 		description = "Solves your experiments",
 		category = ModuleCategory.GENERAL,
@@ -165,17 +159,12 @@ object ExperimentSolver {
 			listOf(runSection, runTable.withMore(focus, renews, serums, buyExperience, guardianReminder), superpairsByHand),
 	)
 
-	/** True while the table should be played for books rather than for levels. */
+	/** True while playing for books rather than levels. */
 	val huntingItems: Boolean get() = focus.selectedIndex == FOCUS_ITEMS
 
 	private var nextClickAt = 0L
 
-	/**
-	 * Paints the slots still to click over the chest.
-	 *
-	 * Called at the tail of the screen's extract pass, so it lands on top of the
-	 * chest rather than under it.
-	 */
+	/** Paints the slots to click over the chest, at the tail of the screen's pass. */
 	@JvmStatic
 	fun render(screen: Screen, context: GuiGraphicsExtractor) {
 		if (!module.enabled) return
@@ -214,14 +203,9 @@ object ExperimentSolver {
 	}
 
 	/**
-	 * Whether a click of your own in the open experiment should be dropped.
-	 *
-	 * OdinClient's rule (BSD 3-Clause, Copyright (c) 2026 Starred): while the
-	 * game is playing itself, nothing you click reaches it. The sequence is
-	 * counted from this module's own clicks — the board never says how far in
-	 * it is — so one stray click, or a hotbar number pressed over a slot, sends
-	 * a click it did not count, and either fails the round or leaves it a step
-	 * out for the rest of the game. Superpairs left to you is yours to click.
+	 * Whether to drop your own click in the open experiment, OdinClient's rule: the sequence is
+	 * counted from this module's clicks, so a stray click fails the round or shifts it. Superpairs
+	 * left to you is yours.
 	 */
 	@JvmStatic
 	fun blocksManualClicks(): Boolean {
@@ -230,12 +214,7 @@ object ExperimentSolver {
 		return !(superpairsByHand.value && handler.game == ExperimentRules.Game.SUPERPAIRS)
 	}
 
-	/**
-	 * Plays the next click, when it is time and the player asked for that.
-	 *
-	 * Paced the same way the terminal solver paces itself, and for the same
-	 * reason: a game answered instantly is not one anybody played.
-	 */
+	/** Plays the next click when it's due, paced like the terminal solver. */
 	fun tick(client: Minecraft) {
 		ExperimentTracker.tick(client)
 		ExperimentDebug.flush()
@@ -244,8 +223,7 @@ object ExperimentSolver {
 
 		val handler = ExperimentTracker.current ?: return
 		if (handler.waiting) return
-		// Superpairs can be left to the player without giving up the other two:
-		// the pairs are still painted, they are just not clicked.
+		// Superpairs can be left to you: its pairs are painted but not clicked.
 		if (superpairsByHand.value && handler.game == ExperimentRules.Game.SUPERPAIRS) return
 
 		val now = System.currentTimeMillis()
@@ -256,11 +234,10 @@ object ExperimentSolver {
 		val slot = handler.clickOrder().firstOrNull() ?: return
 		if (slot !in screen.menu.slots.indices) return
 
-		// Button zero with CLONE for all three, which is what Astrail sends.
+		// Button zero with CLONE, as Astrail sends.
 		client.gameMode?.handleContainerInput(screen.menu.containerId, slot, 0, ContainerInput.CLONE, player)
 
-		// The handler is told, rather than asked to notice: nothing on the board
-		// says which of the sequence has been entered so far.
+		// Told, since nothing on the board says how far into the sequence you are.
 		handler.advance()
 		nextClickAt = now + clickDelay.random().toLong()
 	}

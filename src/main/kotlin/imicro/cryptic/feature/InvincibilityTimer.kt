@@ -36,31 +36,19 @@ import java.util.Locale
 import java.util.UUID
 
 /**
- * What saved your life, and when it can do it again.
- *
- * Ported from Odin's Invincibility Timer (BSD 3-Clause, Copyright (c) 2025
- * odtheking), row for row: each thing that takes a death for you gets its own
- * picture, a tick while it is ready and a count of seconds while it is not,
- * and the one on your head is marked. Three things in SkyBlock do it — the
- * Spirit Mask, Bonzo's Mask and the Phoenix pet — and each says so once, in a
- * line of chat that scrolls away in a boss fight. What matters afterwards is
- * the part nothing tells you: how long you are invincible for, and how long
- * until the thing can save you again.
- *
- * Bonzo's cooldown is read off the helmet itself when it is worn, because the
- * mask's own lore carries the number and an upgraded one is quicker than the
- * base three minutes.
+ * What saved your life, and when it can again: the Spirit Mask, Bonzo's Mask and the Phoenix pet,
+ * each with its picture, a tick when ready, seconds while not, and the worn mask marked. Hypixel
+ * only announces a proc once in chat. Bonzo's cooldown is read from the worn helmet's lore, since
+ * upgrades shorten it. Ported row for row from Odin's Invincibility Timer.
  */
 object InvincibilityTimer {
-	/** Ticks of invincibility each one gives, and the cooldown it takes. */
+	/** Invincibility ticks and cooldown for each. */
 	private enum class Charm(
 		val label: String,
 		val pattern: Regex,
 		val invincibleTicks: Int,
 		val cooldownSeconds: Int,
-		/** The head Hypixel draws the thing as, which is its picture here. */
 		private val textureHash: String,
-		/** What the item is called in SkyBlock, so a worn one can be spotted. */
 		val itemIds: Set<String>,
 	) {
 		SPIRIT(
@@ -88,7 +76,7 @@ object InvincibilityTimer {
 			emptySet(),
 		);
 
-		/** Built once, on first use: a head is a profile, and a profile is not free. */
+		/** Built once; a head means building a profile. */
 		val icon: ItemStack by lazy { skullOf(textureHash) }
 
 		var invincibleFor = 0
@@ -128,9 +116,7 @@ object InvincibilityTimer {
 		description = "A sound the moment something saves you.",
 	)
 
-	// Odin's sound by default: the same pling Cryptic always played, but at the
-	// pitch Odin plays it at, which is its natural one — Cryptic's was raised to
-	// 1.4, a sound nobody coming from Odin had heard on a proc.
+	// Odin's sound by default: the pling at its natural pitch.
 	@JvmField
 	val sound = DropdownModuleSetting(
 		id = "sound",
@@ -335,7 +321,7 @@ object InvincibilityTimer {
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> Charm.entries.forEach { it.forget() } }
 	}
 
-	/** Counted off Hypixel's own clock, like every other timer here. */
+	/** Counted on Hypixel's clock, like every timer here. */
 	@JvmStatic
 	fun onServerTick() {
 		if (!module.enabled) return
@@ -352,8 +338,7 @@ object InvincibilityTimer {
 		val client = Minecraft.getInstance()
 		if (playSound.value) playProcSound()
 		if (procTitle.value) {
-			// Plain white and short: the name of the thing, which is all there is
-			// time to read in the moment it happens.
+			// Plain white and short: the thing's name, all there's time to read.
 			client.gui.hud.setTimes(0, TITLE_STAY_TICKS, TITLE_FADE_TICKS)
 			client.gui.hud.setTitle(Component.literal("§f${charm.label}"))
 		}
@@ -361,8 +346,7 @@ object InvincibilityTimer {
 		if (!announce.value) return
 		val used = Charm.entries.count { it.cooldownFor > 0 }
 		val message = "${charm.label} procced! ($used/${Charm.entries.size})"
-		// The same preview switch the score announcements use, so the wording
-		// can be read back without a party to send it to.
+		// The same preview switch as the score announcements.
 		if (DebugOverrides.previewScoreMessage) {
 			client.gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §7Party chat: §f$message"))
 		} else {
@@ -373,16 +357,11 @@ object InvincibilityTimer {
 	private fun playProcSound() =
 		SoundChoices.play(sound.selectedIndex, volume.value.toFloat(), pitch.value.toFloat(), customSound.value)
 
-	/** How long the proc title holds, and how long it takes to fade, in ticks: Odin's. */
+	/** Odin's title timings, in ticks. */
 	private const val TITLE_STAY_TICKS = 20
 	private const val TITLE_FADE_TICKS = 5
 
-	/**
-	 * The cooldown written on the Bonzo's Mask being worn.
-	 *
-	 * An upgraded mask comes back faster than the base three minutes, and the
-	 * only place that number exists is the item's own lore.
-	 */
+	/** The cooldown written on the worn Bonzo's Mask; upgraded masks come back faster. */
 	private fun wornBonzoCooldown(): Int? {
 		val helmet = Minecraft.getInstance().player?.getItemBySlot(EquipmentSlot.HEAD) ?: return null
 		val lore = helmet.get(DataComponents.LORE) ?: return null
@@ -394,11 +373,8 @@ object InvincibilityTimer {
 	private val COOLDOWN_LINE = Regex("""^Cooldown: (\d+)s$""")
 
 	/**
-	 * A player head wearing one of Hypixel's own textures.
-	 *
-	 * The hash is the tail of the skin's URL, which is how every mod that draws
-	 * a SkyBlock item it does not own refers to it. Resolved rather than left
-	 * to be looked up, so nothing is fetched from Mojang to draw a mask.
+	 * A player head with one of Hypixel's textures. The hash is the tail of the skin URL; resolved
+	 * locally, so nothing is fetched from Mojang.
 	 */
 	private fun skullOf(textureHash: String): ItemStack {
 		val payload = """{"textures":{"SKIN":{"url":"http://textures.minecraft.net/texture/$textureHash"}}}"""
@@ -414,7 +390,6 @@ object InvincibilityTimer {
 		}
 	}
 
-	/** Which mask is on your head, so the row for it can say so. */
 	private fun wornCharm(): Charm? {
 		val helmet = Minecraft.getInstance().player?.getItemBySlot(EquipmentSlot.HEAD) ?: return null
 		val id = SkyblockItem.id(helmet)
@@ -437,14 +412,13 @@ object InvincibilityTimer {
 		}
 	}
 
-	/** Whether the rows have any business being on screen where you are now. */
 	private fun showsHere(): Boolean {
 		if (onlyInDungeons.value && !DungeonLocation.inDungeon) return false
 		if (onlyInBoss.value && !DungeonRun.inBoss) return false
 		return true
 	}
 
-	/** The seconds left, or the tick that says there is nothing to wait for. */
+	/** The seconds left, or a tick when ready. */
 	private fun rowText(charm: Charm): String = when {
 		charm.invincibleFor > 0 -> "${seconds(charm.invincibleFor)}s"
 		charm.cooldownFor > 0 -> "${seconds(charm.cooldownFor)}s"
@@ -460,11 +434,8 @@ object InvincibilityTimer {
 	private fun seconds(ticks: Int): String = String.format(Locale.ROOT, "%.1f", ticks / 20f)
 
 	/**
-	 * Draws a mask's cooldown over the item itself, in an inventory.
-	 *
-	 * Returns true when the slot has been drawn here and the game should not
-	 * draw it again. The item goes down first and the shade over it second,
-	 * because the point is to cover the picture rather than sit beside it.
+	 * Draws a mask's cooldown over the item in an inventory. True when drawn here, so the game
+	 * doesn't draw it again.
 	 */
 	@JvmStatic
 	fun drawSlotCooldown(context: GuiGraphicsExtractor, slot: Slot): Boolean {
@@ -488,7 +459,6 @@ object InvincibilityTimer {
 		return true
 	}
 
-	/** A tick rather than a number, which is Odin's way of saying ready. */
 	private const val READY_MARK = "✔"
 
 	private class TimerElement : HudElement("invincibility_timer", "Invincibility Timer", 0.45, 0.40) {
@@ -496,12 +466,7 @@ object InvincibilityTimer {
 
 		private fun rows(): List<Charm> = Charm.entries.filter { shows(it) }
 
-		/**
-		 * What the frame is measured around.
-		 *
-		 * With nothing to show the element is not drawn at all, so the size
-		 * that matters then is the one the editor's example takes: all three.
-		 */
+		/** The frame is sized around the rows, or all three when the editor shows the example. */
 		private fun sized(): List<Charm> = rows().ifEmpty { Charm.entries }
 
 		private fun labelOf(charm: Charm): String =
@@ -531,8 +496,7 @@ object InvincibilityTimer {
 				if (showIcons.value) {
 					context.item(charm.icon, 0, index * ICON_ROW - 1)
 					val y = index * ICON_ROW + 3
-					// A stripe down the side of the mask you are wearing, which
-					// is the one whose cooldown is about to matter.
+					// A stripe beside the mask you're wearing.
 					if (charm == worn) context.fill(14, y, 15, y + 9, equippedColor.argb)
 					context.text(font, rowText(charm), ICON_ROOM - 4, y, rowColor(charm))
 					return@forEachIndexed
@@ -547,7 +511,7 @@ object InvincibilityTimer {
 		private companion object {
 			const val MARK_WIDTH = 5
 
-			/** A head is sixteen wide; the text starts clear of it and its stripe. */
+			/** A head is sixteen wide; text starts clear of it and its stripe. */
 			const val ICON_ROOM = 20
 			const val ICON_ROW = 14
 			const val EXAMPLE_WIDTH = 46

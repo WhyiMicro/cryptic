@@ -655,7 +655,7 @@
       "enabled": false,
       "settings": {
         "delay": 5.0,
-        "command": "/joininstance",
+        "command": "Auto",
         "check_party": true,
         "wait_for_ready": true,
         "feedback": true

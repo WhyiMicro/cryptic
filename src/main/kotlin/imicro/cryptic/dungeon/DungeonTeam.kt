@@ -6,11 +6,8 @@ import net.minecraft.client.Minecraft
 import net.minecraft.world.entity.player.PlayerSkin
 
 /**
- * Tracks who is in the dungeon party and what class each of them plays.
- *
- * Hypixel publishes this in the tab list, and more than one module needs it, so
- * the scan lives here rather than inside whichever feature happened to want it
- * first. It runs while any consumer is switched on and idles otherwise.
+ * Who is in the dungeon party and what class each plays, from the tab list. Runs only while
+ * something wants it.
  */
 object DungeonTeam {
 	enum class DungeonClass(val initial: Char) {
@@ -30,7 +27,6 @@ object DungeonTeam {
 
 	private var ticksUntilRefresh = 0
 
-	/** True while the tab list shows the player is inside the Catacombs. */
 	var inDungeons = false
 		private set
 
@@ -38,30 +34,17 @@ object DungeonTeam {
 		private set
 
 	/**
-	 * Who is currently dead, in Hypixel's terms.
-	 *
-	 * A dead teammate keeps their row in the tab list but loses their marker on
-	 * the dungeon map, so anything pairing markers with players has to know, or
-	 * every head after the dead one is drawn as the wrong person.
+	 * Who is dead. A dead teammate keeps their tab row but loses their map marker, so marker
+	 * pairing has to skip them.
 	 */
 	var dead: Set<String> = emptySet()
 		private set
 
-	/**
-	 * The skin on each teammate's own row of the tab list.
-	 *
-	 * Hypixel draws the row with the player's head, so the row carries their
-	 * skin even when their own player entry has not been sent — which is when
-	 * looking the name up came back empty, and the leap menu used to fall back
-	 * to your own face for them.
-	 */
+	/** The skin on each teammate's tab row, which is there even when their player entry hasn't been sent. */
 	var tabSkins: Map<String, PlayerSkin> = emptyMap()
 		private set
 
-	/**
-	 * Each teammate's class level, from the numeral after the class in their
-	 * row — "(Mage XXXIX)". Missing for a row that does not show one.
-	 */
+	/** Each teammate's class level, from "(Mage XXXIX)" in their row. */
 	var classLevels: Map<String, Int> = emptyMap()
 		private set
 
@@ -69,14 +52,8 @@ object DungeonTeam {
 
 	fun isTeammate(name: String): Boolean = classes.containsKey(name)
 
-	/**
-	 * Refreshing twice a second is immediate enough for tab-list data and tiny
-	 * in cost. [active] is false when no module wants the data, which stops the
-	 * scan without any module having to know about the others.
-	 */
+	/** Twice a second. */
 	fun tick(client: Minecraft, active: Boolean) {
-		// A developer override stands in for the tab list, so class features can
-		// be looked at without queueing a dungeon for them.
 		val overriddenClass = DebugOverrides.dungeonClass
 		if (overriddenClass != null) {
 			val name = client.player?.name?.string
@@ -100,9 +77,8 @@ object DungeonTeam {
 		if (ticksUntilRefresh-- > 0) return
 		ticksUntilRefresh = REFRESH_INTERVAL_TICKS
 
-		// One pass over the tab list instead of materializing all of its lines
-		// first. Teammate rows always begin with the bracketed class level, so a
-		// single character check keeps the regex away from every other entry.
+		// One pass over the tab list; teammate rows start with a bracket, which keeps the regex off
+		// everything else.
 		val previous = classes
 		var updated: MutableMap<String, DungeonClass>? = null
 		var fallen: MutableSet<String>? = null
@@ -110,16 +86,11 @@ object DungeonTeam {
 		var levels: MutableMap<String, Int>? = null
 		var foundCatacombs = false
 
-		// In the order the rows are drawn in, which is not the order the
-		// connection keeps its players in — that one is however they happened
-		// to be hashed. The difference matters because the party's order in the
-		// tab list is also the order Hypixel puts their markers on the dungeon
-		// map, and the map has nothing else to say who is who by. Sorted the
-		// wrong way, every head on the map belongs to somebody else.
+		// In drawn order, not the connection's (hashed) order: Hypixel orders map markers the same
+		// way, and the map has nothing else to say who is who.
 		for (playerInfo in connection.listedOnlinePlayers.sortedWith(PlayerTabOverlayAccessor.`cryptic$ordering`())) {
 			val line = playerInfo.tabListDisplayName?.string ?: continue
 
-			// Odin identifies the Catacombs from Hypixel's Area/Dungeon tab entry.
 			if (!foundCatacombs &&
 				(line.startsWith("Area: ") || line.startsWith("Dungeon: ")) &&
 				line.contains("Catacombs", ignoreCase = true)
@@ -133,7 +104,7 @@ object DungeonTeam {
 			val name = match.groupValues[2]
 			val className = match.groupValues[3]
 
-			// Dead teammates are reported as DEAD; retain the class learned earlier.
+			// Dead teammates read as DEAD; keep the class learned earlier.
 			val dungeonClass = if (className.equals("DEAD", ignoreCase = true)) {
 				(fallen ?: mutableSetOf<String>().also { fallen = it }).add(name)
 				previous[name] ?: DungeonClass.UNKNOWN
@@ -154,7 +125,6 @@ object DungeonTeam {
 		classLevels = if (foundCatacombs) levels ?: emptyMap() else emptyMap()
 	}
 
-	/** "XXXIX" or "39", as a number. */
 	private fun parseLevel(text: String): Int? {
 		if (text.isEmpty()) return null
 		text.toIntOrNull()?.let { return it }
@@ -168,15 +138,7 @@ object DungeonTeam {
 		return total
 	}
 
-	/**
-	 * The party in tab-list order, against the markers the map has for them.
-	 *
-	 * The dungeon map says where five people are and nothing at all about who
-	 * they are: the first marker belongs to the first living teammate in the
-	 * tab list, the second to the second, and so on. That is the whole of the
-	 * pairing, and when it is wrong every head on the map is somebody else — so
-	 * this prints both halves of it, in order, to be read against the map.
-	 */
+	/** The party in tab order against the map's markers, for checking the pairing. */
 	fun describePairing(): List<String> {
 		val self = Minecraft.getInstance().player?.name?.string
 		if (!inDungeons) return listOf("§7Not in a dungeon, so there is no party to pair.")

@@ -7,14 +7,8 @@ import net.minecraft.client.Minecraft
 import net.minecraft.world.effect.MobEffects
 
 /**
- * Throws away the potion effects that only make the screen harder to look at.
- *
- * Blindness and nausea change nothing about what you can do — they change what
- * you can see doing it, and in a dungeon that is the difference between reading
- * a terminal and guessing at one. The effect is dropped from the client's own
- * copy of the player rather than from the server's, so Hypixel still believes
- * you are blind and everything that depends on that carries on as normal;
- * only the fog and the wobble go away.
+ * Drops blindness and nausea from the client's copy of the player. The server still thinks you're
+ * blind, so nothing else changes; only the fog and wobble go.
  */
 object NoDebuff {
 	@JvmField
@@ -38,6 +32,7 @@ object NoDebuff {
 	@JvmField
 	val module = Module(
 		id = "no_debuff",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		name = "No Debuff",
 		description = "No blindness or nausea",
 		category = ModuleCategory.VISUAL,
@@ -45,11 +40,7 @@ object NoDebuff {
 		settings = configurableSettings,
 	)
 
-	/**
-	 * Effects arrive as packets and are then counted down by the client, so
-	 * taking one off once is enough until the server sends it again — there is
-	 * nothing here that has to fight the game every frame.
-	 */
+	/** Effects are counted down by the client, so removing one once lasts until the server resends it. */
 	fun tick(client: Minecraft) {
 		if (!module.enabled) return
 		val player = client.player ?: return

@@ -1,0 +1,90 @@
+{
+    "targets": {
+        "spread": {},
+        "outline": {},
+        "swap": {}
+    },
+    "passes": [
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "cryptic:post/item_outline_spread",
+            "inputs": [
+                {
+                    "sampler_name": "MainDepth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "Params",
+                    "location": "cryptic:item_outline_params",
+                    "width": 6,
+                    "height": 1
+                }
+            ],
+            "output": "spread"
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "cryptic:post/item_outline_ring",
+            "inputs": [
+                {
+                    "sampler_name": "Spread",
+                    "target": "spread"
+                },
+                {
+                    "sampler_name": "MainDepth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "Params",
+                    "location": "cryptic:item_outline_params",
+                    "width": 6,
+                    "height": 1
+                }
+            ],
+            "output": "outline"
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "cryptic:post/item_outline_composite",
+            "inputs": [
+                {
+                    "sampler_name": "Main",
+                    "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Ring",
+                    "target": "outline"
+                },
+                {
+                    "sampler_name": "Params",
+                    "location": "cryptic:item_outline_params",
+                    "width": 6,
+                    "height": 1
+                }
+            ],
+            "output": "swap"
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "minecraft:post/blit",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "swap"
+                }
+            ],
+            "output": "minecraft:main",
+            "uniforms": {
+                "BlitConfig": [
+                    {
+                        "name": "ColorModulate",
+                        "type": "vec4",
+                        "value": [ 1.0, 1.0, 1.0, 1.0 ]
+                    }
+                ]
+            }
+        }
+    ]
+}

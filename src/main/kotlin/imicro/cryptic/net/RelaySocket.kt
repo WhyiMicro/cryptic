@@ -12,26 +12,19 @@ import java.util.concurrent.atomic.AtomicReference
 import org.slf4j.LoggerFactory
 
 /**
- * A websocket that is either open or not, and says nothing when it is not.
+ * A websocket to Odin's relay, where everyone in the same lobby shares what they see. Quiet when it
+ * isn't connected.
  *
- * Odin's `WebSocketConnection` (BSD 3-Clause, Copyright (c) 2025 odtheking),
- * which is how Odin users share what they can see with each other: everybody
- * in the same lobby connects to the same room of Odin's relay, and whatever
- * one sends, the rest receive. Built on the JDK's own client, so nothing new
- * is bundled.
- *
- * [onMessage] is called on the socket's own thread. Anything it does to the
- * game has to be handed to the client thread first.
+ * [onMessage] runs on the socket's thread; hand anything that touches the game to the client
+ * thread.
  */
 class RelaySocket(private val onMessage: (String) -> Unit) {
 	private val logger = LoggerFactory.getLogger("cryptic/relay")
 
 	private val socket = AtomicReference<WebSocket?>(null)
 
-	/** True between the handshake and the close, which is when [send] does anything. */
 	val connected: Boolean get() = socket.get() != null
 
-	/** True from [connect] until the attempt has either opened or failed. */
 	@Volatile
 	var connecting = false
 		private set
@@ -98,10 +91,7 @@ class RelaySocket(private val onMessage: (String) -> Unit) {
 		}
 	}
 
-	/**
-	 * The JDK's socket fails a send made while the last is still going out, and
-	 * a moving note sends several a second, so each waits for the one before.
-	 */
+	/** The JDK socket fails a send while the last is still going, so each send waits for the one before. */
 	private var outgoing: CompletableFuture<*> = CompletableFuture.completedFuture(null)
 
 	@Synchronized

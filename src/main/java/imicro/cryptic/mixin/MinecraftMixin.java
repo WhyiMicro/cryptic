@@ -1,12 +1,7 @@
 package imicro.cryptic.mixin;
 
-import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
-import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import imicro.cryptic.feature.AutoClicker;
-import imicro.cryptic.feature.BreakerHelper;
-import net.minecraft.client.KeyMapping;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import imicro.cryptic.feature.DeviceSolver;
 import imicro.cryptic.feature.BossWaypoints;
 import imicro.cryptic.feature.DungeonWaypoints;
@@ -23,8 +18,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * The Auto Clicker's press and release, which belong to the frame rather than
- * the tick, and the one place a right click can be stopped before it leaves.
+ * The Auto Clicker's press and release (per frame), and where a right click can be stopped before
+ * it's sent.
  */
 @Mixin(Minecraft.class)
 public abstract class MinecraftMixin {
@@ -36,13 +31,10 @@ public abstract class MinecraftMixin {
     private int rightClickDelay;
 
     /**
-     * A right click on nothing, for the waypoint editors' floating waypoints.
-     *
-     * The game sets the click delay first thing, so a swallowed click sets it
-     * here too: held down, the button would otherwise place and remove the
-     * same waypoint every tick.
+     * A right click on nothing, for floating waypoints in the editors. Sets the click delay too, or
+     * holding it would place and remove a waypoint every tick.
      */
-    /** A right click on a Three Weirdos box, which talks to that weirdo instead. */
+    /** A right click on a Three Weirdos box talks to that weirdo instead. */
     @Inject(method = "startUseItem", at = @At("HEAD"), cancellable = true)
     private void cryptic$instantWeirdos(CallbackInfo info) {
         if (PuzzleSolver.onUseItem()) {
@@ -61,12 +53,8 @@ public abstract class MinecraftMixin {
     }
 
     /**
-     * Lets a device solver swallow a right click on a block.
-     *
-     * The injection is on the call rather than on the method, which is what
-     * makes it precise: by this point the game has decided this is a use on a
-     * block and which block it is, and cancelling here means the packet is
-     * never built. The same point Odin (BSD 3-Clause) uses.
+     * Lets a device solver swallow a right click on a block. On the call, where the block is
+     * decided and nothing has been sent. The same point Odin uses.
      */
     @Inject(
         method = "startUseItem",
@@ -78,16 +66,14 @@ public abstract class MinecraftMixin {
     )
     private void cryptic$blockDeviceBlockUse(CallbackInfo info) {
         if (!(this.hitResult instanceof BlockHitResult hit)) return;
-        // The puzzles that can be failed by one wrong click are asked here as
-        // well, because this is the point where a click has been decided on and
-        // nothing has been sent yet.
+        // Puzzles that one wrong click can fail are asked here too.
         if (DeviceSolver.blocksBlockUse(hit.getBlockPos()) || PuzzleSolver.blocksClick(hit.getBlockPos())
                 || DungeonWaypoints.onEditorClick(hit.getBlockPos()) || BossWaypoints.onEditorClick(hit.getBlockPos())) {
             info.cancel();
         }
     }
 
-    /** The same for an item frame, which is what the arrow device is made of. */
+    /** The same for an item frame, which the arrow device is made of. */
     @Inject(
         method = "startUseItem",
         at = @At(
@@ -102,56 +88,9 @@ public abstract class MinecraftMixin {
         }
     }
 
-    // ---- Breaker Helper: Lumen's way of mining with the Dungeon Breaker ----
-
-    /** A click of attack: refused on a secret, and the break pauses cleared before it. */
-    @Inject(method = "startAttack", at = @At("HEAD"), cancellable = true)
-    private void cryptic$breakerStartAttack(CallbackInfoReturnable<Boolean> cir) {
-        if (BreakerHelper.onStartAttack()) cir.setReturnValue(false);
-    }
-
-    @Inject(method = "startAttack", at = @At("RETURN"))
-    private void cryptic$breakerAttackDone(CallbackInfoReturnable<Boolean> cir) {
-        BreakerHelper.onAttackFinished();
-    }
-
-    @Inject(method = "handleKeybinds", at = @At("HEAD"))
-    private void cryptic$breakerKeybinds(CallbackInfo ci) {
-        BreakerHelper.onHandleKeybinds();
-    }
-
-    /** Whether a held attack keeps mining: it pauses on secrets, and past them presses again. */
-    @WrapOperation(
-        method = "handleKeybinds",
-        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;continueAttack(Z)V")
-    )
-    private void cryptic$breakerContinueAttack(Minecraft self, boolean down, Operation<Void> original) {
-        original.call(self, BreakerHelper.continueAttack(down));
-    }
-
-    /** The tick after swapping to the Breaker, the attack click waits: it is left queued, not dropped. */
-    @WrapOperation(
-        method = "handleKeybinds",
-        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/KeyMapping;consumeClick()Z")
-    )
-    private boolean cryptic$breakerHoldClick(KeyMapping key, Operation<Boolean> original) {
-        if (key == ((Minecraft) (Object) this).options.keyAttack && BreakerHelper.waitsAfterSwap()) return false;
-        return original.call(key);
-    }
-
-    @WrapOperation(
-        method = "handleKeybinds",
-        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/KeyMapping;isDown()Z")
-    )
-    private boolean cryptic$breakerHoldDown(KeyMapping key, Operation<Boolean> original) {
-        if (key == ((Minecraft) (Object) this).options.keyAttack && BreakerHelper.waitsAfterSwap()) return false;
-        return original.call(key);
-    }
-
     /**
-     * Runs the Auto Clicker before the frame, which is the only place it can
-     * run: a press and its release are both inside a single tick at any rate
-     * worth using, so a tick hook could not fit them both.
+     * Runs the Auto Clicker before each frame: at useful rates, a press and release both fit inside
+     * one tick.
      */
     @Inject(method = "renderFrame", at = @At("HEAD"))
     private void cryptic$autoClick(boolean renderLevel, CallbackInfo ci) {

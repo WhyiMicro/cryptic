@@ -11,27 +11,17 @@ import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 
 /**
- * Says when there is no booster cookie running, and when there is about to be.
- *
- * Three moments are worth interrupting somebody over, since dying without a
- * cookie costs coins: arriving in a lobby with none, a cookie running low, and
- * its last minute. The last minute is Hypixel's own "Booster Cookie expires in
- * 60s", and gets a notification that counts the minute down and stays up until
- * the cookie is gone, when one saying so takes its place.
- *
- * Every lobby is checked once the tab list has arrived, so a missing cookie is
- * said again on each server hop rather than once and then forgotten.
+ * Warns when no booster cookie is running, or one is about to run out: once a game session when
+ * you play without one, when it runs low, and in its last minute (Hypixel's "Booster Cookie
+ * expires in 60s"), with a countdown notification that stays until it's gone. Lobbies are checked
+ * once their tab list arrives.
  */
 object CookieReminder {
 	private const val SOURCE = "Booster Cookie"
 
-	/**
-	 * Twice a second would tell nobody anything: the footer counts in whole
-	 * minutes, so two seconds is already far finer than the thing being read.
-	 */
+	/** The footer counts whole minutes, so every two seconds is plenty. */
 	private const val POLL_TICKS = 40
 
-	/** The countdown notification's id, so it can be taken down when the cookie goes. */
 	private const val COUNTDOWN = "cookie_countdown"
 
 	@JvmField
@@ -51,7 +41,7 @@ object CookieReminder {
 		id = "announce_expired",
 		label = "Say when there is none",
 		defaultValue = true,
-		description = "On each lobby you join without a cookie, and when one runs out.",
+		description = "Once a game session when you play without a cookie, not on every lobby, and whenever one runs out.",
 	)
 
 	@JvmField
@@ -76,18 +66,11 @@ object CookieReminder {
 	private val check = ButtonModuleSetting("check", "Check now", action = { requestCheck() })
 
 	/**
-	 * Whether a pressed "Check now" is still waiting for an answer.
-	 *
-	 * The tab list is a packet, not a screen, so it is normally readable from
-	 * anywhere — but on a server hop, or in the first moments after joining, it
-	 * has not arrived and there is nothing to read. Answering "no cookie" then
-	 * would be a guess dressed as a reading, and answering nothing at all looks
-	 * like a button that does not work. So the press is remembered and the
-	 * answer given when there is one.
+	 * Whether a pressed "Check now" is still waiting. Right after a server hop the tab list hasn't
+	 * arrived, so the answer waits for it instead of guessing.
 	 */
 	private var awaitingCheck = false
 
-	/** How long a pressed check keeps waiting before it gives up, in ticks. */
 	private const val CHECK_PATIENCE = 200
 
 	private var checkWaitedFor = 0
@@ -99,7 +82,6 @@ object CookieReminder {
 		Toasts.show(SOURCE, "Waiting for the tab list...", life = seconds.value, color = Toasts.Colors.COOKIE)
 	}
 
-	/** Answers a pending check if the tab list can say anything yet. */
 	private fun answerCheck(): Boolean {
 		val reading = BoosterCookie.read()
 		if (reading is BoosterCookie.Reading.Unknown) return false
@@ -109,7 +91,6 @@ object CookieReminder {
 			is BoosterCookie.Reading.Inactive -> "§cNo active booster cookie"
 			is BoosterCookie.Reading.Active ->
 				reading.minutesLeft?.let { "Active, §f${describe(it)} §7left" } ?: "Active"
-			else -> return true
 		}
 		Toasts.show(SOURCE, message, life = seconds.value, color = Toasts.Colors.COOKIE)
 		return true
@@ -130,7 +111,6 @@ object CookieReminder {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		// A new lobby is checked again once its tab list is in.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ ->
 			checkLobby = true
 			ticksUntilPoll = 0
@@ -139,27 +119,27 @@ object CookieReminder {
 
 	private var ticksUntilPoll = 0
 
-	/** Set on joining a lobby, until its tab list has been read once. */
 	private var checkLobby = true
 
-	/** The warning for the cookie running now has been given; a cookie seen above the line again re-arms it. */
+	/** The low warning has been given; a cookie seen above the line again re-arms it. */
 	private var saidExpiring = false
 
-	/** When the counted-down last minute ends, or 0 when none is being counted. */
 	private var countdownEnds = 0L
 
-	/** Whether the last reading had a cookie running, so one ending without the chat line is still said. */
+	/** Whether the last reading had a cookie, so one ending without the chat line is still noticed. */
 	private var wasActive = false
 
-	/** "Booster Cookie expires in 60s", and the 10, 5, 4 ... after it. */
+	/** The no-cookie warning was given this game session, so new lobbies don't repeat it. */
+	private var saidNoneThisSession = false
+
+	/** "Booster Cookie expires in 60s", and the 10, 5, 4... after it. */
 	private val EXPIRES_IN = Regex("""^Booster Cookie expires in (\d+)s$""")
 
 	private val FORMATTING = Regex("§.")
 
 	/**
-	 * Hypixel's own countdown, read from the chat packet. Whichever of its lines
-	 * comes first starts the notification, so one that was missed — joining a
-	 * lobby with ten seconds left — still gets the rest.
+	 * Hypixel's own countdown from chat. Any of its lines starts the notification, so joining with
+	 * ten seconds left still shows it.
 	 */
 	@JvmStatic
 	fun onSystemChat(content: Component, overlay: Boolean) {
@@ -196,8 +176,7 @@ object CookieReminder {
 		if (client.player == null) return
 
 		if (awaitingCheck) {
-			// Every tick rather than on the poll, because somebody is standing
-			// in front of the button waiting for it.
+			// Every tick, since someone is waiting on the button.
 			if (!answerCheck() && ++checkWaitedFor > CHECK_PATIENCE) {
 				awaitingCheck = false
 				Toasts.show(SOURCE, "§cCan't see the tab list", life = seconds.value, color = Toasts.Colors.COOKIE)
@@ -208,18 +187,19 @@ object CookieReminder {
 		ticksUntilPoll = POLL_TICKS
 
 		when (val reading = BoosterCookie.read()) {
-			// Not on SkyBlock, or the tab list has not arrived. Saying nothing is
-			// the whole point of the third answer.
+			// Not on SkyBlock, or no tab list yet: say nothing.
 			is BoosterCookie.Reading.Unknown -> Unit
 
 			is BoosterCookie.Reading.Inactive -> {
-				// A new lobby, or a cookie seen running that has since stopped.
+				// A new lobby, or a running cookie that has since stopped.
 				val ended = wasActive
 				wasActive = false
 				if (!checkLobby && !ended) return
 				checkLobby = false
 				saidExpiring = true
-				// The countdown has said its piece, and the expired line its own.
+				if (!ended && saidNoneThisSession) return
+				saidNoneThisSession = true
+				// The countdown and the expired line have both been shown.
 				if (System.currentTimeMillis() < countdownEnds + 5_000) return
 				if (announceExpired.value) {
 					Toasts.show(SOURCE, "§cNo active booster cookie§7, be careful", life = seconds.value, color = Toasts.Colors.COOKIE)
@@ -232,8 +212,7 @@ object CookieReminder {
 				val minutes = reading.minutesLeft
 				val window = warnMinutes.value.toLong()
 				if (minutes == null || window <= 0 || minutes > window) {
-					// Back above the line — a new cookie, or a longer one — so the
-					// warning is worth giving again when it drops back under it.
+					// Back above the line, so the warning re-arms.
 					saidExpiring = false
 					return
 				}
@@ -245,7 +224,7 @@ object CookieReminder {
 		}
 	}
 
-	/** Whole minutes as something readable, since an hour of them is not. */
+	/** Whole minutes as something readable. */
 	private fun describe(minutes: Long): String = when {
 		minutes <= 0 -> "under a minute"
 		minutes < 60 -> "${minutes}m"

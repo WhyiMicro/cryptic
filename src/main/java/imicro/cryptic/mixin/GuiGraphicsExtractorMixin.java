@@ -2,7 +2,7 @@ package imicro.cryptic.mixin;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import imicro.cryptic.feature.CrosshairEditor;
-import imicro.cryptic.feature.ScrollableTooltips;
+import imicro.cryptic.feature.TooltipFeatures;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent;
@@ -18,22 +18,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.List;
 
 /**
- * Moves and sizes a tooltip by whatever Scrollable Tooltips has been scrolled
- * to.
- *
- * Wrapped around the whole method rather than applied to the coordinates it is
- * given: the position those produce is clamped to the screen by the positioner,
- * which is exactly the behaviour being worked around. Changing the matrix moves
- * the finished tooltip, clamp and all - the same place NoammAddons does it.
+ * Moves and sizes a tooltip by Scrollable Tooltips' scroll. Wraps the whole method, since the
+ * positioner clamps coordinates to the screen; moving the matrix moves the finished tooltip. The
+ * same place NoammAddons does it.
  */
 @Mixin(GuiGraphicsExtractor.class)
 public abstract class GuiGraphicsExtractorMixin {
     /**
-     * Drops vanilla's crosshair sprite — or a resource pack's in its place —
-     * while the Crosshair Editor is drawing its own.
-     *
-     * Every plain {@code blitSprite} overload ends up in this one, so any mod
-     * that wraps the HUD's crosshair call still arrives here when it draws.
+     * Drops vanilla's (or a resource pack's) crosshair while the Crosshair Editor draws its own.
+     * Every plain {@code blitSprite} overload ends here, so mods wrapping the crosshair call still
+     * arrive.
      */
     @Inject(
         method = "blitSprite(Lcom/mojang/blaze3d/pipeline/RenderPipeline;Lnet/minecraft/resources/Identifier;IIIII)V",
@@ -53,7 +47,7 @@ public abstract class GuiGraphicsExtractorMixin {
         if (CrosshairEditor.hidesSprite(location)) info.cancel();
     }
 
-    /** The crosshair drawn from the atlas sprite itself, as a mod that draws its own reaches it. */
+    /** The crosshair drawn from the atlas sprite directly, as some mods do. */
     @Inject(
         method = "blitSprite(Lcom/mojang/blaze3d/pipeline/RenderPipeline;Lnet/minecraft/client/renderer/texture/TextureAtlasSprite;IIIII)V",
         at = @At("HEAD"),
@@ -72,6 +66,16 @@ public abstract class GuiGraphicsExtractorMixin {
         if (CrosshairEditor.hidesSprite(sprite)) info.cancel();
     }
 
+    /** The text of an item's tooltip, as Tooltip Features last sees it before drawing. */
+    @org.spongepowered.asm.mixin.injection.ModifyVariable(
+        method = "setTooltipForNextFrame(Lnet/minecraft/client/gui/Font;Ljava/util/List;Ljava/util/Optional;IILnet/minecraft/resources/Identifier;)V",
+        at = @At("HEAD"),
+        argsOnly = true
+    )
+    private List<net.minecraft.network.chat.Component> cryptic$tooltipText(List<net.minecraft.network.chat.Component> texts) {
+        return TooltipFeatures.beforeDraw(texts);
+    }
+
     @Inject(method = "tooltip", at = @At("HEAD"))
     private void cryptic$offsetTooltip(
         Font font,
@@ -82,7 +86,7 @@ public abstract class GuiGraphicsExtractorMixin {
         @Nullable Identifier style,
         CallbackInfo info
     ) {
-        ScrollableTooltips.beforeTooltip((GuiGraphicsExtractor) (Object) this, xo, yo);
+        TooltipFeatures.beforeTooltip((GuiGraphicsExtractor) (Object) this, xo, yo);
     }
 
     @Inject(method = "tooltip", at = @At("RETURN"))
@@ -95,6 +99,6 @@ public abstract class GuiGraphicsExtractorMixin {
         @Nullable Identifier style,
         CallbackInfo info
     ) {
-        ScrollableTooltips.afterTooltip((GuiGraphicsExtractor) (Object) this);
+        TooltipFeatures.afterTooltip((GuiGraphicsExtractor) (Object) this);
     }
 }

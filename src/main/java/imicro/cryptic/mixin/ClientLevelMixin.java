@@ -12,15 +12,26 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
 
 @Mixin(ClientLevel.class)
 public abstract class ClientLevelMixin {
+    /** The cracks on the block Mining's ping offset is timing, which its own box replaces. */
+    @org.spongepowered.asm.mixin.injection.Inject(method = "destroyBlockProgress", at = @At("HEAD"), cancellable = true)
+    private void cryptic$hideBreakAnimation(int id, BlockPos pos, int progress, org.spongepowered.asm.mixin.injection.callback.CallbackInfo info) {
+        if (imicro.cryptic.feature.Mining.hidesBreakAnimation(pos)) info.cancel();
+    }
+
+    /** Render Optimizer's block break particles: the bits while mining, and the burst when it breaks. */
+    @org.spongepowered.asm.mixin.injection.Inject(method = "addDestroyBlockEffect", at = @At("HEAD"), cancellable = true)
+    private void cryptic$hideBreakBurst(BlockPos pos, BlockState state, org.spongepowered.asm.mixin.injection.callback.CallbackInfo info) {
+        if (imicro.cryptic.feature.RenderOptimizer.hidesBreakParticles()) info.cancel();
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "addBreakingBlockEffect", at = @At("HEAD"), cancellable = true)
+    private void cryptic$hideBreakingBits(BlockPos pos, net.minecraft.core.Direction direction, org.spongepowered.asm.mixin.injection.callback.CallbackInfo info) {
+        if (imicro.cryptic.feature.RenderOptimizer.hidesBreakParticles()) info.cancel();
+    }
+
     /**
-     * A block the server has just set, as the world takes it.
-     *
-     * Both single-block and whole-section updates end up here, which is what
-     * lets I love glass swap a wall as it arrives rather than on its next scan:
-     * Storm's pillars are resent a layer at a time as they sink, and a scan
-     * that comes round a few ticks later leaves each new layer standing as
-     * diorite until it does. Always the client thread, since both packets are
-     * handed over before they touch the level.
+     * A block the server just set, from both single-block and section updates. Lets I love glass
+     * swap Storm's sinking pillars as each layer arrives. Always the client thread.
      */
     @ModifyArg(
         method = "setServerVerifiedBlockState",
@@ -31,11 +42,11 @@ public abstract class ClientLevelMixin {
         index = 1
     )
     private BlockState cryptic$glaze(BlockPos pos, BlockState state, int flags, int limit) {
-        // The block being replaced is still in the world here, which is what
-        // lets Spirit Bear tell a lantern lighting from one going out.
+        // The replaced block is still in the world here (Spirit Bear tells a lantern lighting from
+        // going out).
         BlockState old = ((ClientLevel) (Object) this).getBlockState(pos);
         SpiritBear.onBlockChanged(pos, old, state);
-        // A Crystal Hollows treasure chest appearing, or going once it is looted.
+        // A Crystal Hollows treasure chest appearing, or going once looted.
         NucleusQol.onBlockChanged(pos, old, state);
         return ILoveGlass.substitute(pos, state);
     }

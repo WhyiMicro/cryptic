@@ -21,16 +21,12 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 /**
- * Asks GitHub whether a newer Cryptic has been released.
- *
- * Once a session, on the first server joined, it reads the repository's
- * recent releases and compares their tags (`v0.20.0-26.2`) with what is
- * installed, counting only releases with a jar for this Minecraft version.
- * A newer one is announced with a notification that stays up for thirty
- * seconds, and a line in chat that opens the release page when clicked.
+ * Checks GitHub for a newer Cryptic once a session, on the first server joined. Compares release
+ * tags (`v0.20.0-26.2`) with the installed version, counting only releases with a jar for this
+ * Minecraft version, and announces one with a notification and a clickable chat line.
  */
 object UpdateChecker {
-	/** The recent releases, not only the latest: the latest may be for another Minecraft version. */
+	/** Recent releases rather than just the latest, which may be for another Minecraft version. */
 	private const val API = "https://api.github.com/repos/WhyiMicro/cryptic/releases?per_page=30"
 	private const val SOURCE = "Update"
 	private const val TOAST_SECONDS = 30.0
@@ -79,12 +75,11 @@ object UpdateChecker {
 		}
 	}
 
-	/** The installed version, "0.20.0-26.2". */
 	val installed: String
 		get() = FabricLoader.getInstance().getModContainer(Cryptic.MOD_ID)
 			.map { it.metadata.version.friendlyString }.orElse("0.0.0")
 
-	/** Asks GitHub, off the game thread. [manual] also says so when there is nothing new. */
+	/** Asks GitHub off the game thread. [manual] also reports when nothing is new. */
 	fun check(manual: Boolean) {
 		if (checking) return
 		checking = true
@@ -116,22 +111,15 @@ object UpdateChecker {
 		}
 	}
 
-	/** This build's Minecraft version as releases name it, the part after the dash: "26.2". */
+	/** This build's Minecraft version, the part after the dash: "26.2". */
 	val minecraftTag: String get() = installed.substringAfter('-', "")
 
-	/** Whether a release has a jar built for this Minecraft version. */
 	fun forThisMinecraft(release: JsonObject): Boolean =
 		AutoUpdater.assetFor(release) != null
 
 	/**
-	 * Picks what to say from the releases, newest first.
-	 *
-	 * Only a release with a jar for this Minecraft version is an update: once
-	 * Cryptic moves to a newer Minecraft, its releases are for that one, and a
-	 * jar for it would not start on this game. The newest such release is the
-	 * one offered, even when a later one exists for another version. A later
-	 * one for another version, with nothing newer for this one, is mentioned
-	 * but never downloaded.
+	 * Picks what to say, newest first. Only a release with a jar for this Minecraft version is
+	 * offered; a newer one for another version is mentioned but never downloaded.
 	 */
 	private fun decide(releases: List<JsonObject>, manual: Boolean) {
 		val tag = { release: JsonObject -> release.get("tag_name").asString }
@@ -159,7 +147,6 @@ object UpdateChecker {
 
 	private const val RELEASES_PAGE = "https://github.com/WhyiMicro/cryptic/releases"
 
-	/** Which of two version tags is later, by their first three numbers. */
 	private fun compare(a: String, b: String): Int {
 		val x = numbers(a) ?: return -1
 		val y = numbers(b) ?: return 1
@@ -177,9 +164,8 @@ object UpdateChecker {
 	}
 
 	/**
-	 * A newer release with automatic updates on: fetched in the background,
-	 * and installed when the game closes. A download that fails falls back to
-	 * the plain announcement, with the link, so the update is not missed.
+	 * With automatic updates on: downloaded in the background and installed when the game closes. A
+	 * failed download falls back to the announcement with the link.
 	 */
 	private fun update(release: JsonObject, latest: String, page: String) {
 		if (AutoUpdater.waiting == latest) {
@@ -209,9 +195,8 @@ object UpdateChecker {
 	}
 
 	/**
-	 * Whether [tag] is a later release than [current], by their first three
-	 * numbers. What follows them is the Minecraft version, which is not newer
-	 * or older Cryptic, only a different build of it.
+	 * Whether [tag] is newer than [current], by the first three numbers. What follows is the
+	 * Minecraft version, not a newer Cryptic.
 	 */
 	fun isNewer(tag: String, current: String): Boolean {
 		val latest = numbers(tag) ?: return false

@@ -19,10 +19,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/**
- * The local player's own living tick: swing duration for the Animations module,
- * and the jump cooldown for No Jump Delay.
- */
+/** The local player's living tick: swing duration for Animations, and the jump cooldown for No Jump Delay. */
 @Mixin(LivingEntity.class)
 public abstract class LivingEntityMixin extends Entity {
     protected LivingEntityMixin(EntityType<?> type, Level level) {
@@ -35,14 +32,8 @@ public abstract class LivingEntityMixin extends Entity {
     @Shadow private int noJumpDelay;
 
     /**
-     * Clears the ten-tick wait vanilla puts between jumps, for the local player
-     * only — every other entity here is the server's account of one, and moving
-     * it would only disagree with what the server sends next.
-     *
-     * At the head, because the first thing {@code aiStep} does is count the
-     * cooldown down and the last thing it does with it is refuse to jump unless
-     * it has reached zero. Putting it back to zero before either happens is the
-     * whole feature.
+     * Clears vanilla's ten-tick jump cooldown, for the local player only, at the head before aiStep
+     * counts it and checks it.
      */
     @Inject(method = "aiStep", at = @At("HEAD"))
     private void cryptic$clearJumpDelay(CallbackInfo ci) {

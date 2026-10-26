@@ -7,10 +7,8 @@ import net.minecraft.client.gui.GuiGraphicsExtractor
 import kotlin.math.max
 
 /**
- * A scrollbar you can use: a thin rounded track the height of the list, with
- * a pale thumb sized to how much of the list is in view.
- * Dragging the thumb scrolls; clicking the track jumps the thumb there and
- * carries on as a drag.
+ * A thin rounded track with a thumb sized to the visible fraction. Dragging the thumb scrolls;
+ * clicking the track jumps there and continues as a drag.
  */
 class Scrollbar {
 	private var track = Box.NONE
@@ -19,7 +17,6 @@ class Scrollbar {
 	private var grab = 0f
 	private var lift = 0f
 
-	/** Whether the list is long enough to need one; nothing is drawn or clicked otherwise. */
 	private var active = false
 
 	fun draw(
@@ -40,12 +37,12 @@ class Scrollbar {
 		val hovered = dragging || track.contains(mx, my)
 		lift = approach(lift, if (hovered) 1f else 0f, 18f, dt)
 		RoundRect.fill(graphics, x, y, x + WIDTH, y + h, fade(MenuStyle.SCROLL_TRACK, alpha), WIDTH / 2f)
-		// Neutral rather than the accent: a scrollbar is furniture, not a choice.
+		// Neutral, not the accent: a scrollbar isn't a choice.
 		val color = MenuStyle.blend(MenuStyle.SCROLL_THUMB, MenuStyle.SCROLL_THUMB_HOVER, lift)
 		RoundRect.fill(graphics, x, thumbY, x + WIDTH, thumbY + thumbH, fade(color, alpha), WIDTH / 2f)
 	}
 
-	/** A press on the bar: starts a drag, jumping the thumb under the pointer first if it missed it. */
+	/** A press on the bar: starts a drag, jumping the thumb under the pointer if it missed. */
 	fun press(mx: Float, my: Float, maxScroll: Float, setScroll: (Float) -> Unit): Boolean {
 		if (!active || !track.contains(mx, my)) return false
 		dragging = true
@@ -71,7 +68,7 @@ class Scrollbar {
 	companion object {
 		const val WIDTH = 5f
 
-		/** How far right of a list the bar starts, to sit centred in the menu's 20-pixel right margin. */
+		/** Centred in the menu's 20-pixel right margin. */
 		const val GAP = (20f - WIDTH) / 2f
 	}
 }

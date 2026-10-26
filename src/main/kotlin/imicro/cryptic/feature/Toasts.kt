@@ -17,26 +17,18 @@ import kotlin.math.ceil
 import kotlin.math.pow
 
 /**
- * Cryptic's own notifications, styled after Essential's.
- *
- * A dark box in Minecraft's own font, the speaking module's name as its title
- * and what it has to say underneath, with a thin bar along the bottom that
- * fills as its time runs out. It slides in from the edge of the screen, and
- * when it goes the ones stacked behind it close the gap. Resting the pointer on
- * one pauses its bar; a click lets it finish at once; dragging it towards its
- * edge throws it away.
- *
- * Only the look and the feel are Essential's: this is drawn through
- * Minecraft's GUI renderer, at the layer vanilla's own toasts are drawn at, so
- * it shows over any screen and on any graphics backend.
+ * Cryptic's own notifications, styled after Essential's: a dark box with the module's name as
+ * title, the message underneath, and a bar that fills as time runs out. They slide in from the edge
+ * and the stack closes up when one leaves. Hovering pauses the bar, a click finishes it, dragging
+ * it toward its edge throws it away. Drawn through Minecraft's GUI renderer at vanilla's toast
+ * layer, so it shows over any screen and on any backend.
  */
 object Toasts {
-	/** Indices into [position]. */
 	private const val TOP_LEFT = 0
 	private const val TOP_RIGHT = 1
 	private const val BOTTOM_LEFT = 2
 
-	// Measurements, in GUI pixels, before [scale].
+	// In GUI pixels, before [scale].
 	private const val WIDTH = 175
 	private const val PADDING = 7
 	private const val BOTTOM_PADDING = 4
@@ -46,19 +38,19 @@ object Toasts {
 	private const val EDGE = 5
 	private const val SPACING = 5
 
-	/** A player's face, one line of text tall, and the gap after it: Essential's 8 and 5. */
+	/** A player's face, one line tall, and the gap after it (Essential's 8 and 5). */
 	private const val HEAD = 8
 	private const val HEAD_GAP = 5
 
-	// How long each move takes, in seconds, as Essential has them.
+	// Essential's timings, in seconds.
 	private const val SLIDE_SECONDS = 0.5f
 	private const val COLLAPSE_SECONDS = 0.25f
 	private const val FINISH_SECONDS = 1.25f
 
-	/** How far it has to be dragged, as a share of its width, to be thrown away. */
+	/** How far, as a share of its width, a drag must go to throw it away. */
 	private const val THROW_SHARE = 0.25f
 
-	/** How many are shown at once before the oldest is dropped. */
+	/** Shown at once before the oldest is dropped. */
 	private const val MAX_SHOWN = 5
 
 	// Essential's palette.
@@ -103,7 +95,7 @@ object Toasts {
 		description = "Their size, where 1 is the size of the rest of your interface.",
 	)
 
-	/** Raises one, so the look can be seen while it is being set. */
+	/** Raises one so the look can be checked while setting it. */
 	private val test = ButtonModuleSetting("test", "Show toast", action = {
 		show("Toast Notifications", "Click to dismiss, or §fdrag it away§7.", color = Colors.CRYPTIC)
 	})
@@ -120,11 +112,7 @@ object Toasts {
 
 	private enum class Phase { IN, TIMER, FINISHING, OUT, COLLAPSE }
 
-	/**
-	 * One notification. [text] is asked every frame rather than fixed, so one
-	 * that is waiting on something can say how long it has left; [keys] is
-	 * what makes one a question, a key to an answer.
-	 */
+	/** One notification. [text] is read every frame, so it can count down; [keys] makes it a question. */
 	private class Toast(
 		val source: String,
 		val text: (secondsLeft: Int) -> String,
@@ -132,32 +120,31 @@ object Toasts {
 		val life: Float,
 		val id: String? = null,
 		val keys: Map<Int, () -> Unit> = emptyMap(),
-		/** The title's colour, which says at a glance what kind of notice it is. Errors stay red. */
+		/** The title colour, saying what kind of notice it is. Errors stay red. */
 		val color: Int? = null,
-		/** A player whose face is drawn on the left, Essential's way. */
+		/** A player whose face is drawn on the left. */
 		val head: String? = null,
-		/** A last line, centred: the keys a question answers to. */
+		/** A centred last line: the keys a question answers to. */
 		val footer: String? = null,
 	) {
 		var phase = Phase.IN
 		var phaseTime = 0f
 
-		/** How much of its time has run, nought to one: the bar along the bottom. */
+		/** How much of its time has run, 0 to 1: the bar. */
 		var timer = 0f
 		var finishFrom = 0f
 
-		/** How far it has been pushed back towards its edge, by a drag or on the way out. */
+		/** How far it's pushed back toward its edge, by a drag or on the way out. */
 		var slide = 0f
 		var drag = 0f
 
-		/** Where it was last drawn, in GUI pixels, for the pointer. */
 		var left = 0f
 		var top = 0f
 		var right = 0f
 		var bottom = 0f
 		var height = 0f
 
-		/** Set once it has been answered or waved away, so it cannot be answered twice. */
+		/** Set once answered or dismissed, so it can't be answered twice. */
 		var done = false
 
 		fun secondsLeft(): Int = ceil(life * (1f - timer)).toInt().coerceAtLeast(0)
@@ -184,74 +171,156 @@ object Toasts {
 	private val shown = ArrayList<Toast>()
 	private var lastFrame = 0L
 
-	/** The toast being pressed on, and where the press began. */
+	/** The toast being pressed, and where the press began. */
 	private var pressed: Toast? = null
 	private var pressX = 0f
 	private var dragged = false
 
 	/**
-	 * Raises a notification. [source] is who is speaking, a module's name, and
-	 * [message] what it has to say. [life] overrides the configured time, for
-	 * the rare one worth more of somebody's attention.
+	 * Raises a notification. [source] is the speaking module's name, [message] what it says. [life]
+	 * overrides the configured time.
 	 */
 	fun show(
 		source: String, message: String, error: Boolean = false, life: Double = seconds.value,
 		color: Int? = null, head: String? = null,
 	) {
-		if (!module.enabled) return
+		if (!module.enabled) {
+			toChat(source, message, error)
+			return
+		}
 		add(Toast(source, { message }, error, life.toFloat(), color = color, head = head))
 	}
 
 	/**
-	 * Raises one that asks something and waits for a key. [keys] maps a GLFW
-	 * key to what pressing it does; [id] names it, so its module can take it
-	 * down, and so asking again replaces it rather than stacking a second.
-	 * [footer] is a centred last line, for saying which keys those are.
+	 * Raises one that waits for a key. [keys] maps a GLFW key to its action; [id] lets its module
+	 * take it down, and asking again replaces it. [footer] names the keys.
 	 */
 	fun ask(
 		source: String, id: String, life: Double, keys: Map<Int, () -> Unit>,
 		color: Int? = null, head: String? = null, footer: String? = null,
 		text: (secondsLeft: Int) -> String,
 	) {
-		if (!module.enabled) return
+		if (!module.enabled) {
+			askInChat(source, id, life, keys, text(ceil(life).toInt()))
+			return
+		}
 		shown.removeAll { it.id == id }
 		add(Toast(source, text, false, life.toFloat(), id, keys, color, head, footer))
 	}
 
+	// ---- With notifications off ---------------------------------------------------------------
+	//
+	// Every notification still reaches you, as a chat line. A question's keys become clickable
+	// answers, which run "/cryptic answer" and do what the key would have.
+
+	private fun prefix(source: String, error: Boolean) = "§8[Cryptic] " + (if (error) "§c" else "§7") + "$source: §7"
+
+	private fun toChat(source: String, message: String, error: Boolean) {
+		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(Component.literal(prefix(source, error) + message))
+	}
+
+	/** A question asked in chat, its answers by key name, until it runs out. */
+	private class Question(val keys: Map<String, () -> Unit>, val until: Long)
+
+	private val questions = HashMap<String, Question>()
+
+	private fun keyName(key: Int): String =
+		org.lwjgl.glfw.GLFW.glfwGetKeyName(key, 0)?.uppercase() ?: key.toString()
+
+	private fun askInChat(source: String, id: String, life: Double, keys: Map<Int, () -> Unit>, text: String) {
+		if (keys.isEmpty()) {
+			toChat(source, text, false)
+			return
+		}
+		val named = keys.entries.associate { (key, action) -> keyName(key) to action }
+		questions[id] = Question(named, System.currentTimeMillis() + (life * 1000).toLong())
+		val line = Component.literal(prefix(source, false) + text)
+		for ((index, name) in named.keys.withIndex()) {
+			// The first answer is the yes.
+			val colour = if (index == 0) "§a" else "§c"
+			line.append(Component.literal(" "))
+			line.append(
+				Component.literal("$colour§l[$name]").withStyle {
+					it.withClickEvent(net.minecraft.network.chat.ClickEvent.RunCommand("cryptic answer $id $name"))
+						.withHoverEvent(net.minecraft.network.chat.HoverEvent.ShowText(Component.literal("Click to answer $name")))
+				},
+			)
+		}
+		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(line)
+	}
+
+	/** "/cryptic answer <id> <key>": a chat answer clicked. Each question takes one answer. */
+	fun answer(id: String, key: String): String {
+		val question = questions[id] ?: return "That question is gone."
+		if (System.currentTimeMillis() > question.until) {
+			questions.remove(id)
+			return "Too late: that question ran out."
+		}
+		val action = question.keys[key.uppercase()] ?: return "That isn't one of its answers."
+		questions.remove(id)
+		action()
+		return "Answered $key."
+	}
+
+	private var initialized = false
+
+	fun initialize() {
+		if (initialized) return
+		initialized = true
+		net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
+			dispatcher.register(
+				net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal("cryptic").then(
+					net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal("answer").then(
+						net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word()).then(
+							net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument("key", com.mojang.brigadier.arguments.StringArgumentType.word()).executes { context ->
+								val reply = answer(
+									com.mojang.brigadier.arguments.StringArgumentType.getString(context, "id"),
+									com.mojang.brigadier.arguments.StringArgumentType.getString(context, "key"),
+								)
+								context.source.sendFeedback(Component.literal("§8[Cryptic] §7$reply"))
+								1
+							},
+						),
+					),
+				),
+			)
+		}
+	}
+
 	/**
-	 * The title colours, one per kind of notice, so which module is speaking
-	 * can be told before a word is read. Kept to a handful of Minecraft's own
-	 * colours, and only on the title: the body stays grey with the odd name or
-	 * number picked out in white.
+	 * Title colours, one per kind of notice, so the speaker is known before reading. Only on the
+	 * title; the body stays grey with names and numbers in white.
 	 */
 	object Colors {
 		const val PARTY = 0xFF5555FF.toInt()
+		const val FRIEND = 0xFF55FF55.toInt()
 		const val COOKIE = 0xFFF0A040.toInt()
 		const val INVENTORY = 0xFFFFFF55.toInt()
 		const val TELEPORT = 0xFFAA55FF.toInt()
 		const val MINING = 0xFF55FFFF.toInt()
 		const val GOOD = 0xFF55FF55.toInt()
 		const val REWARD = 0xFFE0B551.toInt()
+		const val BAZAAR = 0xFFFFAA00.toInt()
 
-		/** Cryptic itself — its settings and profiles — in your accent colour. */
+		/** Cryptic itself (settings and profiles), in your accent colour. */
 		val CRYPTIC: Int get() = imicro.cryptic.gui.menu.MenuStyle.accent()
 	}
 
 	private fun add(toast: Toast) {
 		shown += toast
-		// The oldest goes first, but a question outlives an announcement.
+		// The oldest goes first, but questions outlive announcements.
 		while (shown.count { !it.done } > MAX_SHOWN) {
 			val victim = shown.firstOrNull { !it.done && it.keys.isEmpty() && it !== toast } ?: shown.first { !it.done }
 			victim.leave()
 		}
 	}
 
-	/** Takes down the one raised under [id], if it is still up. */
-	fun dismiss(id: String) {
-		shown.forEach { if (it.id == id) it.finish() }
+	fun dismiss(id: String, slideAway: Boolean = false) {
+		// Slid straight out for a notice that turned out wrong; otherwise its timer runs out first.
+		shown.forEach { if (it.id == id) if (slideAway) it.leave() else it.finish() }
 	}
 
-	/** A key going down, offered to the newest question on screen. True when one took it. */
+	/** A key going down, offered to the newest question. True when one took it. */
 	fun handleKey(key: Int): Boolean {
 		if (!module.enabled) return false
 		val toast = shown.lastOrNull { key in it.keys && !it.done } ?: return false
@@ -261,9 +330,8 @@ object Toasts {
 	}
 
 	/**
-	 * A key from the keyboard itself, answered only where a letter cannot be
-	 * something being typed: out in the world, or in a chest. A Y in a chat
-	 * message must never accept a party invite.
+	 * A keyboard key, answered only where it can't be typing: in the world or in a chest. A Y in
+	 * chat must never accept an invite.
 	 */
 	@JvmStatic
 	fun onKeyPressed(key: Int): Boolean {
@@ -273,7 +341,7 @@ object Toasts {
 		return handleKey(key)
 	}
 
-	/** The left button going down. A press on a notification is kept from whatever is under it. */
+	/** The left button going down. A press on a notification is kept from what's under it. */
 	@JvmStatic
 	fun onMousePressed(): Boolean {
 		val (mx, my) = pointer() ?: return false
@@ -284,7 +352,7 @@ object Toasts {
 		return true
 	}
 
-	/** The left button coming up: a click lets it finish; a long enough drag throws it away. */
+	/** The left button coming up: a click finishes it; a long enough drag throws it away. */
 	@JvmStatic
 	fun onMouseReleased(): Boolean {
 		val toast = pressed ?: return false
@@ -299,7 +367,7 @@ object Toasts {
 		return true
 	}
 
-	/** Where the pointer is in GUI pixels, or null while it is the crosshair. */
+	/** The pointer in GUI pixels, or null while it's the crosshair. */
 	private fun pointer(): Pair<Float, Float>? {
 		val minecraft = Minecraft.getInstance()
 		if (minecraft.mouseHandler.isMouseGrabbed) return null
@@ -309,10 +377,7 @@ object Toasts {
 
 	fun clear() = shown.clear()
 
-	/**
-	 * Draws the stack, from vanilla's toast layer (see `GuiMixin`), which is
-	 * above any screen and below nothing else.
-	 */
+	/** Draws the stack from vanilla's toast layer (see `GuiMixin`), above any screen. */
 	@JvmStatic
 	fun extract(graphics: GuiGraphicsExtractor) {
 		val now = System.nanoTime()
@@ -334,7 +399,7 @@ object Toasts {
 		val fromTop = corner == TOP_LEFT || corner == TOP_RIGHT
 		val pointer = pointer()?.let { (x, y) -> x / factor to y / factor }
 
-		// The pressed one follows the pointer away from the screen while held.
+		// The pressed one follows the pointer while held.
 		pressed?.let { toast ->
 			pointer?.let { (x, _) ->
 				val moved = (if (fromLeft) pressX / factor - x else x - pressX / factor).coerceAtLeast(0f)
@@ -348,11 +413,11 @@ object Toasts {
 		pose.scale(factor, factor)
 
 		var stack = SPACING.toFloat()
-		// The oldest nearest the corner and newer ones stacked beyond it, as
-		// Essential does, so when the oldest leaves the rest close up behind it.
+		// The oldest nearest the corner, newer ones stacked beyond, so the rest close up when it
+		// leaves.
 		for (toast in shown.toList()) {
 			advance(toast, dt, pointer)
-			// Only a message that shares its row with the face is narrowed by it.
+			// Only a message sharing its row with the face is narrowed by it.
 			val titled = toast.source.isNotEmpty()
 			val textWidth = WIDTH - 2 - PADDING * 2 - (if (toast.head != null && !titled) HEAD + HEAD_GAP else 0)
 			val lines = font.split(Component.literal(toast.text(toast.secondsLeft())), textWidth)
@@ -387,7 +452,6 @@ object Toasts {
 		shown.removeAll { it.phase == Phase.COLLAPSE && it.phaseTime >= COLLAPSE_SECONDS }
 	}
 
-	/** Moves one notification on by a frame. */
 	private fun advance(toast: Toast, dt: Float, pointer: Pair<Float, Float>?) {
 		toast.phaseTime += dt
 		val hovered = pointer != null && pressed == null && toast.covers(pointer)
@@ -396,7 +460,7 @@ object Toasts {
 				toast.phase = Phase.TIMER
 				toast.phaseTime = 0f
 			}
-			// The bar stands still while the pointer rests on it, as Essential's does.
+			// The bar pauses while hovered, as Essential's does.
 			Phase.TIMER -> {
 				if (!hovered && pressed !== toast) toast.timer += dt / toast.life
 				if (toast.timer >= 1f) {
@@ -421,7 +485,7 @@ object Toasts {
 			}
 			Phase.COLLAPSE -> Unit
 		}
-		// Let go short of throwing it: it springs back.
+		// Released short of throwing: it springs back.
 		if (pressed !== toast && toast.drag > 0f && toast.phase != Phase.OUT && toast.phase != Phase.COLLAPSE) {
 			toast.drag = (toast.drag - dt * WIDTH * 4f).coerceAtLeast(0f)
 		}
@@ -443,7 +507,7 @@ object Toasts {
 		pose.translate(x, y)
 		val font = Minecraft.getInstance().font
 
-		// A one-pixel border, the body inside it, and the bar along the bottom of the body.
+		// A one-pixel border, the body, and the bar along the body's bottom.
 		graphics.fill(0, 0, WIDTH, height, if (hovered) BORDER_HOVER else BORDER)
 		graphics.fill(1, 1, WIDTH - 1, height - 1, BACKGROUND)
 		val barWidth = ((WIDTH - 2) * toast.timer).toInt()
@@ -451,9 +515,8 @@ object Toasts {
 
 		val left = 1 + PADDING
 		var textY = 1 + PADDING
-		// The face goes on the first row, Essential's way: beside the title, or
-		// beside the message when there is no title. Whatever shares its row is
-		// moved along to make room.
+		// The face goes on the first row, beside the title or the message, which shift to make
+		// room.
 		val headX = left
 		val faceWidth = if (toast.head != null) HEAD + HEAD_GAP else 0
 		toast.head?.let { name -> drawFace(graphics, name, headX, textY, HEAD) }
@@ -471,7 +534,7 @@ object Toasts {
 			textY += LINE_SPACING
 		}
 		toast.footer?.let { footer ->
-			// Under the face as well as the text, centred on the whole notice.
+			// Under the face and text, centred on the whole notice.
 			val bottom = height - 1 - BOTTOM_PADDING - TIMER_HEIGHT - 9
 			graphics.centeredText(font, Component.literal(footer), WIDTH / 2, bottom, BODY)
 		}
@@ -479,12 +542,11 @@ object Toasts {
 	}
 
 	/**
-	 * A player's face, hat layer and all. From the tab list when they are in
-	 * it, which is instant; otherwise looked up by name the way a player head
-	 * is, showing the default skin until it arrives.
+	 * A player's face with its hat layer: from the tab list when there, otherwise looked up by name
+	 * like a player head (default skin until it arrives).
 	 */
-	private fun drawFace(graphics: GuiGraphicsExtractor, name: String, x: Int, y: Int, size: Int) {
-		// A one-pixel black shadow down and to the right, as Essential gives its avatars.
+	internal fun drawFace(graphics: GuiGraphicsExtractor, name: String, x: Int, y: Int, size: Int) {
+		// A one-pixel black shadow down and right, as Essential gives avatars.
 		graphics.fill(x + 1, y + 1, x + size + 1, y + size + 1, 0xFF000000.toInt())
 		val info = Minecraft.getInstance().connection?.getPlayerInfoIgnoreCase(name)
 		if (info != null) {
@@ -495,7 +557,7 @@ object Toasts {
 		PlayerFaceExtractor.extractRenderState(graphics, profile, x, y, size)
 	}
 
-	/** Profiles being looked up by name, kept so each is only asked for once. */
+	/** Profiles being looked up by name, so each is asked for once. */
 	private val profiles = HashMap<String, ResolvableProfile>()
 
 	private fun outExpo(t: Float): Float = if (t >= 1f) 1f else 1f - 2f.pow(-10f * t.coerceAtLeast(0f))

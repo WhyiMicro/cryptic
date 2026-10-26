@@ -1,6 +1,8 @@
 {
   "key.cryptic.open_gui": "Open Cryptic GUI",
   "key.cryptic.zoom": "Zoom",
+  "key.cryptic.freelook": "Freelook",
+  "key.cryptic.freecam": "Freecam",
   "key.cryptic.auto_clicker": "Auto Clicker",
   "key.cryptic.slot_bind": "Set Slot Bind",
   "key.cryptic.carry_manager": "Open Carry Manager",

@@ -15,7 +15,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Keeps the held sword aligned with the local player's third-person block pose. */
 @Mixin(ItemInHandLayer.class)
 public abstract class ItemInHandLayerMixin {
     @Inject(
@@ -41,8 +40,7 @@ public abstract class ItemInHandLayerMixin {
             return;
         }
 
-        // BringBlockingBack's third-person sword transform, mirrored for a
-        // genuinely left-handed local player.
+        // BringBlockingBack's third-person sword transform, mirrored for left-handed players.
         float side = arm == HumanoidArm.RIGHT ? 1.0F : -1.0F;
         poseStack.mulPose(Axis.YP.rotationDegrees(-90.0F * side));
         poseStack.mulPose(Axis.ZP.rotationDegrees(-40.0F * side));

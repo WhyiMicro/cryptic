@@ -14,21 +14,14 @@ import java.awt.image.BufferedImage
 import kotlin.math.roundToInt
 
 /**
- * One typeface at one pixel size, rasterised a glyph at a time into a texture
- * of its own and drawn back one texel to one screen pixel.
- *
- * This is how Dear ImGui got its text clean, done without it: a glyph is
- * anti-aliased by Java2D at exactly the size it is shown at, so nothing is
- * stretched or squeezed on the way to the screen. Minecraft's own TrueType
- * fonts are baked once at a fixed size and then scaled, which is what made the
- * menu's text look soft and uneven. Each new size gets its own [BakedFont],
- * and glyphs are added to its atlas the first time they are drawn.
+ * One typeface at one pixel size, rasterised by Java2D into its own atlas at exactly the size shown
+ * and drawn one texel per pixel. Minecraft's TrueType fonts are baked once and scaled, which looked
+ * soft. Glyphs are added the first time they're drawn.
  */
 class BakedFont(private val face: Font, val pixelSize: Int, name: String, reference: String) {
 	private class Glyph(
 		val u: Int, val v: Int,
 		val width: Int, val height: Int,
-		/** From the pen position and the baseline to the top-left of the bitmap. */
 		val offsetX: Int, val offsetY: Int,
 		val advance: Float,
 	)
@@ -42,12 +35,12 @@ class BakedFont(private val face: Font, val pixelSize: Int, name: String, refere
 	private val id: Identifier = Cryptic.id("menu_font/${name}_$pixelSize")
 	private var dirty = false
 
-	// Shelf packing: glyphs fill a row left to right, then a new row starts.
+	// Shelf packing: rows fill left to right.
 	private var packX = PADDING
 	private var packY = PADDING
 	private var shelfHeight = 0
 
-	/** How far above the baseline [reference] reaches, in pixels: a capital, or a typical icon. */
+	/** How far above the baseline [reference] reaches: a capital, or a typical icon. */
 	val capHeight: Float
 
 	init {
@@ -56,7 +49,6 @@ class BakedFont(private val face: Font, val pixelSize: Int, name: String, refere
 		capHeight = (-bounds.y).toFloat()
 	}
 
-	/** How wide [text] is, in pixels. */
 	fun width(text: String): Float {
 		var width = 0f
 		var index = 0
@@ -69,15 +61,14 @@ class BakedFont(private val face: Font, val pixelSize: Int, name: String, refere
 	}
 
 	/**
-	 * Draws [text] with its baseline at [baseline], starting at [x], both in
-	 * pixels of the screen. The caller has set the pose so one unit is one
-	 * pixel; glyphs are placed on whole pixels, which is what keeps them sharp.
+	 * Draws [text] at [x] on [baseline], in screen pixels. Glyphs land on whole pixels, which keeps
+	 * them sharp.
 	 */
 	fun draw(graphics: GuiGraphicsExtractor, text: String, x: Float, baseline: Float, color: Int) {
 		var pen = x
 		val base = baseline.roundToInt()
 		var index = 0
-		// Rasterise anything new first, so the texture is uploaded once.
+		// New glyphs are rasterised first, so the texture uploads once.
 		while (index < text.length) {
 			val codePoint = text.codePointAt(index)
 			glyph(codePoint)
@@ -117,7 +108,7 @@ class BakedFont(private val face: Font, val pixelSize: Int, name: String, refere
 		val bounds = vector.getGlyphPixelBounds(0, context, 0f, 0f)
 		if (bounds.width <= 0 || bounds.height <= 0) return Glyph(0, 0, 0, 0, 0, 0, advance)
 
-		// A pixel of room on every side, for the anti-aliased edge.
+		// A pixel of room around each glyph for its anti-aliased edge.
 		val width = bounds.width + 2
 		val height = bounds.height + 2
 		if (packX + width + PADDING > ATLAS) {
@@ -125,7 +116,7 @@ class BakedFont(private val face: Font, val pixelSize: Int, name: String, refere
 			packY += shelfHeight + PADDING
 			shelfHeight = 0
 		}
-		// A full atlas starts over; anything still in use is drawn again next frame.
+		// A full atlas starts over; glyphs still in use are drawn again next frame.
 		if (packY + height + PADDING > ATLAS) {
 			reset()
 			return rasterise(codePoint)
@@ -143,7 +134,7 @@ class BakedFont(private val face: Font, val pixelSize: Int, name: String, refere
 		g.drawGlyphVector(vector, (1 - bounds.x).toFloat(), (1 - bounds.y).toFloat())
 		g.dispose()
 
-		// White, with the coverage as alpha, so the draw colour tints it.
+		// White with coverage as alpha, so the draw colour tints it.
 		for (y in 0 until height) {
 			for (x in 0 until width) {
 				val alpha = bitmap.getRGB(x, y) ushr 24
@@ -174,7 +165,6 @@ class BakedFont(private val face: Font, val pixelSize: Int, name: String, refere
 		private const val ATLAS = 1024
 		private const val PADDING = 1
 
-		/** A TrueType font from the mod's own resources. */
 		fun load(path: String): Font {
 			val stream = BakedFont::class.java.getResourceAsStream(path) ?: error("Missing font $path")
 			return stream.use { Font.createFont(Font.TRUETYPE_FONT, it) }

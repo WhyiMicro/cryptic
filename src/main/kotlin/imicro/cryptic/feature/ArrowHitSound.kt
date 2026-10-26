@@ -2,8 +2,6 @@ package imicro.cryptic.feature
 
 import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
-import imicro.cryptic.gui.Module
-import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import net.minecraft.client.Minecraft
@@ -13,15 +11,8 @@ import net.minecraft.sounds.SoundEvent
 import net.minecraft.sounds.SoundEvents
 
 /**
- * Replaces the ding an arrow makes when it hits something.
- *
- * Ported from NoammAddons (CC0, Copyright (c) Noamm9). The hit sound is the
- * only confirmation an archer gets that a shot landed, and vanilla's is a thin
- * click that disappears under a boss fight. A note you chose, at a volume you
- * chose, is audible in the places it is needed.
- *
- * The original is not played over — it is cancelled and yours is played in its
- * place, so two sounds never overlap.
+ * Replaces the arrow hit sound with one you choose, at a volume you choose. The original is
+ * cancelled, not played over. Ported from NoammAddons. Part of [BowTweaks].
  */
 object ArrowHitSound {
 	private val soundOptions = listOf(
@@ -38,7 +29,7 @@ object ArrowHitSound {
 
 	@JvmField
 	val silence = ToggleModuleSetting(
-		id = "silence",
+		id = "hit_sound_silence",
 		label = "Silence only",
 		defaultValue = false,
 		description = "Takes the hit sound away and puts nothing in its place.",
@@ -46,17 +37,17 @@ object ArrowHitSound {
 
 	@JvmField
 	val sound = DropdownModuleSetting(
-		id = "sound",
+		id = "hit_sound_sound",
 		label = "Sound",
 		options = soundOptions.map { it.first } + SoundChoices.CUSTOM,
 		visibleIf = { !silence.value },
 	)
 
-	private val customSound = SoundChoices.customField("custom_sound", sound) { !silence.value }
+	private val customSound = SoundChoices.customField("hit_sound_custom_sound", sound) { !silence.value }
 
 	@JvmField
 	val volume = SliderModuleSetting(
-		id = "volume",
+		id = "hit_sound_volume",
 		label = "Volume",
 		defaultValue = 1.0,
 		min = 0.1,
@@ -67,7 +58,7 @@ object ArrowHitSound {
 
 	@JvmField
 	val pitch = SliderModuleSetting(
-		id = "pitch",
+		id = "hit_sound_pitch",
 		label = "Pitch",
 		defaultValue = 1.0,
 		min = 0.5,
@@ -77,37 +68,25 @@ object ArrowHitSound {
 	)
 
 	private val preview = ButtonModuleSetting(
-		id = "preview",
+		id = "hit_sound_preview",
 		label = "Play it",
 		action = { play() },
 		visibleIf = { !silence.value },
 	)
 
-	private val configurable = listOf(silence, sound, customSound, volume, pitch)
-
-	@JvmField
-	val module = Module(
-		id = "arrow_hit_sound",
-		name = "Arrow Hit Sound",
-		description = "A louder arrow hit sound",
-		category = ModuleCategory.GENERAL,
-		supportsKeybind = false,
-		settings = listOf(silence, sound, customSound, volume, pitch, preview),
-	)
+	val settings = listOf(silence, sound, customSound, volume, pitch, preview)
 
 	/**
-	 * Answers whether the sound about to play is the one being replaced, and
-	 * plays the replacement if it is.
-	 *
-	 * True means the original should not be started.
+	 * Whether the sound about to play is the one being replaced; plays the replacement if so. True
+	 * means don't start the original.
 	 */
 	@JvmStatic
 	fun intercept(instance: SoundInstance): Boolean {
-		if (!module.enabled) return false
+		if (!BowTweaks.module.enabled || !BowTweaks.hitSound.value) return false
 		if (instance.identifier != SoundEvents.ARROW_HIT_PLAYER.location) return false
 		if (silence.value) return true
-		// A custom sound set to the hit sound itself is that sound, left to play:
-		// playing it from here would come straight back through here.
+		// A custom sound set to the hit sound itself plays as is, or it would loop back through
+		// here.
 		val replacement = selected() ?: return true
 		if (replacement.location == SoundEvents.ARROW_HIT_PLAYER.location) return false
 		play()
@@ -122,7 +101,7 @@ object ArrowHitSound {
 		)
 	}
 
-	/** The sound chosen, or null when Custom holds no sound id. */
+	/** The chosen sound, or null when Custom holds no id. */
 	private fun selected(): SoundEvent? =
 		if (sound.selected == SoundChoices.CUSTOM) SoundChoices.custom(customSound.value)
 		else soundOptions[sound.selectedIndex.coerceIn(soundOptions.indices)].second

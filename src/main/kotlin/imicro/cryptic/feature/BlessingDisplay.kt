@@ -17,21 +17,11 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 
 /**
- * Lists the blessings the run has picked up, and how strong each has got.
- *
- * Ported from Odin's Blessing Display (BSD 3-Clause, Copyright (c) 2025
- * odtheking) and NoammAddons' (CC0, Noamm9), which are the same feature with
- * the same defaults: Power and Time on, the other three off, each in the colour
- * its name is written in. A blessing is found behind a secret and raises the
- * whole party's stats for the run, and the only place the running total is
- * written down is the block of small print under the tab list — which nobody
- * reads, and which is not on screen anyway.
- *
- * Power is the one a party actually plans around: how many of them have been
- * found decides which dragons can be split in Master Mode 7.
+ * The blessings the run has found and their levels, read from the tab list footer. Power matters
+ * most: it decides which M7 dragons can be split. From Odin's and NoammAddons' Blessing Display
+ * (same defaults).
  */
 object BlessingDisplay {
-	/** How often the tab list's footer is read. A blessing is not a fast-moving thing. */
 	private const val READ_INTERVAL_TICKS = 10
 
 	private const val VALUE_COLOR = 0xFFFFFFFF.toInt()
@@ -39,15 +29,10 @@ object BlessingDisplay {
 
 	private val FORMATTING = Regex("§.")
 
-	/** Roman numerals up to the thirties, which is further than a blessing goes. */
+	/** Roman numerals up to the thirties. */
 	private const val ROMAN = "(X{0,3}(?:IX|IV|V?I{0,3}))"
 
-	/**
-	 * The five blessings, in the order Odin lists them.
-	 *
-	 * [level] is the last one read off the tab list, and zero for a blessing the
-	 * run has not found.
-	 */
+	/** The five blessings in Odin's order. [level] is the last read, zero if not found. */
 	private enum class Blessing(val label: String, pattern: String) {
 		POWER("Power", "Blessing of Power $ROMAN"),
 		TIME("Time", "Blessing of Time $ROMAN"),
@@ -129,14 +114,13 @@ object BlessingDisplay {
 		initialized = true
 
 		Hud.register(BlessingElement())
-		// Blessings belong to the run they were found in.
+		// Blessings belong to the run.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> forget() }
 	}
 
 	private fun forget() = Blessing.entries.forEach { it.level = 0 }
 
-	/** Reads the footer, twice a second, while there is a run to read it for. */
 	fun tick(client: Minecraft) {
 		if (!module.enabled || !DungeonLocation.inDungeon) return
 		if (ticksUntilRead-- > 0) return
@@ -145,8 +129,7 @@ object BlessingDisplay {
 		val overlay = client.gui.hud.tabList as? PlayerTabOverlayAccessor ?: return
 		val footer = overlay.`cryptic$footer`()?.string?.replace(FORMATTING, "") ?: return
 		Blessing.entries.forEach { blessing ->
-			// Only ever raised from what is written: a footer that has not
-			// arrived yet says nothing, which is not the same as saying none.
+			// Only raised from what's written; a footer that hasn't arrived says nothing.
 			blessing.regex.find(footer)?.let { blessing.level = romanToInt(it.groupValues[1]) }
 		}
 	}
@@ -162,14 +145,14 @@ object BlessingDisplay {
 				'L' -> 50
 				else -> 0
 			}
-			// A smaller numeral before a larger one is taken away: IV, IX.
+			// A smaller numeral before a larger one subtracts: IV, IX.
 			if (value < previous) total -= value else total += value
 			previous = value
 		}
 		return total
 	}
 
-	/** The blessings worth a row: switched on, and found. */
+	/** Blessings that are switched on and found. */
 	private fun rows(): List<Pair<Blessing, Int>> {
 		if (DebugOverrides.sampleHudValues) return Blessing.entries.filter(::shows).map { it to EXAMPLE_LEVEL }
 		return Blessing.entries.filter { shows(it) && it.level > 0 }.map { it to it.level }
@@ -178,8 +161,7 @@ object BlessingDisplay {
 	private class BlessingElement : HudElement("blessing_display", "Blessing Display", 0.86, 0.45) {
 		private val font get() = Minecraft.getInstance().font
 
-		// As wide as the widest name with a two-digit level, so the frame the
-		// editor draws is the one the real thing fills.
+		// As wide as the widest name with a two-digit level.
 		override val width: Int
 			get() = Blessing.entries.filter(::shows).maxOfOrNull { font.width("${it.label}: $EXAMPLE_LEVEL") }
 				?: font.width("Power: $EXAMPLE_LEVEL")

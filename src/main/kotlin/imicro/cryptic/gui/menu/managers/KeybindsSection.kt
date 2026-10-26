@@ -16,22 +16,19 @@ import java.util.Locale
 import kotlin.math.max
 
 /**
- * The Keybinds Manager on its module's page: the bindings grouped by
- * category, each group with a switch that turns all of it off, and the editor
- * for one, where its keys are pressed rather than typed and where it is told
- * when it may fire, as Athen's popup does.
+ * The Keybinds Manager: bindings grouped by category, each group with a switch, and an editor where
+ * keys are pressed rather than typed and conditions are set, as in Athen's popup.
  */
 class KeybindsSection : ManagerSection("Bindings") {
-	/** The binding being edited, a copy so Cancel leaves the real one as it was. */
+	/** The binding being edited, a copy so Cancel leaves the real one alone. */
 	private var draft: Binding? = null
 
-	/** The real binding [draft] replaces when saved, or null for a new one. */
+	/** The binding [draft] replaces on save, or null for a new one. */
 	private var original: Binding? = null
 
 	private val command = TextField(256)
 	private val category = TextField(32)
 
-	/** Keys being pressed for the draft, while it is listening. */
 	private var capturing = false
 	private val captured = mutableListOf<Int>()
 
@@ -44,8 +41,6 @@ class KeybindsSection : ManagerSection("Bindings") {
 		KeybindManager.releaseAll()
 	}
 
-	// ---- Capturing keys --------------------------------------------------
-
 	override fun keyPressed(event: KeyEvent): Boolean {
 		val key = event.key()
 		if (capturing) {
@@ -57,7 +52,7 @@ class KeybindsSection : ManagerSection("Bindings") {
 			return true
 		}
 		if (ui.keyPressed(event)) return true
-		// Escape in the editor goes back to the list rather than shutting the menu.
+		// Escape in the editor goes back to the list instead of closing the menu.
 		if (key == GLFW.GLFW_KEY_ESCAPE && draft != null) {
 			closeEditor()
 			return true
@@ -67,14 +62,14 @@ class KeybindsSection : ManagerSection("Bindings") {
 
 	override fun keyReleased(event: KeyEvent): Boolean {
 		if (!capturing) return false
-		// The keys are done being pressed once the first of them comes up.
+		// Capture ends when the first key comes up.
 		if (captured.isNotEmpty()) finishCapture()
 		return true
 	}
 
 	override fun mouseClicked(mx: Float, my: Float, button: Int, doubleClick: Boolean): Boolean {
 		if (capturing) {
-			// A left click is how every other bind in the menu is cancelled.
+			// A left click cancels, as with every other bind in the menu.
 			if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
 				if (captured.isEmpty()) capturing = false else finishCapture()
 			} else {
@@ -99,8 +94,6 @@ class KeybindsSection : ManagerSection("Bindings") {
 		captured.clear()
 		capturing = false
 	}
-
-	// ---- Drawing ---------------------------------------------------------
 
 	override fun draw(x: Float, y: Float, width: Float): Float {
 		val editing = draft
@@ -230,7 +223,7 @@ class KeybindsSection : ManagerSection("Bindings") {
 			if (!binding.phases.remove(it)) binding.phases += it
 		}
 
-		// Cancel and Save, with what is still missing beside them.
+		// Cancel and Save, with what's still missing beside them.
 		cy += 12f
 		val problem = when {
 			command.text.isBlank() -> "Give it a command or a message."
@@ -246,7 +239,7 @@ class KeybindsSection : ManagerSection("Bindings") {
 		return cy - y
 	}
 
-	/** A row of the editor: its name and a hint on the left, its control on the right. */
+	/** An editor row: name and hint on the left, control on the right. */
 	private fun editorRow(x: Float, y: Float, width: Float, label: String, hint: String, controlH: Float, control: (top: Float) -> Unit): Float {
 		val h = max(56f, controlH + 28f)
 		ui.card(Box(x, y, width, h))
@@ -266,8 +259,6 @@ class KeybindsSection : ManagerSection("Bindings") {
 			ui.chips(x + 200f, top, controlW, items, name, selected, onClick)
 		}
 	}
-
-	// ---- Editing ---------------------------------------------------------
 
 	private fun openEditor(binding: Binding?) {
 		original = binding

@@ -7,7 +7,6 @@ import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 
-/** Carries the entity on its own render state, for {@link EntityRenderStateHolder}. */
 @Mixin(EntityRenderState.class)
 public abstract class EntityRenderStateMixin implements EntityRenderStateHolder {
     @Unique

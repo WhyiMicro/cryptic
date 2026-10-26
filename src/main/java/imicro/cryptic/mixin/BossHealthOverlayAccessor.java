@@ -7,7 +7,7 @@ import net.minecraft.client.gui.components.LerpingBossEvent;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
-/** Reads the boss bars on screen, which is where Hypixel names the boss. */
+/** Reads the boss bars, where Hypixel names the boss. */
 @Mixin(BossHealthOverlay.class)
 public interface BossHealthOverlayAccessor {
     @Accessor("events")

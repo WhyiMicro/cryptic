@@ -10,17 +10,9 @@ import kotlin.math.ceil
 import kotlin.math.floor
 
 /**
- * Everything Hypixel publishes about the run in progress, and the score it adds up to.
- *
- * Ported from dtMap (BSD 3-Clause, Copyright (c) 2026 rice.who), which took the
- * score arithmetic from Odin (BSD 3-Clause, Copyright (c) 2026 odtheking); the
- * full licence is in `licenses/dtMap-LICENSE.txt`. Hypixel never tells you your
- * score, but it does tell you every number the score is made of: the tab list
- * carries secrets, crypts, deaths and puzzles, the sidebar carries how much of
- * the floor is cleared, and chat carries the bonus kills.
- *
- * Reading it here rather than in the HUD element means the score, the map and
- * anything later all see one set of numbers.
+ * Everything Hypixel shows about the run, and the score it adds up to: secrets, crypts, deaths and
+ * puzzles from the tab list, cleared percentage from the sidebar, bonus kills from chat. Ported
+ * from dtMap (score maths from Odin).
  */
 object DungeonStats {
 	private const val REFRESH_INTERVAL_TICKS = 10
@@ -28,19 +20,12 @@ object DungeonStats {
 	private var ticksUntilRefresh = 0
 
 	/**
-	 * Set when the tab list or the sidebar has just changed, so the next tick
-	 * reads it at once instead of waiting out the poll.
-	 *
-	 * The poll alone left every number up to half a second stale, and a score
-	 * is only as quick as its slowest number — Odin re-reads the moment the tab
-	 * list changes, which is why its 300 went out before this one did. Set from
-	 * the network thread as well as the game thread, so it is a single flag and
-	 * nothing more.
+	 * Set when the tab list or sidebar changes, so the next tick reads them at once instead of
+	 * waiting for the poll. Set from both threads.
 	 */
 	@Volatile
 	private var changed = false
 
-	/** The tab list or the sidebar changed: read them on the next tick. */
 	@JvmStatic
 	fun markChanged() {
 		changed = true
@@ -70,12 +55,8 @@ object DungeonStats {
 		private set
 
 	/**
-	 * The mimic dying, as seen rather than as announced.
-	 *
-	 * The chat lines below only fire when somebody else's mod says so in party
-	 * chat, so a party where nobody runs one left this permanently false and the
-	 * score two points short all run. The death animation is the only signal
-	 * Hypixel gives for it, and it comes to everybody.
+	 * The mimic's death animation, seen by everyone, so the score is right even without party mods
+	 * announcing it.
 	 */
 	fun onMimicKilled() {
 		if (mimicKilled || !DungeonLocation.inDungeon) return
@@ -84,29 +65,18 @@ object DungeonStats {
 	}
 
 	/**
-	 * Who has killed a bat, each of them worth one bonus point.
-	 *
-	 * One point per player, not per bat and not per run: Odin counts it this way
-	 * since its SkyBlock 0.27.2 update. Hypixel tells only the killer "A Bat has
-	 * been slain. +1 Bonus Score", and teammates' kills are heard from their
-	 * mods in party chat. A set of names, so a second bat by the same player, or
-	 * a kill announced twice, adds nothing.
+	 * Who has killed a bat; one point per player, as Odin counts it since SkyBlock 0.27.2. Only the
+	 * killer gets Hypixel's message; teammates are heard through their mods in party chat.
 	 */
 	private val batKillers = HashSet<String>()
 
-	/** Whether anybody has killed a bat yet. */
-	val batKilled: Boolean get() = batKillers.isNotEmpty()
-
-	/** Each puzzle the tab list has named, against its tick, cross or dot. */
 	private val puzzles = mutableMapOf<String, Char>()
 
-	/** Whoever the tab list blames for a puzzle that was failed, where it names anybody. */
 	private val puzzleFailers = mutableMapOf<String, String>()
 
 	/**
-	 * Every puzzle the tab list has named, in the order it named them: the name,
-	 * its mark, and who failed it (empty where nobody did). The ones still
-	 * written as ??? are not in here; [puzzleCount] says how many there are in all.
+	 * Every puzzle the tab list has named: name, mark, and who failed it. ??? entries aren't
+	 * included; see [puzzleCount].
 	 */
 	val namedPuzzles: List<Triple<String, Char, String>>
 		get() = puzzles.map { Triple(it.key, it.value, puzzleFailers[it.key].orEmpty()) }
@@ -130,11 +100,7 @@ object DungeonStats {
 		MayorPaul.reset()
 	}
 
-	/**
-	 * Refreshing twice a second is immediate enough: none of these numbers moves
-	 * faster than a room is cleared. [active] is false when no module wants the
-	 * data, which stops the scan without any module having to know about the others.
-	 */
+	/** Twice a second; none of these numbers moves faster than a room is cleared. */
 	fun tick(client: Minecraft, active: Boolean) {
 		if (!active || client.level == null) return
 		if (!changed && ticksUntilRefresh-- > 0) return
@@ -144,8 +110,7 @@ object DungeonStats {
 		readTabList(client)
 		readSidebar(client)
 
-		// Whether Paul is mayor cannot change during a run, so it is asked once
-		// per dungeon and remembered.
+		// Paul can't change mid-run, so it's asked once per dungeon.
 		if (DungeonLocation.inDungeon) MayorPaul.ensureFetched()
 	}
 
@@ -175,7 +140,6 @@ object DungeonStats {
 		}
 	}
 
-	/** How much of the floor is cleared only exists on the scoreboard sidebar. */
 	private fun readSidebar(client: Minecraft) {
 		val scoreboard = client.level?.scoreboard ?: return
 		val objective = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR) ?: return
@@ -191,7 +155,6 @@ object DungeonStats {
 		}
 	}
 
-	/** Bonus points are announced in chat, and nowhere else. */
 	fun onMessage(line: String) {
 		if (!DungeonLocation.inDungeon) return
 
@@ -205,39 +168,32 @@ object DungeonStats {
 		if (batPattern.matches(line)) {
 			val name = net.minecraft.client.Minecraft.getInstance().player?.name?.string ?: "you"
 			val first = batKillers.add(name)
-			// Hypixel tells only the killer, so the party hears it from here.
+			// Only the killer is told, so the party hears it from here.
 			if (first) DungeonScore.onBatKilled()
 			return
 		}
 
-		// A mimic killed by a charm is announced by Hypixel itself, to whoever
-		// cast it — NoammAddons' catch, for a death nobody else may see.
+		// A charm kill is announced by Hypixel to the caster (NoammAddons' catch).
 		if (line.contains(MIMIC_CHARMED, ignoreCase = true)) {
 			onMimicKilled()
 			return
 		}
 
-		// Teammates announce their own kills through the party's tracker mods,
-		// which is the only way to hear about one out of sight. Each mod words
-		// it its own way — "Mimic Killed!" (Odin), "Mimic dead!" (Skyblocker),
-		// "Mimic Killed" (NoammAddons), a code for Skytils, and flavour text
-		// besides — and some put a tag in front, so the wording is looked for
-		// anywhere in the message rather than matched whole.
+		// Teammates' mods announce kills in party chat, each worded differently, sometimes with a
+		// tag in front, so the wording is searched for anywhere in the message.
 		val match = partyMessagePattern.find(line) ?: return
 		val said = match.groupValues[3].lowercase()
 		when {
 			DungeonLocation.floor >= 6 && MIMIC_MESSAGES.any { it in said } -> mimicKilled = true
 			PRINCE_MESSAGES.any { it in said } -> princeKilled = true
 			BAT_MESSAGES.any { it in said } -> batKillers += match.groupValues[2].substringBefore(' ')
-			// A teammate's score reaching 300 first, which is worth a title now.
 			"300 score" in said -> DungeonScore.onTeammateReached300()
 		}
 	}
 
-	/** Hypixel's line for a mimic dying to a charm, e.g. "...You charmed a Mimic and captured 2 shards from it." */
 	private const val MIMIC_CHARMED = "You charmed a Mimic"
 
-	/** Every wording the party's mods use, lower case, as NoammAddons collected them. */
+	/** Every wording party mods use, lower case, as NoammAddons collected them. */
 	private val MIMIC_MESSAGES = listOf(
 		"mimic dead", "mimic killed", "mimic slain", "\$skytils-dungeon-score-mimic\$",
 		"child destroyed", "mimic obliterated", "mimic exorcised", "mimic destroyed",
@@ -250,16 +206,12 @@ object DungeonStats {
 		"bat dead", "bat killed", "bat slain", "\$skytils-dungeon-score-bat\$",
 	)
 
-	/** True once the blood room has been cleared, which the score counts as a room. */
 	private val bloodDone: Boolean
 		get() = DungeonFloor.rooms.any {
 			it.type == DungeonRoom.Type.BLOOD && it.state == DungeonRoom.State.GREEN
 		}
 
-	/**
-	 * How many secrets the floor holds, worked out from the percentage Hypixel
-	 * shows next to how many have been found.
-	 */
+	/** The floor's total secrets, worked out from the found count and percentage. */
 	val totalSecrets: Int
 		get() = if (secretsFound == 0 || secretsPercent == 0f) 0
 		else floor(100 / secretsPercent * secretsFound + 0.5).toInt()
@@ -268,22 +220,17 @@ object DungeonStats {
 		get() = if (completedRooms == 0 || percentCleared == 0) 0
 		else floor(completedRooms / (percentCleared * 0.01f) + 0.4).toInt()
 
-	/** The bonus points already banked, Paul aside. */
 	private val bonusWithoutPaul: Int
 		get() = (if (mimicKilled) 2 else 0) + (if (princeKilled) 1 else 0) +
 			batKillers.size + crypts.coerceAtMost(5)
 
-	/** Paul's mayoral perk is worth ten points on top of everything else. */
 	val paulScore: Int get() = if (MayorPaul.active) 10 else 0
 
 	val bonusScore: Int get() = bonusWithoutPaul + paulScore
 
 	/**
-	 * The score as Hypixel will award it, assuming full marks for time.
-	 *
-	 * The blood room and the boss room are both counted as rooms you are going
-	 * to complete, because you are: the score you care about is the one at the
-	 * end of the run, not the one right now.
+	 * The score Hypixel will award, assuming full time marks. Blood and boss count as completed
+	 * rooms, since they will be.
 	 */
 	val score: Int
 		get() {
@@ -307,10 +254,7 @@ object DungeonStats {
 			return exploration + skill + 100 + bonusScore
 		}
 
-	/**
-	 * How many more secrets are needed before the secret half of the score stops
-	 * being what is holding the run back.
-	 */
+	/** How many more secrets until secrets stop holding the score back. */
 	val missingSecrets: Int
 		get() {
 			val deathPenalty = (deaths * 2 - 1).coerceAtLeast(0)

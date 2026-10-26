@@ -2,16 +2,17 @@
 	"schemaVersion": 1,
 	"id": "cryptic",
 	"version": "${version}",
-	"name": "cryptic",
-	"description": "",
+	"name": "Cryptic",
+	"description": "A Hypixel SkyBlock mod: dungeon solvers, Floor 7 tools, Crystal Hollows helpers and everyday QoL in one menu.",
 	"authors": [
 		"iMicro"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://modworks.tf/cryptic",
+		"sources": "https://github.com/WhyiMicro/cryptic",
+		"issues": "https://github.com/WhyiMicro/cryptic/issues"
 	},
-	"license": "MIT License",
+	"license": "LicenseRef-Cryptic-Non-Commercial",
 	"icon": "assets/cryptic/icon.png",
 	"environment": "*",
 	"entrypoints": {

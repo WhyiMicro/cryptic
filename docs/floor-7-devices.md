@@ -104,6 +104,12 @@ button going while no light is lit, at least twelve ticks after the last one.
 It stops once the device is done. Both are off by default, because enabling a
 module for its boxes should not quietly start typing in your party chat.
 
+A "completed a device!" line only ends the watch when the player who completed
+it is standing at Simon Says (within five blocks of it). Another device being
+done elsewhere in the section used to stop the check early, and the
+"SS broke!" that followed a real break could then go missing or come at the
+wrong moment.
+
 Sneaking overrides every one of these blocks, on both devices. A solver that has
 lost track must never be able to stop a device being played by hand.
 
@@ -144,6 +150,22 @@ marking them there is clutter over a section that has four terminals in it.
 many of the nine you were counted as having shot — the client's own tally, which
 can be a block out either way, so it is shown as what it is rather than as
 gospel.
+
+### i4 messages
+
+When Goldor starts talking ("Who dares trespass into my domain?") while you are
+on the Sharp Shooter plate, Cryptic treats it as an i4. Your own "completed a
+device!" line is a success. Stepping off the plate for a second before that, or
+45 seconds passing, is a fail.
+
+- **Party message** says one line in party chat for each outcome. The defaults
+  are "i4 done!" and "i4 failed!"; change either text behind its dots.
+- **Title** shows a title for each outcome, with its own text and colour
+  ("i4 Done!" in green and "i4 Failed!" in red by default). It replaces Announce
+  finish's title when both would show.
+
+Both are on by default, but nothing is said unless you were on the plate when
+Goldor spoke.
 
 Two things here are fixes rather than a port. NoammAddons moves the target
 *onto* the block just shot, so the green mark jumps to a finished block and sits
@@ -199,6 +221,11 @@ calls it by the number of the section it is in: 1 is Simon Says, 2 is Lights On,
 
 Only the section you are standing in is drawn, because every section numbers its
 terminals 1 upwards and they would otherwise be ambiguous.
+
+**Shows** switches the label between the **Number** and the **Class** the plan
+gives it: `[ Archer ]` instead of `[ 4 ]`, written in that class's colour. A
+task two classes share shows both, as `[ Archer/Mage ]`. A plan that doesn't
+split by class keeps the numbers.
 
 ### Which plan
 

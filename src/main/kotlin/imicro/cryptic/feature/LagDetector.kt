@@ -14,17 +14,9 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 
 /**
- * Says how long the server has been silent, once it has been silent too long.
- *
- * Ported from Athen (BSD 3-Clause, Copyright (c) 2025-2026 Starred), whose
- * format this is: nothing at all while the server is keeping up, and the
- * milliseconds since its last tick the moment that stops being true. A number
- * that is only ever on screen when it matters is one you read instantly; a
- * number that is always there is furniture.
- *
- * What it counts is Hypixel's own per-tick ping, which [ServerTicks] already
- * watches for the terminal solver's click protection — so a lag spike here and
- * a click being held back there are the same observation.
+ * Shows how long the server has been silent, only once it's too long, in Athen's format. Counts
+ * Hypixel's per-tick ping via [ServerTicks], the same one the terminal click protection uses.
+ * Ported from Athen.
  */
 object LagDetector {
 	private const val EXAMPLE = "670ms"
@@ -72,19 +64,14 @@ object LagDetector {
 		if (initialized) return
 		initialized = true
 		Hud.register(LagElement())
-		// A server hop is not a lag spike, however long it took.
+		// A server hop isn't a lag spike.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> ServerTicks.forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> ServerTicks.forget() }
 	}
 
-	/** True while the floor has to be read for this, for [imicro.cryptic.CrypticClient]. */
 	val needsDungeon: Boolean get() = module.enabled && dungeonsOnly.value
 
-	/**
-	 * Milliseconds since the last server tick, or null while that is not worth
-	 * saying — the server is keeping up, the module is off, or there is no
-	 * server to have heard from.
-	 */
+	/** Milliseconds since the last server tick, or null while that's not worth showing. */
 	private fun silenceMillis(): Long? {
 		if (!module.enabled) return null
 		if (Minecraft.getInstance().player == null) return null
@@ -109,7 +96,6 @@ object LagDetector {
 			context.text(font, "${silence}ms", 0, 0, textColor.argb)
 		}
 
-		/** The editor needs something to place, and there is no lag to hand. */
 		override fun renderExample(context: GuiGraphicsExtractor) {
 			context.text(font, EXAMPLE, 0, 0, textColor.argb)
 		}

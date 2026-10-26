@@ -8,15 +8,12 @@ import imicro.cryptic.gui.menu.MenuStyle
 import imicro.cryptic.gui.menu.TextField
 import imicro.cryptic.gui.menu.UiText
 
-/**
- * The Alias Manager on its module's page: a card to add or edit one alias,
- * above the list of them, each with its own switch.
- */
+/** The Alias Manager: a card to add or edit an alias, above the list, each with its own switch. */
 class AliasSection : ManagerSection("Aliases") {
 	private val name = TextField(24)
 	private val command = TextField(256)
 
-	/** The alias being edited in the card, or null while it adds a new one. */
+	/** The alias being edited, or null when adding. */
 	private var editing: Alias? = null
 
 	/** What was wrong with the last Add, shown until the fields change. */

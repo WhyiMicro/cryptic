@@ -11,13 +11,9 @@ import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 
 /**
- * The Floor 7 terminals, playable outside a dungeon.
- *
- * Ported from Odin's Terminal Simulator (BSD 3-Clause, Copyright (c) 2025
- * odtheking). It is a practice range rather than a module that does anything
- * during a run, so it has no on-off switch: nothing happens until the button is
- * pressed, and pressing it opens the same terminals the real fight opens, which
- * [TerminalSolver] then draws over exactly as it would in the boss room.
+ * The Floor 7 terminals, playable outside a dungeon. Ported from Odin's Terminal Simulator. No
+ * on-off switch: the button opens the same terminals the fight does, and [TerminalSolver] draws
+ * over them as in the boss room.
  */
 object TerminalSimulator {
 	@JvmField
@@ -47,7 +43,7 @@ object TerminalSimulator {
 		action = { open() },
 	)
 
-	/** The simulator's own bests: Terminal Times keeps the ones from real runs, and resets those. */
+	/** The simulator's own bests (Terminal Times keeps real ones). */
 	@JvmField
 	val resetRecords = ButtonModuleSetting(
 		id = "reset_records",
@@ -70,13 +66,7 @@ object TerminalSimulator {
 		cardAction = { open() },
 	)
 
-	/**
-	 * Opens the start menu, or says why it cannot.
-	 *
-	 * The simulated chest is built around an inventory of the player's, so
-	 * there has to be a player: pressing the button at the title screen is
-	 * otherwise a crash rather than a refusal.
-	 */
+	/** Opens the start menu, or says why it can't (the simulated chest needs a player). */
 	fun open() {
 		val client = Minecraft.getInstance()
 		if (client.player == null) {

@@ -86,33 +86,51 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Lets modules swallow a server sound so they can play their own instead. */
+/** Lets modules swallow a server sound to play their own. */
 @Mixin(ClientPacketListener.class)
 public abstract class ClientPacketListenerMixin {
+    @org.spongepowered.asm.mixin.Shadow
+    private com.mojang.brigadier.CommandDispatcher<net.minecraft.client.multiplayer.ClientSuggestionProvider> commands;
+
+    /** The server's commands, just read: its own /cc gives way to Cryptic's. Client thread only. */
+    @Inject(
+        method = "handleCommands",
+        at = @At(
+            value = "FIELD",
+            target = "Lnet/minecraft/client/multiplayer/ClientPacketListener;commands:Lcom/mojang/brigadier/CommandDispatcher;",
+            opcode = org.objectweb.asm.Opcodes.PUTFIELD,
+            shift = At.Shift.AFTER
+        )
+    )
+    private void cryptic$dropServerShortCommand(net.minecraft.network.protocol.game.ClientboundCommandsPacket packet, CallbackInfo info) {
+        imicro.cryptic.CrypticClient.dropServerCommand(this.commands.getRoot());
+    }
+
     @Inject(method = "handleSoundEvent", at = @At("HEAD"), cancellable = true)
     private void cryptic$replaceEtherwarpSound(ClientboundSoundPacket packet, CallbackInfo info) {
-        // A bat dying is a secret found, and its own death sound is the only
-        // announcement Hypixel gives — there is no chat line and no entity left
-        // to look at by the time anything else could notice.
+        // A bat dying is a secret found, and its death sound is Hypixel's only announcement.
         if (packet.getSound().value() == SoundEvents.BAT_DEATH) {
             Secrets.onBatDied(packet.getX(), packet.getY(), packet.getZ());
             DungeonWaypoints.onBatDied(packet.getX(), packet.getY(), packet.getZ());
         }
-        // The Spring Boots charge is a note that climbs in pitch, and nothing else.
         SpringBootsHelper.onSound(packet);
+        imicro.cryptic.feature.WitherDragons.onSound(packet);
         GyroHelper.onSound(packet);
-        // Crystal Hollows treasure chests: found, lock picked, opened.
         NucleusQol.onSound(packet.getSound().value(), packet.getPitch(), packet.getVolume());
         SoundLog.note(packet.getSound().value(), packet.getPitch(), packet.getVolume(), false);
-        if (Etherwarp.replaceTeleportSound(packet)) info.cancel();
-        // Hypixel's terminal click sound, while a chosen one is playing instead.
-        if (TerminalSolver.eatsServerSound(packet)) info.cancel();
+        if (Etherwarp.replaceTeleportSound(packet)) {
+            SoundLog.dropped(packet.getSound().value(), packet.getPitch(), packet.getVolume(), "Etherwarp");
+            info.cancel();
+            return;
+        }
+        // Hypixel's terminal click sound, while a chosen one plays instead.
+        if (TerminalSolver.eatsServerSound(packet)) {
+            SoundLog.dropped(packet.getSound().value(), packet.getPitch(), packet.getVolume(), "Terminal Solver");
+            info.cancel();
+        }
     }
 
-    /**
-     * A sound played on an entity rather than at a place, which is how Hypixel
-     * sends some of its own — the treasure chests' among them.
-     */
+    /** A sound played on an entity, as Hypixel sends some of its own (treasure chests). */
     @Inject(method = "handleSoundEntityEvent", at = @At("HEAD"))
     private void cryptic$noteEntitySound(ClientboundSoundEntityPacket packet, CallbackInfo info) {
         NucleusQol.onSound(packet.getSound().value(), packet.getPitch(), packet.getVolume());
@@ -120,23 +138,16 @@ public abstract class ClientPacketListenerMixin {
     }
 
     /**
-     * A teleport landing, which is the answer to a click Etherwarp predicted.
-     *
-     * The rotation is read before the packet is applied and put back after,
-     * rather than the packet being rewritten: by then the client has already
-     * accepted the teleport with the angles the server asked for, so the
-     * server is told what it expects and only the view is kept.
+     * A teleport landing. The rotation is read before the packet and put back after, so the server
+     * gets the acceptance it expects and only the view is kept.
      */
     @Inject(method = "handleMovePlayer", at = @At("HEAD"))
     private void cryptic$beforeTeleport(ClientboundPlayerPositionPacket packet, CallbackInfo info) {
-        EtherwarpZeroPing.beforeServerTeleport();
+        imicro.cryptic.debug.TeleportLog.packet(packet);
+        EtherwarpZeroPing.beforeServerTeleport(packet);
         SmoothTeleport.beforeServerTeleport();
-        // Before the move is applied, not after. A teleport onto an exact half
-        // block is the maze throwing you about, and the solver needs to know
-        // which pad threw you - which is the one you are standing on right now
-        // and will not be standing on a line later.
+        // Before the move: the maze solver needs the pad you're standing on as you're thrown.
         PuzzleSolver.onTeleport(packet);
-        // Being put into a boss room, which the rotate fix turns you into.
         SpiritLeapOverlay.beforeServerTeleport(packet);
     }
 
@@ -144,47 +155,37 @@ public abstract class ClientPacketListenerMixin {
     private void cryptic$afterTeleport(ClientboundPlayerPositionPacket packet, CallbackInfo info) {
         EtherwarpZeroPing.afterServerTeleport();
         SmoothTeleport.afterServerTeleport();
+        imicro.cryptic.debug.TeleportLog.packetApplied();
         DungeonWaypoints.onTeleport();
         // Last, so nothing above puts the old rotation back over it.
         SpiritLeapOverlay.afterServerTeleport(packet);
     }
 
     /**
-     * A single block changing, which for the Creeper Beams is one being broken.
-     *
-     * Taken at the head so the block that was there can still be read: the
-     * packet carries what it is becoming, and the pair of them is what says a
-     * lantern has gone out.
+     * A single block changing (for Creeper Beams, one breaking). At the head, so the old block can
+     * still be read.
      */
     @Inject(method = "handleBlockUpdate", at = @At("HEAD"))
     private void cryptic$noteBlockUpdate(ClientboundBlockUpdatePacket packet, CallbackInfo info) {
         Minecraft client = Minecraft.getInstance();
-        // A packet handler runs twice: once as it arrives, on the network
-        // thread, and again on the client thread once it has been handed over.
-        // Only the second one may read the world, and the block being replaced
-        // is still in it either way.
+        // Handlers run twice, first on the network thread; only the client-thread pass may read the
+        // world.
         if (!client.isSameThread() || client.level == null) return;
         PuzzleSolver.onBlockUpdate(packet.getPos(), client.level.getBlockState(packet.getPos()), packet.getBlockState());
+        imicro.cryptic.feature.WitherDragons.onBlockChanged(packet.getPos(), client.level.getBlockState(packet.getPos()), packet.getBlockState());
     }
 
-    /**
-     * The knock Hypixel plays on a puzzle's own block when it is finished,
-     * which is the only announcement several of them make.
-     */
+    /** The knock Hypixel plays on a finished puzzle's block, the only announcement several make. */
     @Inject(method = "handleBlockEvent", at = @At("TAIL"))
     private void cryptic$notePuzzleComplete(ClientboundBlockEventPacket packet, CallbackInfo info) {
         PuzzleSolver.onBlockEvent(packet.getPos(), packet.getBlock());
     }
 
-    /**
-     * An item secret, which is picked up rather than clicked. The item entity
-     * has to be read before the packet removes it from the world.
-     */
+    /** An item secret picked up; the item has to be read before the packet removes it. */
     @Inject(method = "handleTakeItemEntity", at = @At("HEAD"))
     private void cryptic$noteSecretPickup(ClientboundTakeItemEntityPacket packet, CallbackInfo info) {
         Minecraft client = Minecraft.getInstance();
-        // The game thread's pass only. See cryptic$dropServerSneak for why an
-        // entity ID must not be asked for from the network thread.
+        // Client thread only; see cryptic$dropServerSneak for why.
         if (!client.isSameThread()) return;
         if (client.level == null || client.player == null) return;
         if (packet.getPlayerId() != client.player.getId()) return;
@@ -195,12 +196,8 @@ public abstract class ClientPacketListenerMixin {
     }
 
     /**
-     * The mimic says nothing when it dies, so the death animation is what
-     * announces it. On a floor that can hold one, the only baby zombie dying is
-     * the mimic — the same test Odin makes.
-     *
-     * A slayer boss somebody is being carried through says nothing either, and
-     * for the same reason is counted from the same signal.
+     * The mimic's death animation announces it (only baby zombie on floors that hold one, Odin's
+     * test). Carried slayer bosses are counted from the same signal.
      */
     @Inject(method = "handleEntityEvent", at = @At("TAIL"))
     private void cryptic$noteMimicDeath(ClientboundEntityEventPacket packet, CallbackInfo info) {
@@ -208,29 +205,25 @@ public abstract class ClientPacketListenerMixin {
         if (client.level == null || packet.getEventId() != 3) return;
 
         Entity dying = packet.getEntity(client.level);
-        if (dying != null) CarryManager.onEntityDied(dying.getId());
-        // A bat secret taken, wherever the bat had flown to.
+        if (dying != null) {
+            CarryManager.onEntityDied(dying.getId());
+            imicro.cryptic.feature.SlayerFeatures.onEntityDied(dying.getId());
+        }
         if (dying instanceof Bat) DungeonWaypoints.onBatDied(dying.getX(), dying.getY(), dying.getZ());
 
         if (dying instanceof Zombie zombie && zombie.isBaby() && DungeonRun.INSTANCE.mimicCouldDieNow()) {
-            // Both halves: the title, and the two bonus points the score has
-            // been missing all run because nothing else told it.
+            // The title, and the two bonus points nothing else would tell the score about.
             DungeonStats.INSTANCE.onMimicKilled();
             RoomAlerts.onMimicKilled();
         }
     }
 
-    /** Feeds Hypixel's dungeon map item to the map the HUD draws. */
     @Inject(method = "handleMapItemData", at = @At("TAIL"))
     private void cryptic$readDungeonMap(ClientboundMapItemDataPacket packet, CallbackInfo info) {
         DungeonMapReader.INSTANCE.accept(packet);
     }
 
-    /**
-     * The terminal solver reads the chest Hypixel opens rather than the screen
-     * the game builds from it, because the title is what says which of the six
-     * terminals this is and the contents are the puzzle itself.
-     */
+    /** Reads the chest Hypixel opens: the title says which terminal, the contents are the puzzle. */
     @Inject(method = "handleOpenScreen", at = @At("TAIL"))
     private void cryptic$terminalOpened(ClientboundOpenScreenPacket packet, CallbackInfo info) {
         Terminals.INSTANCE.windowOpened(packet.getTitle().getString(), packet.getContainerId());
@@ -240,32 +233,59 @@ public abstract class ClientPacketListenerMixin {
     }
 
     /**
-     * Drops an entity before the world has it.
-     *
-     * The head rather than the tail, and before the packet is handed to the
-     * client thread, because the cheapest thing to not draw is a thing that was
-     * never added.
+     * Drops an entity before the world has it, on the network thread, since the cheapest thing not
+     * to draw is one never added.
      */
     @Inject(method = "handleAddEntity", at = @At("HEAD"), cancellable = true)
     private void cryptic$hideSpawnedEntity(ClientboundAddEntityPacket packet, CallbackInfo info) {
         BossTimings.onEntityAdded(packet.getType());
+        imicro.cryptic.feature.WitherDragons.onAddEntity(packet);
+        imicro.cryptic.feature.ClassAbilities.onAddEntity(packet);
         if (RenderOptimizer.blocksSpawn(packet.getType())) info.cancel();
+    }
+
+    /** Who hit a slayer boss, for the Carry Manager's guess at its owner. TAIL, so only the client thread. */
+    @Inject(method = "handleDamageEvent", at = @At("TAIL"))
+    private void cryptic$noteBossHit(net.minecraft.network.protocol.game.ClientboundDamageEventPacket packet, CallbackInfo info) {
+        try {
+            imicro.cryptic.slayer.VoidgloomBosses.onDamaged(packet.entityId(), packet.sourceCauseId());
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    @Inject(method = "handleAnimate", at = @At("TAIL"))
+    private void cryptic$noteSwing(net.minecraft.network.protocol.game.ClientboundAnimatePacket packet, CallbackInfo info) {
+        int action = packet.getAction();
+        if (action == net.minecraft.network.protocol.game.ClientboundAnimatePacket.SWING_MAIN_HAND
+            || action == net.minecraft.network.protocol.game.ClientboundAnimatePacket.SWING_OFF_HAND) {
+            imicro.cryptic.slayer.VoidgloomBosses.onSwing(packet.getId());
+        }
+    }
+
+    @Inject(method = "handleHurtAnimation", at = @At("TAIL"))
+    private void cryptic$noteBossHurt(net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket packet, CallbackInfo info) {
+        try {
+            imicro.cryptic.slayer.VoidgloomBosses.onDamaged(packet.id(), -1);
+        } catch (RuntimeException ignored) {
+        }
     }
 
     @Inject(method = "handleParticleEvent", at = @At("HEAD"), cancellable = true)
     private void cryptic$hideParticles(ClientboundLevelParticlesPacket packet, CallbackInfo info) {
-        // The mage beam reads the particles it is drawn from before deciding
-        // whether the game still needs them.
         NucleusQol.onParticle(packet);
-        if (MageBeam.onParticle(packet) || RenderOptimizer.blocksParticle(packet.getParticle())) info.cancel();
+        imicro.cryptic.feature.WishingCompass.onParticle(packet);
+        imicro.cryptic.feature.WitherDragons.onParticle(packet);
+        if (imicro.cryptic.feature.Fishing.onParticle(packet) || MageBeam.onParticle(packet) || RenderOptimizer.blocksParticle(packet)
+            || imicro.cryptic.feature.SlayerFeatures.hidesParticle(packet)) info.cancel();
     }
 
     /**
-     * Reads what an entity is carrying, which is the only thing that says what
-     * some of Hypixel's decorations are. The tail, because this needs the world.
+     * What an entity carries is the only thing that identifies some of Hypixel's decorations. At
+     * the tail, since this needs the world.
      */
     @Inject(method = "handleSetEquipment", at = @At("TAIL"))
     private void cryptic$hideEquippedDecorations(ClientboundSetEquipmentPacket packet, CallbackInfo info) {
+        imicro.cryptic.feature.WitherDragons.onEquipment(packet);
         for (Pair<EquipmentSlot, ItemStack> slot : packet.getSlots()) {
             BloodCamp.onEquipment(packet.getEntity(), slot.getFirst(), slot.getSecond());
             if (RenderOptimizer.hidesEquipment(slot.getFirst(), slot.getSecond())) {
@@ -276,23 +296,15 @@ public abstract class ClientPacketListenerMixin {
     }
 
     /**
-     * One step of an entity's walk, straight off the wire.
-     *
-     * Blood Camp builds a mob's heading out of these: the entity itself is
-     * moved by interpolation between them, so a direction taken from the
-     * entity wobbles where one taken from the packets is straight.
+     * One step of an entity's movement, off the wire. Blood Camp takes headings from these, since
+     * the interpolated entity wobbles.
      */
     @Inject(method = "handleMoveEntity", at = @At("TAIL"))
     private void cryptic$noteEntityStep(ClientboundMoveEntityPacket packet, CallbackInfo info) {
         BloodCamp.onEntityMove(packet);
     }
 
-    /**
-     * Holds the sky at the time the player chose, for Time Changer.
-     *
-     * The server announces the time regularly, and that announcement is exactly
-     * what would otherwise put the world's own clock back.
-     */
+    /** Holds the sky at the chosen time, for Time Changer; the server's time packets would reset it. */
     @Inject(
         method = "handleSetTime",
         at = @At(
@@ -303,8 +315,7 @@ public abstract class ClientPacketListenerMixin {
         cancellable = true
     )
     private void cryptic$holdTheClock(ClientboundSetTimePacket packet, CallbackInfo info) {
-        // Once a second, which is what the TPS falls back on where there is no
-        // per-tick ping to count.
+        // Once a second; what TPS falls back on without per-tick pings.
         ServerStats.onTimePacket();
         if (!TimeChanger.overridesServerTime()) return;
         TimeChanger.apply();
@@ -312,69 +323,50 @@ public abstract class ClientPacketListenerMixin {
     }
 
     /**
-     * Drops the server's opinion of whether you are crouching, for Camera.
-     *
-     * Index six of the shared entity data is the pose flags. Hypixel resends
-     * them at times the client has already moved on from, which is what leaves
-     * a sneak needing a second press to take.
+     * Drops the server's crouch flag (data index six), for Camera. Hypixel resends it late, which
+     * made a sneak need a second press.
      */
     @Inject(method = "handleSetEntityData", at = @At("HEAD"))
     private void cryptic$dropServerSneak(ClientboundSetEntityDataPacket packet, CallbackInfo info) {
         if (!CameraTweaks.fixesDoubleSneak()) return;
-        // HEAD runs twice: first on the network thread, then again on the game
-        // thread, still before the data is applied. Only the second pass is
-        // safe. On joining, the game thread builds a new player and gives it
-        // its ID a moment later, and asking an entity for an ID it has not
-        // been given throws — inside a packet handler, which Minecraft answers
-        // by disconnecting. That was the occasional kick on joining Hypixel.
+        // Client thread only. On join the player gets its id a moment late, and asking for it on
+        // the network thread throws, which disconnects.
         if (!Minecraft.getInstance().isSameThread()) return;
         LocalPlayer player = Minecraft.getInstance().player;
         if (player == null || player.getId() != packet.id()) return;
         packet.packedItems().removeIf(value -> value.id() == 6);
     }
 
-    /**
-     * The tab list changing, which is where secrets, crypts, rooms and deaths
-     * are written. The score reads it on the next tick instead of waiting out
-     * its half-second poll, the way Odin reads it on every one of these.
-     */
+    /** The tab list changing; the score reads it next tick rather than waiting for its poll, as Odin does. */
     @Inject(method = "handlePlayerInfoUpdate", at = @At("RETURN"))
     private void cryptic$noteTabList(ClientboundPlayerInfoUpdatePacket packet, CallbackInfo info) {
         DungeonStats.markChanged();
     }
 
     /**
-     * A sidebar line changing, for the Smart Tick Timer's secret spawn timer.
+     * A sidebar line changing, for the Smart Tick Timer's secret spawn timer, which counts from the
+     * "Time Elapsed" rewrite.
      *
-     * Hypixel draws each line of the sidebar as a team's prefix and suffix, and
-     * rewrites the "Time Elapsed" one the moment a second turns over — which is
-     * exactly the moment the secret timer counts from.
-     *
-     * On the network thread's pass, not the game thread's. Server ticks are
-     * counted on the network thread as they arrive, and when the rewrite and a
-     * tick come in the same burst the tick was counted first and then undone by
-     * a reset the game thread got round to a frame later — which left the timer
-     * one tick behind Odin's, every second. Read here, both are taken in the
-     * order the server sent them. Only the packet is read and one number set,
-     * so there is nothing that can throw on this thread.
+     * Read on the network thread so it stays in order with the tick count; on the client thread it
+     * was one tick behind Odin's every second. Only one number is set, so nothing can throw here.
      */
     @Inject(method = "handleSetPlayerTeamPacket", at = @At("HEAD"))
     private void cryptic$noteScoreboardLine(ClientboundSetPlayerTeamPacket packet, CallbackInfo info) {
         if (Minecraft.getInstance().isSameThread()) return;
         packet.getParameters().ifPresent(team ->
             SmartTickTimer.onScoreboardLine(team.playerPrefix().getString(), team.playerSuffix().getString()));
-        // "Cleared: N%" lives on the sidebar too, so the score reads it now.
+        // "Cleared: N%" is on the sidebar too.
         DungeonStats.markChanged();
     }
 
     /**
-     * Reads an entity's nametag and the item it holds, which between them
-     * identify a corpse still standing and the archer passive's bone meal.
+     * An entity's nametag and held item, which identify a standing corpse and the archer passive's
+     * bone meal.
      */
-    /** A stand getting its name, which is when Three Weirdos can send a click it was holding. */
     @Inject(method = "handleSetEntityData", at = @At("TAIL"))
     private void cryptic$instantWeirdos(ClientboundSetEntityDataPacket packet, CallbackInfo info) {
         PuzzleSolver.onEntityData(packet.id());
+        imicro.cryptic.feature.WitherDragons.onEntityData(packet);
     }
 
     @Inject(method = "handleSetEntityData", at = @At("TAIL"))
@@ -396,11 +388,7 @@ public abstract class ClientPacketListenerMixin {
         }
     }
 
-    /**
-     * The container id is checked because this also carries updates to the
-     * player's own inventory, whose slot numbers would otherwise be read as
-     * changes to the puzzle.
-     */
+    /** Checks the container id, since this also carries the player's own inventory slots. */
     @Inject(method = "handleContainerSetSlot", at = @At("TAIL"))
     private void cryptic$terminalSlotChanged(ClientboundContainerSetSlotPacket packet, CallbackInfo info) {
         if (Minecraft.getInstance().gui.screen() instanceof AbstractContainerScreen<?> screen
@@ -410,11 +398,7 @@ public abstract class ClientPacketListenerMixin {
         }
     }
 
-    /**
-     * Hypixel fills a terminal a slot at a time, but a window that arrives in
-     * one packet has to solve too, so it is reported as the last slot changing
-     * — which is the moment a terminal is considered complete.
-     */
+    /** A whole window in one packet, reported as its last slot changing. */
     @Inject(method = "handleContainerContent", at = @At("TAIL"))
     private void cryptic$terminalContentChanged(ClientboundContainerSetContentPacket packet, CallbackInfo info) {
         if (Minecraft.getInstance().gui.screen() instanceof AbstractContainerScreen<?> screen
@@ -431,26 +415,16 @@ public abstract class ClientPacketListenerMixin {
         ExperimentTracker.INSTANCE.closed();
     }
     /**
-     * The server's answer to a ping, which is how far away it is.
-     *
-     * This handler is one of the few the game runs straight off the network
-     * thread, which is what makes the timing honest: the answer is timed as it
-     * arrives rather than whenever the next frame gets to it. Nothing here but
-     * a subtraction and a number stored.
+     * The server's answer to a ping. Runs on the network thread, so the timing isn't delayed by the
+     * frame.
      */
     @Inject(method = "handlePongResponse", at = @At("HEAD"))
     private void cryptic$notePong(ClientboundPongResponsePacket packet, CallbackInfo info) {
         ServerStats.onPong(packet.time());
     }
     /**
-     * A line of chat, read off the packet itself.
-     *
-     * Fabric's message event is only raised for a message every other mod has
-     * agreed to show, so a mod that hides or rewrites a line takes it away from
-     * whoever is listening after it. A party invite and a party command are
-     * both things that must not be missed that way, and reading them here —
-     * where Odin and NoammAddons read their chat — cannot be. After the hand-off
-     * to the client thread, so nothing here runs on the network's.
+     * Chat, read from the packet. Fabric's message event misses lines other mods hide, and party
+     * invites and commands must not be missed. After the hand-off to the client thread.
      */
     @Inject(
         method = "handleSystemChat",
@@ -463,8 +437,10 @@ public abstract class ClientPacketListenerMixin {
     )
     private void cryptic$readSystemChat(ClientboundSystemChatPacket packet, CallbackInfo info) {
         DungeonRun.onSystemChat(packet.content(), packet.overlay());
+        if (packet.overlay()) imicro.cryptic.dungeon.RoomSecrets.onActionBar(packet.content());
         BossTimings.onSystemChat(packet.content(), packet.overlay());
         SmartTickTimer.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.F3Features.onSystemChat(packet.content(), packet.overlay());
         DeviceSolver.onSystemChat(packet.content(), packet.overlay());
         GyroHelper.onSystemChat(packet.content(), packet.overlay());
         Secrets.onSystemChat(packet.content(), packet.overlay());
@@ -473,6 +449,10 @@ public abstract class ClientPacketListenerMixin {
         F7Qol.onSystemChat(packet.content(), packet.overlay());
         MelodyHud.onSystemChat(packet.content(), packet.overlay());
         AutoRequeue.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.PartyKick.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.SlayerFeatures.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.ChocolateFactory.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.CurrentChat.onSystemChat(packet.content(), packet.overlay());
         AutoGfs.onSystemChat(packet.content(), packet.overlay());
         DungeonWaypoints.onSystemChat(packet.content(), packet.overlay());
         LividSolver.onSystemChat(packet.content(), packet.overlay());
@@ -480,19 +460,23 @@ public abstract class ClientPacketListenerMixin {
         SpiritLeapOverlay.onSystemChat(packet.content(), packet.overlay());
         NucleusQol.onSystemChat(packet.content(), packet.overlay());
         CookieReminder.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.CroesusHelper.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.Relics.onSystemChat(packet.content(), packet.overlay());
         DailyRewards.onSystemChat(packet.content(), packet.overlay());
-        // Last, once everything above has read it: Better Chat keeps a line
-        // out of the chat window, never out of the mod.
+        imicro.cryptic.feature.ClassAbilities.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.Mining.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.Bazaar.onSystemChat(packet.content(), packet.overlay());
+        // Last: Better Chat hides a line from the chat window, never from the mod.
         if (BetterChat.hidesChat(packet.content(), packet.overlay())
-                || AutoRequeue.hidesChat(packet.content(), packet.overlay())) {
+                || AutoRequeue.hidesChat(packet.content(), packet.overlay())
+                || imicro.cryptic.feature.Bazaar.hidesChat(packet.content(), packet.overlay())) {
             info.cancel();
         }
     }
 
     /**
-     * The line as the chat window shows it: Better Chat's shortened channel
-     * names. Swapped only on the way into the window, after everything above
-     * has read the line as Hypixel sent it.
+     * The line as the chat window shows it, with Better Chat's short channel names; swapped after
+     * everything above has read the original.
      */
     @ModifyArg(
         method = "handleSystemChat",
@@ -506,11 +490,7 @@ public abstract class ClientPacketListenerMixin {
         return BetterChat.shown(message);
     }
 
-    /**
-     * The action bar's own packet, the other way Hypixel can send it. The gyro
-     * hears Gravity Storm's mana line here as well as in the chat packet.
-     * After the hand-off, like the chat.
-     */
+    /** The action bar's own packet, Hypixel's other way of sending it. Client thread. */
     @Inject(
         method = "setActionBarText",
         at = @At(
@@ -521,13 +501,13 @@ public abstract class ClientPacketListenerMixin {
     )
     private void cryptic$readActionBar(ClientboundSetActionBarTextPacket packet, CallbackInfo info) {
         GyroHelper.onActionBarPacket(packet.text());
+        imicro.cryptic.dungeon.RoomSecrets.onActionBar(packet.text());
         NucleusQol.onActionBar(packet.text());
     }
 
     /**
-     * Hypixel's "Steve activated a terminal! (3/7)" title, which Better P3
-     * titles draws its own way. It comes as a subtitle, but a title is checked
-     * too in case that changes. After the hand-off, like the chat.
+     * Hypixel's "Steve activated a terminal! (3/7)" title for Better P3 titles. Usually a subtitle;
+     * titles are checked too.
      */
     @Inject(
         method = "setSubtitleText",

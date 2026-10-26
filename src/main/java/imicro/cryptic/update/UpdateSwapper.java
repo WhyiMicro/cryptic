@@ -10,21 +10,12 @@ import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Puts a downloaded Cryptic in place of the running one, once the game has
- * closed.
+ * Swaps a downloaded Cryptic jar in for the running one after the game closes. Runs as its own Java
+ * process because Windows keeps the old jar locked while the game is open. The old jar is moved
+ * aside first and restored if the copy fails, so the mods folder never ends up with two jars or
+ * none.
  *
- * Run as a separate little Java process by the auto updater as the game shuts
- * down, from a copy of this class outside the mod jar: Windows will not let a
- * jar be deleted while a program has it open, and the game has the old one
- * open until it exits. Plain Java and nothing else, because none of Minecraft
- * is loaded here.
- *
- * The old jar is moved aside before the new one goes in, and put back if the
- * new one cannot be copied: two Cryptic jars in the mods folder stop Fabric
- * starting, and none means no Cryptic, so neither is ever left behind.
- *
- * Arguments: the game's process id, the running jar, the downloaded jar, and
- * a log file.
+ * Arguments: the game's process id, the running jar, the downloaded jar, and a log file.
  */
 public final class UpdateSwapper {
 	private static final int ATTEMPTS = 120;
@@ -43,14 +34,14 @@ public final class UpdateSwapper {
 			try {
 				game.onExit().get(10, TimeUnit.MINUTES);
 			} catch (Exception ignored) {
-				// Gone or taking too long: try anyway; a locked jar just fails below.
+				// Gone or taking too long: try anyway, a locked jar just fails below.
 			}
 		});
 
 		Path backup = newJar.resolveSibling(oldJar.getFileName() + ".old");
 		Path target = oldJar.resolveSibling(newJar.getFileName());
 
-		// The jar can stay locked for a moment after the game has gone.
+		// The jar can stay locked for a moment after the game exits.
 		boolean movedAside = false;
 		for (int attempt = 0; attempt < ATTEMPTS && !movedAside; attempt++) {
 			try {
@@ -83,7 +74,6 @@ public final class UpdateSwapper {
 			Files.writeString(log, Instant.now() + " " + message + System.lineSeparator(), StandardCharsets.UTF_8,
 				StandardOpenOption.CREATE, StandardOpenOption.APPEND);
 		} catch (IOException ignored) {
-			// Nowhere left to say it.
 		}
 	}
 

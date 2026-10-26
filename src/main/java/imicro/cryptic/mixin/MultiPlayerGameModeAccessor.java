@@ -5,10 +5,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
-/**
- * The pause between instant breaks, and the send of the held slot, for Breaker
- * Helper's Zero ping.
- */
+/** The pause between breaks and the held-slot send, for Breaker Helper. */
 @Mixin(MultiPlayerGameMode.class)
 public interface MultiPlayerGameModeAccessor {
     @Accessor("destroyDelay")

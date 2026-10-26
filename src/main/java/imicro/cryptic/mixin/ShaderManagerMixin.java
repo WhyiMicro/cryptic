@@ -7,7 +7,6 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
-/** Lets Cryptic answer with its own post-effect chain when one is asked for. */
 @Mixin(ShaderManager.class)
 public abstract class ShaderManagerMixin {
     @ModifyVariable(method = "getPostChain", at = @At("HEAD"), argsOnly = true)

@@ -8,17 +8,9 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 /**
- * Two things the tab list overlay keeps to itself.
- *
- * The order rows are drawn in is the important one. Hypixel writes things into
- * the tab list that exist nowhere else a client can reach — the booster
- * cookie's remaining time among them — and writes them as a heading with the
- * value on the row below it. "The row below" only means anything in display
- * order, and the connection hands its players out in the order they happened to
- * connect; this comparator is what turns one into the other.
- *
- * The footer is a second, older place the same information sometimes appears,
- * and it has a setter and no getter.
+ * Two things the tab list overlay keeps to itself: the row order it draws in (Hypixel writes
+ * headings with their values on the row below, which only works in display order), and the footer,
+ * which has no getter.
  */
 @Mixin(PlayerTabOverlay.class)
 public interface PlayerTabOverlayAccessor {

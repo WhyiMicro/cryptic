@@ -7,16 +7,9 @@ import imicro.cryptic.Cryptic
 import net.minecraft.client.Minecraft
 
 /**
- * What Cryptic knows about a room before anyone walks into it.
- *
- * Ported from dtMap (BSD 3-Clause, Copyright (c) 2026 rice.who), whose
- * `rooms.json` is copied verbatim into Cryptic's assets; the full licence is in
- * `licenses/dtMap-LICENSE.txt`. Each entry lists the hashes ("cores") of the
- * block columns that identify the room in the world, which is how a name can be
- * put on the map without asking Hypixel anything.
- *
- * Only the fields the map draws are declared. Gson drops the rest of the file
- * on the floor, so the asset can stay byte-for-byte dtMap's.
+ * What Cryptic knows about a room before anyone enters, from dtMap's `rooms.json` (copied
+ * verbatim). Each entry lists the column hashes ("cores") that identify the room. Only the fields
+ * the map uses are declared; Gson ignores the rest.
  */
 data class RoomData(
 	val name: String = "Unknown",
@@ -25,11 +18,9 @@ data class RoomData(
 	val secrets: Int = 0,
 	val crypts: Int = 0,
 	val shape: DungeonRoom.Shape = DungeonRoom.Shape.UNKNOWN,
-	/** True for the one room per floor a Prince can spawn in, worth a bonus point. */
 	val prince: Boolean = false,
 ) {
 	companion object {
-		/** The shapes are written the way a player says them, not the enum's name. */
 		private val shapeNames = mapOf(
 			"1x1" to DungeonRoom.Shape.S1X1,
 			"1x2" to DungeonRoom.Shape.S2X1,
@@ -50,10 +41,7 @@ data class RoomData(
 
 		private var byCore: Map<Int, RoomData> = emptyMap()
 
-		/**
-		 * Reads the asset on first use rather than at startup, because the
-		 * resource manager is only ready once a world is being joined.
-		 */
+		/** Loaded on first use, once the resource manager is ready. */
 		private fun ensureLoaded() {
 			if (byCore.isNotEmpty()) return
 
@@ -81,7 +69,6 @@ data class RoomData(
 			Cryptic.LOGGER.info("Cryptic read {} dungeon rooms across {} block signatures", rooms.size, byCore.size)
 		}
 
-		/** The room a scanned column hash belongs to, or null when it is unknown. */
 		fun byCore(core: Int): RoomData? {
 			ensureLoaded()
 			return byCore[core]

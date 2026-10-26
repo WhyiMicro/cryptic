@@ -62,8 +62,12 @@ tasks.jar {
 	from("LICENSE") {
 		rename { "${it}_$projectName" }
 	}
-	from("INTER-OFL.txt") {
-		rename { "${it}_$projectName" }
+	// The licences of the parts that come from other projects travel with the jar.
+	from("THIRD_PARTY_NOTICES.md") {
+		into("META-INF")
+	}
+	from("licenses") {
+		into("META-INF/licenses")
 	}
 }
 
@@ -95,3 +99,6 @@ dependencies {
 tasks.test {
 	useJUnitPlatform()
 }
+
+// The menu's fonts, trimmed to the characters Cryptic draws.
+apply(from = "gradle/fonts.gradle.kts")

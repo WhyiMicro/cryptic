@@ -3,30 +3,15 @@ package imicro.cryptic.experiment
 import net.minecraft.client.Minecraft
 
 /**
- * Which pet is out, read off the tab list.
- *
- * SkyBlock has no client-facing way to ask, and the pet itself is no use to
- * look at: plenty of people hide theirs, and a hidden pet has no entity to read
- * a tag off. The tab list carries it either way — `[Lvl 100] Guardian` on a row
- * of its own — which is why that is what gets read.
- *
- * Everything here **fails open**. An answer of null means "could not tell", not
- * "no pet", and the one thing that acts on it treats those very differently —
- * closing somebody's menu on a guess would be worse than never closing it at
- * all.
+ * Which pet is out, read from the tab list's `[Lvl 100] Guardian` row (a hidden pet has no entity
+ * to read). Fails open: null means "couldn't tell", never "no pet".
  */
 object EquippedPet {
-	/**
-	 * `[Lvl 100] Guardian`, which is the whole of what the pet row says.
-	 *
-	 * Nothing else in the tab list is written this way, so the level marker is
-	 * enough on its own and no "Pet:" heading has to be found first.
-	 */
+	/** Only the pet row is written this way, so no heading has to be found first. */
 	private val PET_ROW = Regex("""\[Lvl \d+]\s*(.+)""")
 
 	private val formattingPattern = Regex("§.")
 
-	/** The name of the pet that is out — "Guardian" — or null if none is listed. */
 	fun name(): String? {
 		val connection = Minecraft.getInstance().connection ?: return null
 
@@ -38,10 +23,7 @@ object EquippedPet {
 		return null
 	}
 
-	/**
-	 * Whether the tab list has the Pet widget at all, under its "Pet:" heading.
-	 * Without it, [name] answers null whatever pet is out.
-	 */
+	/** Whether the tab list has the Pet widget; without it, [name] is always null. */
 	fun widgetShown(): Boolean {
 		val connection = Minecraft.getInstance().connection ?: return false
 		return connection.onlinePlayers.any {
@@ -51,25 +33,15 @@ object EquippedPet {
 	}
 
 	/**
-	 * Whether the pet that is out is definitely not [wanted].
-	 *
-	 * Three answers collapsed into two on purpose: "a different pet is out" is
-	 * the only one that returns true. "That pet is out" and "no idea" both
-	 * return false, because the caller shuts a menu on the strength of this and
-	 * only one of the three is worth shutting a menu over.
+	 * True only when a different pet is definitely out. "That pet" and "no idea" are both false,
+	 * because the caller closes a menu on this.
 	 */
 	fun isDefinitelyNot(wanted: String): Boolean {
 		val name = name() ?: return false
 		return !name.contains(wanted, ignoreCase = true)
 	}
 
-	/**
-	 * Every tab row that has anything on it, for `/cryptic debug pet`.
-	 *
-	 * What Hypixel writes where in the tab list is the one part of this that
-	 * cannot be worked out from outside the game, and it decides whether the
-	 * reminder can ever fire.
-	 */
+	/** Every non-empty tab row, for `/cryptic debug pet`. */
 	fun describe(): List<String> {
 		val connection = Minecraft.getInstance().connection ?: return listOf("Not connected.")
 

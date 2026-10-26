@@ -16,7 +16,6 @@ class DeleteConfirm {
 		return armed === key
 	}
 
-	/** True when this click is the second and the thing should go. */
 	fun click(key: Any): Boolean {
 		if (isArmed(key)) {
 			armed = null
@@ -32,11 +31,10 @@ class DeleteConfirm {
 	}
 }
 
-/** What the managers share: their headings, their delete button, a few glyphs and colours. */
+/** What the managers share: headings, the delete button, a few glyphs and colours. */
 object Sections {
 	const val HEADING = 30f
 
-	/** The red things that undo work are drawn in. */
 	const val DANGER = MenuStyle.DANGER
 
 	const val ARROW_RIGHT = ""
@@ -48,13 +46,13 @@ object Sections {
 	const val MINUS = ""
 	const val CHECK = ""
 
-	/** A small uppercase heading over a group of rows, as the settings page has. */
+	/** A small uppercase heading over a group of rows. */
 	fun heading(ui: UiKit, text: String, x: Float, y: Float) =
 		ui.text(text.uppercase(), x + 2f, y + 8f, 11f, MenuStyle.MUTED, UiText.Face.MEDIUM)
 
 	/**
-	 * A bin that turns into "Delete?" once clicked, right-aligned at [right] and
-	 * centred on [cy]; a second click runs [delete]. Returns its width.
+	 * A bin that becomes "Delete?" when clicked, right-aligned at [right] and centred on [cy]; a
+	 * second click runs [delete]. Returns its width.
 	 */
 	fun deleteButton(ui: UiKit, confirm: DeleteConfirm, key: Any, right: Float, cy: Float, delete: () -> Unit): Float {
 		val armed = confirm.isArmed(key)

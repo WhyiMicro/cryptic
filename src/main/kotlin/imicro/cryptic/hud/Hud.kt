@@ -7,12 +7,8 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 
 /**
- * Everything Cryptic draws on top of the game, and where the player put it.
- *
- * Elements register themselves once at startup and are drawn in one pass, so a
- * new one needs no rendering plumbing of its own: it declares its size and how
- * to draw itself, and the placement, scaling and editing all come from here.
- * Positions live in the profile, next to the module settings they belong with.
+ * Everything Cryptic draws on the HUD. Elements register once and are drawn in one pass; placement,
+ * scaling and the editor all come from here.
  */
 object Hud {
 	private val registered = mutableListOf<HudElement>()
@@ -31,8 +27,7 @@ object Hud {
 		if (initialized) return
 		initialized = true
 
-		// After the chat so an element never hides a message, and before the
-		// screens the editor itself draws.
+		// After the chat, so elements never cover a message.
 		HudElementRegistry.attachElementAfter(
 			VanillaHudElements.CHAT,
 			Cryptic.id("hud"),
@@ -40,11 +35,7 @@ object Hud {
 		)
 	}
 
-	/**
-	 * Opens the placement editor. [parent] is the screen to return to on
-	 * escape, which is the menu when the editor was opened from its own button
-	 * and nothing at all when it came from a command.
-	 */
+	/** Opens the placement editor; escape returns to [parent], or closes when there is none. */
 	fun openEditor(parent: net.minecraft.client.gui.screens.Screen? = null) {
 		val client = Minecraft.getInstance()
 		client.gui.setScreen(HudEditorScreen(parent))
@@ -52,7 +43,6 @@ object Hud {
 
 	private fun renderAll(context: GuiGraphicsExtractor) {
 		val client = Minecraft.getInstance()
-		// The editor draws the elements itself, with handles around them.
 		if (client.gui.screen() is HudEditorScreen) return
 
 		for (element in registered) {
@@ -61,13 +51,13 @@ object Hud {
 		}
 	}
 
-	/** Applies one element's placement, so both halves of the HUD agree on it. */
 	internal fun draw(context: GuiGraphicsExtractor, element: HudElement, body: () -> Unit) {
 		val pose = context.pose()
 		pose.pushMatrix()
+		// On whole pixels, so one-pixel lines and text edges come out even.
 		pose.translate(
-			(element.x * context.guiWidth()).toFloat(),
-			(element.y * context.guiHeight()).toFloat(),
+			Math.round(element.x * context.guiWidth()).toFloat(),
+			Math.round(element.y * context.guiHeight()).toFloat(),
 		)
 		pose.scale(element.scale.toFloat(), element.scale.toFloat())
 		body()

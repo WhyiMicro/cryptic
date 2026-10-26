@@ -13,68 +13,40 @@ import net.minecraft.world.phys.Vec3
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Which two lanterns belong to each other.
- *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking). The room has
- * eight beams to break and the pair that make up each one are on opposite
- * walls, which is impossible to see from inside. The pairs are fixed, so the
- * answer is a list of them; only the pairs whose lanterns are both still
- * standing are drawn, which is what makes a broken beam disappear from the
- * picture.
- *
- * The pairs are worked out again whenever a lantern changes, because breaking
- * one is exactly the event that should take its line off the screen.
+ * Creeper Beams: which two lanterns make up each beam (they sit on opposite walls). The pairs come
+ * from Odin's answer sheet; only pairs with both lanterns standing are drawn, so a broken beam
+ * disappears.
  */
 object BeamsSolver {
 	private const val PUZZLE = "Creeper Beams"
 
-	/** One lantern to its partner, and the colour they share. */
 	private val pairs = ConcurrentHashMap<BlockPos, Pair<BlockPos, Int>>()
 
-	/**
-	 * The colour each pair was given, kept for as long as you are in the room.
-	 *
-	 * Handed out again on every recount, the colours moved round whenever a
-	 * pair was broken: the count of standing pairs went down by one, and every
-	 * pair after the broken one took the colour of the one before it.
-	 */
+	/** Each pair's colour, kept for the visit so colours don't shift when a beam breaks. */
 	private val colors = ConcurrentHashMap<BlockPos, Int>()
 
 	/**
-	 * Eight colours meant to be told apart at a glance.
-	 *
-	 * The two ends of a beam are marked in the same colour, so what matters is
-	 * not that the palette looks nice but that no two of its entries can be
-	 * confused across a dim room. These are spread around the wheel and kept
-	 * bright: the pale and the dark shades that sat next to each other in the
-	 * first version - two greens, two purples - were the ones that could not be
-	 * paired up by eye.
+	 * Eight colours spread around the wheel and kept bright, so the two ends of a beam can be
+	 * matched across a dim room.
 	 */
 	private val palette = listOf(
-		0xFF2020, // red
-		0x20FF20, // green
-		0x4080FF, // blue
-		0xFFFF20, // yellow
-		0xFF20FF, // magenta
-		0x20FFFF, // cyan
-		0xFF8000, // orange
-		0xFFFFFF, // white
+		0xFF2020,
+		0x20FF20,
+		0x4080FF,
+		0xFFFF20,
+		0xFF20FF,
+		0x20FFFF,
+		0xFF8000,
+		0xFFFFFF,
 	)
 
-	/**
-	 * The colour for the nth beam in the room.
-	 *
-	 * Eight are written down; past that the wheel is divided evenly, so even a
-	 * room with more beams than anybody has seen still gives every one of them
-	 * a colour of its own.
-	 */
+	/** The colour for the nth beam; past eight, the wheel is divided by the golden angle. */
 	private fun colorFor(index: Int): Int {
 		palette.getOrNull(index)?.let { return it }
 		val hue = ((index - palette.size) * GOLDEN_ANGLE) % 1f
 		return Mth.hsvToRgb(hue, 0.85f, 1f) and 0xFFFFFF
 	}
 
-	/** Spacing that keeps successive hues as far apart as they can be. */
 	private const val GOLDEN_ANGLE = 0.618033f
 
 	fun onRoomEnter(room: DungeonRoom) {
@@ -91,19 +63,9 @@ object BeamsSolver {
 		PuzzleAssets.ensureLoaded()
 		pairs.clear()
 
-		// Counted over the pairs that are actually still standing rather than
-		// over the answer sheet. The sheet lists more pairs than any one room
-		// uses, so colouring by its index left gaps - and a gap of eight is two
-		// beams wearing the same colour, which is the one thing this must not
-		// do. A pair keeps the colour it was first given.
-		//
-		// A lantern belongs to one beam. The answer sheet (Odin's, as it is)
-		// lists one beam twice the right way round and another a second time
-		// back to front, and the back-to-front copy was stored as a beam of its
-		// own: two lines between the same two lanterns, and both boxes, in two
-		// different colours. So a pair whose lanterns are already taken is
-		// skipped, and a pair is kept and coloured by whichever of its two ends
-		// sorts first, so it is the same pair whichever way it was written.
+		// Counted over the pairs still standing, and each pair keeps its first colour. Odin's sheet
+		// lists some beams twice (once reversed), so a pair whose lanterns are already taken is
+		// skipped and pairs are keyed by their lower end.
 		val taken = HashSet<BlockPos>()
 		PuzzleAssets.beams.forEach { pair ->
 			if (pair.size < 6) return@forEach
@@ -121,11 +83,8 @@ object BeamsSolver {
 	}
 
 	/**
-	 * A lantern turning into prismarine, or back, is a beam being broken.
-	 *
-	 * Asked about every block change in the room rather than only the lanterns,
-	 * because the other end of a broken beam changes at the same moment and
-	 * both have to leave the picture together.
+	 * A lantern turning to prismarine or back is a beam breaking. Every block change in the room is
+	 * checked, since both ends change together.
 	 */
 	fun onBlockChanged(pos: BlockPos, wasLantern: Boolean, isLantern: Boolean) {
 		if (!PuzzleRooms.inside(PUZZLE)) return

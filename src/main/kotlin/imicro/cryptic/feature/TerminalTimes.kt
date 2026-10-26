@@ -15,18 +15,9 @@ import net.minecraft.network.chat.Component
 import java.util.Locale
 
 /**
- * Times the terminals, and the sections they belong to.
- *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking). Three numbers
- * come out of a Goldor run and this says all three: how long each terminal took
- * on its own, how long the section it was part of has been running, and how
- * long the whole phase has. Personal bests are kept per terminal, and the
- * simulator's are kept apart from the real ones.
- *
- * The clock can run on real time or on server ticks. Ticks are the honest
- * measure of a laggy run — a section that took four seconds of server time took
- * four seconds however long the client spent waiting — and real time is what a
- * stopwatch would have said.
+ * Times terminals, their sections and the whole Goldor phase, with personal bests per terminal
+ * (simulator ones kept apart). Can run on real time or server ticks, which ignore lag. Ported from
+ * Odin.
  */
 object TerminalTimes {
 	private val timesSection = SectionModuleSetting(id = "times_section", label = "Times")
@@ -81,7 +72,6 @@ object TerminalTimes {
 	private val goldorGreeting = Regex("""^\[BOSS] Goldor: Who dares trespass into my domain\?$""")
 	private val coreOpening = "The Core entrance is opening!"
 
-	/** Section progress as Hypixel counts it, so "7/7 and the gate went" is knowable. */
 	private var completed = 0
 	private var total = 7
 
@@ -90,7 +80,6 @@ object TerminalTimes {
 	private var sectionStart = 0L
 	private var phaseStart = 0L
 
-	/** Server time in milliseconds, counted a tick at a time. */
 	private var serverClock = 0L
 
 	private var initialized = false
@@ -108,7 +97,6 @@ object TerminalTimes {
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> resetSection(full = true) }
 	}
 
-	/** Hypixel's per-tick ping is the only sight the client gets of its clock. */
 	fun onServerTick() {
 		serverClock += MILLIS_PER_TICK
 	}
@@ -136,8 +124,8 @@ object TerminalTimes {
 
 		val currentCount = current.toIntOrNull() ?: return
 		val totalCount = of.toIntOrNull() ?: return
-		// The gate going before the count has caught up means the section is
-		// over; so does the count going backwards, which is the next one.
+		// The gate going before the count catches up ends the section; so does the count going
+		// backwards (the next section).
 		if ((currentCount == totalCount && gateBlown) || currentCount < completed) {
 			resetSection()
 		} else {
@@ -146,13 +134,7 @@ object TerminalTimes {
 		}
 	}
 
-	/**
-	 * Adds the two clocks to a completion message.
-	 *
-	 * The message is rewritten rather than followed by a line of its own,
-	 * because seven terminals, three devices and four levers is a lot of chat
-	 * for something that belongs on the line that is already there.
-	 */
+	/** Adds the two clocks to the completion message rather than adding a line. */
 	private fun decorate(message: Component): Component {
 		if (!module.enabled || !splits.value) return message
 		val match = completedPattern.find(message.string) ?: return message
@@ -165,11 +147,8 @@ object TerminalTimes {
 	}
 
 	/**
-	 * Says what the terminal that just closed took, against the best so far.
-	 *
-	 * Called by the chat line Hypixel prints, and by the simulator when one of
-	 * its own terminals is finished — which has no chat line to print and is
-	 * the whole reason the simulator can be practised against a clock at all.
+	 * Reports the closed terminal's time against the best. Called from Hypixel's chat line, and by
+	 * the simulator, which has none.
 	 */
 	fun onSolved() {
 		if (!module.enabled || !announceTimes.value) return

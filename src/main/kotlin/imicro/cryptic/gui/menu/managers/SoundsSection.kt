@@ -15,12 +15,9 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * The Sound Manager on its module's page: every sound the game knows,
- * searchable, each with its own volume and a button to hear it.
- *
- * NoammAddons' layout: a search, a row of categories by what the id starts
- * with, and a Recent list of what has just played, which is how a sound heard
- * in game is found without knowing its name.
+ * The Sound Manager: every sound the game knows, searchable, each with its own volume and a play
+ * button. NoammAddons' layout: search, category chips by id prefix, and a Recent list, which is how
+ * a sound just heard is found.
  */
 class SoundsSection : ManagerSection("Sounds") {
 	private enum class Tab(val title: String) {
@@ -31,11 +28,10 @@ class SoundsSection : ManagerSection("Sounds") {
 	private val search = TextField(64)
 	private var tab = Tab.ALL
 
-	/** Every registered sound, sorted, worked out once per opening. */
 	private val everySound: List<String> = BuiltInRegistries.SOUND_EVENT.keySet().map { it.toString() }.sorted()
 	private val everySoundSet: Set<String> = everySound.toHashSet()
 
-	/** The list as last filtered, kept until the search or the tab changes. */
+	/** The list as last filtered, kept until the search or tab changes. */
 	private var shown: List<String> = emptyList()
 	private var shownFor = ""
 	private var changed = false
@@ -47,7 +43,7 @@ class SoundsSection : ManagerSection("Sounds") {
 	override fun draw(x: Float, y: Float, width: Float): Float {
 		var cy = y
 		val pad = 18f
-		// The card's height depends on how the chips wrap, so they are measured first.
+		// The card's height depends on how the chips wrap, so they're measured first.
 		val wrap = chipRows(width - pad * 2f)
 		val cardH = 18f + 34f + 12f + wrap * (imicro.cryptic.gui.menu.UiKit.CHIP_HEIGHT + 6f) - 6f + 14f + 18f + 14f
 		ui.card(Box(x, cy, width, cardH))
@@ -72,7 +68,6 @@ class SoundsSection : ManagerSection("Sounds") {
 		return cy - y
 	}
 
-	/** How many rows the category chips wrap onto at [width]. */
 	private fun chipRows(width: Float): Int {
 		var rows = 1
 		var cx = 0f
@@ -122,10 +117,10 @@ class SoundsSection : ManagerSection("Sounds") {
 		ui.text(ui.fit(name, 13f, room), x + pad, cy - 6.5f, 13f, if (percent == 100) MenuStyle.TEXT else MenuStyle.accent(), UiText.Face.REGULAR)
 	}
 
-	/** What the search and the tab leave, worked out again only when either changes. */
+	/** What the search and tab leave, recomputed only when either changes. */
 	private fun filtered(): List<String> {
 		val query = search.text.trim().lowercase(Locale.ROOT)
-		// Recent and Changed move on their own, so those are never kept.
+		// Recent and Changed move on their own, so they're never cached.
 		val key = "$tab\u0000$query"
 		if (key == shownFor && tab != Tab.RECENT && tab != Tab.CHANGED) return shown
 
@@ -153,11 +148,11 @@ class SoundsSection : ManagerSection("Sounds") {
 		}
 	}
 
-	/** Plays [id] the way it would sound at [percent]: from half volume, so twice as loud can be heard. */
+	/** Plays [id] at [percent], from half volume so double can be heard. */
 	private fun preview(id: String, percent: Int) {
 		val location = Identifier.tryParse(id) ?: return
-		// With the module on, the volume is scaled on the way out like any
-		// other sound; with it off, the preview does it itself.
+		// With the module on, the volume is scaled on the way out like any sound; off, the preview
+		// scales itself.
 		val volume = if (SoundVolumes.module.enabled) PREVIEW_VOLUME else PREVIEW_VOLUME * percent / 100f
 		Minecraft.getInstance().soundManager.play(SimpleSoundInstance.forUI(SoundEvent.createVariableRangeEvent(location), 1f, volume))
 	}

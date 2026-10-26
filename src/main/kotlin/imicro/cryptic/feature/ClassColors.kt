@@ -21,17 +21,12 @@ import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.player.Player
 
 /**
- * Applies Hypixel's dungeon-class colors to teammates, on the glow and on the
- * labels [ClassNames] draws over their heads.
- *
- * Hypixel already controls whether a player is glowing. Cryptic only replaces
- * the color returned for known dungeon teammates, mirroring Odin's approach.
- * Who is on the team comes from [DungeonTeam], which other modules share. The
- * name labels live in the same module because they are the same idea told a
- * second way, and nobody wants to find one switched on and the other off.
+ * Hypixel's dungeon-class colours on teammates' glows and on the labels [ClassNames] draws. Only
+ * the colour of known teammates is replaced (Odin's approach); Hypixel still decides who glows.
+ * Teammates come from [DungeonTeam].
  */
 object ClassColors {
-	/** Blade Addons' own label height, kept so the labels sit where players expect. */
+	/** Blade Addons' label height. */
 	private const val NAME_TAG_HEIGHT = 2.75
 
 	private val colorsSection = SectionModuleSetting("colors_section", "Colors")
@@ -130,7 +125,6 @@ object ClassColors {
 
 	private val boxesSection = SectionModuleSetting("boxes_section", "Boxes")
 
-	/** Indices into [boxStyle]. */
 	private const val STYLE_OUTLINE = 0
 	private const val STYLE_FILL = 1
 
@@ -238,9 +232,8 @@ object ClassColors {
 	}
 
 	/**
-	 * A box round each teammate, in their class's colour: the same colour the
-	 * glow and the name label use, so all three agree on who is who. Your own
-	 * box is left out — it would sit around the camera.
+	 * A box round each teammate in their class colour, matching the glow and label. Not your own;
+	 * it would sit around the camera.
 	 */
 	private fun renderBoxes(context: LevelRenderContext) {
 		if (!module.enabled || !boxes.value || !DungeonTeam.inDungeons || DungeonTeam.classes.isEmpty()) return
@@ -256,7 +249,6 @@ object ClassColors {
 			if (player === self || player.isInvisible) continue
 			val dungeonClass = DungeonTeam.classOf(player.name.string) ?: continue
 			val rgb = getClassColor(dungeonClass) and 0xFFFFFF
-			// Around where the player is drawn this frame, not where they were last tick.
 			val box = player.type.dimensions.makeBoundingBox(
 				Mth.lerp(partial, player.xOld, player.x),
 				Mth.lerp(partial, player.yOld, player.y),
@@ -278,10 +270,8 @@ object ClassColors {
 	}
 
 	/**
-	 * Called from Entity#getTeamColor for every entity in view, so the checks are
-	 * ordered cheapest and most selective first. Reading an entity's name builds
-	 * a string, which only happens once there is something to match it against.
-	 * Returning null leaves vanilla behavior untouched.
+	 * Called from Entity#getTeamColor for every entity in view, so cheap checks go first and names
+	 * are read last. Null leaves vanilla alone.
 	 */
 	@JvmStatic
 	fun getGlowColor(entity: Entity): Int? {
@@ -297,7 +287,6 @@ object ClassColors {
 		return DungeonTeam.classOf(entity.name.string)?.let(::getClassColor)
 	}
 
-	/** Shared palette entry point for every module which colors dungeon classes. */
 	@JvmStatic
 	fun getClassColor(dungeonClass: DungeonClass): Int = when (dungeonClass) {
 		DungeonClass.ARCHER -> archerColor.rgb
@@ -309,15 +298,9 @@ object ClassColors {
 	}
 
 	/**
-	 * Whether a player glows, or null to leave it to the game.
-	 *
-	 * Only players, only in a dungeon, and only with this module on — anything
-	 * else is not this module's to decide. "Disable player glow" turns it off
-	 * for everyone. Otherwise your own glow follows "Apply to self" both ways:
-	 * switched on, you glow in third person even without the server's glow
-	 * flag; switched off, you do not glow at all, because Hypixel sets that flag
-	 * on everyone in a dungeon and "off" would otherwise only have meant your
-	 * glow kept its plain team colour. Teammates are left to the server.
+	 * Whether a player glows, or null to leave it to the game. Players in a dungeon only, with the
+	 * module on. "Disable player glow" turns it off for everyone; your own glow follows "Apply to
+	 * self" both ways (Hypixel glows everyone in dungeons). Teammates are left to the server.
 	 */
 	@JvmStatic
 	fun glowOverride(entity: Entity): Boolean? {

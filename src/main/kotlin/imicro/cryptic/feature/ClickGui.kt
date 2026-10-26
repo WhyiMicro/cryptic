@@ -14,7 +14,7 @@ import imicro.cryptic.hud.Hud
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 
-/** Settings for the menu itself. The open-menu bind is Minecraft's real key mapping. */
+/** Settings for the menu itself. The open-menu key is a real Minecraft key mapping. */
 object ClickGui {
 	@JvmField
 	val accentColor = ColorModuleSetting(
@@ -38,7 +38,6 @@ object ClickGui {
 		},
 	)
 
-	/** Indices into [sorting]. */
 	const val SORT_A_TO_Z = 0
 	const val SORT_Z_TO_A = 1
 	const val SORT_WIDTH = 2
@@ -68,7 +67,6 @@ object ClickGui {
 		description = "Keeps what you typed in the search when it is closed with Escape or the menu is shut, and puts it back the next time.",
 	)
 
-	/** The search as it was left, while [rememberSearch] is on. For this session. */
 	var rememberedSearch: String = ""
 
 	@JvmField
@@ -103,9 +101,7 @@ object ClickGui {
 	val editHud = ButtonModuleSetting(
 		id = "edit_hud",
 		label = "Edit HUD",
-		// The menu is in the way of the thing being arranged, so it closes and
-		// hands over to the editor rather than opening it on top of itself. The
-		// menu goes along as the way back, so escape returns to it.
+		// The menu closes and hands over to the editor, which returns to it on escape.
 		action = {
 			val parent = Minecraft.getInstance().gui.screen()
 			Minecraft.getInstance().execute { Hud.openEditor(parent) }
@@ -116,7 +112,7 @@ object ClickGui {
 	val module = Module(
 		id = "click_gui",
 		name = "Click GUI",
-		description = "Customize Cryptic's interface",
+		description = "Cryptic's own interface",
 		category = ModuleCategory.MISC,
 		supportsToggle = false,
 		supportsKeybind = true,

@@ -32,40 +32,31 @@ import org.lwjgl.glfw.GLFW
 import kotlin.math.roundToInt
 
 /**
- * Draws the answer to the Floor 7 terminals, and takes their clicks.
- *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking), and of its
- * three ways of drawing a terminal only one is left: the custom GUI, which
- * throws the chest away and draws the puzzle on its own, big and in the middle
- * of the screen with rounded slots. The two that painted over the chest's own
- * slots were taken out — nobody here used them — and with them the business of
- * asking the game for a different GUI scale while a terminal was open.
+ * Draws the answer to the Floor 7 terminals and handles their clicks, ported from Odin. Only Odin's
+ * custom GUI is kept: the chest is replaced by the puzzle alone, large and centred, with rounded
+ * slots.
  */
 object TerminalSolver {
-	/** A slot's size in the custom GUI before the size setting scales it. */
 	private const val BASE_SLOT_SIZE = 24
 
-	/** How far the custom GUI's background reaches past the outermost slots. */
 	private const val BASE_PADDING = 2
 
-	/** How deep a rounded corner cuts into the square it replaces, as a share of its radius. */
+	/** How deep a rounded corner cuts into its square, as a share of the radius. */
 	private const val CORNER_BITE = 0.3
 
-	/** Minecraft's own chat colours, which Odin's defaults are built from. */
+	/** Minecraft's chat colours, which Odin's defaults use. */
 	private const val MINECRAFT_GREEN = 0x55FF55
 	private const val MINECRAFT_DARK_RED = 0xAA0000
 	private const val MINECRAFT_DARK_PURPLE = 0xAA00AA
 
-	/** The same green and red at half and a quarter brightness, as Odin has them. */
+	/** The same green and red at half and quarter brightness, as Odin has them. */
 	private const val GREEN_HALF = 0x2B802B
 	private const val GREEN_QUARTER = 0x154015
 	private const val DARK_RED_HALF = 0x550000
 
-	/** The three rubix modes, in the order the dropdown offers them. */
+	/** The three rubix modes, in dropdown order. */
 	private const val RUBIX_LEFT_ONLY = 1
 	private const val RUBIX_ONE_BUTTON = 2
-
-	// ---- Rendering -------------------------------------------------------
 
 	private val renderSection = SectionModuleSetting(id = "render_section", label = "Rendering")
 
@@ -120,8 +111,6 @@ object TerminalSolver {
 		defaultValue = false,
 		description = "Writes the numbers in your resource pack's font.",
 	)
-
-	// ---- Solver functionality --------------------------------------------
 
 	private val functionalitySection = SectionModuleSetting(
 		id = "functionality_section",
@@ -181,12 +170,12 @@ object TerminalSolver {
 	val rubixMode = DropdownModuleSetting(
 		id = "rubix_mode",
 		label = "Rubix mode",
-		options = listOf("Fewest clicks", "Left clicks only", "One button"),
+		options = listOf("Normal", "No minus", "One button"),
 		defaultIndex = 0,
-		description = "Fewest clicks wants right clicks; one button sends them for you.",
+		description = "Normal takes the fewest clicks, right clicks included; No minus only left clicks; One button sends them for you.",
+		optionRestrictions = mapOf("No minus" to imicro.cryptic.gui.Restriction.SEMI_LEGIT),
+		renamed = mapOf("Fewest clicks" to "Normal", "Left clicks only" to "No minus"),
 	)
-
-	// ---- First click protection ------------------------------------------
 
 	private val protectionSection = SectionModuleSetting(
 		id = "protection_section",
@@ -228,12 +217,10 @@ object TerminalSolver {
 
 	// ---- Sound -----------------------------------------------------------
 	//
-	// Odin's Terminal Sounds and NoammAddons' terminal click sound (BSD
-	// 3-Clause, Copyright (c) 2025 odtheking; CC0, Noamm9): Hypixel answers
-	// every terminal click with a note-block pling at volume 8 and a pitch of
-	// 4.047619, a pair nothing else uses. While a terminal is open that sound
-	// is dropped as it arrives, and the one chosen here is played on the click
-	// instead — at once, rather than a round trip later.
+	// Odin's Terminal Sounds and NoammAddons' click sound: Hypixel answers every terminal click
+	// with a note block pling (volume 8, pitch 4.047619, a pair nothing else uses). While a
+	// terminal is open that sound is dropped, and the chosen one plays on the click instead,
+	// without waiting a round trip.
 
 	private val soundSection = SectionModuleSetting(id = "sound_section", label = "Sound", startsCollapsed = true)
 
@@ -285,17 +272,15 @@ object TerminalSolver {
 		visibleIf = { clickSound.value },
 	)
 
-	/** True while terminal clicks sound like the sound chosen here, not like Hypixel's. */
 	val replacesClickSound: Boolean get() = module.enabled && clickSound.value
 
-	/** The chosen click sound, on the client thread. */
 	fun playClickSound() {
 		SoundChoices.play(clickSoundChoice.selectedIndex, clickSoundVolume.value.toFloat(), clickSoundPitch.value.toFloat(), customClickSound.value)
 	}
 
 	/**
-	 * Whether a sound from the server is Hypixel's terminal click, to be
-	 * dropped. May be asked on the network thread, so it only reads.
+	 * Whether a server sound is Hypixel's terminal click, to be dropped. May run on the network
+	 * thread, so it only reads.
 	 */
 	@JvmStatic
 	fun eatsServerSound(packet: ClientboundSoundPacket): Boolean {
@@ -305,9 +290,8 @@ object TerminalSolver {
 	}
 
 	/**
-	 * The gate falling and the core opening ring the same pling as a click, so
-	 * one that lands while a terminal is open was dropped with the clicks. It
-	 * is played again here, as Odin does, so neither goes unheard.
+	 * The gate falling and the core opening ring the same pling, so one dropped while a terminal
+	 * was open is replayed, as Odin does.
 	 */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
@@ -324,8 +308,6 @@ object TerminalSolver {
 	private const val GATE_DESTROYED = "The gate has been destroyed!"
 	private const val CORE_OPENING = "The Core entrance is opening!"
 	private val FORMATTING = Regex("§.")
-
-	// ---- Colors ----------------------------------------------------------
 
 	@JvmField
 	val backgroundColor = ColorModuleSetting(
@@ -484,35 +466,27 @@ object TerminalSolver {
 		) + MelodyHud.settings,
 	)
 
-	/** True when rubix should never ask for a right click at all. */
 	val leftClicksOnly: Boolean get() = rubixMode.selectedIndex == RUBIX_LEFT_ONLY
 
-	/** True when rubix sends whichever button the answer wants, not the one pressed. */
+	/** True when rubix sends whichever button the answer wants. */
 	val rubixOneButton: Boolean get() = rubixMode.selectedIndex == RUBIX_ONE_BUTTON
 
 	/**
-	 * The slot the cursor was over when the custom GUI was last drawn.
-	 *
-	 * Keeping it from the render pass is what lets a key press click "the slot
-	 * under the mouse" without working the layout out a second time.
+	 * The slot under the cursor when the GUI was last drawn, so keys can click it without redoing
+	 * the layout.
 	 */
 	private var hoveredSlot: Int? = null
 
 	/**
-	 * Cryptic's own copy of Minecraft's font, so a resource pack that replaces
-	 * the game's cannot replace the terminal's numbers with something harder to
-	 * read at a glance. It is vanilla's `default.json` under Cryptic's
-	 * namespace, which is where a pack will not think to look.
+	 * Cryptic's own copy of Minecraft's font (vanilla's `default.json` under Cryptic's namespace),
+	 * so resource packs can't make the terminal numbers harder to read.
 	 */
 	private val vanillaFont = Style.EMPTY.withFont(FontDescription.Resource(Cryptic.id("vanilla")))
 
 	/**
-	 * The terminal open on screen right now, or null when there is none.
-	 *
-	 * The screen is checked, not just the tracker: a terminal that is no longer
-	 * on screen must never reach the menu that replaced it, because the solver
-	 * hides items and swallows clicks by slot number and the player's own
-	 * inventory numbers its slots the same way.
+	 * The terminal open on screen, or null. Checks the screen too, so a stale terminal never
+	 * reaches the next menu (the inventory numbers its slots the same way, and the solver hides
+	 * items and swallows clicks by slot).
 	 */
 	private fun tracked(): TerminalHandler? {
 		if (!module.enabled) return null
@@ -521,48 +495,36 @@ object TerminalSolver {
 		return Terminals.current
 	}
 
-	/** The terminal being *drawn* right now, which melody can be excused from. */
+	/** The terminal being drawn right now (melody can be excused from drawing). */
 	private fun active(): TerminalHandler? {
 		val handler = tracked() ?: return null
 		if (stopMelodySolver.value && handler.type == TerminalType.MELODY) return null
 		return handler
 	}
 
-	/** True while the custom GUI has taken the screen over. */
 	private fun ownsScreen(screen: Screen): Boolean =
 		active() != null &&
 			screen is AbstractContainerScreen<*> &&
 			Minecraft.getInstance().gui.screen() === screen
 
-	/** Tooltips are the chest talking about items nobody can see. */
 	@JvmStatic
 	fun hidesTooltip(): Boolean = active() != null
 
 	/**
-	 * A click on one of the chest's slots.
-	 *
-	 * Every click in a terminal goes through the handler, whichever way it is
-	 * being drawn: the handler is what holds the first-click protection, and a
-	 * click that went straight to the chest would walk around it.
-	 *
-	 * Vanilla sends hotbar keys and the drop key through here too, with the
-	 * hotbar number in place of a mouse button, so anything that is not a
-	 * plain pickup is read as a left click.
+	 * A click on a chest slot. Every terminal click goes through the handler, which holds the
+	 * first-click protection. Hotbar and drop keys come through here too and are read as left
+	 * clicks.
 	 */
 	@JvmStatic
 	fun handleSlotClick(slotId: Int, button: Int, input: ContainerInput): Boolean {
-		// Melody is asked even when it is not being drawn: the ban risk is in
-		// the clicking, not in the painting, so first click protection holds
-		// whatever the render settings say.
+		// Melody is asked even when not drawn: the ban risk is in clicking, so protection always
+		// holds.
 		val handler = tracked() ?: return false
 		val pressed = if (input == ContainerInput.PICKUP) button else GLFW.GLFW_MOUSE_BUTTON_LEFT
 		handler.click(slotId, pressed)
 		return true
 	}
 
-	// ---- The custom GUI --------------------------------------------------
-
-	/** Where each slot of the open terminal is on screen, in GUI pixels. */
 	private class Layout(
 		val type: TerminalType,
 		val originX: Int,
@@ -588,7 +550,6 @@ object TerminalSolver {
 			}
 		}
 
-		/** The slot at a screen position, or null between or outside them. */
 		fun slotAt(x: Double, y: Double): Int? {
 			var found: Int? = null
 			forEachSlot { slotIndex, slotX, slotY ->
@@ -602,12 +563,8 @@ object TerminalSolver {
 		if (type == TerminalType.MELODY) melodyTermSize.value else termSize.value
 
 	/**
-	 * How far the background reaches past the outermost slots.
-	 *
-	 * A rounded corner takes a bite out of the box's own corner — at its
-	 * deepest, the diagonal, about three tenths of the radius — so the padding
-	 * grows with the rounding. Without that, turning the container's corners up
-	 * while leaving the slots square clipped the corner slot.
+	 * How far the background reaches past the outer slots; grows with the corner radius (a corner
+	 * bites about three tenths of the radius), or round corners clip the corner slot.
 	 */
 	private fun paddingFor(scale: Double): Int =
 		(BASE_PADDING * scale).roundToInt() + (containerRoundness.value * CORNER_BITE * scale).roundToInt()
@@ -628,15 +585,9 @@ object TerminalSolver {
 	}
 
 	/**
-	 * Draws the terminal in place of everything the chest screen would draw.
-	 *
-	 * The whole screen has to go rather than only its contents: the chest
-	 * texture behind the slots is a picture of an inventory, and leaving it up
-	 * puts a row of fake item slots under a terminal that has nothing to do
-	 * with them. What replaces it is the same dimming any in-game screen lays
-	 * over the world, so the terminal is the only thing on it.
-	 *
-	 * Returns true when it took over, so the caller can drop the vanilla screen.
+	 * Draws the terminal instead of the chest screen. The whole screen goes, since the chest
+	 * texture is a picture of an inventory. The usual in-game dimming replaces it. Returns true
+	 * when it took over.
 	 */
 	@JvmStatic
 	fun renderCustomGui(screen: Screen, context: GuiGraphicsExtractor, mouseX: Int, mouseY: Int): Boolean {
@@ -648,7 +599,7 @@ object TerminalSolver {
 		val slotRadius = (roundness.value * scale).toFloat()
 		val boxRadius = (containerRoundness.value * scale).toFloat()
 
-		// The same stratum the screen would have drawn its background into.
+		// The stratum the screen's background would have used.
 		context.nextStratum()
 		context.fillGradient(0, 0, context.guiWidth(), context.guiHeight(), BACKDROP_TOP, BACKDROP_BOTTOM)
 		context.nextStratum()
@@ -670,8 +621,8 @@ object TerminalSolver {
 			}
 
 			val overlay = terminal.overlay(slotIndex) ?: return@forEachSlot
-			// A fully transparent slot still has a label worth drawing: the
-			// order terminal numbers every pane but only paints the next few.
+			// A transparent slot still gets its label: the numbers terminal labels every pane but
+			// paints only the next few.
 			if (overlay.argb ushr 24 != 0) {
 				RoundedRect.fill(context, x, y, x + layout.slotSize, y + layout.slotSize, overlay.argb, slotRadius)
 			}
@@ -690,9 +641,8 @@ object TerminalSolver {
 	}
 
 	/**
-	 * Draws [text] centred on ([centerX], [centerY]), in Minecraft's own
-	 * letters where they could be read and in the installed font where they
-	 * could not.
+	 * Draws [text] centred on ([centerX], [centerY]), in Minecraft's letters where readable,
+	 * otherwise the installed font.
 	 */
 	private fun drawLabel(
 		context: GuiGraphicsExtractor,
@@ -713,15 +663,12 @@ object TerminalSolver {
 			return
 		}
 
-		// The declared font is Cryptic's own copy of Minecraft's, which most
-		// packs cannot reach; asking for the pack's font means asking for
-		// whatever the game would ordinarily draw with.
+		// The declared font is Cryptic's copy of Minecraft's, which most packs can't reach.
 		val component = Component.literal(text)
 		if (!resourcePackFont.value) component.setStyle(vanillaFont)
 		context.centeredText(font, component, centerX, centerY - font.lineHeight / 2, argb)
 	}
 
-	/** Returns true when the click was ours, and the chest should not see it. */
 	@JvmStatic
 	fun handleMouseClick(screen: AbstractContainerScreen<*>, mouseX: Double, mouseY: Double, button: Int): Boolean {
 		if (!ownsScreen(screen)) return false
@@ -731,15 +678,14 @@ object TerminalSolver {
 		hoveredSlot = slot
 		if (slot != null) terminal.click(slot, button)
 
-		// Clicks that missed every slot are swallowed too: the chest underneath
-		// is not on screen, so letting one through would click a slot blind.
+		// Clicks between slots are swallowed too; the chest isn't on screen, so a click through
+		// would be blind.
 		return true
 	}
 
 	/**
-	 * Clicks the slot under the cursor when a key bound to dropping or to a
-	 * hotbar number is pressed, which is what makes the terminal quick to play
-	 * without moving the mouse off a slot. Holding control right-clicks.
+	 * A drop or hotbar key clicks the slot under the cursor, so terminals can be played without
+	 * moving off a slot. Control right-clicks.
 	 */
 	@JvmStatic
 	fun handleKeyPress(screen: AbstractContainerScreen<*>, event: KeyEvent): Boolean {
@@ -757,7 +703,7 @@ object TerminalSolver {
 		return true
 	}
 
-	/** Vanilla's own in-game screen dimming, so nothing about it looks new. */
+	/** Vanilla's in-game screen dimming. */
 	private const val BACKDROP_TOP = 0xC0101010.toInt()
 	private const val BACKDROP_BOTTOM = 0xD0101010.toInt()
 }

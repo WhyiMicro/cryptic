@@ -24,45 +24,35 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * Says how high a charged pair of Spring Boots is about to throw you.
- *
- * Ported from Odin's Spring Boots (BSD 3-Clause, Copyright (c) 2025 odtheking)
- * and NoammAddons' (CC0, Noamm9); the table of heights and the pitches it is
- * read from are theirs, and identical in both. The boots charge while you
- * crouch and jump when you let go, and the only feedback Hypixel gives is a
- * note that climbs in pitch — so the charge is counted off the notes: two low
- * ones to begin with, then one higher one for every step after, each step
- * being a row of the table.
- *
- * The box is the half that makes it usable. "33 blocks" is a number; a box
- * hanging in the air where your feet will reach is whether you clear the wall.
+ * How high a charged pair of Spring Boots will throw you. The boots charge while crouching, and
+ * Hypixel's only feedback is a note rising in pitch: two low ones, then a higher one per step, each
+ * step a row of the heights table. A box marks where your feet will reach. Table and pitches from
+ * Odin and NoammAddons.
  */
 object SpringBootsHelper {
 	private const val BOOTS_ID = "SPRING_BOOTS"
 
-	/** Indices into [hudMode]. */
 	private const val MODE_PERCENT = 0
 
-	/** Indices into [boxStyle]. */
 	private const val STYLE_OUTLINE = 0
 	private const val STYLE_FILL = 1
 
-	/** The first two notes of a charge, which are the same low one twice. */
+	/** The first two notes of a charge: the same low one twice. */
 	private const val LOW_PITCH = 0.6984127f
 	private const val MAX_LOW_NOTES = 2
 
-	/** The notes after that, any of which is one more step. */
+	/** Any later note is one more step. */
 	private val HIGH_PITCHES = floatArrayOf(
 		0.82539684f, 0.8888889f, 0.93650794f, 1.0476191f, 1.1746032f, 1.3174603f, 1.7777778f,
 	)
 
-	/** The firework Hypixel plays as the boots go off, at one of these two pitches. */
+	/** The firework Hypixel plays as the boots fire, at one of two pitches. */
 	private val LAUNCH_PITCHES = floatArrayOf(0.0952381f, 1.6984127f)
 
-	/** A pitch is sent as a float and compared as one, so "equal" needs a little room. */
+	/** Pitches arrive as floats, so "equal" needs a little slack. */
 	private const val PITCH_SLACK = 0.0005f
 
-	/** How many blocks each step of charge is worth. The last is the most the boots can do. */
+	/** Blocks per step of charge; the last is the maximum. */
 	private val HEIGHTS = floatArrayOf(
 		0.0f, 3.0f, 6.5f, 9.0f, 11.5f, 13.5f, 16.0f, 18.0f, 19.0f,
 		20.5f, 22.5f, 25.0f, 26.5f, 28.0f, 29.0f, 30.0f, 31.0f, 33.0f,
@@ -166,7 +156,6 @@ object SpringBootsHelper {
 	private var lowNotes = 0
 	private var highNotes = 0
 
-	/** How many blocks the charge so far is worth, and zero while there is none. */
 	private val height: Float
 		get() {
 			if (DebugOverrides.sampleHudValues) return EXAMPLE_HEIGHT
@@ -198,12 +187,8 @@ object SpringBootsHelper {
 	private fun near(pitch: Float, target: Float): Boolean = abs(pitch - target) < PITCH_SLACK
 
 	/**
-	 * A sound from the server, which is the only place the charge is announced.
-	 *
-	 * A packet handler is run twice — as it arrives, on the network thread, and
-	 * again on the client's — and a note counted on both would be two steps of
-	 * charge for one. Only the client's pass is counted, which is also the one
-	 * that is allowed to look at the player.
+	 * A server sound, the only place the charge is announced. Only the client-thread pass counts,
+	 * or each note would count twice.
 	 */
 	@JvmStatic
 	fun onSound(packet: ClientboundSoundPacket) {
@@ -223,13 +208,13 @@ object SpringBootsHelper {
 					HIGH_PITCHES.any { near(pitch, it) } -> highNotes++
 				}
 			}
-			// The boots going off, which spends the charge.
+			// The boots fire, spending the charge.
 			SoundEvents.FIREWORK_ROCKET_LAUNCH.location() ->
 				if (LAUNCH_PITCHES.any { near(pitch, it) }) reset()
 		}
 	}
 
-	/** A charge is lost the moment you stand up, leave the ground or take the boots off. */
+	/** A charge is lost on standing up, leaving the ground, or taking the boots off. */
 	fun tick(client: Minecraft) {
 		if (lowNotes == 0 && highNotes == 0) return
 		val player = client.player
@@ -243,8 +228,7 @@ object SpringBootsHelper {
 
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return
-		// Where the player is being drawn this frame rather than where they were
-		// last tick, so the box does not shiver as they shuffle about.
+		// Where the player is drawn this frame, so the box doesn't shiver.
 		val at = player.getPosition(client.deltaTracker.getGameTimeDeltaPartialTick(false))
 		val style = boxStyle.selectedIndex
 
@@ -287,7 +271,7 @@ object SpringBootsHelper {
 	private class SpringElement : HudElement("spring_boots", "Spring Boots", 0.46, 0.60) {
 		private val font get() = Minecraft.getInstance().font
 
-		// Against the widest it gets in either mode, so the frame holds still.
+		// The widest it gets in either mode, so the frame holds still.
 		override val width: Int get() = font.width(label() + if (hudMode.selectedIndex == MODE_PERCENT) "100%" else "61.0")
 		override val height: Int get() = font.lineHeight
 

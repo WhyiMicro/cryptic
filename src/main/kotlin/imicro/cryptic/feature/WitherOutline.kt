@@ -12,24 +12,12 @@ import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.boss.wither.WitherBoss
 
 /**
- * Outlines Maxor, Storm, Goldor and Necron during the Floor 7 boss fight.
- *
- * All four are ordinary withers wearing Hypixel's own skins, which is how
- * NoammAddons (CC0) identifies them too, and its four colours are the defaults
- * here.
- *
- * The outline itself is the one the game already draws around glowing
- * entities: the render state's outline colour is all that decides whether an
- * entity gets one, so Cryptic sets it directly and never touches glowing, team
- * colours, or anything the server controls. [BetterGlow] is what makes that
- * outline a clean line rather than a dark-fringed one.
+ * Outlines Maxor, Storm, Goldor and Necron in the Floor 7 fight, identified by their skins with
+ * NoammAddons' colours. Sets the render state's outline colour directly, never glowing or teams;
+ * [BetterGlow] makes it a clean line.
  */
 object WitherOutline {
-	/**
-	 * Hypixel parks decoy withers in the arena with the spawn timer pinned at
-	 * its maximum. NoammAddons skips those, and outlining them would put a line
-	 * around a boss that is not there yet.
-	 */
+	/** Hypixel parks decoy withers with the spawn timer at max; NoammAddons skips them too. */
 	private const val DECOY_INVULNERABLE_TICKS = 800
 
 	@JvmField
@@ -89,25 +77,20 @@ object WitherOutline {
 		visibleIf = { enabled.value && perBossColors.value },
 	)
 
-	/** Listed on the F7/M7 QOL card. */
+	/** Listed on the F7/M7 Features card. */
 	val settings: List<ModuleSetting> = listOf(
 		enabled, perBossColors, color, maxorColor, stormColor, goldorColor, necronColor,
 	)
 
-	/** True while the withers are to be outlined. */
 	val active: Boolean get() = F7Qol.module.enabled && enabled.value
 
-	/** True while the boss bar has to be read to know which colour to use. */
+	/** True while the boss bar has to be read to pick a colour. */
 	val needsBossTracking: Boolean get() = active && perBossColors.value
 
 	/**
-	 * The colour to outline [entity] with, or [EntityRenderState.NO_OUTLINE] to
-	 * leave it alone.
-	 *
-	 * This is asked once per entity per frame, so the checks are ordered
-	 * cheapest and most selective first. Invisible withers are passed over
-	 * because Hypixel hides Goldor while his terminals are running, and an
-	 * outline would give away a boss the fight means to keep out of sight.
+	 * The outline colour for [entity], or [EntityRenderState.NO_OUTLINE]. Asked per entity per
+	 * frame, so cheap checks go first. Invisible withers are skipped: Hypixel hides Goldor during
+	 * terminals.
 	 */
 	@JvmStatic
 	fun outlineColorFor(entity: Entity): Int {
@@ -117,8 +100,7 @@ object WitherOutline {
 			return EntityRenderState.NO_OUTLINE
 		}
 
-		// The outline is written into a mask the game later blends, where an
-		// alpha below full would come out faded.
+		// The outline mask needs full alpha.
 		return ARGB.opaque(currentColor())
 	}
 
@@ -130,8 +112,7 @@ object WitherOutline {
 			DungeonBoss.Wither.STORM -> stormColor.rgb
 			DungeonBoss.Wither.GOLDOR -> goldorColor.rgb
 			DungeonBoss.Wither.NECRON -> necronColor.rgb
-			// Between phases there is no boss bar to read, and the shared
-			// colour is a better guess than picking one of the four.
+			// Between phases there's no boss bar; the shared colour is the best guess.
 			null -> color.rgb
 		}
 	}

@@ -7,16 +7,9 @@ import imicro.cryptic.gui.ToggleModuleSetting
 import net.minecraft.client.gui.GuiGraphicsExtractor
 
 /**
- * Lays a sheet of black over the game, to take the edge off a bright world.
- *
- * Ported from NoammAddons' Dark Mode (CC0, Noamm9), with the same two settings.
- * SkyBlock is lit like a showroom — a snowy island or the inside of a quartz
- * dungeon room is a white screen at night — and the game's own brightness
- * slider only goes up. This goes down, by as much as is wanted.
- *
- * The one choice is what the sheet goes over. Drawn first, it darkens the world
- * and leaves the hotbar, the chat and everything else on the HUD at full
- * strength on top of it; drawn last, it darkens those as well.
+ * A sheet of black over the game, to darken a bright world (the brightness slider only goes up).
+ * Drawn first it darkens only the world; drawn last it darkens the HUD too. Ported from
+ * NoammAddons' Dark Mode.
  */
 object DarkMode {
 	@JvmField
@@ -49,17 +42,15 @@ object DarkMode {
 		settings = listOf(opacity, tintHud),
 	)
 
-	/** Before anything on the HUD is drawn, which puts the sheet under all of it. */
 	@JvmStatic
 	fun drawUnderHud(graphics: GuiGraphicsExtractor) {
 		if (module.enabled && !tintHud.value) draw(graphics)
 	}
 
-	/** After everything on the HUD is drawn, which puts the sheet over all of it. */
 	@JvmStatic
 	fun drawOverHud(graphics: GuiGraphicsExtractor) {
 		if (!module.enabled || !tintHud.value) return
-		// A layer of its own, so nothing already drawn can end up above it.
+		// A layer of its own, so nothing already drawn ends up above it.
 		graphics.nextStratum()
 		draw(graphics)
 	}

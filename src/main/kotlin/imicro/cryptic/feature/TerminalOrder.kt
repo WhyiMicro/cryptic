@@ -23,22 +23,11 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * Writes over each terminal, device and lever the number your class was given.
- *
- * A Goldor section is four or five terminals scattered across a quarter of the
- * tower, and a party's plan is a sentence — "tank takes 1 and 3" — that has to
- * be turned back into places while you are running. This is that: your own
- * assignment, drawn on the things themselves.
- *
- * What is written is the thing's **name**, not its place in an order. Nobody
- * says "do your second one", they say "I've got 3 and 4", so a terminal called
- * 3 reads `[ 3 ]` wherever it comes in your route.
- *
- * The plans and the numbering live in [Floor7Tasks]; the idea is Stella's
- * (LGPL-3.0, so none of its code is here).
+ * Writes your class's assigned number over each Goldor terminal, device and lever, so "tank takes 1
+ * and 3" is drawn on the things themselves. Shows the thing's own number, not its place in your
+ * route. Plans and numbering are in [Floor7Tasks]; the idea is Stella's.
  */
 object TerminalOrder {
-	/** The classes the menu offers, in the order [classChoice] lists them. */
 	private val CLASSES = listOf(
 		DungeonClass.ARCHER,
 		DungeonClass.BERSERK,
@@ -47,13 +36,7 @@ object TerminalOrder {
 		DungeonClass.TANK,
 	)
 
-	/**
-	 * How close a label has to be before it is gone completely.
-	 *
-	 * Arm's reach, near enough: by the time a terminal is this close you are
-	 * looking at the terminal rather than at a label telling you where it is,
-	 * and the label is only in the way.
-	 */
+	/** Within arm's reach a label fades out completely; you're looking at the terminal by then. */
 	private const val FADE_TO_NOTHING = 3.0
 
 	@JvmField
@@ -123,6 +106,17 @@ object TerminalOrder {
 		visibleIf = { fadeWhenClose.value },
 	)
 
+	private const val SHOW_CLASS = 1
+
+	@JvmField
+	val labelStyle = DropdownModuleSetting(
+		id = "label_style",
+		label = "Shows",
+		options = listOf("Number", "Class"),
+		defaultIndex = 0,
+		description = "The terminal's number, or the class the plan gives it (\"[ Archer ]\"), in that class's colour.",
+	)
+
 	@JvmField
 	val numberColor = ColorModuleSetting(
 		id = "number_color",
@@ -175,26 +169,21 @@ object TerminalOrder {
 		supportsKeybind = false,
 		settings = listOf(
 			preset, highlightAll, autoAssign, classChoice, hideWhenDone,
-			labelSection, fadeWhenClose, fadeDistance,
+			labelSection, labelStyle, fadeWhenClose, fadeDistance,
 			numberColor, bracketColor, scale, height, throughWalls,
 		),
 	)
 
 	/**
-	 * Whether the chosen plan cares who you are.
-	 *
-	 * Declared beside the settings that hang off it because a setting's
-	 * visibility is read every frame the menu is open, and the answer is one
-	 * enum lookup.
+	 * Whether the chosen plan depends on class. Read every frame the menu is open, so it's one enum
+	 * lookup.
 	 */
 	private fun splitsByClass(): Boolean =
 		Floor7Tasks.Preset.entries.getOrNull(preset.selectedIndex)?.splitsByClass ?: true
 
-	/** True while the module wants to know the party's classes. */
 	val needsTeamTracking: Boolean
 		get() = module.enabled && autoAssign.value && !highlightAll.value && splitsByClass()
 
-	/** True while the module wants to know what has already been finished. */
 	val needsProgressTracking: Boolean get() = module.enabled && hideWhenDone.value
 
 	private var initialized = false
@@ -211,13 +200,8 @@ object TerminalOrder {
 		Floor7Tasks.Preset.entries.getOrNull(preset.selectedIndex) ?: Floor7Tasks.Preset.M7_GUIDES
 
 	/**
-	 * Whose assignment to draw, or null when nothing should be.
-	 *
-	 * Auto is the tab list, which is the only place that knows and cannot be
-	 * left set to the wrong thing after a run where you swapped class. It says
-	 * nothing at all rather than guessing when it does not know — a wrong
-	 * assignment sends somebody to a terminal that is not theirs, which is
-	 * worse in a run than no assignment at all.
+	 * Whose assignment to draw, or null. Auto reads the tab list and says nothing when it doesn't
+	 * know; a wrong assignment is worse than none.
 	 */
 	private fun assignedClass(): DungeonClass? {
 		if (!autoAssign.value) return CLASSES.getOrNull(classChoice.selectedIndex)
@@ -228,16 +212,13 @@ object TerminalOrder {
 
 	private fun render(context: LevelRenderContext) {
 		if (!module.enabled) return
-		// Which quarter you are standing in is what says which set of numbers
-		// these are: every section repeats them.
+		// The section you're in says which numbers these are; every section repeats them.
 		val section = Floor7.p3Section ?: return
 
 		val tasks = if (highlightAll.value) {
 			Floor7Tasks.tasksIn(section)
 		} else {
-			// The class is only resolved for a plan that splits by one, so a
-			// plan that gives everybody the same thing still draws when the tab
-			// list has not been read yet.
+			// The class is only needed for plans that split by it.
 			val chosen = chosenPreset()
 			Floor7Tasks.assignedIn(section, if (chosen.splitsByClass) assignedClass() else null, chosen)
 		}
@@ -256,7 +237,7 @@ object TerminalOrder {
 				poseStack = context.poseStack(),
 				collector = context.submitNodeCollector(),
 				orientation = orientation,
-				text = label(task),
+				text = label(task, section),
 				x = task.anchor.x,
 				y = task.anchor.y + height.value,
 				z = task.anchor.z,
@@ -267,14 +248,7 @@ object TerminalOrder {
 		}
 	}
 
-	/**
-	 * How solid a label [distance] blocks away should be, nought to 255.
-	 *
-	 * Straight-line between the two ends rather than anything cleverer: the
-	 * point is only that a label gets out of the way as you arrive, and a
-	 * curve would make the distance setting harder to reason about than the
-	 * one sentence that describes it.
-	 */
+	/** A label's alpha at [distance], linear between the two ends. */
 	private fun alphaAt(distance: Double): Int {
 		if (!fadeWhenClose.value) return 0xFF
 		val from = fadeDistance.value.coerceAtLeast(FADE_TO_NOTHING + 1.0)
@@ -285,20 +259,33 @@ object TerminalOrder {
 		return (fraction * 0xFF).roundToInt().coerceIn(0, 0xFF)
 	}
 
-	/** `[ 3 ]`, with the brackets quieter than the thing they hold. */
-	private fun label(task: Floor7Tasks.Task): Component {
+	/** `[ 3 ]`, with quieter brackets. */
+	private fun label(task: Floor7Tasks.Task, section: Int): Component {
 		val name = when (task.kind) {
-			// A terminal's number is the whole of what a party calls it.
 			Floor7Tasks.Kind.TERMINAL -> task.number.toString()
-			// The other two are said by name as well as by number, and the
-			// number is what a plan is written in terms of.
+			// Devices and levers are named too, but plans are written in their numbers.
 			Floor7Tasks.Kind.DEVICE -> "Device ${task.number}"
 			Floor7Tasks.Kind.LEVER -> "Lever ${task.number}"
 		}
+		val inside = classesFor(task, section)?.let { classes ->
+			// Each class in its own colour, several joined by a slash.
+			classes.foldIndexed(Component.empty()) { index, text, dungeonClass ->
+				if (index > 0) text.append(Component.literal("/").withColor(bracketColor.rgb))
+				text.append(Component.literal(dungeonClass.name.lowercase().replaceFirstChar { it.uppercase() }).withColor(ClassColors.getClassColor(dungeonClass)))
+			}
+		} ?: Component.literal(name).withColor(numberColor.rgb)
 
 		return Component.literal("[ ").withColor(bracketColor.rgb)
-			.append(Component.literal(name).withColor(numberColor.rgb))
+			.append(inside)
 			.append(Component.literal(" ]").withColor(bracketColor.rgb))
 			.withStyle(ChatFormatting.BOLD)
+	}
+
+	/** The classes the chosen plan gives [task], with the Class style; null shows its number. */
+	private fun classesFor(task: Floor7Tasks.Task, section: Int): List<DungeonClass>? {
+		if (labelStyle.selectedIndex != SHOW_CLASS) return null
+		val chosen = chosenPreset()
+		if (!chosen.splitsByClass) return null
+		return CLASSES.filter { task in Floor7Tasks.assignedIn(section, it, chosen) }.takeIf { it.isNotEmpty() }
 	}
 }

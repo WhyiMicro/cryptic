@@ -8,23 +8,22 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Overrides only the extracted client lightmap; the user's gamma stays intact. */
+/** Overrides only the extracted lightmap; the player's gamma setting is untouched. */
 @Mixin(LightmapRenderStateExtractor.class)
 public abstract class LightmapRenderStateExtractorMixin {
     @Inject(method = "extract", at = @At("TAIL"))
     private void cryptic$applyFullbright(LightmapRenderState state, float partialTick, CallbackInfo ci) {
         if (!CameraTweaks.isFullbright()) {
             if (CameraTweaks.lightmapApplied) {
-                // One last update hands the lightmap back to vanilla's values.
+                // One last update hands the lightmap back to vanilla.
                 CameraTweaks.lightmapApplied = false;
                 state.needsUpdate = true;
             }
             return;
         }
 
-        // Cryptic's lightmap is constant, so it only has to be uploaded again
-        // when the module turns on or when vanilla already wants an update.
-        // Forcing it every frame rebuilt and re-uploaded the texture for nothing.
+        // The lightmap is constant, so it's only re-uploaded when the module turns on or vanilla
+        // updates anyway.
         if (!CameraTweaks.lightmapApplied) {
             CameraTweaks.lightmapApplied = true;
             state.needsUpdate = true;

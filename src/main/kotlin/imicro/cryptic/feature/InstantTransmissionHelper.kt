@@ -8,90 +8,81 @@ import net.minecraft.world.level.block.CarpetBlock
 import net.minecraft.world.level.block.FlowerPotBlock
 import net.minecraft.world.level.block.WebBlock
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
+import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.Vec3
-import kotlin.math.ceil
 import kotlin.math.floor
-import kotlin.math.round
 
 /**
- * Works out where an Instant Transmission lands.
- *
- * Ported from NoammAddons' `InstantTransmissionHelper` (CC0, Noamm9), line for
- * line: the rules here are Hypixel's, found by its author by trial, and there
- * is nothing to improve by rewriting them. The teleport steps forward a block
- * at a time along the look and stops at the last place a player fits, with a
- * handful of special cases for skimming along a floor — and Wither Impact's
- * teleport is the same walk with a different length.
- *
- * Like the etherwarp ray, this is a prediction: it says where the camera may
- * go early, and the server's own answer is what actually moves the player.
+ * Where an Instant Transmission lands: a block at a time along the look from the eyes, each step
+ * puts the player in the middle of the block the eyes reach, at the height their body fits (the
+ * eyes' block, or the one under it beneath a low ceiling), set down onto a floor right under it.
+ * The walk stops at the first wall on the eyes' line or where no body fits. Wither Impact is the
+ * same walk, longer. A prediction only; the server's answer moves the player.
  */
 object InstantTransmissionHelper {
-	/** Cast from the 1.8 eye height, like every other teleport Hypixel does. */
+	/** Hypixel teleports cast from the 1.8 eye height. */
 	private const val EYE_HEIGHT = 1.62
 
-	/** The feet's position after teleporting [distance] blocks, or null if it would not move. */
+	private const val HALF_WIDTH = 0.3
+	private const val BODY_HEIGHT = 1.8
+
+	/** How finely the eyes' line is checked for walls between steps. */
+	private const val RAY_STEP = 0.05
+
+	private const val EPSILON = 1e-7
+
+	/** The feet's position after teleporting [distance] blocks, or null if it wouldn't move. */
 	fun predict(distance: Double, feet: Vec3, look: Vec3): Vec3? {
 		val level = Minecraft.getInstance().level ?: return null
-		val start = Vec3(feet.x, feet.y + EYE_HEIGHT, feet.z)
-		val travelled = raycast(distance, look, start, level) ?: return null
-
-		val end = start.add(travelled)
-		// Hypixel sets you down in the middle of the block, standing on its floor.
-		val eyes = Vec3(
-			roundToCenter(end.x),
-			ceil(end.y) + EYE_HEIGHT - 1,
-			roundToCenter(end.z),
-		)
-		return Vec3(eyes.x, eyes.y - EYE_HEIGHT, eyes.z)
+		val eye = feet.add(0.0, EYE_HEIGHT, 0.0)
+		var landing: Vec3? = null
+		for (step in 1..floor(distance).toInt()) {
+			if (wallBetween(level, eye, look, step - 1.0, step.toDouble())) break
+			val point = eye.add(look.scale(step.toDouble()))
+			val x = floor(point.x) + 0.5
+			val z = floor(point.z) + 0.5
+			val eyeBlock = floor(point.y)
+			val y = when {
+				fits(level, x, eyeBlock, z) -> eyeBlock
+				fits(level, x, eyeBlock - 1, z) -> eyeBlock - 1
+				else -> break
+			}
+			// Down onto the floor when there's a block of air under you, not further.
+			landing = Vec3(x, if (fits(level, x, y - 1, z)) y - 1 else y, z)
+		}
+		return landing
 	}
 
-	private fun raycast(distance: Double, direction: Vec3, start: Vec3, level: Level): Vec3? {
-		val xDiagonal = if (direction.x > 0) BlockPos(1, 0, 0) else BlockPos(-1, 0, 0)
-		val zDiagonal = if (direction.z > 0) BlockPos(0, 0, 1) else BlockPos(0, 0, -1)
-		var closeFloorY = Int.MAX_VALUE
-
-		for (offset in 0..distance.toInt()) {
-			val pos = start.add(direction.scale(offset.toDouble()))
-			val check = BlockPos.containing(pos)
-
-			if (!isPassable(level, check)) {
-				return if (offset == 0) null else direction.scale((offset - 1).toDouble())
+	/** Whether a solid part of a block sits on the eyes' line between [from] and [to] blocks along it. */
+	private fun wallBetween(level: Level, eye: Vec3, look: Vec3, from: Double, to: Double): Boolean {
+		var t = from
+		while (t <= to) {
+			val point = eye.add(look.scale(t))
+			val pos = BlockPos.containing(point)
+			if (!isPassable(level, pos)) {
+				val local = point.subtract(pos.x.toDouble(), pos.y.toDouble(), pos.z.toDouble())
+				if (level.getBlockState(pos).getCollisionShape(level, pos).toAabbs().any { it.contains(local) }) return true
 			}
+			t += RAY_STEP
+		}
+		return false
+	}
 
-			if (!isPassable(level, check.above())) {
-				if (offset == 0) {
-					val justAhead = start.add(direction.scale(0.2))
-					if ((justAhead.y - floor(justAhead.y)) <= 0.495) continue
-					return null
+	/** Whether the player's 0.6 by 1.8 box fits with its feet at [y]. */
+	private fun fits(level: Level, x: Double, y: Double, z: Double): Boolean {
+		val body = AABB(x - HALF_WIDTH, y, z - HALF_WIDTH, x + HALF_WIDTH, y + BODY_HEIGHT, z + HALF_WIDTH)
+		// One block lower too, for fences and walls reaching above their own block.
+		for (bx in floor(body.minX).toInt()..floor(body.maxX - EPSILON).toInt())
+			for (by in floor(body.minY).toInt() - 1..floor(body.maxY - EPSILON).toInt())
+				for (bz in floor(body.minZ).toInt()..floor(body.maxZ - EPSILON).toInt()) {
+					val pos = BlockPos(bx, by, bz)
+					if (isPassable(level, pos)) continue
+					val solid = level.getBlockState(pos).getCollisionShape(level, pos).toAabbs().any {
+						body.intersects(it.move(pos).deflate(EPSILON))
+					}
+					if (solid) return false
 				}
-				return direction.scale((offset - 1).toDouble())
-			}
-
-			if (offset != 0 && direction.x < 0 && isFloor(level, check.east()) &&
-				isFloor(level, BlockPos.containing(pos.subtract(direction)).offset(zDiagonal))
-			) {
-				return direction.scale((offset - 1).toDouble())
-			}
-			if (offset != 0 && direction.z < 0 && direction.x < 0 && isFloor(level, check.south()) &&
-				isFloor(level, BlockPos.containing(pos.subtract(direction)).offset(xDiagonal))
-			) {
-				return direction.scale((offset - 1).toDouble())
-			}
-
-			val skimming = isFloor(level, check.below()) ||
-				(isFloor(level, check.below().offset(xDiagonal)) && isFloor(level, check.below().offset(zDiagonal)))
-			if (skimming && (pos.y - floor(pos.y)) < 0.31) closeFloorY = check.y - 1
-
-			if (closeFloorY == check.y) return direction.scale((offset - 1).toDouble())
-		}
-
-		val under = BlockPos.containing(start.add(direction.scale(distance)).subtract(0.0, 1.0, 0.0))
-		return if (!isFloor(level, under)) {
-			direction.scale(distance).subtract(0.0, 1.0, 0.0)
-		} else {
-			direction.scale(distance)
-		}
+		return true
 	}
 
 	private fun isPassable(level: Level, pos: BlockPos): Boolean {
@@ -103,13 +94,4 @@ object InstantTransmissionHelper {
 			block is CarpetBlock || block is FlowerPotBlock || block is WebBlock ||
 			(block == Blocks.SNOW && state.getValue(BlockStateProperties.LAYERS) <= 3)
 	}
-
-	private fun isFloor(level: Level, pos: BlockPos): Boolean {
-		val state = level.getBlockState(pos)
-		val shape = state.getCollisionShape(level, pos)
-		if (shape.isEmpty) return false
-		return shape.bounds().maxY >= 1 || state.block == Blocks.MUD
-	}
-
-	private fun roundToCenter(value: Double): Double = round(value - 0.5) + 0.5
 }

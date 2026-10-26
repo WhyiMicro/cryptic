@@ -14,16 +14,11 @@ import net.minecraft.network.chat.Component
 import org.lwjgl.glfw.GLFW
 
 /**
- * `/cryptic debug toast`: raises a notification, to see how one looks without
- * waiting for whatever would raise it.
+ * `/cryptic debug toast`: raises a notification to check how it looks.
  *
- * - `toast <seconds> <title> <message>`, where a title with spaces is quoted.
- *   Both take `&` colour codes, and a title that starts with one is drawn in
- *   that colour, the way each module's own are: `&9Party`.
- * - `toast head <player> <seconds> <title> <message>`, the same with a face.
- * - `toast sample <kind>`, the real thing with made-up details, for checking
- *   the look of each kind at once. The invite answers to Y and N as the real
- *   one does.
+ * - `toast <seconds> <title> <message>` (quote a title with spaces; `&` colour codes work)
+ * - `toast head <player> <seconds> <title> <message>`, with a face
+ * - `toast sample <kind>`, a real kind with made-up details
  */
 object ToastCommand {
 	private val SAMPLES = listOf("invite", "carry", "cookie", "downtime", "update", "error", "all")
@@ -55,7 +50,6 @@ object ToastCommand {
 				),
 			)
 
-	/** `<seconds> <title> <message>` under [seconds], with a face from [head] when there is one. */
 	private fun message(
 		seconds: com.mojang.brigadier.builder.RequiredArgumentBuilder<FabricClientCommandSource, Double>,
 		head: (CommandContext<FabricClientCommandSource>) -> String?,
@@ -79,7 +73,6 @@ object ToastCommand {
 
 	private fun colored(text: String): String = text.replace(Regex("&([0-9a-fk-orA-FK-OR])")) { "§" + it.groupValues[1] }
 
-	/** The colour a title opens with, as `&9`, or null when it does not. */
 	private fun leadingColor(title: String): Int? {
 		val code = Regex("^[&§]([0-9a-fA-F])").find(title)?.groupValues?.get(1)?.single() ?: return null
 		val format = ChatFormatting.getByCode(code) ?: return null

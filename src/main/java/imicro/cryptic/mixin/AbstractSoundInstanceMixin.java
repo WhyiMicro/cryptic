@@ -9,11 +9,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Scales a sound by the volume the Sound Manager has for it.
- *
- * At the volume a sound reports rather than where it is played, so a sound
- * that changes its volume as it goes - a minecart, a beacon - is scaled every
- * time it is asked, not once at the start.
+ * Scales a sound by the Sound Manager's volume for it, each time the volume is read, so sounds that
+ * change volume as they play are scaled throughout.
  */
 @Mixin(AbstractSoundInstance.class)
 public abstract class AbstractSoundInstanceMixin {

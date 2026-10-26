@@ -13,27 +13,14 @@ import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.player.Player
 
 /**
- * Draws players at a size of your choosing, and optionally with the head off.
- *
- * Ported from Athen (BSD 3-Clause, Copyright (c) 2025-2026 Starred), settings
- * and all: who it applies to, the scale itself, and the chibi styles that
- * resize the head against the body rather than with it.
- *
- * Everything here is local. Nobody else sees a resized player, hit boxes do not
- * move, and nothing about how the game is played changes — it is the model and
- * the two things pinned to it, the nametag and the shadow.
+ * Draws players at a chosen size, with optional chibi heads. Local only: hitboxes don't move; only
+ * the model, nametag and shadow change. Ported from Athen, settings and all.
  */
 object CustomScale {
-	/** Indices into [chibiStyle]. */
 	private const val CHIBI_NONE = 0
 	private const val CHIBI_BIG_HEAD = 1
 
-	/**
-	 * Vanilla's own player scale, which the game applies before this does.
-	 *
-	 * A player model is drawn at fifteen-sixteenths, and a scale meant to read
-	 * as "one" has to keep that rather than quietly making everybody bigger.
-	 */
+	/** Vanilla draws players at 15/16; "one" keeps that. */
 	private const val VANILLA_PLAYER_SCALE = 0.9375f
 
 	@JvmField
@@ -120,11 +107,8 @@ object CustomScale {
 	)
 
 	/**
-	 * Whether this player is one of the ones being resized.
-	 *
-	 * A real account's UUID is random — version 4 — and Hypixel's NPCs are
-	 * given ones that are not, which is how Athen tells the two apart and the
-	 * only way to without asking the server.
+	 * Whether this player is resized. Real accounts have random (version 4) uuids; Hypixel's NPCs
+	 * don't, as Athen tells them apart.
 	 */
 	@JvmStatic
 	fun appliesTo(entity: Entity?): Boolean {
@@ -137,19 +121,15 @@ object CustomScale {
 		}
 	}
 
-	/** The entity a render state was built from, or null if nothing set one. */
 	@JvmStatic
 	fun entityOf(state: EntityRenderState): Entity? = (state as EntityRenderStateHolder).`cryptic$entity`()
 
-	/** The factor on its own, for the things pinned to the model. */
 	@JvmStatic
 	fun factor(): Float = scale.value.toFloat()
 
-	/** The model scale to apply, vanilla's own included. */
 	@JvmStatic
 	fun modelScale(): Float = factor() * VANILLA_PLAYER_SCALE
 
-	/** True while the model itself is being resized, rather than left alone. */
 	@JvmStatic
 	fun scalesModel(): Boolean = module.enabled && scale.value != 1.0
 
@@ -160,10 +140,8 @@ object CustomScale {
 	fun scalesShadow(): Boolean = module.enabled && scaleShadow.value && scale.value != 1.0
 
 	/**
-	 * How much bigger the head is than the rest, or null for a head left alone.
-	 *
-	 * A big head is the factor; a small head is its reciprocal, so the same
-	 * slider reads the same way round for both.
+	 * How much bigger the head is than the body, or null. A small head is the reciprocal, so the
+	 * slider reads the same both ways.
 	 */
 	@JvmStatic
 	fun headScale(): Float? {

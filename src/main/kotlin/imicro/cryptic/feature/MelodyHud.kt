@@ -24,28 +24,17 @@ import net.minecraft.network.chat.Component
 import java.util.Locale
 
 /**
- * Melody, as the rest of the party sees it: saying how far yours has got, and
- * showing how far theirs has.
+ * Melody, shared with the party: says how far yours has got, and shows how far theirs has.
  *
- * Melody is the one terminal that cannot be hurried, so the rest of the party
- * needs to know whether to wait for it or go and do the next thing.
+ * **Sending** (NoammAddons' Melody Alert, Odin's Melody Message): a party chat line when the
+ * terminal opens and for each row finished.
  *
- * **Sending** is NoammAddons' Melody Alert (CC0, Noamm9) and Odin's Melody
- * Message (BSD 3-Clause, Copyright (c) 2025 odtheking): a line in party chat
- * when the terminal opens and one for each row finished.
+ * **Showing**: Odin's Progress GUI is the live part, where every Odin user in the lobby joins a
+ * room on Odin's relay during Goldor and streams their note, marker and row. Cryptic joins the same
+ * room with the same messages, so it sees Odin users and they see it. NoammAddons' Melody Display
+ * adds "ARCHER has melody! 1/3" from party chat, which covers teammates without the relay.
  *
- * **Showing** is the three mods together. Odin's Progress GUI is the live part:
- * every Odin user in the lobby connects to a room of Odin's relay during the
- * Goldor phase and sends where their note is, where the marker is and which
- * row they are on, as it happens — so a teammate's melody can be watched
- * rather than guessed at. Cryptic joins the same room and speaks the same
- * messages, so it both sees Odin users and is seen by them. NoammAddons'
- * Melody Display is the sentence under it, "ARCHER has melody! 1/3", read
- * from the party chat line every melody mod sends — which is also all there
- * is to show for a teammate whose mod is not on the relay.
- *
- * There is no module of its own: these are switches on the Terminal Solver's
- * card, which is where somebody would look for anything about melody.
+ * No module of its own; these are switches on the Terminal Solver's card.
  */
 object MelodyHud {
 	private const val WHITE = 0xFFFFFFFF.toInt()
@@ -53,19 +42,17 @@ object MelodyHud {
 	private const val PURPLE = 0xFFFF55FF.toInt()
 	private const val GREEN = 0xFF55FF55.toInt()
 
-	/** A melody is three rows since SkyBlock 0.27.2, which took one away. */
+	/** Three rows since SkyBlock 0.27.2. */
 	private const val ROWS = 3
 
-	/** The five columns the note runs along. */
 	private const val COLUMNS = 5
 
-	/** Odin's relay. A room per lobby, named by the server id on the sidebar. */
+	/** Odin's relay; one room per lobby, named by the sidebar's server id. */
 	private const val RELAY_URL = "wss://ws.odtheking.com/"
 
-	/** How long to leave a relay that would not connect before trying it again. */
 	private const val RETRY_MILLIS = 15_000L
 
-	/** A teammate the relay has gone quiet about is taken down after this long. */
+	/** A teammate the relay has gone quiet about is removed after this long. */
 	private const val LIVE_MILLIS = 10_000L
 
 	/** The relay's message kinds, which are Odin's. */
@@ -76,18 +63,17 @@ object MelodyHud {
 
 	private val FORMATTING = Regex("§.")
 
-	/** "Party > [MVP+] Name: the message", rank optional, and the emblem some names carry. */
+	/** "Party > [MVP+] Name: the message", rank and emblem optional. */
 	private val partyLine = Regex("""^Party > (?:\[[^\]]+] )?(\w{1,16})(?: \S)?: (.+)$""")
 
 	/**
-	 * "2/3" or "67%", standing on their own rather than inside a bigger number.
-	 * The old four-row "2/4" and "50%" are read too, for teammates whose mods
-	 * have not caught up, and turned into rows of three.
+	 * "2/3" or "67%" standing alone. The old four-row "2/4" and "50%" are read too, for teammates
+	 * with older mods, and converted to rows of three.
 	 */
 	private val fraction = Regex("""(?<![\d/])([0-4])/([34])(?![\d/])""")
 	private val percent = Regex("""(?<!\d)(100|75|67|66|50|33|25|0)%""")
 
-	/** Hypixel's own line for a terminal being finished, which ends that player's melody. */
+	/** Hypixel's line for a finished terminal, which ends that player's melody. */
 	private val finished = Regex("""^(\w{1,16}) (?:activated|completed) a (?:terminal|device|lever)! \(\d+/\d+\)""")
 
 	private const val GOLDOR_START = "[BOSS] Goldor: Who dares trespass into my domain?"
@@ -172,7 +158,6 @@ object MelodyHud {
 	/** Listed on the Terminal Solver's card. */
 	val settings: List<ModuleSetting> = listOf(section, sendProgress, progressFormat, sendCoords, enabled, live, seconds, playerLabel)
 
-	/** True while this wants the floor and the boss read, for [imicro.cryptic.CrypticClient]. */
 	val wanted: Boolean get() = TerminalSolver.module.enabled && (enabled.value || sendProgress.value || sendCoords.value)
 
 	private val shown: Boolean get() = TerminalSolver.module.enabled && enabled.value
@@ -180,11 +165,8 @@ object MelodyHud {
 	private val relayWanted: Boolean get() = shown && live.value
 
 	/**
-	 * What is known of one teammate's melody.
-	 *
-	 * The first three are from the relay and are columns and rows of the
-	 * terminal itself; [quarters] is from party chat. Either half can be
-	 * missing, and the drawing leaves out whatever is.
+	 * What's known of one teammate's melody: the first three from the relay (columns and rows of
+	 * the terminal), [quarters] from party chat. Either can be missing.
 	 */
 	private class Melody {
 		var marker: Int? = null
@@ -196,23 +178,22 @@ object MelodyHud {
 
 		val hasLive: Boolean get() = marker != null || note != null || button != null
 
-		/** Rows done: what they said, or the row they are on, whichever is further. */
+		/** Rows done: what they said, or the row they're on, whichever is further. */
 		val done: Int get() = maxOf(quarters ?: 0, (button ?: 1) - 1).coerceIn(0, ROWS)
 	}
 
 	/** Insertion-ordered, so two teammates on melody keep their places. Client thread only. */
 	private val melodies = LinkedHashMap<String, Melody>()
 
-	/** The last row of your own melody that was announced, so each is said once. */
 	private var announcedRow = -1
 
-	/** What was last sent to the relay about your own melody, so only changes go out. */
+	/** What was last sent to the relay, so only changes go out. */
 	private var sentButton = -1
 	private var sentMarker = -1
 	private var sentNote = -1
 
 	private val relay = RelaySocket { message ->
-		// Read here, on the socket's thread, and applied on the client's.
+		// Parsed on the socket thread, applied on the client thread.
 		val json = JsonParser.parseString(message).asJsonObject
 		val name = json.get("username")?.asString ?: return@RelaySocket
 		val kind = json.get("type")?.asInt ?: return@RelaySocket
@@ -248,16 +229,13 @@ object MelodyHud {
 		sentNote = -1
 	}
 
-	/** Floor 7's boss, which is the only place anybody is on melody. */
 	private fun inTerminals(): Boolean = DungeonLocation.inFloor7 && DungeonRun.inBoss
 
 	private fun self(): String? = Minecraft.getInstance().player?.name?.string
 
 	/**
-	 * Keeps the relay open for as long as the Goldor phase runs.
-	 *
-	 * Goldor's first line is what opens it, as it is for Odin; this is for
-	 * whoever missed that line by joining late or reconnecting.
+	 * Keeps the relay open during the Goldor phase. Goldor's first line opens it, as with Odin;
+	 * this covers joining late or reconnecting.
 	 */
 	fun tick() {
 		if (!relayWanted || !inTerminals()) {
@@ -275,16 +253,13 @@ object MelodyHud {
 		relay.connect(RELAY_URL + lobby)
 	}
 
-	// ---- Chat ------------------------------------------------------------
-
-	/** A chat packet, read on the client thread. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay || !wanted || !inTerminals()) return
 		try {
 			onLine(message.string.replace(FORMATTING, "").trim())
 		} catch (_: RuntimeException) {
-			// A line not understood is a line ignored, never a disconnect.
+			// A line not understood is ignored, never a disconnect.
 		}
 	}
 
@@ -318,8 +293,8 @@ object MelodyHud {
 		} ?: percent.find(said)?.groupValues?.get(1)?.toIntOrNull()?.let { Math.round(it * 3 / 100.0).toInt() }
 		val mentionsMelody = said.contains("melody", ignoreCase = true)
 
-		// A number only counts as melody's if it says so, or if this player has
-		// already been heard to be on it — "2/4" on its own could be anything.
+		// A number only counts as melody if the line says so, or this player is already known to be
+		// on it.
 		if (quarters == null && !mentionsMelody) return
 		if (quarters != null && !mentionsMelody && name !in melodies) return
 
@@ -328,11 +303,9 @@ object MelodyHud {
 		melody.chatAt = System.currentTimeMillis()
 	}
 
-	// ---- The relay -------------------------------------------------------
-
 	private fun onRelay(name: String, kind: Int, slot: Int) {
 		if (name == self() || !inTerminals()) return
-		// Only the party's own: the room is the whole lobby's.
+		// Only the party's own; the room is the whole lobby's.
 		if (!DungeonTeam.isTeammate(name)) return
 
 		if (kind == KIND_CLOSED) {
@@ -356,20 +329,13 @@ object MelodyHud {
 
 	private fun sendToRelay(kind: Int, slot: Int) {
 		val name = self() ?: return
-		// A name is letters, digits and underscores, so it needs no escaping.
+		// Names are letters, digits and underscores, so no escaping is needed.
 		relay.send("""{"username":"$name","type":$kind,"slot":$slot}""")
 	}
 
-	// ---- Your own melody -------------------------------------------------
-
 	private fun ownMelodyCounts(): Boolean = Minecraft.getInstance().gui.screen() !is TermSimScreen
 
-	/**
-	 * A melody terminal opening, which starts the count of its rows again.
-	 *
-	 * Called for every melody that opens, so that a second melody in the same
-	 * fight is announced from its beginning too.
-	 */
+	/** A melody opening resets its row count, so a second melody is announced from the start too. */
 	fun onTerminalOpened() {
 		announcedRow = -1
 		resetSent()
@@ -379,19 +345,16 @@ object MelodyHud {
 		}
 	}
 
-	/** Your melody closing, done or not, which takes you off everybody's HUD. */
+	/** Your melody closing, done or not, removes you from everyone's HUD. */
 	fun onTerminalClosed() {
 		if (relay.connected && ownMelodyCounts()) sendToRelay(KIND_CLOSED, 0)
 		resetSent()
 	}
 
 	/**
-	 * The board of your own melody, as slot numbers, or -1 for what is not on
-	 * it: the marker in the top row, the note moving under it, and the one
-	 * lit button, whose row is how far the melody has got.
-	 *
-	 * Called every time the board changes, several times a second, so the
-	 * first thing each part does is decide nothing has changed.
+	 * Your own melody's board as slot numbers (-1 for absent): the marker in the top row, the note
+	 * under it, and the lit button whose row is the progress. Called several times a second, so
+	 * each part checks for a change first.
 	 */
 	fun onOwnBoard(marker: Int, note: Int, button: Int) {
 		if (button >= 0) onOwnRow(button / 9)
@@ -418,24 +381,20 @@ object MelodyHud {
 		return column.takeIf { it in 0 until COLUMNS }
 	}
 
-	/**
-	 * The row of your own melody that is being played, one to three. A row is
-	 * only ever announced going forwards: the board being resent must not say
-	 * "0/3" again halfway through.
-	 */
+	/** The row being played, 1 to 3. Only announced forwards, so a resent board doesn't say "0/3" midway. */
 	private fun onOwnRow(row: Int) {
 		if (row <= announcedRow || row !in 1..ROWS) return
 		announcedRow = row
 
 		if (!TerminalSolver.module.enabled || !sendProgress.value) return
-		// The simulator's melody is nobody's business but yours.
+		// The simulator's melody is nobody else's business.
 		if (!ownMelodyCounts()) return
 
 		val done = row - 1
 		say(if (progressFormat.selectedIndex == FORMAT_QUARTERS) "Melody $done/$ROWS" else "Melody ${Math.round(done * 100 / 3.0)}%")
 	}
 
-	/** A line to party chat, or a preview of it under `/cryptic debug party`. Only in the boss. */
+	/** A party chat line, or a preview under `/cryptic debug party`. Only in the boss. */
 	private fun say(line: String) {
 		val client = Minecraft.getInstance()
 		if (DebugOverrides.previewPartyCommands) {
@@ -446,9 +405,7 @@ object MelodyHud {
 		client.connection?.sendCommand("pc $line")
 	}
 
-	// ---- Drawing ---------------------------------------------------------
-
-	/** Whoever has something recent enough to still be worth showing. */
+	/** Whoever has something recent enough to show. */
 	private fun current(): List<Pair<String, Melody>> {
 		if (melodies.isEmpty()) return emptyList()
 		val now = System.currentTimeMillis()
@@ -472,7 +429,6 @@ object MelodyHud {
 		quarters = 1
 	}
 
-	/** For `/cryptic debug melody`. */
 	fun describe(): List<String> {
 		val lines = mutableListOf(
 			"§8[Cryptic] §7Melody relay: " + when {
@@ -489,9 +445,11 @@ object MelodyHud {
 	}
 
 	private class MelodyElement : HudElement("melody_hud", "Melody HUD", 0.44, 0.58) {
+		override val layer get() = imicro.cryptic.gui.ModuleCategory.FLOOR_7
+
 		private val font get() = Minecraft.getInstance().font
 
-		/** A square, the gap between two, and so the step from one to the next. */
+		/** A square, the gap between two, and so the step. */
 		private val square = 7
 		private val gap = 2
 		private val step = square + gap
@@ -525,7 +483,7 @@ object MelodyHud {
 
 		private fun label(parts: List<Pair<String, Int>>): String = parts.joinToString("") { it.first }
 
-		/** "ARCHER has melody! 1/3", the class in its colour, or the name when the class is not known. */
+		/** "ARCHER has melody! 1/3", the class in its colour, or the name when unknown. */
 		private fun labelParts(name: String, melody: Melody): List<Pair<String, Int>> {
 			val dungeonClass = if (name == EXAMPLE_NAME) DungeonClass.ARCHER else DungeonTeam.classOf(name)
 			val known = dungeonClass?.takeIf { it != DungeonClass.UNKNOWN }
@@ -556,10 +514,7 @@ object MelodyHud {
 			}
 		}
 
-		/**
-		 * The marker's row, the note's row under it, and the row number beside
-		 * both — the terminal itself, shrunk to what matters.
-		 */
+		/** The marker's row, the note's row, and the row number: the terminal shrunk to what matters. */
 		private fun drawGrid(context: GuiGraphicsExtractor, top: Int, melody: Melody) {
 			val numberWidth = font.width("4") * numberScale
 			val left = (width - (gridWidth + 4 + numberWidth)) / 2
@@ -578,7 +533,7 @@ object MelodyHud {
 			pose.popMatrix()
 		}
 
-		/** A square with the same drop shadow text gets, so the two sit together. */
+		/** A square with the same drop shadow as text. */
 		private fun drawSquare(context: GuiGraphicsExtractor, x: Int, y: Int, color: Int) {
 			context.fill(x + 1, y + 1, x + square + 1, y + square + 1, shadowOf(color))
 			context.fill(x, y, x + square, y + square, color)

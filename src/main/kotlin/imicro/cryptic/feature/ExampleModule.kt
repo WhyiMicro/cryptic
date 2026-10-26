@@ -19,24 +19,14 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 
 /**
- * One of every control the menu can draw, wired to nothing.
- *
- * The idea is NoammAddons' Comp Test (CC0, Noamm9): a card that exists to be
- * poked at. It is where a change to the menu itself gets looked at — every kind
- * of row is here, so a row that has gone wrong is here too — and where the
- * things a card can do are on show in one place: a setting that appears when
- * another is switched on, a group that starts folded away, a key bound from a
- * row, and a HUD element that reads its card back.
- *
- * Nothing here changes the game. Its settings are saved with the profile like
- * any other card's, which is itself one of the things worth testing.
+ * One of every control the menu can draw, wired to nothing (the idea of NoammAddons' Comp Test).
+ * Where menu changes get checked: dependent settings, a folded group, a key bind, and a HUD element
+ * reading the card back. Saved with profiles like any card.
  */
 object ExampleModule {
 	private const val SOURCE = "Example Module"
 	private const val WHITE = 0xFFFFFFFF.toInt()
 	private const val MUTED = 0xFFAAAAAA.toInt()
-
-	// ---- Switches --------------------------------------------------------
 
 	private val switchSection = SectionModuleSetting("switch_section", "Switches")
 
@@ -93,8 +83,6 @@ object ExampleModule {
 		description = "So does a colour picker.",
 	)
 
-	// ---- Numbers ---------------------------------------------------------
-
 	private val numberSection = SectionModuleSetting("number_section", "Numbers")
 
 	@JvmField
@@ -130,8 +118,6 @@ object ExampleModule {
 		step = 1.0,
 		description = "Two ends on one track, for anything that wants a number from somewhere in between.",
 	)
-
-	// ---- Choices ---------------------------------------------------------
 
 	private val choiceSection = SectionModuleSetting("choice_section", "Choices")
 
@@ -180,9 +166,6 @@ object ExampleModule {
 		action = { Toasts.show(SOURCE, "The button was pressed", color = Toasts.Colors.CRYPTIC) },
 	)
 
-	// ---- Colours ---------------------------------------------------------
-
-	/** Folded away to begin with, the way a card's long tail of colours usually is. */
 	private val colorSection = SectionModuleSetting("color_section", "Colors (starts folded)", startsCollapsed = true)
 
 	@JvmField
@@ -235,7 +218,6 @@ object ExampleModule {
 		Hud.register(ExampleElement())
 	}
 
-	/** What the card is set to, a line per kind of setting. */
 	private fun lines(): List<Pair<String, Int>> = listOf(
 		"Example Module" to (0xFF000000.toInt() or color.rgb),
 		"Toggle: ${if (toggle.value) "on" else "off"}" to WHITE,
@@ -247,11 +229,8 @@ object ExampleModule {
 	)
 
 	/**
-	 * A HUD element that reads the card back.
-	 *
-	 * Here to be dragged about in the editor as much as to be looked at: it
-	 * resizes as the text setting is typed into, takes its heading's colour from
-	 * the colour setting and its backdrop from the one with opacity.
+	 * A HUD element reading the card back: resizes with the text setting and takes its colours from
+	 * the colour settings.
 	 */
 	private class ExampleElement : HudElement("example_module", "Example Module", 0.70, 0.30) {
 		private val font get() = Minecraft.getInstance().font

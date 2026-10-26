@@ -9,24 +9,13 @@ import imicro.cryptic.skyblock.SkyblockItem
 import net.minecraft.world.item.context.BlockPlaceContext
 
 /**
- * Stops the items that are used by right-clicking from being placed instead.
- *
- * Ported from NoammAddons (CC0, Copyright (c) Noamm9). SkyBlock builds most of
- * its right-click items out of vanilla blocks — a Power Orb is a skull, the
- * Flower of Truth is a flower — so aiming a hair low while using one places it
- * in the world. In a dungeon that is a wither relic stuck in the floor during
- * Necron, or an Etherwarp Conduit left behind in a boss room. It only acts in a
- * dungeon.
- *
- * The click still happens: it is the *placement* that is dropped, and the
- * server goes on receiving the use it was sent. Nothing is faked, and an item
- * that really is meant to be placed is not in the list.
+ * Stops right-click items that are vanilla blocks underneath (Power Orbs, relics, the Flower of
+ * Truth) from being placed. The use is still sent; only the placement is dropped. Dungeons only.
+ * Ported from NoammAddons.
  */
 object NoItemPlace {
-	/** Items whose id begins this way, whatever the rest of it says. */
 	private val PREFIXES = listOf("ABIPHONE")
 
-	/** Items whose id ends this way — every tier of the same thing. */
 	private val SUFFIXES = listOf("_TUBA", "_POWER_ORB", "_POCKET_BLACK_HOLE", "_FISHING_NET")
 
 	private val EXACT = setOf(
@@ -73,13 +62,12 @@ object NoItemPlace {
 		settings = listOf(relics),
 	)
 
-	/** True while the floor has to be read for this module. */
 	val needsDungeon: Boolean get() = module.enabled
 
 	/** True when this placement should be swallowed. */
 	@JvmStatic
 	fun blocks(context: BlockPlaceContext): Boolean {
-		// Only in a dungeon: outside one, placing these is sometimes the point.
+		// Only in a dungeon; elsewhere placing these is sometimes the point.
 		if (!module.enabled || !DungeonLocation.inDungeon) return false
 		val stack = context.player?.mainHandItem ?: return false
 		val id = SkyblockItem.id(stack)

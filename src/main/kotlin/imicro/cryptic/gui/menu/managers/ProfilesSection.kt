@@ -13,18 +13,14 @@ import imicro.cryptic.gui.menu.UiText
 import net.minecraft.client.Minecraft
 
 /**
- * Profiles: whole setups saved under a name, switched between, and shared as a
- * line of text.
- *
- * Every change is saved to the active profile as it is made; a new profile
- * starts as a copy of what is set now. Copy puts a profile on the clipboard,
- * Import adds one from it, and Import here replaces the active profile's
- * settings with the clipboard's.
+ * Profiles: whole setups saved by name, switched between, and shared as a line of text. Changes
+ * save to the active profile as they're made; a new profile copies the current settings. Copy puts
+ * a profile on the clipboard, Import adds one, and Import here replaces the active profile's
+ * settings.
  */
 class ProfilesSection : ManagerSection("Profiles") {
 	private val deletes = DeleteConfirm()
 
-	/** The profile whose name is being edited, and the field it is typed into. */
 	private var renaming: ProfileEntry? = null
 	private val renameField = TextField(32)
 
@@ -153,7 +149,7 @@ class ProfilesSection : ManagerSection("Profiles") {
 		private const val SOURCE = "Profiles"
 		private const val COPY = ""
 
-		/** Not a feature: the card in Settings that the Profiles page hangs from. */
+		/** The card in Settings the Profiles page hangs from. */
 		val module = Module(
 			id = "profiles",
 			name = "Profiles",

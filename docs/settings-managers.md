@@ -1,6 +1,7 @@
-# Settings: Keybinds, Aliases, Sounds and Updates
+# Keybinds, Aliases, Sounds and Updates
 
-Four modules in the menu's Settings view. Each manager is on its module's page:
+The Keybinds, Alias and Sound managers are in the menu's General tab, and the
+Update Checker is in Settings. Each manager is on its module's page:
 open the card with its **⋮** (or a right-click), or use its `/cryptic` command,
 which opens the menu straight on it. A manager works whether or not its module
 is on; the switch in the page's title row turns the module on.
@@ -11,6 +12,7 @@ is on; the switch in the page's title row turns the module on.
 | `/cryptic aliases` | Alias Manager |
 | `/cryptic sounds` | Sound Manager |
 | `/cryptic update` | Checks for an update now |
+| `/cryptic blacklist` | Party Blacklist |
 
 ## Keybinds Manager
 
@@ -98,3 +100,28 @@ If the release is newer, you get two things:
 
 **Check now**, or `/cryptic update`, checks straight away and also tells you
 when you're already up to date.
+
+## Party Blacklist
+
+In the Dungeon tab. Players you won't run with, each with a reason and the day
+they were added. The module's switch turns the blacklist on.
+
+- **Add a player** takes a name and a reason. Adding a name that is already on
+  the list updates its reason.
+- Each row shows the player's face, name, reason and date, with an edit button
+  and a delete button. Delete asks again first.
+- **Kick them** (on by default) kicks a blacklisted player as soon as they join
+  your party, while you lead it. **Say why in party chat** first says they are
+  blacklisted, with your reason.
+- When a blacklisted player joins, a toast names them and your reason, even
+  when you don't lead and can't kick.
+
+From chat:
+
+| Command | Does |
+|---|---|
+| `/cryptic blacklist add <name> [reason]` | Adds a player, or updates their reason |
+| `/cryptic blacklist remove <name>` | Takes a player off |
+| `/cryptic blacklist list` | Lists everyone, with reasons and dates |
+
+The list is kept in `config/cryptic/blacklist.json`.

@@ -30,19 +30,15 @@ import kotlin.math.max
 import kotlin.math.round
 
 /**
- * One module's settings, shown in place of the card grid.
- *
- * A first pass at the layout: a list of full-width rows, each with its label
- * and description on the left and its control on the right, grouped under the
- * module's own headings. A row with settings of its own (the old "⋯" panels)
- * gets a chevron that opens them underneath it, indented. Dropdown lists and
- * the colour picker float over the list and are drawn last.
+ * One module's settings, shown in place of the card grid: full-width rows with label and
+ * description on the left and the control on the right, under the module's headings. A row with
+ * settings of its own gets a chevron that opens them indented underneath. Dropdowns and the colour
+ * picker float over the list.
  */
 class ModulePage(val module: Module) {
-	/** What the module has besides its settings, if anything; its page opens on it. */
+	/** The module's extras besides settings, if any; the page opens on it. */
 	val manager: ManagerSection? = ManagerSection.forModule(module)?.also { it.page = this }
 
-	/** Whether the manager is showing rather than the settings. */
 	var showingManager = manager != null
 		private set
 
@@ -62,11 +58,10 @@ class ModulePage(val module: Module) {
 		class Star(box: Box) : Hit(box)
 		class View(box: Box, val manager: Boolean) : Hit(box)
 
-		/** A whole row, under its controls: a click on the rest of it. */
+		/** A whole row behind its controls: a click on the rest of it. */
 		class Row(box: Box, val setting: ModuleSetting) : Hit(box)
 	}
 
-	/** Something a number or text is being typed into. */
 	sealed class Edit {
 		data class Slider(val setting: SliderModuleSetting) : Edit()
 		data class Lower(val setting: RangeModuleSetting) : Edit()
@@ -85,12 +80,11 @@ class ModulePage(val module: Module) {
 	private var scrollTarget = 0f
 	private var maxScroll = 0f
 
-	/** Where this module's page was left, the last time it closed this session. */
+	/** Where this module's page was left, this session. */
 	private class Place(
 		val showingManager: Boolean,
 		val settingsScroll: Float,
 		val managerScroll: Float,
-		/** Rows left expanded, kept while the menu was closed on this page. */
 		val expanded: Set<ModuleSetting>,
 	)
 
@@ -105,7 +99,14 @@ class ModulePage(val module: Module) {
 		}
 	}
 
-	/** Keeps where the page is scrolled to, so it opens there again. */
+	/** Switches a manager's page to its settings, as the HUD editor's right-click asks. */
+	fun openSettings() {
+		if (!showingManager) return
+		showingManager = false
+		scrollTarget = settingsScroll
+		scroll = scrollTarget
+	}
+
 	private fun remember(keepExpanded: Boolean) {
 		if (showingManager) managerScroll = scrollTarget else settingsScroll = scrollTarget
 		remembered[module.id] = Place(showingManager, settingsScroll, managerScroll, if (keepExpanded) expanded.toSet() else emptySet())
@@ -114,10 +115,10 @@ class ModulePage(val module: Module) {
 	private var editing: Edit? = null
 	private var input = TextField(0)
 
-	/** True while the pointer, pressed in the field being typed in, is dragging out a selection. */
+	/** True while a press in the active field is dragging out a selection. */
 	private var selecting = false
 
-	/** A click on a number's box that has not turned into a drag selects the number on release. */
+	/** A click on a number's box that didn't become a drag selects the number on release. */
 	private var pendingSelectAll = false
 	private var frameDt = 0f
 	private val scrollbar = Scrollbar()
@@ -142,17 +143,14 @@ class ModulePage(val module: Module) {
 	private var pickerHex = Box.NONE
 	private var hsv = floatArrayOf(0f, 0f, 0f)
 
-	/** Which part of the picker is being dragged: 0 none, 1 square, 2 hue, 3 alpha. */
+	/** Which part of the picker is dragged: 0 none, 1 square, 2 hue, 3 alpha. */
 	private var pickerDrag = 0
 
-	/** True while a key press belongs to this page: typing, or a bind waiting for its key. */
 	val capturingKeys: Boolean get() = editing != null || awaiting != null || (showingManager && manager?.capturingKeys == true)
 
-	// ---- Drawing ---------------------------------------------------------
-
-	/** The row above the list: the module's name, its star, and its own switch. */
+	/** The row above the list: name, star and the module's switch. */
 	fun drawTitle(graphics: GuiGraphicsExtractor, box: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
-		// The controls on the right first, so the title knows how much room it has.
+		// The controls first, so the title knows how much room it has.
 		var limit = box.right
 		if (module.supportsToggle) {
 			val switch = Box(box.right - 34f, box.y + (box.h - 16f) / 2f, 34f, 16f)
@@ -164,13 +162,11 @@ class ModulePage(val module: Module) {
 			hits += Hit.ModuleSwitch(switch)
 			limit = box.right - 34f - 12f - UiText.width("Disabled", 13f) - 24f
 		}
-		// A module with a manager gets a switch between the two, left of its own.
 		val section = manager
 		if (section != null && (module.supportsKeybind || module.settings.any { it.onCard && it.isVisible() && it !is SlotMapModuleSetting })) {
 			limit = drawViewSwitch(graphics, section.tabLabel, limit, box, mx, my, alpha) - 24f
 		}
 
-		// "Name | what it does", the second half quieter, then the star.
 		val nameSize = 19f
 		val detailSize = 14f
 		var x = box.x + 4f
@@ -197,7 +193,6 @@ class ModulePage(val module: Module) {
 		hits += Hit.Star(star)
 	}
 
-	/** The list of rows, clipped to [box] and scrolled. */
 	fun draw(graphics: GuiGraphicsExtractor, box: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
 		area = box
 		frameDt = dt
@@ -247,7 +242,7 @@ class ModulePage(val module: Module) {
 		scrollbar.draw(graphics, box.right + Scrollbar.GAP, box.y, box.h, contentH, scroll, maxScroll, mx, my, dt, alpha)
 	}
 
-	/** "Aliases | Settings": which of the two the page shows, right-aligned at [right]. Returns its left edge. */
+	/** "Aliases | Settings", right-aligned at [right]. Returns its left edge. */
 	private fun drawViewSwitch(graphics: GuiGraphicsExtractor, label: String, right: Float, row: Box, mx: Float, my: Float, alpha: Float): Float {
 		val size = 13f
 		val pad = 14f
@@ -276,10 +271,9 @@ class ModulePage(val module: Module) {
 		return x
 	}
 
-	/** The manager, in the same scrolled, clipped area the settings use. */
 	private fun drawManager(graphics: GuiGraphicsExtractor, box: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
 		val section = manager ?: return
-		// Nothing under an open colour picker counts as pointed at.
+		// Nothing under an open colour picker counts as hovered.
 		val covered = overlayContains(mx, my)
 		section.ui.begin(graphics, box, if (covered) -1e6f else mx, if (covered) -1e6f else my, dt, alpha)
 		graphics.enableScissor(box.x.toInt(), box.y.toInt(), box.right.toInt() + 1, box.bottom.toInt())
@@ -293,21 +287,20 @@ class ModulePage(val module: Module) {
 	}
 
 	/**
-	 * Opens the colour picker on [setting], hung from [anchor]: how a manager
-	 * edits a colour it keeps as a setting without a row of its own.
+	 * Opens the colour picker on [setting], hung from [anchor], for a manager editing a colour that
+	 * has no row of its own.
 	 */
 	fun openColorPicker(setting: ColorModuleSetting, anchor: Box) {
 		openColor = setting
 		colorAnchor = anchor
 		hsv = java.awt.Color.RGBtoHSB((setting.rgb shr 16) and 0xFF, (setting.rgb shr 8) and 0xFF, setting.rgb and 0xFF, null)
-		// The hex code is ready to be replaced, so one paste is enough.
+		// The hex code is selected, so one paste replaces it.
 		startEditing(Edit.Hex(setting), selectAll = true)
 	}
 
 	/**
-	 * The page is going away: what was typed goes in, and the manager saves.
-	 * [keepExpanded] is true when the whole menu closed on this page, which
-	 * reopens on it as it was; leaving the module folds its rows back up.
+	 * The page is closing: commit typed text and save the manager. [keepExpanded] when the whole
+	 * menu closed here (it reopens as it was); leaving the module folds its rows.
 	 */
 	fun onClose(keepExpanded: Boolean = true) {
 		commitEditing()
@@ -317,7 +310,6 @@ class ModulePage(val module: Module) {
 
 	fun keyReleased(event: KeyEvent): Boolean = showingManager && manager?.keyReleased(event) == true
 
-	/** Dropdown lists and the colour picker, over everything else. */
 	fun drawOverlays(graphics: GuiGraphicsExtractor, mx: Float, my: Float, alpha: Float) {
 		if (showingManager) manager?.drawOverlays()
 		openDropdown?.let { drawDropdownList(graphics, it, mx, my, alpha) }
@@ -325,7 +317,6 @@ class ModulePage(val module: Module) {
 		drawSuggestions(graphics, mx, my, alpha)
 	}
 
-	/** Called by the screen at the start of each frame, before anything records where it was drawn. */
 	fun beginFrame() {
 		hits.clear()
 		suggestFor = null
@@ -362,14 +353,20 @@ class ModulePage(val module: Module) {
 		else -> ""
 	}
 
-	/** One row: the label and description on the left, the control on the right. Returns its height. */
+	/** One row, label left and control right. Returns its height. */
 	private fun drawRow(
 		graphics: GuiGraphicsExtractor, setting: ModuleSetting,
 		x: Float, y: Float, w: Float, nested: Boolean,
 		mx: Float, my: Float, pointerInside: Boolean, dt: Float, alpha: Float,
 	): Float {
 		val description = descriptionOf(setting)
-		val h = if (description.isEmpty()) ROW_SHORT else ROW_TALL
+		val lines = descriptionLines(setting, w, nested)
+		ModulePageMetrics.lastRowWidth = w
+		val h = when {
+			description.isEmpty() -> ROW_SHORT
+			lines.size > 1 -> ROW_TALL + DESCRIPTION_LINE
+			else -> ROW_TALL
+		}
 		if (y + h < area.y || y > area.bottom) return h + ROW_GAP
 
 		val row = Box(x, y, w, h)
@@ -381,11 +378,10 @@ class ModulePage(val module: Module) {
 
 		val cy = y + h / 2f
 		val right = x + w - 16f
-		// Registered before the controls, so a control on the row is still hit first.
+		// Registered before the controls, so a control is hit first.
 		hits += Hit.Row(row, setting)
 		val controlLeft = drawControl(graphics, setting, right, cy, row, mx, my, pointerInside, dt, alpha)
 
-		// A row with settings of its own gets a chevron just left of its control.
 		var labelRight = controlLeft - 16f
 		if (setting !is PanelModuleSetting && setting.hasVisibleMore()) {
 			val chevron = Box(controlLeft - 10f - 26f, cy - 13f, 26f, 26f)
@@ -400,12 +396,60 @@ class ModulePage(val module: Module) {
 			UiText.draw(graphics, UiText.fit(setting.label, LABEL, room), labelX, cy - LABEL / 2f, LABEL, fade(MenuStyle.TEXT, alpha))
 		} else {
 			UiText.draw(graphics, UiText.fit(setting.label, LABEL, room), labelX, y + 10f, LABEL, fade(MenuStyle.TEXT, alpha))
-			UiText.draw(graphics, UiText.fit(description, DESCRIPTION, room), labelX, y + 30f, DESCRIPTION, fade(MenuStyle.MUTED, alpha))
+			lines.forEachIndexed { index, line ->
+				UiText.draw(graphics, line, labelX, y + 30f + index * DESCRIPTION_LINE, DESCRIPTION, fade(MenuStyle.MUTED, alpha))
+			}
 		}
 		return h + ROW_GAP
 	}
 
-	/** Draws the control for [setting], right-aligned at [right] and centred on [cy]. Returns its left edge. */
+	/** How much of a row's right side a setting's control takes, its chevron included. */
+	private fun controlWidth(setting: ModuleSetting): Float {
+		val control = when (setting) {
+			is ToggleModuleSetting -> 34f + if (setting.inlineColor != null) 36f else 0f
+			is SliderModuleSetting -> 62f + 16f + 210f + 8f
+			is RangeModuleSetting -> 52f + 6f + 52f + 16f + 180f + 8f
+			is DropdownModuleSetting, is MultiSelectModuleSetting -> 220f
+			is KeybindModuleSetting -> 110f
+			is ButtonModuleSetting -> 150f
+			is ColorModuleSetting -> 26f + 10f + UiText.width(setting.hex, 12f)
+			is TextModuleSetting -> 220f + if (setting.button != null) 88f else 0f
+			is PanelModuleSetting -> setting.note?.let { UiText.width(it, 13f) } ?: 26f
+			is SectionModuleSetting, is SlotMapModuleSetting -> 0f
+		}
+		val chevron = if (setting !is PanelModuleSetting && setting.hasVisibleMore()) 36f else 0f
+		return control + chevron
+	}
+
+	/**
+	 * A setting's description as drawn: one line when it fits, else wrapped to two, the second cut
+	 * short if even two aren't enough.
+	 */
+	private fun descriptionLines(setting: ModuleSetting, rowWidth: Float, nested: Boolean): List<String> {
+		val description = descriptionOf(setting)
+		if (description.isEmpty()) return emptyList()
+		val room = rowWidth - 16f - controlWidth(setting) - 16f - (if (nested) 34f else 18f)
+		if (UiText.width(description, DESCRIPTION) <= room) return listOf(description)
+		val wrapped = UiText.wrap(description, DESCRIPTION, room)
+		if (wrapped.size <= 2) return wrapped
+		return listOf(wrapped[0], UiText.fit(wrapped.drop(1).joinToString(" "), DESCRIPTION, room))
+	}
+
+	/** Every description that needs more than two lines, for checking the wording fits. */
+	fun overflowing(rowWidth: Float): List<String> = module.settings.filter { it.hasOwnRow }.mapNotNull { setting ->
+		val description = descriptionOf(setting)
+		if (description.isEmpty()) return@mapNotNull null
+		val nested = setting.parent != null
+		val room = rowWidth - 16f - controlWidth(setting) - 16f - (if (nested) 34f else 18f)
+		val lines = UiText.wrap(description, DESCRIPTION, room).size
+		if (lines > 2) "${module.id}.${setting.id} ($lines lines): $description" else null
+	} + module.settings.filter { it.hasOwnRow }.mapNotNull { setting ->
+		val nested = setting.parent != null
+		val room = rowWidth - 16f - controlWidth(setting) - 16f - (if (nested) 34f else 18f)
+		if (UiText.width(setting.label, LABEL) > room) "${module.id}.${setting.id} label too long: ${setting.label}" else null
+	}
+
+	/** Draws [setting]'s control right-aligned at [right], centred on [cy]. Returns its left edge. */
 	private fun drawControl(
 		graphics: GuiGraphicsExtractor, setting: ModuleSetting, right: Float, cy: Float, row: Box,
 		mx: Float, my: Float, pointerInside: Boolean, dt: Float, alpha: Float,
@@ -464,20 +508,7 @@ class ModulePage(val module: Module) {
 				drawBadge(graphics, if (capturing) "Press a key" else setting.keyName, right, cy, capturing || setting.bound, mx, my, pointerInside, alpha)
 					.also { hits += Hit.Keybind(it, setting) }.x
 			}
-			is ButtonModuleSetting -> {
-				val size = 13f
-				// As wide as its label needs, and never narrower than the others.
-				val w = max(150f, UiText.width(setting.label, size, UiText.Face.MEDIUM) + 32f)
-				val box = Box(right - w, cy - 15f, w, 30f)
-				val over = hovered(box)
-				MenuStyle.drawField(graphics, box, over, false, alpha)
-				UiText.draw(
-					graphics, setting.label, box.x + (box.w - UiText.width(setting.label, size, UiText.Face.MEDIUM)) / 2f,
-					box.y + (box.h - size) / 2f, size, fade(if (over) MenuStyle.TEXT else MenuStyle.TAB_HOVER, alpha), UiText.Face.MEDIUM,
-				)
-				hits += Hit.Button(box, setting)
-				box.x
-			}
+			is ButtonModuleSetting -> drawButton(graphics, setting, right, cy, 150f, mx, my, pointerInside, alpha)
 			is ColorModuleSetting -> {
 				val swatch = Box(right - 26f, cy - 13f, 26f, 26f)
 				drawSwatch(graphics, setting, swatch, hovered(swatch), alpha)
@@ -488,10 +519,10 @@ class ModulePage(val module: Module) {
 				hexX
 			}
 			is TextModuleSetting -> {
-				val box = Box(right - 260f, cy - 15f, 260f, 30f)
+				val fieldRight = setting.button?.let { drawButton(graphics, it, right, cy, 80f, mx, my, pointerInside, alpha) - 8f } ?: right
+				val box = Box(fieldRight - 220f, cy - 15f, 220f, 30f)
 				val edit = Edit.Text(setting)
 				drawTextField(graphics, box, edit, setting.value, setting.hint, hovered(box), alpha)
-				// A field that completes what is typed lists the completions under itself.
 				if (setting.suggestions != null && editing == edit) {
 					suggestFor = setting
 					suggestAnchor = box
@@ -500,7 +531,12 @@ class ModulePage(val module: Module) {
 				box.x
 			}
 			is PanelModuleSetting -> {
-				// The whole row opens it, with the chevron at the end saying so.
+				// A note in place of a control: just the words, muted.
+				setting.note?.let { note ->
+					val noteX = right - UiText.width(note, 13f)
+					UiText.draw(graphics, note, noteX, cy - 6.5f, 13f, fade(MenuStyle.MUTED, alpha))
+					return noteX
+				}
 				val chevron = Box(right - 26f, cy - 13f, 26f, 26f)
 				drawChevron(graphics, chevron, setting in expanded, hovered(row), alpha)
 				hits += Hit.Expand(row, setting)
@@ -577,6 +613,24 @@ class ModulePage(val module: Module) {
 		hits += Hit.Value(box, edit)
 	}
 
+	/** A button right-aligned at [right], at least [minWidth] wide. Returns its left edge. */
+	private fun drawButton(
+		graphics: GuiGraphicsExtractor, setting: ButtonModuleSetting, right: Float, cy: Float, minWidth: Float,
+		mx: Float, my: Float, pointerInside: Boolean, alpha: Float,
+	): Float {
+		val size = 13f
+		val w = max(minWidth, UiText.width(setting.label, size, UiText.Face.MEDIUM) + 32f)
+		val box = Box(right - w, cy - 15f, w, 30f)
+		val over = pointerInside && box.contains(mx, my)
+		MenuStyle.drawField(graphics, box, over, false, alpha)
+		UiText.draw(
+			graphics, setting.label, box.x + (box.w - UiText.width(setting.label, size, UiText.Face.MEDIUM)) / 2f,
+			box.y + (box.h - size) / 2f, size, fade(if (over) MenuStyle.TEXT else MenuStyle.TAB_HOVER, alpha), UiText.Face.MEDIUM,
+		)
+		hits += Hit.Button(box, setting)
+		return box.x
+	}
+
 	private fun drawTextField(graphics: GuiGraphicsExtractor, box: Box, edit: Edit, value: String, hint: String, hovered: Boolean, alpha: Float) {
 		val focused = editing == edit
 		MenuStyle.drawField(graphics, box, hovered, focused, alpha)
@@ -614,14 +668,13 @@ class ModulePage(val module: Module) {
 	private fun drawChecker(graphics: GuiGraphicsExtractor, box: Box, radius: Float, alpha: Float) =
 		RoundRect.checker(graphics, box.x, box.y, box.right, box.bottom, radius, 5f, alpha)
 
-	/** The text field whose completions are showing this frame, and where it is. */
 	private var suggestFor: TextModuleSetting? = null
 	private var suggestAnchor = Box.NONE
 	private var suggestBox = Box.NONE
 	private val suggestRows = ArrayList<Pair<String, Box>>()
 	private var suggestIndex = 0
 
-	/** The completions last worked out, kept until the text changes: the sound list is long. */
+	/** The last completions, kept until the text changes (the sound list is long). */
 	private var suggestedFor = ""
 	private var suggested: List<String> = emptyList()
 
@@ -637,7 +690,6 @@ class ModulePage(val module: Module) {
 		return suggested
 	}
 
-	/** The completions for the field being typed in, in a list hung under it. */
 	private fun drawSuggestions(graphics: GuiGraphicsExtractor, mx: Float, my: Float, alpha: Float) {
 		suggestRows.clear()
 		suggestBox = Box.NONE
@@ -663,7 +715,6 @@ class ModulePage(val module: Module) {
 		}
 	}
 
-	/** Puts a completion into the field, and into the setting with it. */
 	private fun acceptSuggestion(option: String) {
 		val edit = editing ?: return
 		input.set(option)
@@ -675,7 +726,8 @@ class ModulePage(val module: Module) {
 		val anchor = dropdownAnchor
 		val rowH = 28f
 		val pad = 4f
-		val h = source.options.size * rowH + pad * 2f
+		val shown = source.shownOptions
+		val h = shown.size * rowH + pad * 2f
 		val below = anchor.bottom + 4f
 		val y = if (below + h > area.bottom + 40f) anchor.y - 4f - h else below
 		val box = Box(anchor.x, y, anchor.w, h)
@@ -683,8 +735,9 @@ class ModulePage(val module: Module) {
 		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.POPUP, alpha), 8f)
 		RoundRect.outline(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.FIELD_EDGE, alpha), 8f, 1f)
 		val size = 13f
-		for ((index, option) in source.options.withIndex()) {
-			val row = Box(box.x + pad, box.y + pad + index * rowH, box.w - pad * 2f, rowH)
+		for ((place, index) in shown.withIndex()) {
+			val option = source.options[index]
+			val row = Box(box.x + pad, box.y + pad + place * rowH, box.w - pad * 2f, rowH)
 			dropdownRows += index to row
 			val over = row.contains(mx, my)
 			if (over) RoundRect.fill(graphics, row.x, row.y, row.right, row.bottom, fade(MenuStyle.POPUP_HOVER, alpha), 6f)
@@ -726,7 +779,6 @@ class ModulePage(val module: Module) {
 		RoundRect.outline(graphics, ringX - 6f, ringY - 6f, ringX + 6f, ringY + 6f, fade(white, alpha), 6f, 2f)
 		cy += squareH + gap
 
-		// The hue, as a rainbow.
 		val hueBar = Box(x + pad, cy, inner, barH)
 		pickerHue = hueBar
 		val stops = intArrayOf(0xFF0000, 0xFFFF00, 0x00FF00, 0x00FFFF, 0x0000FF, 0xFF00FF, 0xFF0000)
@@ -744,7 +796,6 @@ class ModulePage(val module: Module) {
 			cy += gap
 			val alphaBar = Box(x + pad, cy, inner, barH)
 			pickerAlpha = alphaBar
-			// Square, like the hue bar above it.
 			drawChecker(graphics, alphaBar, 0f, alpha)
 			val solid = setting.rgb or 0xFF000000.toInt()
 			RoundRect.fillCorners(graphics, alphaBar.x, alphaBar.y, alphaBar.right, alphaBar.bottom, fade(setting.rgb, alpha), fade(solid, alpha), fade(solid, alpha), fade(setting.rgb, alpha), 0f)
@@ -767,15 +818,12 @@ class ModulePage(val module: Module) {
 		RoundRect.fill(graphics, hx - half + 2f, bar.y - 1f, hx + half - 2f, bar.bottom + 1f, fade(color or 0xFF000000.toInt(), alpha), half - 2f)
 	}
 
-	// ---- Input -----------------------------------------------------------
-
 	private fun overlayContains(mx: Float, my: Float): Boolean =
 		(openDropdown != null && dropdownBox.contains(mx, my)) || (openColor != null && pickerBox.contains(mx, my)) ||
 			suggestBox.contains(mx, my)
 
 	fun mouseClicked(mx: Float, my: Float, button: Int, doubleClick: Boolean = false): Boolean {
-		// A bind waiting for its key takes any mouse button but the left one,
-		// which stops it waiting instead.
+		// A bind waiting for its key takes any mouse button but left, which cancels.
 		awaiting?.let { target ->
 			if (button != 0) {
 				when (target) {
@@ -786,9 +834,9 @@ class ModulePage(val module: Module) {
 			awaiting = null
 			return true
 		}
-		// A manager hears every button: the crosshair canvas erases with the right one.
+		// Managers hear every button (the crosshair canvas erases with right).
 		if (showingManager && button != 0 && openColor == null) return manager?.mouseClicked(mx, my, button, doubleClick) == true
-		// A right click anywhere on a row opens what it holds, without aiming at the chevron.
+		// A right click anywhere on a row opens what it holds.
 		if (button == 1 && openDropdown == null && openColor == null && area.contains(mx, my)) {
 			val row = hits.asReversed().firstOrNull { it is Hit.Row && it.box.contains(mx, my) } as? Hit.Row ?: return false
 			if (!row.setting.hasVisibleMore()) return false
@@ -798,7 +846,7 @@ class ModulePage(val module: Module) {
 		}
 		if (button != 0) return false
 
-		// The floating parts first: they sit over the rows.
+		// Floating parts first; they sit over the rows.
 		if (suggestBox.contains(mx, my)) {
 			suggestRows.firstOrNull { it.second.contains(mx, my) }?.let { acceptSuggestion(it.first) }
 			return true
@@ -833,7 +881,6 @@ class ModulePage(val module: Module) {
 
 		if (scrollbar.press(mx, my, maxScroll) { scroll = it; scrollTarget = it }) return true
 
-		// The title row is the page's own; the rest of a manager's view is the manager's.
 		val titleHit = hits.lastOrNull { (it is Hit.Star || it is Hit.ModuleSwitch || it is Hit.View) && it.box.contains(mx, my) }
 		if (showingManager && titleHit == null) {
 			commitEditing()
@@ -845,7 +892,7 @@ class ModulePage(val module: Module) {
 		}
 
 		val hit = hits.asReversed().firstOrNull { it.box.contains(mx, my) }
-		// A click anywhere but the field being typed in puts in what was typed.
+		// Clicking anywhere but the active field commits what was typed.
 		val target = (hit as? Hit.Value)?.target ?: (hit as? Hit.Text)?.target
 		if (target == null || target != editing) commitEditing()
 
@@ -855,7 +902,6 @@ class ModulePage(val module: Module) {
 			is Hit.ModuleSwitch -> module.enabled = !module.enabled
 			is Hit.Star -> MenuPrefs.toggleFavorite(module.id)
 			is Hit.View -> if (showingManager != hit.manager) {
-				// Each view keeps its own place.
 				if (showingManager) managerScroll = scrollTarget else settingsScroll = scrollTarget
 				showingManager = hit.manager
 				scrollTarget = if (showingManager) managerScroll else settingsScroll
@@ -864,7 +910,7 @@ class ModulePage(val module: Module) {
 				manager?.ui?.blur()
 			}
 			is Hit.Expand -> if (!expanded.add(hit.setting)) expanded.remove(hit.setting)
-			// The rest of a toggle's row flips it, so the switch need not be aimed at.
+			// The rest of a toggle's row flips it.
 			is Hit.Row -> (hit.setting as? ToggleModuleSetting)?.let { it.value = !it.value }
 			is Hit.Track -> {
 				dragging = hit
@@ -874,7 +920,7 @@ class ModulePage(val module: Module) {
 				}
 				drag(mx)
 			}
-			// A number is selected whole when its box is clicked, so typing replaces it.
+			// Clicking a number's box selects it, so typing replaces it.
 			is Hit.Value -> focusField(hit.target, hit.box, mx, selectAll = true, doubleClick)
 			is Hit.Text -> focusField(hit.target, hit.box, mx, selectAll = false, doubleClick)
 			is Hit.Dropdown -> {
@@ -890,7 +936,7 @@ class ModulePage(val module: Module) {
 				openColor = hit.setting
 				colorAnchor = hit.box
 				hsv = java.awt.Color.RGBtoHSB((hit.setting.rgb shr 16) and 0xFF, (hit.setting.rgb shr 8) and 0xFF, hit.setting.rgb and 0xFF, null)
-				// The hex code is ready to be replaced, so one paste is enough.
+				// The hex code is selected, so one paste replaces it.
 				startEditing(Edit.Hex(hit.setting), selectAll = true)
 			}
 		}
@@ -898,10 +944,8 @@ class ModulePage(val module: Module) {
 	}
 
 	/**
-	 * A press in a field: the caret goes where it landed and a drag from there
-	 * selects, whether or not the field was being typed in already. A number's
-	 * box that is only clicked, not dragged across, selects the whole number on
-	 * release, so typing replaces it. A double click selects everything.
+	 * A press in a field puts the caret there; dragging selects. Clicking a number's box without
+	 * dragging selects it all on release; a double click selects everything.
 	 */
 	private fun focusField(target: Edit, box: Box, mx: Float, selectAll: Boolean, doubleClick: Boolean) {
 		val fresh = editing != target
@@ -952,7 +996,6 @@ class ModulePage(val module: Module) {
 		scrollTarget = (scrollTarget - amount * 70f).coerceIn(0f, maxScroll)
 	}
 
-	/** Handles a key, returning false when the screen should have it (Escape with nothing to cancel). */
 	fun keyPressed(event: KeyEvent): Boolean {
 		awaiting?.let { target ->
 			val clear = event.key() == GLFW.GLFW_KEY_ESCAPE || event.key() == GLFW.GLFW_KEY_BACKSPACE
@@ -968,21 +1011,44 @@ class ModulePage(val module: Module) {
 			when (event.key()) {
 				GLFW.GLFW_KEY_ESCAPE -> {
 					stopEditing()
-					// Escape out of the hex code shuts the picker with it.
+					// Escaping the hex code closes the picker too.
 					if (edit is Edit.Hex) openColor = null
 				}
-				// With completions showing, Tab takes the lit one and the arrows move the light.
+				// With completions showing, Tab takes the highlighted one and the arrows move it.
 				GLFW.GLFW_KEY_TAB -> currentSuggestions().getOrNull(suggestIndex)?.let(::acceptSuggestion)
 				GLFW.GLFW_KEY_DOWN, GLFW.GLFW_KEY_UP -> {
 					val count = currentSuggestions().size
 					if (count > 0) suggestIndex = (suggestIndex + if (event.key() == GLFW.GLFW_KEY_DOWN) 1 else count - 1) % count
 				}
-				GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> commitEditing()
+				GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> {
+					val button = (editing as? Edit.Text)?.setting?.button
+					commitEditing()
+					button?.let { Minecraft.getInstance().execute { it.action() } }
+				}
 				else -> if (input.keyPressed(event)) liveUpdate(edit)
 			}
 			return true
 		}
 		if (showingManager && manager?.keyPressed(event) == true) return true
+		// An open dropdown steps through its options with the arrows, so each can be tried in turn.
+		openDropdown?.let { source ->
+			val shown = source.shownOptions
+			val count = shown.size
+			if (!source.multiple && count > 0) {
+				when (event.key()) {
+					GLFW.GLFW_KEY_DOWN, GLFW.GLFW_KEY_UP -> {
+						val step = if (event.key() == GLFW.GLFW_KEY_DOWN) 1 else count - 1
+						val place = shown.indexOf(source.selectedIndex).coerceAtLeast(0)
+						source.pick(shown[(place + step) % count])
+						return true
+					}
+					GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> {
+						openDropdown = null
+						return true
+					}
+				}
+			}
+		}
 		if (event.key() == GLFW.GLFW_KEY_ESCAPE && (openDropdown != null || openColor != null)) {
 			openDropdown = null
 			openColor = null
@@ -1013,7 +1079,7 @@ class ModulePage(val module: Module) {
 		selecting = false
 	}
 
-	/** Text goes in as it is typed; a hex code as soon as it is whole. */
+	/** Text applies as typed; a hex code once complete. */
 	private fun liveUpdate(edit: Edit) {
 		when (edit) {
 			is Edit.Text -> edit.setting.value = input.text
@@ -1079,9 +1145,8 @@ class ModulePage(val module: Module) {
 			else -> return
 		}
 		if (pickerDrag != 3) setting.rgb = java.awt.Color.HSBtoRGB(hsv[0], hsv[1], hsv[2]) and 0xFFFFFF
-		// The hex field follows the drag. It is usually focused, ready for a
-		// paste, and it is committed when the picker closes — so a code left
-		// behind there put the colour straight back to where it started.
+		// The hex field follows the drag, since it's committed when the picker closes and a stale
+		// code would undo the drag.
 		val hex = Edit.Hex(setting)
 		if (editing == hex) input.set(rawValue(hex), selectAll = true)
 	}
@@ -1093,7 +1158,6 @@ class ModulePage(val module: Module) {
 	}
 
 	private companion object {
-		/** Each module's page as it was left, for the length of the game. */
 		val remembered = HashMap<String, Place>()
 
 		const val ROW_TALL = 56f
@@ -1101,5 +1165,13 @@ class ModulePage(val module: Module) {
 		const val ROW_GAP = 2f
 		const val LABEL = 14f
 		const val DESCRIPTION = 12f
+
+		/** The step to a description's second line. */
+		const val DESCRIPTION_LINE = 15f
 	}
+}
+
+/** The width of the last settings row drawn, for measuring descriptions outside a frame. */
+object ModulePageMetrics {
+	var lastRowWidth = 0f
 }

@@ -23,54 +23,35 @@ import java.nio.file.Files
 import java.util.Locale
 
 /**
- * The boss timings the Smart Tick Timer counts with, and the tools for
- * finding out what they should be.
- *
- * SkyBlock 0.27.2 sped up the Floor 7 fight — dialogue, spawns and phase
- * transitions — so the numbers every mod had for Storm and Necron stopped
- * being right overnight. Rather than guess at the new ones, each timing can be
- * changed while playing with `/cryptic debug timing`, and is kept between
- * sessions in `config/cryptic/timings.json`. `/cryptic debug bosslog` prints
- * every boss line, every lightning strike and every wither starting or
- * stopping, each with how many server ticks it came after that boss's first
- * line — which is what the timings are measured from — and how many real
- * seconds, which only differ when the server is lagging.
+ * The boss timings the Smart Tick Timer counts with. SkyBlock 0.27.2 sped up the Floor 7 fight, so
+ * each timing can be changed in game with `/cryptic debug timing` (saved in
+ * `config/cryptic/timings.json`). `/cryptic debug bosslog` prints every boss line, lightning volley
+ * and wither move, in server ticks and real seconds since that boss's first line.
  */
 object BossTimings {
-	/** Every timing, in server ticks, under the name the command uses. */
 	enum class Timing(val key: String, val defaultTicks: Int, val what: String) {
-		/**
-		 * Measured with the boss log on 2026-10-06: the big volley of bolts
-		 * landed 519 ticks after Storm's first line. Odin has 520.
-		 */
+		/** Measured 2026-10-06: 519 ticks after Storm's first line (Odin has 520). */
 		LIGHTNING("lightning", 519, "Storm's first line until the big lightning volley"),
 
 		/**
-		 * The moment to lower the purple pillar. Storm moved 99 ticks after his
-		 * PY call in both logged runs on 2026-10-06, and the user settled on 52
-		 * in game. Odin has 55.
-		 *
-		 * Counted from the call rather than from his first line: his lines come
-		 * exactly 62 ticks apart except one longer pause in the middle, which
-		 * may not be the same every run, and the call comes after it.
+		 * When to lower the purple pillar, counted from Storm's PY call. He moved 99 ticks after it
+		 * in both logged runs; 52 was settled on in game (Odin has 55).
 		 */
 		PY("py", 52, "Storm's PY call until the purple pillar should be lowered"),
 
-		/** Odin's, after the update. */
 		GOLDOR_START("goldor_start", 64, "Storm dying until terminals can be done"),
 
 		GOLDOR_CORE("goldor_core", 60, "Goldor's repeating cycle"),
 
 		FIRE_FREEZE("fire_freeze", 206, "The Professor's line until Fire Freeze is used, plus its 100-tick cast"),
 
-		/** Odin's, after the update: a fixed 20s, where it used to depend on how soon the wave came. */
+		/** A fixed 20 s since the update. */
 		WATCHER_MOVE("watcher_move", 400, "The Watcher's greeting until he moves his first wave on"),
 
-		/** Odin's, after the update: 390 before it. */
+		/** 390 before the update. */
 		LIVID("livid", 340, "Livid's greeting until he can be hurt"),
 		;
 
-		/** The ticks in use: the one set with the command, or the default. */
 		val ticks: Int get() = overrides[key] ?: defaultTicks
 	}
 
@@ -80,28 +61,23 @@ object BossTimings {
 
 	private val gson = GsonBuilder().setPrettyPrinting().create()
 
-	// ---- The boss log ----------------------------------------------------
-
-	/** Whether `/cryptic debug bosslog` is printing. Off when the game starts. */
 	@Volatile
 	var logging = false
 		private set
 
-	/** A moment, as a server tick and as the time on the clock. */
 	private data class Moment(val tick: Long, val millis: Long) {
 		companion object {
 			fun now() = Moment(ServerTicks.total, System.currentTimeMillis())
 		}
 	}
 
-	/** When each boss first spoke on this server, which every log line is measured from. */
+	/** When each boss first spoke on this server; every log line is measured from it. */
 	private val firstLine = LinkedHashMap<String, Moment>()
 
-	/** The boss that spoke last, whose first line the lightning and the withers are measured from. */
 	private var currentBoss: String? = null
 	private var lastLineTick = -1L
 
-	/** Each wither's last position, and how many ticks it has kept still or kept moving. */
+	/** Each wither's last position, and how long it has kept still or moving. */
 	private class Track(var at: Vec3, var moving: Boolean = false, var still: Int = 0, var lastMoved: Moment = Moment.now())
 
 	private val withers = HashMap<Int, Track>()
@@ -138,7 +114,6 @@ object BossTimings {
 		}.onFailure { Cryptic.LOGGER.error("Could not write timings.json", it) }
 	}
 
-	/** A chat packet, on the client thread. Only boss lines matter. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay) return
@@ -154,17 +129,15 @@ object BossTimings {
 	}
 
 	/**
-	 * An entity arriving, on the network thread: only lightning is looked at,
-	 * and only handed to the client thread to be printed. Nothing here may
-	 * throw, or the connection is dropped.
+	 * An entity arriving, on the network thread: only lightning matters, handed to the client
+	 * thread. Must not throw, or the connection drops.
 	 */
 	@JvmStatic
 	fun onEntityAdded(type: EntityType<*>) {
 		if (!logging || type != EntityTypes.LIGHTNING_BOLT) return
 		val now = Moment.now()
-		// Storm strikes a few bolts at a time all phase long; the lightning
-		// the timer is for is a volley of thirty or more in one tick. Only
-		// that is printed, once, when it gets big enough to be it.
+		// Storm strikes a few bolts all phase; the volley the timer is for is ten or more in one
+		// tick, printed once.
 		if (now.tick != boltTick) {
 			boltTick = now.tick
 			boltsThisTick = 0
@@ -173,14 +146,13 @@ object BossTimings {
 		Minecraft.getInstance().execute { print("§eLightning volley ${sinceBoss(now)}") }
 	}
 
-	/** The tick bolts are being counted for, and how many have come in it. Network thread only. */
+	/** The tick bolts are being counted for, and how many. Network thread only. */
 	private var boltTick = -1L
 	private var boltsThisTick = 0
 
-	/** This many bolts in one tick is the big strike, not Storm's ordinary attacks. */
 	private const val VOLLEY_BOLTS = 10
 
-	/** Watches the withers while logging, for when Storm moves and Necron drops. */
+	/** While logging, watches the withers for Storm moving and Necron dropping. */
 	fun tick(client: Minecraft) {
 		if (!logging) {
 			if (withers.isNotEmpty()) withers.clear()
@@ -192,14 +164,13 @@ object BossTimings {
 			if (entity !is WitherBoss) continue
 			seen += entity.id
 			val track = withers.getOrPut(entity.id) {
-				// A wither showing up, which a boss arriving in a new place can be.
 				print("§dWither #${entity.id} appeared ${sinceBoss(Moment.now())} §8at ${where(entity.position())}")
 				Track(entity.position())
 			}
 			val step = entity.position().distanceTo(track.at)
 			val moved = step > MOVE_PER_TICK
-			// A jump of several blocks in one tick is a boss being put somewhere,
-			// such as Necron dropping, rather than flying there.
+			// A jump of several blocks in one tick is a boss being placed (Necron dropping), not
+			// flying.
 			if (step > JUMP_BLOCKS) {
 				print("§dWither #${entity.id} jumped ${String.format(Locale.ROOT, "%.1f", step)} blocks ${sinceBoss(Moment.now())} §8from ${where(track.at)} to ${where(entity.position())}")
 			}
@@ -221,12 +192,12 @@ object BossTimings {
 
 	private fun sinceBoss(now: Moment): String {
 		val boss = currentBoss ?: return "§8(no boss line yet)"
-		// The last line as well, which is what the Necron drop is timed from.
+		// Also since the last line, which the Necron drop is timed from.
 		val sinceLast = if (lastLineTick >= 0) " §8(+${now.tick - lastLineTick}t after the last line)" else ""
 		return "${stamp(now, firstLine[boss] ?: now)} §8after $boss's first line$sinceLast"
 	}
 
-	/** "+541t (27.05s, 27.31s real)": server ticks, what they come to, and the clock. */
+	/** "+541t (27.05s, 27.31s real)". */
 	private fun stamp(now: Moment, from: Moment): String {
 		val ticks = now.tick - from.tick
 		val real = String.format(Locale.ROOT, "%.2fs", (now.millis - from.millis) / 1000.0)
@@ -241,9 +212,6 @@ object BossTimings {
 		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(Component.literal("§8[Boss] $text"))
 	}
 
-	// ---- Commands --------------------------------------------------------
-
-	/** `/cryptic debug timing [name] [ticks|seconds|reset]`. */
 	fun timingCommand(): LiteralArgumentBuilder<FabricClientCommandSource> =
 		ClientCommands.literal("timing")
 			.executes { context -> list(context); 1 }
@@ -283,7 +251,6 @@ object BossTimings {
 					),
 			)
 
-	/** `/cryptic debug bosslog`, which turns the boss log on and off. */
 	fun bossLogCommand(): LiteralArgumentBuilder<FabricClientCommandSource> =
 		ClientCommands.literal("bosslog").executes { context ->
 			logging = !logging
@@ -330,12 +297,10 @@ object BossTimings {
 	private val BOSS_LINE = Regex("""^\[BOSS] ([^:]+): .*$""")
 	private val FORMATTING = Regex("§.")
 
-	/** More than this between two ticks is a wither moving rather than bobbing. */
+	/** More than this between ticks is moving rather than bobbing. */
 	private const val MOVE_PER_TICK = 0.05
 
-	/** Ticks a wither has to keep still before it counts as stopped. */
 	private const val STILL_TICKS = 10
 
-	/** More than this in one tick is a jump, not a flight. */
 	private const val JUMP_BLOCKS = 2.0
 }

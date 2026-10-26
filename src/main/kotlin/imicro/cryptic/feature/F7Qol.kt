@@ -7,6 +7,7 @@ import imicro.cryptic.dungeon.DungeonTeam.DungeonClass
 import imicro.cryptic.dungeon.Floor7
 import imicro.cryptic.dungeon.PersonalBests
 import imicro.cryptic.gui.ColorModuleSetting
+import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.ModuleSetting
@@ -26,25 +27,16 @@ import net.minecraft.world.entity.boss.enderdragon.EndCrystal
 import java.util.Locale
 
 /**
- * The small things that make the Floor 7 boss, and Master Mode's, easier to read.
- *
- * One card for what would otherwise be a shelf of little ones:
- *
- * - **Section Complete**, a title for the moment a Goldor section is really
- *   finished. Hypixel counts the terminals, device and levers of a section to
- *   its (7/7), but the party cannot move on until the gate at the end of it is
- *   blown as well, and either can come first. So the title waits for both —
- *   the way Odin's Inactive Waypoints (BSD 3-Clause, Copyright (c) 2025
- *   odtheking) tells one section from the next. The last section has no gate:
- *   it is finished when the core opens, which Hypixel announces.
- * - **Better P3 titles**, NoammAddons' Terminal Titles (CC0, Noamm9): Hypixel's
- *   "Steve activated a terminal! (3/7)" title rewritten as "Steve Terminal
- *   (3/7)", the name in its class's colour, the kind of thing in its own, and
- *   the count going from red to green as the section fills.
- * - **Wish title**, for the healer, when Maxor is enraged — the moment the
- *   party's health is about to be wanted.
- * - [DoorFix], [GateHighlight] and [WitherOutline], which were cards of their
- *   own and are switches here.
+ * The Floor 7 boss, phase by phase (the card is "F7/M7 Features"):
+ * - **Section Complete**: a title when a Goldor section is really done. The terminals, device and
+ * levers must reach (7/7) and the gate must be blown, in either order, as Odin's Inactive Waypoints
+ * tells sections apart. The last section ends when the core opens.
+ * - **Better P3 titles**: NoammAddons' Terminal Titles, rewriting "Steve activated a terminal!
+ * (3/7)" as "Steve Terminal (3/7)" with class and count colours.
+ * - **Wish title** for the healer when Maxor is enraged.
+ * - Maxor's crystals: titles, timers, and boxes around them.
+ * - **Goldor tracer** once the core opens, and the **Necron 3x3** that must stay mined out.
+ * - [DoorFix], [GateHighlight] and [WitherOutline] as switches.
  */
 object F7Qol {
 	private const val WHITE = 0xFFFFFFFF.toInt()
@@ -57,10 +49,9 @@ object F7Qol {
 	private const val SECTION_COMPLETE = "Section Complete"
 	private const val WISH = "Wish!"
 
-	/** The last section, which ends at the core rather than at a gate. */
 	private const val LAST_SECTION = 4
 
-	/** How soon after one section ends a second "(7/7)" is the same one said twice. */
+	/** How soon a second "(7/7)" after a section ends is the same one repeated. */
 	private const val REPEAT_MILLIS = 2_000L
 
 	private val FORMATTING = Regex("§.")
@@ -73,6 +64,12 @@ object F7Qol {
 	private const val MAXOR_ENRAGED = "⚠ Maxor is enraged! ⚠"
 
 	private val titlesSection = SectionModuleSetting("titles_section", "Titles")
+	private val stormSection = SectionModuleSetting("storm_section", "Storm")
+	private val necronSection = SectionModuleSetting("necron_section", "Necron")
+
+	private val BOX_STYLES = listOf("Outline", "Fill", "Fill + Outline")
+	private const val BOX_OUTLINE = 0
+	private const val BOX_FILL = 1
 
 	@JvmField
 	val sectionComplete = ToggleModuleSetting(
@@ -129,7 +126,7 @@ object F7Qol {
 
 	// ---- Maxor's crystals ------------------------------------------------
 	//
-	// NoammAddons' F7 Titles crystal half and its Maxor's Crystals (CC0, Noamm9).
+	// From NoammAddons' F7 Titles and Maxor's Crystals.
 
 	private val maxorSection = SectionModuleSetting("maxor_section", "Maxor")
 
@@ -190,24 +187,131 @@ object F7Qol {
 		visibleIf = { crystalAlert.value },
 	)
 
+	@JvmField
+	val crystalHitboxes = ToggleModuleSetting(
+		id = "crystal_hitboxes",
+		label = "Crystal hitboxes",
+		defaultValue = false,
+		description = "Draws a box around Maxor's Energy Crystals, so they're easy to find and pick up.",
+	)
+
+	@JvmField
+	val crystalBoxStyle = DropdownModuleSetting(
+		id = "crystal_box_style", label = "Style", options = BOX_STYLES, defaultIndex = 2,
+		visibleIf = { crystalHitboxes.value },
+	)
+
+	@JvmField
+	val crystalFillColor = ColorModuleSetting(
+		id = "crystal_box_color", label = "Fill", defaultRgb = 0x55FFFF, supportsAlpha = true, defaultAlpha = 0x60,
+		visibleIf = { crystalHitboxes.value && crystalBoxStyle.selectedIndex != BOX_OUTLINE },
+	)
+
+	@JvmField
+	val crystalOutlineColor = ColorModuleSetting(
+		id = "crystal_outline_color", label = "Outline", defaultRgb = 0x55FFFF, supportsAlpha = true,
+		visibleIf = { crystalHitboxes.value && crystalBoxStyle.selectedIndex != BOX_FILL },
+	)
+
+	@JvmField
+	val crystalBoxWidth = SliderModuleSetting(
+		id = "crystal_box_width", label = "Line width", defaultValue = 2.0, min = 0.5, max = 5.0, step = 0.5,
+		visibleIf = { crystalHitboxes.value && crystalBoxStyle.selectedIndex != BOX_FILL },
+	)
+
+	@JvmField
+	val crystalBoxPhase = ToggleModuleSetting(
+		id = "crystal_box_phase", label = "Through walls", defaultValue = true,
+		visibleIf = { crystalHitboxes.value },
+	)
+
+	private val crushTimes = imicro.cryptic.gui.PanelModuleSetting("crush_times", "Crush times", note = "Coming soon")
+
 	private val goldorSection = SectionModuleSetting("goldor_section", "Goldor")
+
+	@JvmField
+	val goldorTracer = ToggleModuleSetting(
+		id = "goldor_tracer",
+		label = "Goldor tracer after core",
+		defaultValue = false,
+		description = "Once \"The Core entrance is opening!\" shows, a line from your crosshair to Goldor until the phase ends.",
+	)
+
+	@JvmField
+	val goldorTracerColor = ColorModuleSetting(
+		id = "goldor_tracer_color", label = "Colour", defaultRgb = 0xFFAA00,
+		visibleIf = { goldorTracer.value },
+	)
+
+	@JvmField
+	val goldorTracerWidth = SliderModuleSetting(
+		id = "goldor_tracer_width", label = "Line width", defaultValue = 2.0, min = 0.5, max = 5.0, step = 0.5,
+		visibleIf = { goldorTracer.value },
+	)
+
+	@JvmField
+	val platform = ToggleModuleSetting(
+		id = "necron_3x3",
+		label = "3x3 highlight",
+		defaultValue = false,
+		description = "Marks the 3x3 under Necron's platform that gets mined out, so the platform doesn't disappear.",
+	)
+
+	@JvmField
+	val platformStyle = DropdownModuleSetting(
+		id = "necron_3x3_style", label = "Style", options = BOX_STYLES, defaultIndex = 0,
+		visibleIf = { platform.value },
+	)
+
+	@JvmField
+	val platformFillColor = ColorModuleSetting(
+		id = "necron_3x3_color", label = "Fill", defaultRgb = 0xFF5555, supportsAlpha = true, defaultAlpha = 0x50,
+		visibleIf = { platform.value && platformStyle.selectedIndex != BOX_OUTLINE },
+	)
+
+	@JvmField
+	val platformOutlineColor = ColorModuleSetting(
+		id = "necron_3x3_outline_color", label = "Outline", defaultRgb = 0xFF5555, supportsAlpha = true,
+		visibleIf = { platform.value && platformStyle.selectedIndex != BOX_FILL },
+	)
+
+	@JvmField
+	val platformWidth = SliderModuleSetting(
+		id = "necron_3x3_width", label = "Line width", defaultValue = 2.0, min = 0.5, max = 5.0, step = 0.5,
+		visibleIf = { platform.value && platformStyle.selectedIndex != BOX_FILL },
+	)
+
+	@JvmField
+	val platformPhase = ToggleModuleSetting(
+		id = "necron_3x3_phase", label = "Through walls", defaultValue = true,
+		visibleIf = { platform.value },
+	)
 
 	private val witherSection = SectionModuleSetting("wither_section", "Withers")
 
 	@JvmField
 	val module = Module(
 		id = "f7_qol",
-		name = "F7/M7 QOL",
-		description = "Titles, gates, doors, withers",
+		name = "F7/M7 Features",
+		description = "Every phase of the F7 boss",
 		category = ModuleCategory.FLOOR_7,
 		supportsKeybind = false,
-		settings = listOf<ModuleSetting>(titlesSection, sectionComplete, betterTitles, terminalColor, deviceColor, leverColor, wishTitle, titleSeconds) +
-			listOf(maxorSection, crystalTitles.withMore(crystalColor, hideLaserTitle), crystalSpawnTimer, crystalPlaceTimer, crystalAlert.withMore(crystalAlertColor)) +
-			listOf(goldorSection, DoorFix.enabled) + GateHighlight.settings +
-			witherSection + WitherOutline.settings,
+		// In the order a run meets them.
+		settings = listOf<ModuleSetting>(
+			maxorSection, wishTitle, crystalTitles.withMore(crystalColor, hideLaserTitle), crystalSpawnTimer, crystalPlaceTimer,
+			crystalAlert.withMore(crystalAlertColor), crystalHitboxes.withMore(crystalBoxStyle, crystalFillColor, crystalOutlineColor, crystalBoxWidth, crystalBoxPhase),
+			stormSection, crushTimes,
+			goldorSection, sectionComplete, betterTitles.withMore(terminalColor, deviceColor, leverColor), DoorFix.enabled,
+			GateHighlight.enabled.withMore(
+				GateHighlight.style, GateHighlight.lineWidth, GateHighlight.fillColor, GateHighlight.outlineColor,
+				GateHighlight.showDestroyed, GateHighlight.destroyedFillColor, GateHighlight.destroyedOutlineColor,
+			),
+			goldorTracer.withMore(goldorTracerColor, goldorTracerWidth),
+			necronSection, platform.withMore(platformStyle, platformFillColor, platformOutlineColor, platformWidth, platformPhase),
+			witherSection,
+		) + WitherOutline.settings + listOf(titlesSection, titleSeconds),
 	)
 
-	/** A piece of a title and the colour it is drawn in. */
 	private class Part(val text: String, val color: Int)
 
 	private class Title(val parts: List<Part>, val until: Long) {
@@ -216,8 +320,6 @@ object F7Qol {
 
 	private var bigTitle: Title? = null
 	private var taskTitle: Title? = null
-
-	// ---- The section being worked through --------------------------------
 
 	private var section = 1
 	private var tasksDone = false
@@ -234,11 +336,13 @@ object F7Qol {
 		Hud.register(CrystalTimerElement())
 		Hud.register(CrystalAlertElement())
 		ClientEntityEvents.ENTITY_LOAD.register { entity, _ -> onEntityLoad(entity) }
+		net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> reset() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> reset() }
 	}
 
 	private fun reset() {
+		tracing = false
 		section = 1
 		tasksDone = false
 		gateDown = false
@@ -250,14 +354,13 @@ object F7Qol {
 
 	private val inFloor7: Boolean get() = module.enabled && DungeonLocation.inFloor7
 
-	/** A chat packet, read on the client thread. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay || !inFloor7) return
 		try {
 			onLine(message.string.replace(FORMATTING, "").trim())
 		} catch (_: RuntimeException) {
-			// A line not understood is a line ignored, never a disconnect.
+			// A line not understood is ignored, never a disconnect.
 		}
 	}
 
@@ -284,6 +387,7 @@ object F7Qol {
 				return
 			}
 			CORE_OPENING -> {
+				tracing = true
 				if (sectionComplete.value) showBig(SECTION_COMPLETE)
 				section = 1
 				tasksDone = false
@@ -303,19 +407,14 @@ object F7Qol {
 		if (betterTitles.value) showTask(name, kind, done, total)
 
 		if (done < total) return
-		// The count is full. The last section is finished by the core, which
-		// says so itself; any other waits for its gate as well.
-		// Counted rather than read off where the player stands: the berserk is
-		// already in s4 while the rest finish s1, and the mage is in the core.
+		// The count is full. The last section waits for the core; others wait for their gate too.
+		// Counted rather than read from position, since players are spread across sections.
 		if (section == LAST_SECTION) return
 		if (System.currentTimeMillis() - lastCompleteAt < REPEAT_MILLIS) return
 		if (gateDown) completeSection() else tasksDone = true
 	}
 
-	/**
-	 * Whether Hypixel's own title or subtitle should not be shown, because
-	 * Better P3 titles is drawing the same news its own way.
-	 */
+	/** Whether to hide Hypixel's title, because Better P3 titles draws it. */
 	@JvmStatic
 	fun hidesTitle(text: Component): Boolean {
 		if (!inFloor7) return false
@@ -330,30 +429,26 @@ object F7Qol {
 		return betterTitles.value && taskLine.matches(line)
 	}
 
-	// ---- Maxor's crystals ------------------------------------------------
-
-	/** "1/2 Energy Crystals are now active!", Hypixel's title as each goes in. */
+	/** "1/2 Energy Crystals are now active!". */
 	private val crystalLine = Regex("""^(\d+)/(\d+) Energy Crystals are now active!$""")
 	private const val LASER_CHARGING = "The Energy Laser is charging up!"
 	private val crystalPickup = Regex("""^(\w{1,16}) picked up an Energy Crystal!$""")
 
-	/** Maxor stunned, either way he says it: the crystals come back a fixed time after. */
+	/** Maxor stunned, either wording; the crystals come back a fixed time later. */
 	private val MAXOR_STUNNED = setOf("[BOSS] Maxor: THAT BEAM! IT HURTS! IT HURTS!!", "[BOSS] Maxor: YOU TRICKED ME!")
 	private const val CRYSTAL_RESPAWN_TICKS = 34
 
-	/** Where a placed crystal appears: on the pylons, at this height. */
 	private const val CRYSTAL_Y = 224
 	private const val PLACE_REACH = 5.0
 	private const val PLACE_RECORD = "F7 crystal placement"
 
-	/** Server ticks until the crystals are back, or -1 when none are coming. Counted on the network thread. */
+	/** Server ticks until the crystals return, or -1. Counted on the network thread. */
 	@Volatile
 	private var crystalTicks = -1
 
-	/** When you picked a crystal up, or 0 when you are not carrying one. */
 	private var pickedUpAt = 0L
 
-	/** One server tick. Only counts down, so it is safe off the client thread. */
+	/** One server tick. Only counts down, so safe off the client thread. */
 	@JvmStatic
 	fun onServerTick() {
 		val ticks = crystalTicks
@@ -373,8 +468,8 @@ object F7Qol {
 	}
 
 	/**
-	 * A crystal turning up on a pylon near you, after you picked one up: the
-	 * one you just placed. Timed from the pickup line, and kept as a best.
+	 * A crystal appearing on a pylon near you after a pickup: the one you placed. Timed from the
+	 * pickup and kept as a best.
 	 */
 	private fun onEntityLoad(entity: Entity) {
 		if (pickedUpAt == 0L || !crystalPlaceTimer.value || !inFloor7) return
@@ -396,7 +491,6 @@ object F7Qol {
 		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §aCrystal placed in §e${time}s§a.$against"))
 	}
 
-	/** Whether there is an Energy Crystal in your hotbar, which is where Hypixel puts one. */
 	private fun holdingCrystal(): Boolean {
 		val inventory = Minecraft.getInstance().player?.inventory ?: return false
 		return (0 until 9).any { slot ->
@@ -407,7 +501,6 @@ object F7Qol {
 
 	private const val CRYSTAL_WARNING = "⚠ Crystal ⚠"
 
-	/** The respawn countdown, big and centred. */
 	private class CrystalTimerElement : HudElement("crystal_timer", "Crystal Spawn", 0.47, 0.53, 2.5) {
 		private val font get() = Minecraft.getInstance().font
 		override val width: Int get() = font.width("0.00s")
@@ -425,7 +518,7 @@ object F7Qol {
 		}
 	}
 
-	/** The warning while a picked-up crystal has not been placed, during Maxor. */
+	/** The warning while a picked-up crystal is still unplaced during Maxor. */
 	private class CrystalAlertElement : HudElement("crystal_alert", "Crystal Alert", 0.43, 0.2, 3.0) {
 		private val font get() = Minecraft.getInstance().font
 		override val width: Int get() = font.width(CRYSTAL_WARNING)
@@ -480,14 +573,13 @@ object F7Qol {
 		return listOf(
 			Part("$name ", nameColor),
 			Part("$label ", kindColor),
-			// The brackets stay green whatever the count is, so the number is what changes.
+			// The brackets stay green so only the number changes.
 			Part("(", GREEN),
 			Part("$done/$total", countColor(done, total)),
 			Part(")", GREEN),
 		)
 	}
 
-	/** Red, then orange, then yellow as the section fills, and green once it is full. */
 	private fun countColor(done: Int, total: Int): Int {
 		if (total <= 0 || done >= total) return GREEN
 		val fraction = done.toDouble() / total
@@ -508,7 +600,6 @@ object F7Qol {
 			Long.MAX_VALUE,
 		)
 
-	/** One line of coloured text, centred on the element. */
 	private fun drawCentered(context: GuiGraphicsExtractor, title: Title, width: Int) {
 		val font = Minecraft.getInstance().font
 		var x = (width - font.width(title.text)) / 2
@@ -556,10 +647,83 @@ object F7Qol {
 		override fun renderExample(context: GuiGraphicsExtractor) = drawCentered(context, EXAMPLE_TASK, width)
 	}
 
-	/** For `/cryptic debug f7`. */
 	fun describe(): List<String> = listOf(
-		"§8[Cryptic] §7F7/M7 QOL: module ${if (module.enabled) "§aon" else "§coff"}§7, Floor 7 §f${DungeonLocation.inFloor7}" +
+		"§8[Cryptic] §7F7/M7 Features: module ${if (module.enabled) "§aon" else "§coff"}§7, Floor 7 §f${DungeonLocation.inFloor7}" +
 			"§7, section §f$section §7(standing in §f${Floor7.p3Section ?: "none"}§7), tasks done §f$tasksDone" +
 			"§7, gate down §f$gateDown",
 	)
+
+	// ---- Boxes and the tracer ---------------------------------------------------------------
+
+	/** From the core opening until the Goldor phase is left. */
+	private var tracing = false
+
+	/** The 3x3 under Necron's platform, from the F7/M7 boss waypoints. */
+	private val PLATFORM_HOLE = net.minecraft.world.phys.AABB(53.0, 63.0, 113.0, 56.0, 64.0, 116.0)
+
+	private fun render(context: net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext) {
+		if (!inFloor7) return
+		val level = Minecraft.getInstance().level ?: return
+		if (crystalHitboxes.value && Floor7.inBossRoom) {
+			for (entity in level.entitiesForRendering()) {
+				if (entity !is EndCrystal) continue
+				box(context, entity.boundingBox, crystalBoxStyle.selectedIndex, crystalOutlineColor.argb, crystalFillColor.argb, crystalBoxWidth.value, crystalBoxPhase.value)
+			}
+		}
+		if (platform.value && Floor7.phase == NECRON_PHASE) {
+			box(context, PLATFORM_HOLE, platformStyle.selectedIndex, platformOutlineColor.argb, platformFillColor.argb, platformWidth.value, platformPhase.value)
+		}
+		if (tracing && Floor7.phase != GOLDOR_PHASE) tracing = false
+		if (goldorTracer.value && tracing) {
+			val goldor = findGoldor(level) ?: return
+			val at = goldor.getPosition(Minecraft.getInstance().deltaTracker.getGameTimeDeltaPartialTick(false))
+			imicro.cryptic.render.WorldRender.drawTracer(
+				context.poseStack(), context.submitNodeCollector(),
+				at.x, at.y + goldor.bbHeight / 2, at.z,
+				goldorTracerColor.argb or (0xFF shl 24), goldorTracerWidth.value.toFloat(), true,
+			)
+		}
+	}
+
+	/**
+	 * Goldor himself: the wither under the nametag that names him (it has symbols around the name,
+	 * so the name is looked for inside it). Other withers, like the one some armour summons, have
+	 * no such tag. None once he's dead.
+	 */
+	private fun findGoldor(level: net.minecraft.client.multiplayer.ClientLevel): net.minecraft.world.entity.boss.wither.WitherBoss? {
+		val withers = level.entitiesForRendering().filterIsInstance<net.minecraft.world.entity.boss.wither.WitherBoss>()
+			.filter { it.isAlive && it.health > 0f }
+		if (withers.isEmpty()) return null
+		withers.firstOrNull { named(it.customName) }?.let { return it }
+		val tag = level.entitiesForRendering().firstOrNull { it is net.minecraft.world.entity.decoration.ArmorStand && named(it.customName) } ?: return null
+		return withers.filter { it.distanceToSqr(tag) < GOLDOR_TAG_RANGE * GOLDOR_TAG_RANGE }.minByOrNull { it.distanceToSqr(tag) }
+	}
+
+	private fun named(name: Component?): Boolean =
+		name != null && name.string.replace(FORMATTING, "").contains("Goldor", ignoreCase = true)
+
+	/** How far below his nametag Goldor can be. */
+	private const val GOLDOR_TAG_RANGE = 6.0
+
+	private const val GOLDOR_PHASE = 3
+	private const val NECRON_PHASE = 4
+
+	private fun box(
+		context: net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext,
+		box: net.minecraft.world.phys.AABB, style: Int, outlineArgb: Int, fillArgb: Int, width: Double, phase: Boolean,
+	) {
+		imicro.cryptic.render.WorldRender.drawBox(
+			poseStack = context.poseStack(),
+			collector = context.submitNodeCollector(),
+			minX = box.minX, minY = box.minY, minZ = box.minZ,
+			maxX = box.maxX, maxY = box.maxY, maxZ = box.maxZ,
+			outlineArgb = outlineArgb,
+			fillArgb = fillArgb,
+			outline = style != BOX_FILL,
+			fill = style != BOX_OUTLINE,
+			phase = phase,
+			lineWidth = width.toFloat(),
+		)
+	}
+
 }

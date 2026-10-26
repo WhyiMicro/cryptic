@@ -23,32 +23,23 @@ import net.minecraft.world.level.GameType
 import kotlin.math.roundToInt
 
 /**
- * A crosshair you draw yourself, pixel by pixel.
+ * A crosshair you draw yourself, pixel by pixel. The drawing is stored in the profile as one digit
+ * per cell; the editor is [CrosshairScreen]. Only vanilla's crosshair sprite is replaced; the
+ * attack indicator stays.
  *
- * The drawing lives in the profile like every other preference, as one digit
- * per cell; the window that edits it is [CrosshairScreen]. What is drawn in
- * game replaces only vanilla's crosshair sprite — the attack indicator under it
- * is still vanilla's, because it is information rather than decoration and a
- * custom crosshair is no reason to lose it.
- *
- * Two ways to draw it. **Vanilla blending** inverts whatever is behind each
- * painted cell, which is how the default crosshair stays visible on both sky
- * and stone; it ignores the palette, because an inverted pixel has no colour of
- * its own. **Custom colours** draws the palette as painted, with an optional
- * outline to stand in for what inverting did.
+ * **Vanilla blending** inverts what's behind each painted cell, like the default crosshair,
+ * ignoring the palette. **Custom colours** draws the palette as painted, with an optional outline.
  */
 object CrosshairEditor {
-	/** Indices into [blendMode]. */
 	private const val BLEND_VANILLA = 0
 	private const val BLEND_CUSTOM = 1
 
-	/** How many colours a crosshair can use. Index zero is always "empty". */
+	/** Colours a crosshair can use; index zero is always empty. */
 	const val PALETTE_SIZE = 6
 
 	/**
-	 * Vanilla's crosshair is 15 wide with its centre at 7, drawn from
-	 * `(guiWidth - 15) / 2`. Anchoring the centre cell to the same spot is what
-	 * makes a copy of it sit on exactly the same pixel.
+	 * Vanilla's crosshair is 15 wide with its centre at 7, drawn from `(guiWidth - 15) / 2`.
+	 * Anchoring the centre cell there makes a copy sit on the same pixel.
 	 */
 	private const val VANILLA_WIDTH = 15
 	private const val VANILLA_CENTRE = 7
@@ -62,11 +53,7 @@ object CrosshairEditor {
 		description = "How many cells the crosshair is drawn on. Changing it keeps the drawing centred.",
 	)
 
-	/**
-	 * The drawing itself, which has no row on the card — a grid of digits is
-	 * neither readable nor editable in a text box. It is a setting so that it
-	 * travels with the profile, exports with it, and resets with it.
-	 */
+	/** The drawing, with no row on the card; a setting so it travels, exports and resets with the profile. */
 	@JvmField
 	val pixels = TextModuleSetting(
 		id = "pixels",
@@ -76,7 +63,7 @@ object CrosshairEditor {
 		visibleIf = { false },
 	)
 
-	/** The colours, edited in the window rather than on the card. */
+	/** The colours, edited in the editor rather than on the card. */
 	@JvmField
 	val palette: List<ColorModuleSetting> = listOf(
 		0xFFFFFF, 0xFF5555, 0x55FF55, 0x55FFFF, 0xFFFF55, 0x000000,
@@ -184,7 +171,7 @@ object CrosshairEditor {
 		gridSize, blendMode, scale, opacity, outline, outlineColor, targetTint, targetColor, thirdPerson, hideDefault,
 	)
 
-	/** The module card's bind button, pointed at the real key mapping. */
+	/** The card's bind button, pointed at the real key mapping. */
 	private val openKeybind = KeybindSetting(
 		currentKeyName = {
 			if (CrypticClient.crosshairEditorKey.isUnbound) {
@@ -205,7 +192,7 @@ object CrosshairEditor {
 		id = "crosshair_editor",
 		name = "Crosshair Editor",
 		description = "Draw your own crosshair",
-		category = ModuleCategory.MISC,
+		category = ModuleCategory.GENERAL,
 		supportsKeybind = true,
 		keybind = openKeybind,
 		settings = listOf(gridSize, pixels) + palette +
@@ -218,12 +205,8 @@ object CrosshairEditor {
 	val selectedSize: Int get() = CrosshairGrid.SIZES[gridSize.selectedIndex.coerceIn(CrosshairGrid.SIZES.indices)]
 
 	/**
-	 * The grid the setting describes, decoded once and then kept.
-	 *
-	 * Rebuilt only when the text or the chosen size has moved on from what it
-	 * was decoded from: a profile being switched or imported changes the text
-	 * underneath, and a size picked on the card changes the size, and either has
-	 * to show up without the editor having been opened.
+	 * The setting's grid, decoded once. Rebuilt when the text (profile switch or import) or the
+	 * size changes, so changes show without opening the editor.
 	 */
 	private var decoded: CrosshairGrid? = null
 	private var decodedFrom: String? = null
@@ -237,15 +220,14 @@ object CrosshairEditor {
 		val grid = CrosshairGrid.decode(pixels.value, size)
 		decoded = grid
 		decodedSize = size
-		// The stored text is brought to the new size too, so what is saved is
-		// what is drawn.
+		// The stored text follows the new size, so what's saved is what's drawn.
 		val encoded = grid.encode()
 		if (encoded != pixels.value) pixels.value = encoded
 		decodedFrom = pixels.value
 		return grid
 	}
 
-	/** Writes the grid back into the profile, after the editor has changed it. */
+	/** Writes the grid back into the profile after editing. */
 	fun commit(grid: CrosshairGrid) {
 		decoded = grid
 		decodedSize = grid.size
@@ -254,10 +236,8 @@ object CrosshairEditor {
 		decodedFrom = pixels.value
 	}
 
-	/** Colour index [index] as ARGB, index one being the first palette entry. */
+	/** Colour [index] as ARGB; index one is the first palette entry. */
 	fun colorOf(index: Int): Int = palette.getOrNull(index - 1)?.argb ?: 0
-
-	// ---- drawing ----------------------------------------------------------
 
 	/** Horizontal runs of one colour: row, first cell, last cell, colour. */
 	private var runs: IntArray = IntArray(0)
@@ -266,11 +246,8 @@ object CrosshairEditor {
 	private var runsGrid: CrosshairGrid? = null
 
 	/**
-	 * Merges each row into runs of one colour, and works out the outline.
-	 *
-	 * A 64 grid filled solid would otherwise be four thousand separate fills
-	 * every frame. Runs make a typical crosshair a dozen, and they are only
-	 * rebuilt when the drawing actually changes.
+	 * Merges rows into single-colour runs and works out the outline, so a typical crosshair is a
+	 * dozen fills instead of thousands. Rebuilt only when the drawing changes.
 	 */
 	private fun rebuildRuns(grid: CrosshairGrid) {
 		if (grid === runsGrid && grid.revision == runsRevision) return
@@ -279,9 +256,8 @@ object CrosshairEditor {
 
 		runs = collectRuns(grid.size) { x, y -> grid[x, y] }
 		outlineRuns = collectRuns(grid.size + 2) { x, y ->
-			// An outline cell is an empty one touching a painted one, sideways
-			// or corner to corner. The border is one cell wider than the grid so
-			// a drawing that reaches the edge is outlined on that side too.
+			// An outline cell is an empty one touching a painted one, including diagonally. The
+			// border is a cell wider than the grid, so edge drawings are outlined too.
 			val gx = x - 1
 			val gy = y - 1
 			if (grid[gx, gy] != 0) return@collectRuns 0
@@ -314,52 +290,29 @@ object CrosshairEditor {
 		return out.toIntArray()
 	}
 
-	/**
-	 * Vanilla's crosshair sprite — or a resource pack's, since a pack replaces
-	 * the texture behind this name rather than the name itself.
-	 */
+	/** Vanilla's crosshair sprite, or a resource pack's, since packs replace the texture behind this name. */
 	private val VANILLA_CROSSHAIR: Identifier = Identifier.withDefaultNamespace("hud/crosshair")
 
 	/**
-	 * Whether a sprite about to be drawn is the crosshair this replaces.
-	 *
-	 * Asked from inside `blitSprite` itself rather than from the call in the HUD
-	 * that draws the crosshair, and that is the whole of the fix for a pack's
-	 * crosshair showing through. The first version shrank that call's width to
-	 * zero, which works right up until another mod wraps the call — Devonian
-	 * does, to draw its own crosshair, and calls the original with arguments of
-	 * its own, so the zero never arrived. Every wrapper still has to reach the
-	 * real method in the end, so the answer given here holds whatever else is
-	 * installed.
-	 *
-	 * Checked on every sprite the GUI draws, so the cheap half comes first and
-	 * the name is only compared while the module is on.
+	 * Whether a sprite about to be drawn is the crosshair being replaced. Asked inside `blitSprite`
+	 * itself, so it holds even when another mod wraps the HUD's crosshair call (Devonian does).
+	 * Checked for every GUI sprite, so the cheap half comes first.
 	 */
 	@JvmStatic
 	fun hidesSprite(location: Identifier): Boolean = module.enabled && hideDefault.value && location == VANILLA_CROSSHAIR
 
-	/**
-	 * The same, for a sprite drawn straight from the atlas rather than by name,
-	 * which is how a mod that draws the crosshair itself reaches it.
-	 */
+	/** The same, for a sprite drawn straight from the atlas, as some mods do. */
 	@JvmStatic
 	fun hidesSprite(sprite: net.minecraft.client.renderer.texture.TextureAtlasSprite): Boolean =
 		module.enabled && hideDefault.value && sprite.contents().name() == VANILLA_CROSSHAIR
 
-	/**
-	 * How many real screen pixels one cell is: Scale times the GUI scale,
-	 * rounded to a whole number so every cell is the same size.
-	 */
+	/** Screen pixels per cell: Scale times the GUI scale, rounded so every cell is equal. */
 	fun cellPixels(guiScale: Int): Int = (guiScale * scale.value).roundToInt().coerceAtLeast(1)
 
 	/**
-	 * Draws the crosshair, from the point vanilla would have drawn its own.
-	 *
-	 * Drawn in real screen pixels rather than scaled GUI ones, with every cell
-	 * a whole number of them. Scaling the GUI by 1.25 instead puts cell edges
-	 * between pixels, and each one then rounds its own way: some cells a pixel
-	 * wider than the next, which reads as blur. At scale 1 a cell is exactly
-	 * one pixel of vanilla's sprite, on the same spot.
+	 * Draws the crosshair where vanilla would have. Drawn in real screen pixels with whole-pixel
+	 * cells; scaling the GUI instead gives uneven cells that look blurred. At scale 1 a cell is one
+	 * pixel of vanilla's sprite, on the same spot.
 	 */
 	@JvmStatic
 	fun draw(graphics: GuiGraphicsExtractor) {
@@ -374,7 +327,7 @@ object CrosshairEditor {
 		val anchorY = (graphics.guiHeight() - VANILLA_WIDTH) / 2 + VANILLA_CENTRE
 		val c = grid.centre
 		val cell = cellPixels(guiScale)
-		// The centre cell centred on the centre of vanilla's middle pixel.
+		// The centre cell centred on vanilla's middle pixel.
 		val left = ((anchorX + 0.5f) * guiScale - cell / 2f).roundToInt() - c * cell
 		val top = ((anchorY + 0.5f) * guiScale - cell / 2f).roundToInt() - c * cell
 
@@ -383,16 +336,14 @@ object CrosshairEditor {
 		pose.scale(1f / guiScale, 1f / guiScale)
 
 		if (usesVanillaBlending) {
-			// White through the inverting pipeline is exactly vanilla's own
-			// crosshair: every painted cell becomes the negative of what is
-			// behind it.
+			// White through the inverting pipeline is exactly vanilla's crosshair.
 			forEachRun(runs) { y, x0, x1, _ ->
 				graphics.fill(RenderPipelines.GUI_INVERT, left + x0 * cell, top + y * cell, left + (x1 + 1) * cell, top + (y + 1) * cell, WHITE)
 			}
 		} else {
 			if (outline.value) {
 				val outlineArgb = outlineColor.argb
-				// The outline grid is offset by one to have room for a border.
+				// The outline grid is offset by one to make room for the border.
 				forEachRun(outlineRuns) { y, x0, x1, _ ->
 					graphics.fill(left + (x0 - 1) * cell, top + (y - 1) * cell, left + x1 * cell, top + y * cell, outlineArgb)
 				}
@@ -410,12 +361,8 @@ object CrosshairEditor {
 	}
 
 	/**
-	 * The third-person half, which vanilla never reaches.
-	 *
-	 * Vanilla returns before drawing anything when the camera is not in first
-	 * person, so there is no sprite to replace — this draws the crosshair on its
-	 * own, keeping vanilla's other rule that a spectator only gets one over
-	 * something they can open.
+	 * Third person, where vanilla draws nothing. Keeps vanilla's rule that spectators only get one
+	 * over something they can open.
 	 */
 	@JvmStatic
 	fun drawThirdPerson(graphics: GuiGraphicsExtractor) {
@@ -444,7 +391,7 @@ object CrosshairEditor {
 
 	private const val WHITE = 0xFFFFFFFF.toInt()
 
-	/** Vanilla's crosshair on the smallest canvas, which is where everybody starts. */
+	/** Vanilla's crosshair on the smallest canvas, the starting drawing. */
 	private fun defaultDrawing(): String {
 		val grid = CrosshairGrid(CrosshairGrid.SIZES.first())
 		CrosshairPreset.VANILLA.paint(grid, 1)

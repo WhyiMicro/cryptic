@@ -13,36 +13,41 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Lets the terminal solver replace a screen outright.
- *
- * The whole screen has to go, not just its contents: a chest draws its own
- * texture as the background, and that texture is a picture of an inventory, so
- * cancelling only the slots would leave a row of fake item slots behind the
- * terminal. The solver paints the dimming back itself.
+ * Lets the terminal solver replace a screen outright. The chest's background texture is a picture
+ * of an inventory, so cancelling only the slots would leave fake slots behind; the solver paints
+ * the dimming itself.
  */
 @Mixin(Screen.class)
 public abstract class ScreenMixin {
     @Inject(method = "extractRenderStateWithTooltipAndSubtitles", at = @At("HEAD"), cancellable = true)
     private void cryptic$drawTerminal(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo info) {
-        // The Spirit Leap menu, replaced by its four corners the same way.
+        // The Spirit Leap menu, replaced the same way.
         if (SpiritLeapOverlay.render((Screen) (Object) this, graphics, mouseX, mouseY)) {
             info.cancel();
             return;
         }
         if (TerminalSolver.renderCustomGui((Screen) (Object) this, graphics, mouseX, mouseY)) {
             info.cancel();
+            return;
+        }
+        if (imicro.cryptic.feature.PartyFinder.render((Screen) (Object) this, graphics, mouseX, mouseY)) {
+            info.cancel();
+            return;
+        }
+        if (imicro.cryptic.feature.PartyFinderPages.render((Screen) (Object) this, graphics, mouseX, mouseY)) {
+            info.cancel();
         }
     }
 
     /**
-     * The experiment solver paints over the chest rather than in place of it,
-     * so it goes at the tail: the board is what has to be memorised, and
-     * replacing it would take away the thing being solved.
+     * The experiment solver paints over the chest rather than replacing it, since the board is
+     * what's being memorised.
      */
     @Inject(method = "extractRenderStateWithTooltipAndSubtitles", at = @At("TAIL"))
     private void cryptic$drawExperiment(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo info) {
         ExperimentSolver.render((Screen) (Object) this, graphics);
         SlotBinds.render((Screen) (Object) this, graphics, mouseX, mouseY);
         CroesusHelper.renderOverlay((Screen) (Object) this, graphics, mouseX, mouseY);
+        imicro.cryptic.feature.Bazaar.renderOverlay((Screen) (Object) this, graphics);
     }
 }

@@ -10,12 +10,8 @@ import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.HitResult
 
 /**
- * `/cryptic debug block`: the block you are looking at, in full.
- *
- * Its position, what it is and every property of its state, its block entity,
- * and where you are — and for a barrier, the whole room of barriers it is part
- * of, which is what a crystal waiting to be picked up stands in. Barriers are
- * invisible but can still be looked at, so this is how one is found.
+ * `/cryptic debug block`: everything about the block you're looking at. For a barrier, also the
+ * whole barrier room it belongs to (how crystal spaces are found, since barriers are invisible).
  */
 object BlockInfo {
 	fun describe(): List<String> {
@@ -37,7 +33,7 @@ object BlockInfo {
 			lines += "State: " + values.joinToString(", ") { "${it.property().name}=${it.value()}" }
 		}
 		level.getBlockEntity(pos)?.let { lines += "Block entity: ${BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(it.type)}" }
-		if (looking) lines += "Face: ${(hit as BlockHitResult).direction.name.lowercase()}"
+		if (looking) lines += "Face: ${hit.direction.name.lowercase()}"
 		lines += "Light: block ${level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos.above())}, " +
 			"sky ${level.getBrightness(net.minecraft.world.level.LightLayer.SKY, pos.above())}"
 		if (state.`is`(Blocks.BARRIER) || BuiltInRegistries.BLOCK.getKey(state.block).path.contains("glass")) {

@@ -16,53 +16,29 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Which teleport pad has not been used, and which to take next.
+ * Teleport Maze: which pad is the answer and which to step onto next. Ported from Odin.
  *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking). Three earlier
- * attempts here each got one half of it, so both halves are worth naming.
+ * The answer: each landing leaves you facing back along the line you came, so the candidates are
+ * narrowed to pads on that line, minus pads already used; after a few jumps one remains.
  *
- * **Which pad is the answer.** The teleporter leaves you facing back down the
- * line you arrived along, so the pad you came from is somewhere on that line.
- * The answer is therefore kept as a set and narrowed: each landing cuts it to
- * the pads the view line passes through, minus the ones already stood on.
- * Across a few jumps it collapses to one. Scoring pads by how near your gaze
- * they are is the same observation used the weak way round — it always names a
- * favourite, including pads already ruled out, and that is a loop.
- *
- * **Which pad to step onto.** Not the same question. The maze is seven small
- * rooms of four pads, and only the four in the room you are standing in can be
- * reached; a line drawn to the answer from two rooms away points through a wall
- * at something you cannot step onto. The rooms cannot be found by distance,
- * either: the nearest pad of the next room along is two blocks away, nearer
- * than the far corner of your own. So the pads are taken from Odin's
- * written-down list, where the order is the grouping — four at a time — and the
- * last two are the way in and the way out.
+ * The next pad: only the four pads in your own small room can be reached, so pads come from Odin's
+ * list, grouped four at a time (the last two are the entrance and exit).
  */
 object TpMazeSolver {
 	private const val PUZZLE = "Teleport Maze"
 
-	/** How many pads make one room of the maze. */
 	private const val GROUP = 4
 
-	/** The pads, in the order the groups are read from. */
 	private var pads: List<BlockPos> = emptyList()
 
-	/** The pads not yet ruled out, which is the answer once it holds one. */
 	private var candidates: List<BlockPos> = emptyList()
 
-	/** Pads landed on, which is what the colours report. */
+	/** Pads landed on. */
 	private val visited = CopyOnWriteArraySet<BlockPos>()
 
-	/**
-	 * Pads stepped off, which is what stops the walk repeating itself.
-	 *
-	 * Different from [visited] in exactly the way that matters: a pad you were
-	 * carried to is a place you have been, and a pad you walked onto is a move
-	 * you have made. Only the second kind is worth refusing to do again.
-	 */
+	/** Pads stepped off. Unlike [visited], only these are moves you've made and shouldn't repeat. */
 	private val taken = CopyOnWriteArraySet<BlockPos>()
 
-	/** The pad to step onto next, set only by a landing. */
 	private var best: BlockPos? = null
 
 	fun onRoomEnter(room: DungeonRoom) {
@@ -73,11 +49,8 @@ object TpMazeSolver {
 	}
 
 	/**
-	 * Puts the written-down pads where this room actually put them.
-	 *
-	 * Scanning for end portal frames instead, which an earlier version did,
-	 * finds the same thirty blocks but throws away the order — and the order is
-	 * the only record of which four belong to a room together.
+	 * Places the listed pads in this room. The list's order is the only record of which four share
+	 * a room.
 	 */
 	private fun place(room: DungeonRoom) {
 		val placed = PAD_POSITIONS.map { room.getRealCoords(it) }
@@ -87,19 +60,16 @@ object TpMazeSolver {
 	}
 
 	/**
-	 * A teleport. Anything that is not a landing on the grid is ignored: the
-	 * numbers are exact halves at one height, which walking never produces.
+	 * A teleport. Only landings on the grid count: exact halves at one height, which walking never
+	 * produces.
 	 */
 	fun onTeleport(packet: ClientboundPlayerPositionPacket) {
 		if (pads.isEmpty() || !PuzzleRooms.inside(PUZZLE)) return
 		val landing = packet.change.position
 		if (landing.x % 0.5 != 0.0 || landing.y != 69.5 || landing.z % 0.5 != 0.0) return
 
-		// Matched on the floor plan, the way NoammAddons does it, rather than by
-		// box overlap. A pad's block runs from y 69 to 70 and somebody standing
-		// on it runs from 70 up, so the two boxes meet at a plane and never
-		// actually overlap — the pad you left was never once recognised, which
-		// is why refusing to repeat a move changed nothing.
+		// Matched on the floor plan, since the pad's box and a player standing on it only touch,
+		// never overlap.
 		val player = Minecraft.getInstance().player
 		val from = player?.let { padNear(it.x, it.z) }
 		val to = padNear(landing.x, landing.z)
@@ -115,30 +85,15 @@ object TpMazeSolver {
 	}
 
 	/**
-	 * The pad somebody at these coordinates is standing on: the nearest one,
-	 * if it is near enough to be stood on.
-	 *
-	 * Measured flat, across the floor, because height says nothing here: every
-	 * pad is at one height and whoever is on one is above it, never in it.
-	 *
-	 * The nearest, not the first within reach. Rooms of the maze sit two blocks
-	 * apart, so a pad in the next room is within a few blocks of the one you
-	 * are on, and taking whichever came first in the list read thirteen of the
-	 * thirty pads as their neighbour — the solver then planned from the wrong
-	 * room and marked the wrong pads used, which is a loop. NoammAddons gets
-	 * away with "within three" only because it narrows to the room first.
+	 * The pad under these coordinates: the nearest, if close enough. Measured flat, and the nearest
+	 * rather than the first in range, because rooms are only two blocks apart.
 	 */
 	private fun padNear(x: Double, z: Double): BlockPos? {
 		val pad = pads.minByOrNull { (x - (it.x + 0.5)).let { dx -> dx * dx } + (z - (it.z + 0.5)).let { dz -> dz * dz } } ?: return null
 		return pad.takeIf { abs(x - (it.x + 0.5)) <= NEAR && abs(z - (it.z + 0.5)) <= NEAR }
 	}
 
-	/**
-	 * Cuts the answer down to the pads this landing is compatible with.
-	 *
-	 * Filtering the set rather than rebuilding it is the whole point: what
-	 * survives every jump is the answer.
-	 */
+	/** Narrows the candidates to the pads this landing allows. */
 	private fun narrow(from: Vec3, yaw: Float, pitch: Float) {
 		if (candidates.isEmpty()) candidates = pads
 		val goal = from.add(lookVector(yaw, pitch).scale(SIGHT))
@@ -147,9 +102,7 @@ object TpMazeSolver {
 		candidates = candidates.filter { pad ->
 			if (pad in visited) return@filter false
 			if (standing != null && AABB(pad).inflate(0.5, 0.0, 0.5).intersects(standing)) return@filter false
-			// A little wider than the frame, because a pad is aimed at from
-			// across a room and a line passing beside a one-block block at that
-			// range was still pointed at it.
+			// A little wider than the pad, since pads are aimed at from across a room.
 			crossesFootprint(
 				AABB(pad).inflate(0.75, 0.0, 0.75),
 				from,
@@ -159,19 +112,8 @@ object TpMazeSolver {
 	}
 
 	/**
-	 * Whether a line crosses a box's footprint, looking straight down on it.
-	 *
-	 * Odin's test, and the height being thrown away is the point of it rather
-	 * than a shortcut. A pad is a block on the floor with four blocks of air
-	 * over it, aimed at from up to thirty-two blocks away; a proper ray through
-	 * that box misses it for a few degrees of downward pitch, which is how
-	 * somebody looking slightly at their feet on landing ruled out the very pad
-	 * the landing was evidence for. Rule pads out by where you are pointing on
-	 * the floor plan, and a glance at the ground costs nothing.
-	 *
-	 * The line is tested against the four walls of the footprint: it crosses if
-	 * it passes through either x wall inside the z range, or either z wall
-	 * inside the x range.
+	 * Whether a line crosses a box's footprint, seen from above. Height is ignored on purpose: a
+	 * real ray through a floor pad misses it when looking slightly down.
 	 */
 	private fun crossesFootprint(box: AABB, from: Vec3, goal: Vec3): Boolean {
 		fun atX(x: Double): Vec3? {
@@ -195,19 +137,9 @@ object TpMazeSolver {
 	}
 
 	/**
-	 * Picks the pad to step onto, out of the four in the room landed in.
-	 *
-	 * Never one that has already been used, either way round. A pad always
-	 * sends you to the same place, and the pad you land on sends you back, so
-	 * stepping on either repeats a move whose outcome is already known — and a
-	 * maze walked by repeating known moves is a maze walked in circles. Odin
-	 * rules out both the same way; with the room's four pads used up, a repeat
-	 * is offered rather than nothing.
-	 *
-	 * Of what is left, a pad the narrowing still believes in is the one worth
-	 * taking; failing that, the one nearest the way you are already facing is a
-	 * guess, which beats no line at all. Landing on the entrance pair means the
-	 * maze has been left and there is nothing to point at.
+	 * Picks the pad to step onto from the four in the landing room. Never a used one (either
+	 * direction), unless all four are used. Prefers a remaining candidate, otherwise the one
+	 * nearest your facing. Landing on the entrance pair means you've left the maze.
 	 */
 	private fun choose(from: Vec3, yaw: Float, landedOn: BlockPos?) {
 		val index = pads.indexOf(landedOn ?: return)
@@ -221,12 +153,8 @@ object TpMazeSolver {
 		if (start + GROUP > pads.size) return
 		val others = pads.subList(start, start + GROUP).filter { it != pads[index] }
 
-		// Pads come in pairs: one that sent you somewhere is sent back to from
-		// there, so a pad landed on is as used up as one stepped off (Skyblocker
-		// works the maze out from exactly that). Unused pads first, then pads
-		// only landed on, and the whole room only when every pad in it has been
-		// stepped off — at which point a repeat is the only move there is, and a
-		// line to one of them beats no line at all.
+		// A pad landed on is as used as one stepped off, since pads come in pairs. Unused pads
+		// first, then pads only landed on, then any.
 		val pool = others.filter { it !in visited }
 			.ifEmpty { others.filter { it !in taken } }
 			.ifEmpty { others }
@@ -238,7 +166,6 @@ object TpMazeSolver {
 			}
 	}
 
-	/** The same view vector the game builds from a pair of angles. */
 	private fun lookVector(yaw: Float, pitch: Float): Vec3 {
 		val yawRadians = Math.toRadians(yaw.toDouble())
 		val pitchRadians = Math.toRadians(pitch.toDouble())
@@ -251,8 +178,7 @@ object TpMazeSolver {
 		if (!PuzzleRooms.inside(PUZZLE)) return
 
 		val style = PuzzleSolver.mazeStyle.selectedIndex
-		// Three states and no more, which is all a pad can be: the way on, one
-		// already stood on, or one nothing is known about yet.
+		// Three states: the way on, already used, or unknown.
 		val correctColor = PuzzleSolver.mazeColorOne.argb
 		val severalColor = PuzzleSolver.mazeColorMultiple.argb
 		val visitedColor = PuzzleSolver.mazeColorVisited.argb
@@ -266,9 +192,7 @@ object TpMazeSolver {
 			PuzzleRender.box(context, AABB(pad), color, style, phase = false)
 		}
 
-		// Only a pad a landing has named. Before the first teleport nothing has
-		// been learnt, and a line drawn then points across the room at whichever
-		// pad happens to be nearest rather than one that can be stepped onto.
+		// Only a pad a landing has named; before the first teleport nothing is known.
 		if (!PuzzleSolver.mazeTracer.value) return
 		val target = best ?: return
 		PuzzleRender.tracer(
@@ -278,7 +202,7 @@ object TpMazeSolver {
 		)
 	}
 
-	/** What the solver can see, in words, for `/cryptic debug room`. */
+	/** For `/cryptic debug room`. */
 	fun describe(): List<String> = listOf(
 		"Teleport maze: ${pads.size} pads, ${visited.size} landed on, ${taken.size} stepped off, ${candidates.size} still possible.",
 		"  Next pad: ${best?.let { "${it.x}, ${it.y}, ${it.z}" } ?: "not known until you teleport"}",
@@ -292,23 +216,18 @@ object TpMazeSolver {
 	}
 
 
-	/** How far a pad can be aimed at from, which is across the room and then some. */
 	private const val SIGHT = 32.0
 
-	/** A line this flat in one axis never crosses that axis's walls. */
 	private const val FLAT = 1e-8
 
-	/** How far from a pad's centre, along either axis, somebody standing on it can be. */
+	/** How far from a pad's centre, along either axis, someone standing on it can be. */
 	private const val NEAR = 1.5
 
-	/** The last entries are the way in and the way out, not part of the maze. */
 	private const val ENTRANCE_PADS = 2
 
 	/**
-	 * Every pad, in the room's own coordinates, four to a room.
-	 *
-	 * Odin's list, and the order matters: each run of four is one room of the
-	 * maze, and the last two are the entrance and the exit.
+	 * Every pad in room coordinates, four per room, from Odin's list; the last two are the entrance
+	 * and exit.
 	 */
 	private val PAD_POSITIONS = listOf(
 		BlockPos(4, 69, 12), BlockPos(4, 69, 6), BlockPos(10, 69, 12), BlockPos(10, 69, 6),

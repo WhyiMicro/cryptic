@@ -4,24 +4,32 @@ import com.mojang.blaze3d.platform.InputConstants
 import java.util.Locale
 import kotlin.math.roundToInt
 
-/** The top-level pages shown by the Cryptic menu. */
 enum class ModuleCategory(val title: String) {
 	GENERAL("General"),
 	DUNGEON("Dungeon"),
-	// Named for the fight rather than the floor: what is in here started as
-	// Floor 7's terminals and towers, and the other floors' bosses belong
-	// beside them rather than in a tab of their own.
+	// Named for the fight, so other floors' bosses can sit beside Floor 7's.
 	FLOOR_7("Boss"),
 	VISUAL("Render"),
 	MISC("Settings"),
 }
 
 /**
- * Formats a changing number once per distinct value.
- *
- * Value labels are redrawn every frame but only change while a slider is being
- * dragged, so the formatted string is kept until the value actually moves.
+ * How far past Hypixel's rules a feature goes. Client Restrictions picks the highest allowed; a
+ * feature above it is hidden and reads as off, while its own on/off and settings are kept.
  */
+enum class Restriction { LEGIT, SEMI_LEGIT, CHEAT }
+
+object Restrictions {
+	/** The highest level allowed, as Client Restrictions sets it. Everything until it says. */
+	@JvmStatic
+	var allowedLevel: () -> Int = { Restriction.CHEAT.ordinal }
+
+	@JvmStatic
+	fun allows(restriction: Restriction): Boolean =
+		restriction == Restriction.LEGIT || restriction.ordinal <= allowedLevel()
+}
+
+/** Formats a number only when it changes; labels are redrawn every frame. */
 internal class NumberLabel(private val format: (Double) -> String) {
 	private var source = Double.NaN
 	private var text: String? = null
@@ -34,66 +42,66 @@ internal class NumberLabel(private val format: (Double) -> String) {
 	}
 }
 
-/**
- * A reusable module definition. Each setting type is explicit so a future
- * config file and GUI control can handle it without special-casing modules.
- */
+/** A module: its id, card, toggle and typed settings, shared by the menu and the config. */
 class Module(
 	val id: String,
 	val name: String,
 	val description: String,
 	val category: ModuleCategory,
-	var enabled: Boolean = false,
+	enabled: Boolean = false,
 	val supportsToggle: Boolean = true,
 	val supportsKeybind: Boolean = false,
 	val keybind: KeybindSetting = KeybindSetting(),
 	settings: List<ModuleSetting> = emptyList(),
 	/**
-	 * What a left click on the card does, for a module that is something to
-	 * open rather than something to switch on. Right click still edits it.
+	 * What a left click on the card does, for a module that opens something rather than toggling.
+	 * Right click still edits it.
 	 */
 	val cardAction: (() -> Unit)? = null,
+	val restriction: Restriction = Restriction.LEGIT,
 ) {
+	/** The switch as set, kept while Client Restrictions hides the module. Saved as is. */
+	var storedEnabled: Boolean = enabled
+
+	/** Whether the module runs: switched on, and allowed by Client Restrictions. */
+	var enabled: Boolean
+		get() = storedEnabled && Restrictions.allows(restriction)
+		set(value) { storedEnabled = value }
+
+	val allowed: Boolean get() = Restrictions.allows(restriction)
+
 	/**
-	 * Every setting the module has, the ones tucked into a "⋯" panel included,
-	 * each straight after the row whose panel holds it. Profiles, resets and
-	 * the menu all walk this one list; the menu skips a setting with a
-	 * [ModuleSetting.parent] when it lays out the card.
+	 * Every setting, including those in "⋯" panels, each right after the row that holds it.
+	 * Profiles, resets and the menu all use this list; the menu skips settings with a
+	 * [ModuleSetting.parent] when laying out the card.
 	 */
 	val settings: List<ModuleSetting> = settings.flatMap { listOf(it) + it.more }.distinct()
 
-	/** Lowercased once so the menu can sort cards without rebuilding the key. */
 	val sortKey: String = name.lowercase(Locale.ROOT)
 
 }
 
-/**
- * Anything the menu can present as a dropdown, so the popup is drawn by one
- * piece of code whether it belongs to a module or to a single setting.
- */
+/** Anything the menu can show as a dropdown, so one piece of code draws every popup. */
 interface DropdownSource {
 	val options: List<String>
 	var selectedIndex: Int
 	val selected: String
 
-	/** Whether several options can be ticked at once, which keeps the list open while they are. */
+	/** Whether several options can be ticked; keeps the list open while they are. */
 	val multiple: Boolean get() = false
 
-	/** Whether [index] is shown ticked in the open list. */
 	fun isChecked(index: Int): Boolean = index == selectedIndex
 
-	/** An option was clicked in the open list. */
+	/** The options the list offers, by index; some can be held back by Client Restrictions. */
+	val shownOptions: List<Int> get() = options.indices.toList()
+
 	fun pick(index: Int) { selectedIndex = index }
 }
 
 /**
- * A key a module can be bound to.
- *
- * Deliberately not part of a profile. A profile is a set of preferences worth
- * swapping between — colours, thresholds, what is switched on — and none of
- * that should silently move the keys under someone's fingers. Where a bind is
- * a real Minecraft key mapping, Minecraft's own options file is what remembers
- * it, and the controls screen can rebind it like any other.
+ * A key a module can be bound to. Not part of profiles: switching profile shouldn't move keys under
+ * someone's fingers. Real Minecraft key mappings are saved in Minecraft's options and can be
+ * rebound in its controls screen.
  */
 class KeybindSetting(
 	initialKeyName: String = "None",
@@ -119,7 +127,7 @@ class KeybindSetting(
 	}
 }
 
-/** A real module may declare as many typed, profile-backed settings as it needs. */
+/** A typed, profile-backed module setting. */
 sealed class ModuleSetting(
 	val id: String,
 	val label: String,
@@ -127,27 +135,18 @@ sealed class ModuleSetting(
 ) {
 	open fun isVisible() = visibleIf()
 
-	/**
-	 * Whether this setting gets a row of its own. A colour drawn beside its
-	 * toggle does not: it is part of that toggle's row.
-	 */
+	/** Whether this setting gets its own row; a colour drawn beside its toggle doesn't. */
 	open val hasOwnRow: Boolean get() = true
 
-	/**
-	 * The settings that open in a floating panel from the "⋯" beside this row,
-	 * rather than lengthening the card. Set with [withMore].
-	 */
+	/** Settings opened in a floating panel from the "⋯" beside this row. Set with [withMore]. */
 	var more: List<ModuleSetting> = emptyList()
 		private set
 
-	/** The row whose "⋯" panel this setting lives in, or null for a row on the card. */
 	var parent: ModuleSetting? = null
 		private set
 
-	/** A row on the card itself, as opposed to one inside a panel. */
 	val onCard: Boolean get() = hasOwnRow && parent == null
 
-	/** Whether the "⋯" has anything to show right now. */
 	fun hasVisibleMore(): Boolean {
 		val children = more
 		for (index in children.indices) {
@@ -163,10 +162,8 @@ sealed class ModuleSetting(
 }
 
 /**
- * Moves [children] off the card and into a floating panel opened by the "⋯"
- * beside this row: the settings that fine-tune this one, which are wanted
- * once and then never again. Returns the row itself, so it reads in place in
- * a module's list of settings.
+ * Moves [children] into a "⋯" panel beside this row, for fine-tuning set once and forgotten.
+ * Returns the row, so it reads in place.
  */
 fun <T : ModuleSetting> T.withMore(vararg children: ModuleSetting): T {
 	adopt(children.toList())
@@ -179,11 +176,20 @@ class ToggleModuleSetting(
 	val defaultValue: Boolean = false,
 	val description: String = "",
 	visibleIf: () -> Boolean = { true },
+	val restriction: Restriction = Restriction.LEGIT,
 ): ModuleSetting(id, label, visibleIf) {
-	var value: Boolean = defaultValue
+	/** The switch as set, kept while Client Restrictions hides it. Saved as is. */
+	var storedValue: Boolean = defaultValue
+
+	/** On, and allowed by Client Restrictions. */
+	var value: Boolean
+		get() = storedValue && Restrictions.allows(restriction)
+		set(value) { storedValue = value }
+
+	override fun isVisible() = Restrictions.allows(restriction) && visibleIf()
+
 	fun reset() { value = defaultValue }
 
-	/** A colour drawn as a swatch beside this toggle, when one is paired with it. */
 	var inlineColor: ColorModuleSetting? = null
 		internal set
 }
@@ -197,7 +203,7 @@ class SliderModuleSetting(
 	val step: Double,
 	val description: String = "",
 	visibleIf: () -> Boolean = { true },
-	/** Shown after the number in the value box ("ms", "%", "°"), never typed. */
+	/** Shown after the number ("ms", "%", "°"), never typed. */
 	val unit: String = "",
 ): ModuleSetting(id, label, visibleIf) {
 	private fun format(raw: Double): String =
@@ -212,38 +218,23 @@ class SliderModuleSetting(
 
 	private fun withUnit(number: String): String = when {
 		unit.isEmpty() -> number
-		// A one-letter unit or a sign sits against its number ("5s", "90%");
-		// a word does not ("100 ms").
+		// One-letter units hug the number ("5s", "90%"); words don't ("100 ms").
 		unit.length == 1 -> number + unit
 		else -> "$number $unit"
 	}
 
 	var value: Double = defaultValue
 
-	/** The value as the menu shows it, formatted only when the value changes. */
 	val displayValue: String get() = valueLabel.of(value)
 
-	/** The value with its unit, as the box beside the slider shows it. */
 	val boxValue: String get() = boxLabel.of(value)
-
-	/**
-	 * The widest the box's text can get, so the box keeps one size while the
-	 * slider is dragged instead of growing and shrinking under the cursor.
-	 */
-	val widestBoxValue: String by lazy {
-		listOf(min, max, min + step, max - step, defaultValue)
-			.map { withUnit(format(it)) }
-			.maxBy { it.length }
-	}
 
 	fun reset() { value = defaultValue }
 }
 
 /**
- * Two numbers that bound each other, drawn as one slider with two handles.
- *
- * What a range is for here is picking a number that is not always the same one:
- * [random] draws from it, so a delay built on this varies instead of repeating.
+ * Two numbers bounding each other, drawn as one slider with two handles. [random] draws from it, so
+ * delays built on it vary.
  */
 class RangeModuleSetting(
 	id: String,
@@ -273,12 +264,6 @@ class RangeModuleSetting(
 	val displayLower: String get() = lowerLabel.of(lower)
 	val displayUpper: String get() = upperLabel.of(upper)
 
-	/** The widest either end can get, so both boxes keep one size while dragged. */
-	val widestValue: String by lazy {
-		listOf(min, max, min + step, max - step).map(format).maxBy { it.length }
-	}
-
-	/** A value somewhere in the range, inclusive of both ends. */
 	fun random(): Double =
 		if (upper <= lower) lower else lower + Math.random() * (upper - lower)
 
@@ -297,9 +282,8 @@ class ColorModuleSetting(
 	val description: String = "",
 	visibleIf: () -> Boolean = { true },
 	/**
-	 * The toggle this colour belongs to, which then draws it as a swatch beside
-	 * itself instead of the colour taking a row. Only for a toggle with exactly
-	 * one colour of its own.
+	 * The toggle this colour belongs to, drawn as a swatch beside it instead of its own row. Only
+	 * for a toggle with exactly one colour.
 	 */
 	val inlineWith: ToggleModuleSetting? = null,
 ): ModuleSetting(id, label, visibleIf) {
@@ -326,16 +310,6 @@ class ColorModuleSetting(
 
 	val hex: String get() = "#$hexDigits"
 
-	/** Dear ImGui packs colors as ABGR; the swatch is redrawn every frame. */
-	val abgr: Int
-		get() {
-			val color = rgb
-			val swatchAlpha = if (supportsAlpha) alpha else 0xFF
-			return ((swatchAlpha and 0xFF) shl 24) or
-				((color and 0xFF) shl 16) or
-				(color and 0x00FF00) or
-				((color ushr 16) and 0xFF)
-		}
 
 	fun setHex(value: String): Boolean {
 		val digits = value.trim().removePrefix("#")
@@ -356,8 +330,10 @@ class TextModuleSetting(
 	val maxLength: Int = 128,
 	val hint: String = "",
 	val description: String = "",
-	/** Completions for what has been typed so far, listed under the field while it is being typed in. */
+	/** Completions for what has been typed, listed under the field. */
 	val suggestions: ((String) -> List<String>)? = null,
+	/** A button drawn right of the field, which Enter in the field also presses. Not saved. */
+	val button: ButtonModuleSetting? = null,
 	visibleIf: () -> Boolean = { true },
 ): ModuleSetting(id, label, visibleIf) {
 	var value: String = defaultValue
@@ -367,44 +343,36 @@ class TextModuleSetting(
 }
 
 /**
- * A key a module reacts to, chosen in its settings.
- *
- * Unlike a module's own [KeybindSetting], this is one of several a module can
- * carry — one per corner of a menu, say — and it is read by the module while a
- * screen of its own is open, never as a global hotkey. Keyboard keys only: the
- * screens that use these are already taking mouse clicks, and a bind on a mouse
- * button would collide with the click it sits beside.
+ * A key a module reacts to while one of its own screens is open, never a global hotkey. A module
+ * can carry several. Keyboard keys only, since those screens already take mouse clicks.
  */
 class KeybindModuleSetting(
 	id: String,
 	label: String,
 	val description: String = "",
 	visibleIf: () -> Boolean = { true },
-	/** The key it starts on, before anybody binds it: a GLFW key, [mouse] of a button, or [UNBOUND]. */
+	/** The starting key: a GLFW key, [mouse] of a button, or [UNBOUND]. */
 	val defaultKey: Int = UNBOUND,
 ): ModuleSetting(id, label, visibleIf) {
 	/**
-	 * A GLFW key code, a mouse button as [mouse] makes it, or [UNBOUND]. Stable
-	 * across launches, so it is what is saved.
+	 * A GLFW key code, a mouse button as [mouse] makes it, or [UNBOUND]. Stable across launches, so
+	 * it's what is saved.
 	 */
 	var keyCode: Int = defaultKey
 
 	val bound: Boolean get() = keyCode != UNBOUND
 
-	/** Whether the bind is a mouse button rather than a key. */
 	val isMouse: Boolean get() = keyCode >= MOUSE_BASE
 
-	/** The key the way a module's own badge names it: "R", "LEFT.SHIFT", "MOUSE.5", "None". */
+	/** The key as a badge names it: "R", "LEFT.SHIFT", "MOUSE.5", "None". */
 	val keyName: String
 		get() = if (!bound) "None" else nameOf(keyCode)
 
-	/** A key press, by its GLFW code. Never true of a mouse bind. */
+	/** A key press by GLFW code; never true of a mouse bind. */
 	fun matches(key: Int): Boolean = bound && !isMouse && key == keyCode
 
-	/** A mouse button press, by its GLFW button. */
 	fun matchesMouse(button: Int): Boolean = isMouse && keyCode - MOUSE_BASE == button
 
-	/** Whether the key or button is held down right now. */
 	fun isDown(window: com.mojang.blaze3d.platform.Window): Boolean = when {
 		!bound -> false
 		isMouse -> org.lwjgl.glfw.GLFW.glfwGetMouseButton(window.handle(), keyCode - MOUSE_BASE) == org.lwjgl.glfw.GLFW.GLFW_PRESS
@@ -417,15 +385,14 @@ class KeybindModuleSetting(
 		const val UNBOUND = -1
 
 		/**
-		 * Where mouse buttons start, far above every GLFW key code (the highest
-		 * is 348), so one number can hold either and old saves stay keys.
+		 * Mouse buttons start far above every GLFW key code (the highest is 348), so one number
+		 * holds either.
 		 */
 		const val MOUSE_BASE = 10_000
 
-		/** The bind for GLFW mouse [button]: 3 is the back side button, 4 the forward one. */
+		/** The bind for GLFW mouse [button]: 3 is back, 4 forward. */
 		fun mouse(button: Int): Int = MOUSE_BASE + button
 
-		/** A key or [mouse] button the way a badge names it: "R", "LEFT.SHIFT", "MOUSE.5". */
 		fun nameOf(code: Int): String = if (code >= MOUSE_BASE) {
 			InputConstants.Type.MOUSE.getOrCreate(code - MOUSE_BASE).name.removePrefix("key.").uppercase()
 		} else {
@@ -437,44 +404,64 @@ class KeybindModuleSetting(
 class DropdownModuleSetting(
 	id: String,
 	label: String,
-	override val options: List<String>,
+	options: List<String>,
 	val defaultIndex: Int = 0,
 	val description: String = "",
 	visibleIf: () -> Boolean = { true },
+	/** Options that change (named profiles); [options] is then only the fallback. Never empty. */
+	private val liveOptions: (() -> List<String>)? = null,
+	/** Options above the allowed level are left out of the list and read as the default. */
+	private val optionRestrictions: Map<String, Restriction> = emptyMap(),
+	/** Old option labels to their new ones, so profiles saved before a rename still load. */
+	private val renamed: Map<String, String> = emptyMap(),
 ): ModuleSetting(id, label, visibleIf), DropdownSource {
-	override var selectedIndex: Int = defaultIndex
+	private val fixedOptions = options
 
-	override val selected: String get() = options[selectedIndex]
+	override val options: List<String> get() = liveOptions?.invoke() ?: fixedOptions
 
-	/** Profiles store the chosen label, so wording changes cannot silently reorder. */
+	/** The choice as set, kept while Client Restrictions holds it back. Saved as is. */
+	var storedIndex: Int = defaultIndex
+
+	private fun allowed(index: Int): Boolean =
+		optionRestrictions[options.getOrNull(index)]?.let(Restrictions::allows) ?: true
+
+	override var selectedIndex: Int
+		get() = when {
+			allowed(storedIndex) -> storedIndex
+			allowed(defaultIndex) -> defaultIndex
+			else -> options.indices.firstOrNull(::allowed) ?: 0
+		}
+		set(value) { storedIndex = value }
+
+	override val shownOptions: List<Int>
+		get() = if (optionRestrictions.isEmpty()) options.indices.toList() else options.indices.filter(::allowed)
+
+	override val selected: String get() = options.let { it.getOrNull(selectedIndex) ?: it.first() }
+
+	val storedSelected: String get() = options.let { it.getOrNull(storedIndex) ?: it.first() }
+
+	/** Profiles store the label, so reworded options can't silently reorder. */
 	fun select(option: String) {
-		options.indexOf(option).takeIf { it >= 0 }?.let { selectedIndex = it }
+		options.indexOf(renamed[option] ?: option).takeIf { it >= 0 }?.let { storedIndex = it }
 	}
 
-	fun reset() { selectedIndex = defaultIndex }
+	fun reset() { storedIndex = defaultIndex }
 }
 
 /**
- * A list of options, any number of which can be ticked.
- *
- * Drawn as a dropdown whose box names everything ticked ("Head, Chest, …"),
- * opening to the whole list with a tick beside each chosen option; clicking
- * one ticks or unticks it and leaves the list open. Saved as the ticked
- * options' labels rather than their positions, as dropdowns are, so adding or
- * reordering options keeps everybody's choices.
+ * A list of options, any number ticked. The box names everything ticked ("Head, Chest, …"); the
+ * list stays open while ticking. Saved as labels, so adding or reordering options keeps choices.
  */
 class MultiSelectModuleSetting(
 	id: String,
 	label: String,
 	override val options: List<String>,
-	/** The options ticked to begin with. Every one, unless said otherwise. */
 	defaultSelected: Set<String> = options.toSet(),
 	val description: String = "",
 	visibleIf: () -> Boolean = { true },
 ): ModuleSetting(id, label, visibleIf), DropdownSource {
 	private val defaultIndices: Set<Int> = options.indices.filter { options[it] in defaultSelected }.toSet()
 
-	/** Which options are ticked, by their place in [options]. */
 	var ticked: Set<Int> = defaultIndices
 		private set(value) {
 			field = value
@@ -492,12 +479,11 @@ class MultiSelectModuleSetting(
 		ticked = if (index in ticked) ticked - index else ticked + index
 	}
 
-	/** No single option is "the" selection, so none is singled out. */
 	override var selectedIndex: Int
 		get() = -1
 		set(_) {}
 
-	/** The ticked options in list order, built once per change rather than per frame. */
+	/** The ticked options in list order, built once per change. */
 	override val selected: String get() = summary ?: when {
 		ticked.isEmpty() -> "None"
 		ticked.size == options.size -> "All"
@@ -510,7 +496,6 @@ class MultiSelectModuleSetting(
 
 	override fun pick(index: Int) = toggle(index)
 
-	/** The ticked labels, joined, for the profile. */
 	fun encode(): String = options.filterIndexed { index, _ -> index in ticked }.joinToString(SEPARATOR)
 
 	fun decode(text: String) {
@@ -526,29 +511,28 @@ class MultiSelectModuleSetting(
 }
 
 /**
- * A set of slot-to-slot bindings, one set per named profile.
- *
- * The only setting here the menu does not draw. What it holds is made in the
- * inventory rather than in the settings screen — a pair of slots picked by
- * pointing at them — and a list of numbers in a config panel would be neither
- * editable nor readable. It is a [ModuleSetting] so that it travels with the
- * profile like everything else; it simply has no row.
- *
- * Stored as one string rather than as structured JSON, so [ConfigManager] can
- * treat it exactly as it treats a text setting.
+ * Slot-to-slot bindings, one set per named profile. Made in the inventory by pointing at slots, so
+ * the menu doesn't draw it; it's a setting only so it travels with the profile. Stored as one
+ * string so [ConfigManager] treats it like text.
  */
 class SlotMapModuleSetting(
 	id: String,
 	label: String,
 ): ModuleSetting(id, label, visibleIf = { false }) {
-	/** Profile name to the binds made under it, each a slot pointing at a slot. */
 	private val profiles = LinkedHashMap<String, LinkedHashMap<Int, Int>>()
 
 	fun binds(profile: String): MutableMap<Int, Int> = profiles.getOrPut(profile) { LinkedHashMap() }
 
+	/** The profiles that have binds, oldest first. */
+	fun names(): List<String> = profiles.filterValues { it.isNotEmpty() }.keys.toList()
+
+	fun remove(profile: String) {
+		profiles.remove(profile)
+	}
+
 	fun reset() = profiles.clear()
 
-	/** `main=5>36,6>37;alt=9>44`, which is short enough to sit in a config file. */
+	/** `main=5>36,6>37;alt=9>44`. */
 	fun encode(): String = profiles.entries
 		.filter { it.value.isNotEmpty() }
 		.joinToString(";") { (profile, binds) ->
@@ -572,19 +556,18 @@ class SlotMapModuleSetting(
 }
 
 /**
- * A row that is only a way into a "⋯" panel: a label, and the dots at the
- * right-hand end. For a long tail of settings that belong together but are
- * set once and left — a card's dozen colours — so they leave the card without
- * leaving the module. Clicking anywhere on the row opens the panel. Holds
- * nothing itself, and is hidden while nothing in its panel would show.
+ * A row that only opens a "⋯" panel, for a long tail of related settings set once (a card's dozen
+ * colours). Hidden while its panel would be empty.
  */
 class PanelModuleSetting(
 	id: String,
 	label: String,
 	val description: String = "",
 	visibleIf: () -> Boolean = { true },
+	/** Words shown where the dots would be, for a row that only says something ("Coming soon"). */
+	val note: String? = null,
 ): ModuleSetting(id, label, visibleIf) {
-	override fun isVisible(): Boolean = visibleIf() && hasVisibleMore()
+	override fun isVisible(): Boolean = visibleIf() && (note != null || hasVisibleMore())
 }
 
 class ButtonModuleSetting(
@@ -595,29 +578,20 @@ class ButtonModuleSetting(
 ): ModuleSetting(id, label, visibleIf)
 
 /**
- * A heading, with a rule under it, that splits a card's settings into groups.
- *
- * A module that declares none is drawn under one "Main" heading, so cards with
- * a handful of settings need not say anything. Declaring the first one replaces
- * that heading rather than adding to it.
+ * A heading that splits a card's settings into groups. A module with none is drawn under one "Main"
+ * heading; declaring the first replaces it.
  */
 class SectionModuleSetting(
 	id: String,
 	label: String,
 	visibleIf: () -> Boolean = { true },
-	/**
-	 * Whether the group starts folded away.
-	 *
-	 * For the long tail of a card: a dozen colour swatches that most people set
-	 * once are worth having, and worth having out of the way until they are
-	 * wanted.
-	 */
+	/** Whether the group starts folded, for settings most people set once. */
 	val startsCollapsed: Boolean = false,
 ): ModuleSetting(id, label, visibleIf)
 
 /**
- * One stable registry shared by the GUI and config system. IDs are deliberately
- * separate from display names, so wording can change without breaking profiles.
+ * The registry shared by the menu and the config. Ids are separate from display names, so wording
+ * can change without breaking profiles.
  */
 object ModuleRegistry {
 	val autoSprint = Module(
@@ -647,6 +621,7 @@ object ModuleRegistry {
 		imicro.cryptic.feature.Etherwarp.module,
 		imicro.cryptic.feature.F7Qol.module,
 		imicro.cryptic.feature.TerracottaTimer.module,
+		imicro.cryptic.feature.F3Features.module,
 		imicro.cryptic.feature.Highlight.module,
 		imicro.cryptic.feature.Secrets.module,
 		imicro.cryptic.feature.RenderOptimizer.module,
@@ -661,12 +636,12 @@ object ModuleRegistry {
 		imicro.cryptic.feature.BetterGlow.module,
 		imicro.cryptic.feature.CustomNametags.module,
 		imicro.cryptic.feature.WitherCloakEffect.module,
-		imicro.cryptic.feature.ArrowHitboxes.module,
 		imicro.cryptic.feature.CustomScale.module,
 		imicro.cryptic.feature.LagDetector.module,
 		imicro.cryptic.feature.PartyFeatures.module,
 		imicro.cryptic.feature.AutoGfs.module,
 		imicro.cryptic.feature.AutoRequeue.module,
+		imicro.cryptic.feature.ClassAbilities.module,
 		imicro.cryptic.feature.SpiritBear.module,
 		imicro.cryptic.feature.LividSolver.module,
 		imicro.cryptic.feature.PositionalMessages.module,
@@ -680,10 +655,14 @@ object ModuleRegistry {
 		imicro.cryptic.feature.DungeonWarpCooldown.module,
 		imicro.cryptic.feature.ILoveGlass.module,
 		imicro.cryptic.feature.CookieReminder.module,
+		imicro.cryptic.feature.ConfirmDisconnect.module,
+		imicro.cryptic.feature.WitherDragons.module,
+		imicro.cryptic.feature.Relics.module,
+		imicro.cryptic.feature.PartyFinder.module,
+		imicro.cryptic.feature.PartyBlacklist.module,
 		imicro.cryptic.feature.DailyRewards.module,
 		imicro.cryptic.feature.SmartTickTimer.module,
-		imicro.cryptic.feature.ArrowFix.module,
-		imicro.cryptic.feature.ArrowHitSound.module,
+		imicro.cryptic.feature.BowTweaks.module,
 		imicro.cryptic.feature.BlockOverlay.module,
 		imicro.cryptic.feature.CameraTweaks.module,
 		imicro.cryptic.feature.NoItemPlace.module,
@@ -694,11 +673,13 @@ object ModuleRegistry {
 		imicro.cryptic.feature.TimeChanger.module,
 		imicro.cryptic.feature.LavaToWater.module,
 		imicro.cryptic.feature.CarryManager.module,
+		imicro.cryptic.feature.SlayerFeatures.module,
+		imicro.cryptic.feature.ChocolateFactory.module,
 		imicro.cryptic.feature.KeybindManager.module,
 		imicro.cryptic.feature.AliasManager.module,
 		imicro.cryptic.feature.SoundVolumes.module,
 		imicro.cryptic.feature.UpdateChecker.module,
-		imicro.cryptic.feature.ScrollableTooltips.module,
+		imicro.cryptic.feature.TooltipFeatures.module,
 		imicro.cryptic.feature.GyroHelper.module,
 		imicro.cryptic.feature.BloodCamp.module,
 		imicro.cryptic.feature.PuzzleSolver.module,
@@ -706,10 +687,22 @@ object ModuleRegistry {
 		imicro.cryptic.feature.CrosshairEditor.module,
 		imicro.cryptic.feature.SlotBinds.module,
 		imicro.cryptic.feature.NucleusQol.module,
+		imicro.cryptic.feature.ItemProtection.module,
+		imicro.cryptic.feature.Bazaar.module,
+		imicro.cryptic.feature.Mining.module,
+		imicro.cryptic.feature.Fishing.module,
+		imicro.cryptic.feature.ItemOutline.module,
+		imicro.cryptic.feature.Capes.module,
+		imicro.cryptic.feature.Freelook.module,
+		imicro.cryptic.feature.Freecam.module,
+		imicro.cryptic.feature.HideArmor.module,
+		imicro.cryptic.feature.ClientRestrictions.module,
 		imicro.cryptic.feature.Toasts.module,
 		imicro.cryptic.feature.ExampleModule.module,
 		imicro.cryptic.feature.ClickGui.module,
+		imicro.cryptic.hud.HudSettings.module,
 		imicro.cryptic.gui.menu.managers.ProfilesSection.module,
+		imicro.cryptic.gui.menu.managers.CreditsSection.module,
 	)
 
 	val byId: Map<String, Module> = modules.associateBy(Module::id)

@@ -18,13 +18,9 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * The Crosshair Editor on its module's page: a canvas to paint the crosshair
- * on, its colours and tools beside it, and underneath a preview of it at the
- * size it will be in game, over a bright sky and over dark stone.
- *
- * Left paints, right erases, and Ctrl+Z undoes. With a mirror on, a stroke is
- * painted on the far side of the centre as well, which is how a symmetrical
- * crosshair is drawn in a quarter of the strokes.
+ * The Crosshair Editor: a canvas with colours and tools beside it, and a preview at in-game size
+ * over bright sky and dark stone. Left paints, right erases, Ctrl+Z undoes; mirrors paint across
+ * the centre too.
  */
 class CrosshairSection : ManagerSection("Editor") {
 	private val grid: CrosshairGrid = CrosshairEditor.grid()
@@ -34,12 +30,12 @@ class CrosshairSection : ManagerSection("Editor") {
 	private var mirrorY = true
 	private val undo = ArrayDeque<Pair<IntArray, Int>>()
 
-	/** The button painting a stroke, -1 between strokes, and the cell it last reached. */
+	/** The button painting the current stroke (-1 between strokes) and the last cell reached. */
 	private var strokeButton = -1
 	private var lastCellX = -1
 	private var lastCellY = -1
 
-	/** Where the canvas was drawn, in design pixels, and how big a cell is there. */
+	/** Where the canvas was drawn, in design pixels, and the cell size there. */
 	private var canvasLeft = 0f
 	private var canvasTop = 0f
 	private var cell = 1f
@@ -48,8 +44,6 @@ class CrosshairSection : ManagerSection("Editor") {
 		CrosshairEditor.commit(grid)
 		ConfigManager.flush()
 	}
-
-	// ---- Drawing ---------------------------------------------------------
 
 	override fun draw(x: Float, y: Float, width: Float): Float {
 		var cy = y
@@ -75,16 +69,15 @@ class CrosshairSection : ManagerSection("Editor") {
 		ui.card(Box(x, y, size, size))
 		val ppu = UiText.pixelsPerUnit
 		val cells = grid.size
-		// Whole real pixels per cell, so every cell is the same size on screen.
+		// Whole real pixels per cell, so all cells are equal on screen.
 		val cellPixels = floor((size - 28f) * ppu / cells).coerceAtLeast(1f)
 		cell = cellPixels / ppu
 		val canvas = cell * cells
-		// On whole pixels, so the board's squares and the painted cells line up.
+		// On whole pixels, so the checkerboard and cells line up.
 		canvasLeft = ((x + (size - canvas) / 2f) * ppu).roundToInt() / ppu
 		canvasTop = ((y + (size - canvas) / 2f) * ppu).roundToInt() / ppu
 
-		// The board and the drawing are a quad each whatever the size: a cell at
-		// a time was thousands of fills a frame on the big canvas.
+		// The checkerboard and drawing are one quad each.
 		RoundRect.checker(ui.graphics, canvasLeft, canvasTop, canvasLeft + canvas, canvasTop + canvas, 0f, cell, ui.alpha, CHECKER_TINT)
 		val palette = List(CrosshairEditor.PALETTE_SIZE) { CrosshairEditor.colorOf(it + 1) }
 		canvasTexture.update(listOf(grid, grid.revision, cells, palette)) { set ->
@@ -105,7 +98,6 @@ class CrosshairSection : ManagerSection("Editor") {
 		val c = grid.centre
 		RoundRect.outline(ui.graphics, canvasLeft + c * cell, canvasTop + c * cell, canvasLeft + (c + 1) * cell, canvasTop + (c + 1) * cell, MenuStyle.fade(MenuStyle.accent(), ui.alpha), 0f, 1f)
 
-		// The cell under the pointer.
 		val hx = floor((ui.mx - canvasLeft) / cell).toInt()
 		val hy = floor((ui.my - canvasTop) / cell).toInt()
 		if (hx in 0 until cells && hy in 0 until cells && ui.area.contains(ui.mx, ui.my)) {
@@ -156,7 +148,7 @@ class CrosshairSection : ManagerSection("Editor") {
 		return h
 	}
 
-	/** A square tool button, lit with the accent while its tool is on. Returns its width. */
+	/** A square tool button, lit while its tool is on. Returns its width. */
 	private fun tool(x: Float, y: Float, glyph: String, active: Boolean, color: Int = MenuStyle.TAB_HOVER, action: () -> Unit): Float {
 		val box = Box(x, y, 32f, 32f)
 		val over = ui.hovered(box)
@@ -202,7 +194,6 @@ class CrosshairSection : ManagerSection("Editor") {
 		return h
 	}
 
-	/** The crosshair over a bright sky and over dark stone, at the size it is in game. */
 	private fun drawPreview(x: Float, y: Float, width: Float): Float {
 		val h = 150f
 		ui.card(Box(x, y, width, h))
@@ -215,7 +206,7 @@ class CrosshairSection : ManagerSection("Editor") {
 		RoundRect.fill(ui.graphics, light.x, light.y, light.right, light.bottom, MenuStyle.fade(PREVIEW_LIGHT, ui.alpha), 6f)
 		RoundRect.fill(ui.graphics, dark.x, dark.y, dark.right, dark.bottom, MenuStyle.fade(PREVIEW_DARK, ui.alpha), 6f)
 
-		// One cell is one of vanilla's crosshair pixels at your GUI scale, times the Scale setting.
+		// One cell is one vanilla crosshair pixel at your GUI scale, times Scale.
 		val window = Minecraft.getInstance().window
 		var cellPixels = CrosshairEditor.cellPixels(window.guiScale).toFloat()
 		val fits = floor(boxH * UiText.pixelsPerUnit * 0.9f / grid.size).coerceAtLeast(1f)
@@ -231,21 +222,19 @@ class CrosshairSection : ManagerSection("Editor") {
 	private fun drawCrosshairAt(centreX: Float, centreY: Float, size: Float, background: Int) {
 		val c = grid.centre
 		val ppu = UiText.pixelsPerUnit
-		// Snapped to whole pixels, so the preview is as crisp as the real thing.
 		val left = ((centreX - (c + 0.5f) * size) * ppu).roundToInt() / ppu
 		val top = ((centreY - (c + 0.5f) * size) * ppu).roundToInt() / ppu
 		val vanilla = CrosshairEditor.usesVanillaBlending
 		updatePreviewTexture(vanilla)
-		// Vanilla blending paints white, tinted here to the negative of the background.
+		// Vanilla blending inverts white, so the preview tints it to the background's negative.
 		val tint = if (vanilla) inverted(background) else WHITE
 		val cells = grid.size + 2
 		blitCells(previewTexture, left - size, top - size, left + (cells - 1) * size, top + (cells - 1) * size, cells, MenuStyle.fade(tint, ui.alpha))
 	}
 
 	/**
-	 * The drawing as it looks in game, with a cell of room on each side for the
-	 * outline: the palette at the chosen opacity, or plain white to be tinted
-	 * when the game inverts it instead.
+	 * The drawing as it looks in game, with a cell of room for the outline: the palette at the
+	 * chosen opacity, or white to be tinted where the game inverts it.
 	 */
 	private fun updatePreviewTexture(vanilla: Boolean) {
 		val palette = List(CrosshairEditor.PALETTE_SIZE) { CrosshairEditor.colorOf(it + 1) }
@@ -263,7 +252,7 @@ class CrosshairSection : ManagerSection("Editor") {
 		}
 	}
 
-	/** Stretches a texture's top-left [cells] square over a box given in design pixels, snapped to real ones. */
+	/** Stretches a texture's top-left [cells] square over a design-pixel box, snapped to real pixels. */
 	private fun blitCells(texture: CrosshairTexture, x0: Float, y0: Float, x1: Float, y1: Float, cells: Int, color: Int) {
 		val ppu = UiText.pixelsPerUnit
 		val pose = ui.graphics.pose()
@@ -282,11 +271,7 @@ class CrosshairSection : ManagerSection("Editor") {
 		return false
 	}
 
-	/**
-	 * Fills in real pixels: rectangles given in design pixels are rounded to
-	 * whole screen pixels, which is what keeps a grid of thousands of cells
-	 * crisp, and costs one plain quad each.
-	 */
+	/** Fills rectangles rounded to whole screen pixels, so a grid of thousands of cells stays crisp. */
 	private inline fun inPixels(block: ((Float, Float, Float, Float, Int) -> Unit) -> Unit) {
 		val ppu = UiText.pixelsPerUnit
 		val pose = ui.graphics.pose()
@@ -297,8 +282,6 @@ class CrosshairSection : ManagerSection("Editor") {
 		}
 		pose.popMatrix()
 	}
-
-	// ---- Painting --------------------------------------------------------
 
 	override fun mouseClicked(mx: Float, my: Float, button: Int, doubleClick: Boolean): Boolean {
 		val cellX = floor((mx - canvasLeft) / cell).toInt()
@@ -372,7 +355,7 @@ class CrosshairSection : ManagerSection("Editor") {
 		CrosshairEditor.commit(grid)
 	}
 
-	/** Bresenham's line, so a fast stroke leaves no gaps. */
+	/** Bresenham's line, so fast strokes leave no gaps. */
 	private inline fun line(x0: Int, y0: Int, x1: Int, y1: Int, action: (Int, Int) -> Unit) {
 		var x = x0
 		var y = y0
@@ -419,12 +402,10 @@ class CrosshairSection : ManagerSection("Editor") {
 		const val OPAQUE = 0xFF000000.toInt()
 		const val PREVIEW_LIGHT = 0xFFB9D3EE.toInt()
 		const val PREVIEW_DARK = 0xFF2A2A2A.toInt()
-		/** Darkens the swatch checkerboard to the card's greys. */
 		const val CHECKER_TINT = 0x2C2C2C
 		const val WHITE = 0xFFFFFFFF.toInt()
 
-		// Made once and kept: the page is rebuilt every time it opens, and a
-		// texture registered per page would be one more left behind each time.
+		// Made once: the page is rebuilt each time it opens, and a texture per page would leak.
 		val canvasTexture by lazy { CrosshairTexture("canvas") }
 		val previewTexture by lazy { CrosshairTexture("preview") }
 

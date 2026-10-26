@@ -17,12 +17,8 @@ import java.util.Locale
 import net.minecraft.world.level.block.StainedGlassPaneBlock
 
 /**
- * The six terminals, rebuilt client-side. Ported from Odin's term-sim screens
- * (BSD 3-Clause, Copyright (c) 2025 odtheking).
- *
- * Each one only has to be convincing to two audiences: the player, and the
- * solver reading the chest over their shoulder. So the items are the same items
- * Hypixel sends, in the same slots, and nothing else is modelled.
+ * The six terminals rebuilt client-side, with the same items in the same slots Hypixel sends.
+ * Ported from Odin's term-sim.
  */
 
 private fun pane(item: Item) = named(ItemStack(item), "")
@@ -36,7 +32,6 @@ private fun Slot.row() = index / 9
 
 private fun Slot.column() = index % 9
 
-/** Turn every red pane green. */
 class PanesSim : TermSimScreen(TerminalType.PANES.termName, TerminalType.PANES.windowSize) {
 	override fun create() = rebuild { slot ->
 		if (slot.row() in 1..3 && slot.column() in 2..6) {
@@ -62,7 +57,6 @@ class PanesSim : TermSimScreen(TerminalType.PANES.termName, TerminalType.PANES.w
 	}
 }
 
-/** Cycle nine panes until they all match. */
 class RubixSim : TermSimScreen(TerminalType.RUBIX.termName, TerminalType.RUBIX.windowSize) {
 	override fun create() = rebuild { slot ->
 		if (slot.row() in 1..3 && slot.column() in 3..5) pane(PANES.random()) else fillerPane
@@ -70,7 +64,6 @@ class RubixSim : TermSimScreen(TerminalType.RUBIX.termName, TerminalType.RUBIX.w
 
 	override fun slotClick(slot: Slot, button: Int) {
 		val current = slot.item.paneColor?.let(ORDER::indexOf)?.takeIf { it >= 0 } ?: return
-		// A right click steps back around the loop, a left click forward.
 		val next = if (button == 1) (current - 1 + ORDER.size) % ORDER.size else (current + 1) % ORDER.size
 		rebuild { other -> if (other === slot) pane(PANES[next]) else other.item }
 
@@ -92,7 +85,6 @@ class RubixSim : TermSimScreen(TerminalType.RUBIX.termName, TerminalType.RUBIX.w
 	}
 }
 
-/** Click ten numbered panes in order. */
 class NumbersSim : TermSimScreen(TerminalType.NUMBERS.termName, TerminalType.NUMBERS.windowSize) {
 	override fun create() {
 		val numbers = (1..10).shuffled().iterator()
@@ -107,8 +99,7 @@ class NumbersSim : TermSimScreen(TerminalType.NUMBERS.termName, TerminalType.NUM
 	}
 
 	override fun slotClick(slot: Slot, button: Int) {
-		// Out of order does nothing at all, which is what makes the real one
-		// worth practising.
+		// Out of order does nothing, like the real one.
 		val next = gridSlots.minByOrNull {
 			if (it.item.item == Items.STAINED_GLASS_PANE.red()) it.item.count else Int.MAX_VALUE
 		}
@@ -123,12 +114,11 @@ class NumbersSim : TermSimScreen(TerminalType.NUMBERS.termName, TerminalType.NUM
 	}
 }
 
-/** Click every item starting with one letter. */
 class StartsWithSim(
 	private val letter: String = LETTERS.random(),
 ) : TermSimScreen("What starts with: '$letter'?", TerminalType.STARTS_WITH.windowSize) {
 	override fun create() {
-		// One match is guaranteed, so a window can never open already solved.
+		// At least one match, so a window never opens already solved.
 		val guaranteed = (10..16).random()
 		rebuild { slot ->
 			when {
@@ -155,10 +145,7 @@ class StartsWithSim(
 		super.slotClick(slot, button)
 	}
 
-	/**
-	 * Both pools are worked out once rather than per slot, because sweeping the
-	 * item registry forty-five times to fill one chest is a visible pause.
-	 */
+	/** Built once; sweeping the item registry for every slot was a visible pause. */
 	private val pools: Map<Boolean, List<Item>> by lazy {
 		BuiltInRegistries.ITEM
 			.filter { item ->
@@ -176,7 +163,6 @@ class StartsWithSim(
 	}
 }
 
-/** Click every item of one colour. */
 class SelectAllSim(
 	private val color: DyeColor = DyeColor.entries.random(),
 ) : TermSimScreen(
@@ -210,7 +196,6 @@ class SelectAllSim(
 	}
 
 	private companion object {
-		/** The four items Hypixel uses for a colour, named the way it names them. */
 		fun itemsOf(color: DyeColor): List<Item> {
 			val name = color.name.lowercase()
 			return listOf(
@@ -232,7 +217,6 @@ class SelectAllSim(
 	}
 }
 
-/** Press the button as the note crosses the marked column. */
 class MelodySim : TermSimScreen(TerminalType.MELODY.termName, TerminalType.MELODY.windowSize) {
 	private var markedColumn = (1..5).random()
 	private var noteColumn = 1
@@ -244,7 +228,7 @@ class MelodySim : TermSimScreen(TerminalType.MELODY.termName, TerminalType.MELOD
 
 	override fun containerTick() {
 		super.containerTick()
-		// The note slides one column every half second, and turns at the ends.
+		// The note moves one column every half second and turns at the ends.
 		if (ticks++ % TICKS_PER_STEP != 0) return
 		noteColumn += noteDirection
 		if (noteColumn == 1 || noteColumn == 5) noteDirection = -noteDirection
@@ -262,7 +246,6 @@ class MelodySim : TermSimScreen(TerminalType.MELODY.termName, TerminalType.MELOD
 		super.slotClick(slot, button)
 	}
 
-	/** Only the slots that actually changed are re-sent, as Hypixel does. */
 	private fun refresh() {
 		gridSlots.forEach { slot ->
 			val wanted = slot.notePattern()
@@ -286,22 +269,17 @@ class MelodySim : TermSimScreen(TerminalType.MELODY.termName, TerminalType.MELOD
 
 	private companion object {
 		const val BUTTON_COLUMN = 7
-		/** The row after the last to play, which is also where the lower marker is. */
+		/** The row after the last one played, where the lower marker is. */
 		const val ROWS = 4
 		const val TICKS_PER_STEP = 10
 	}
 }
 
-/**
- * The menu the simulator opens on, and returns to when a terminal is solved.
- *
- * Its own clicks are not delayed by the ping setting — waiting out a fake round
- * trip to pick which puzzle to practise would only be annoying.
- */
+/** The simulator's start menu. Its clicks aren't delayed by the ping setting. */
 class StartSim : TermSimScreen("Terminal Simulator", 27) {
 	override val delaysClicks: Boolean get() = false
 
-	/** Cleared by a second press, so a mis-click cannot wipe your times. */
+	/** A second press is needed, so a mis-click can't wipe your times. */
 	private var resetArmed = false
 
 	override fun create() {
@@ -342,13 +320,7 @@ class StartSim : TermSimScreen("Terminal Simulator", 27) {
 		openSim(type, ping)
 	}
 
-	/**
-	 * One terminal to start, with what you have done it in before.
-	 *
-	 * The time is on the item rather than in chat because this menu is where
-	 * you decide which to practise, and the number you are trying to beat is
-	 * the thing that decides it. Odin's simulator does the same.
-	 */
+	/** A terminal's start button, showing your best time on it, as Odin's simulator does. */
 	private fun button(type: TerminalType): ItemStack {
 		val stack = named(
 			ItemStack(DYES[type.ordinal]),
@@ -382,7 +354,6 @@ class StartSim : TermSimScreen("Terminal Simulator", 27) {
 	}
 }
 
-/** Opens one terminal of the simulator, at the ping it should answer at. */
 fun openSim(type: TerminalType, ping: Long) {
 	val screen = when (type) {
 		TerminalType.PANES -> PanesSim()

@@ -14,12 +14,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/**
- * Takes the orange fog out of lava, for Lava to Water.
- *
- * A clear texture behind a solid orange fog is no clearer than before, so the
- * texture swap on its own does almost nothing while your head is under.
- */
+/** Removes lava's orange fog, for Lava to Water; the texture swap alone does little with your head under. */
 @Mixin(LavaFogEnvironment.class)
 public abstract class LavaFogEnvironmentMixin {
     @Unique

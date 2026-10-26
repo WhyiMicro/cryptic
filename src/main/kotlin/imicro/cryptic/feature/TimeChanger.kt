@@ -9,28 +9,18 @@ import net.minecraft.client.Minecraft
 import java.time.LocalTime
 
 /**
- * Holds the world at a time of day you picked.
- *
- * Ported from NoammAddons (CC0, Copyright (c) Noamm9). SkyBlock's night is dark
- * enough to hide a mob at melee range, and its dawn puts the sun directly into
- * your eyes for several minutes at a time. Fixing the clock is a comfort
- * setting that changes nothing about the world — the server's time goes on
- * running, and only the sky this client draws is held still.
- *
- * The time is reapplied whenever the server announces its own, because that
- * announcement is exactly what would otherwise undo it.
+ * Holds the sky at a time you pick; the server's clock keeps running. Reapplied whenever the server
+ * sends its time. Ported from NoammAddons.
  */
 object TimeChanger {
-	/** Day, noon, sunset, night, midnight, sunrise — in ticks. */
+	/** Day, noon, sunset, night, midnight, sunrise, in ticks. */
 	private val PRESET_TICKS = longArrayOf(1_000L, 6_000L, 12_000L, 13_000L, 18_000L, 23_000L)
 
-	/** A full Minecraft day, which is also the slider's range. */
 	private const val DAY_TICKS = 24_000L
 
-	/** Ticks per real minute, for the setting that follows your own clock. */
 	private const val TICKS_PER_MINUTE = 16.66
 
-	/** Minecraft's day starts at 6am, so real time is offset by six hours. */
+	/** Minecraft's day starts at 6am. */
 	private const val DAWN_OFFSET = 6_000L
 
 	@JvmField
@@ -73,10 +63,8 @@ object TimeChanger {
 	)
 
 	/**
-	 * Writes the chosen time into the client's copy of the world.
-	 *
-	 * Called both when the setting changes and when the server sends its own
-	 * time, which is the only thing that would overwrite it.
+	 * Writes the chosen time into the client's world, on setting changes and on the server's time
+	 * packets.
 	 */
 	@JvmStatic
 	fun apply() {
@@ -84,7 +72,6 @@ object TimeChanger {
 		Minecraft.getInstance().level?.setTimeFromServer(chosenTicks())
 	}
 
-	/** True while the server's own time announcement should be ignored. */
 	@JvmStatic
 	fun overridesServerTime(): Boolean = module.enabled
 
@@ -93,21 +80,13 @@ object TimeChanger {
 		return PRESET_TICKS.getOrElse(preset.selectedIndex) { realTimeTicks() }
 	}
 
-	/** Your own wall clock, mapped onto Minecraft's day. */
 	private fun realTimeTicks(): Long {
 		val now = LocalTime.now()
 		val raw = now.hour * 1_000L + (now.minute * TICKS_PER_MINUTE).toLong() - DAWN_OFFSET
 		return if (raw < 0) raw + DAY_TICKS else raw
 	}
 
-	/**
-	 * Keeps the sky moving while "Real time" is chosen, and re-asserts the
-	 * choice in general.
-	 *
-	 * Once a second is plenty: a Minecraft minute is a little over a second of
-	 * sky movement, and nothing here has to be smooth — the alternative is a
-	 * sky that only updates when the server happens to mention the time.
-	 */
+	/** Once a second: keeps "Real time" moving and reasserts the choice. */
 	fun tick(client: Minecraft) {
 		if (!module.enabled || client.level == null) return
 		if (ticksUntilRefresh-- > 0) return

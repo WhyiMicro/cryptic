@@ -3,6 +3,7 @@ package imicro.cryptic.mixin;
 import imicro.cryptic.feature.CroesusHelper;
 import imicro.cryptic.feature.ExperimentSolver;
 import imicro.cryptic.feature.InvincibilityTimer;
+import imicro.cryptic.feature.ItemProtection;
 import imicro.cryptic.feature.LoadoutManager;
 import imicro.cryptic.feature.SlotBinds;
 import imicro.cryptic.feature.SpiritLeapOverlay;
@@ -20,39 +21,51 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Hands a chest's input to whichever module has taken the chest over.
- *
- * The terminal solver draws its own screen in place of the chest, which is
- * {@link ScreenMixin}'s doing; what is here is the other half. Every click in a
- * terminal goes through the solver, because the solver is what holds the
- * first-click protection.
+ * Hands a chest's input to whichever module has taken the chest over. The terminal solver's own
+ * screen is drawn by {@link ScreenMixin}; clicks go through the solver, which holds the first-click
+ * protection.
  */
 @Mixin(AbstractContainerScreen.class)
 public abstract class AbstractContainerScreenMixin {
     /**
-     * One slot, for the mask timer, which wants the item drawn and something
-     * over it. A terminal's slots are never drawn at all: the solver replaces
-     * the whole screen, which is {@link ScreenMixin}'s doing.
+     * One slot, for the mask timer. Terminal slots are never drawn here; the solver replaces the
+     * whole screen.
      */
     @Inject(method = "extractSlot", at = @At("HEAD"), cancellable = true)
     private void cryptic$drawSlotCooldown(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY, CallbackInfo info) {
+        if (imicro.cryptic.feature.Bazaar.drawReopen(graphics, slot)) {
+            info.cancel();
+            return;
+        }
         CroesusHelper.drawSlotHighlight(graphics, slot);
+        ItemProtection.drawSlot(graphics, slot.getItem(), slot.x, slot.y, false, false);
+        imicro.cryptic.feature.Bazaar.drawSlot(graphics, slot);
         if (InvincibilityTimer.drawSlotCooldown(graphics, slot)) info.cancel();
     }
 
-    /** A tooltip is the chest talking about items the solver has hidden. */
-    @Inject(method = "extractTooltip", at = @At("HEAD"), cancellable = true)
-    private void cryptic$hideTerminalTooltip(GuiGraphicsExtractor graphics, int mouseX, int mouseY, CallbackInfo info) {
-        if (TerminalSolver.hidesTooltip()) info.cancel();
+    /** Marks drawn over the item. */
+    @Inject(method = "extractSlot", at = @At("RETURN"))
+    private void cryptic$drawOverSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY, CallbackInfo info) {
+        ItemProtection.drawSlot(graphics, slot.getItem(), slot.x, slot.y, true, false);
     }
 
-    /**
-     * Every click the chest would make, including the ones vanilla builds out
-     * of the drop key and the hotbar numbers.
-     */
+    /** No tooltips for items the solver has hidden. */
+    @Inject(method = "extractTooltip", at = @At("HEAD"), cancellable = true)
+    private void cryptic$hideTerminalTooltip(GuiGraphicsExtractor graphics, int mouseX, int mouseY, CallbackInfo info) {
+        if (TerminalSolver.hidesTooltip()
+                || imicro.cryptic.feature.RenderOptimizer.hidesTooltip(((ContainerScreenAccessor) this).cryptic$hoveredSlot())
+                || imicro.cryptic.feature.Bazaar.drawReopenTooltip((AbstractContainerScreen<?>) (Object) this, graphics, mouseX, mouseY)) info.cancel();
+    }
+
+    /** Every click the chest would make, including the drop key and hotbar numbers. */
     @Inject(method = "slotClicked", at = @At("HEAD"), cancellable = true)
     private void cryptic$clickTerminalSlot(Slot slot, int slotId, int button, ContainerInput input, CallbackInfo info) {
-        // While an experiment plays itself, your own clicks stay out of it.
+        if (imicro.cryptic.feature.Bazaar.onSlotClicked((AbstractContainerScreen<?>) (Object) this, slot)
+                || ItemProtection.blocksClick((AbstractContainerScreen<?>) (Object) this, slot, slotId, button, input)) {
+            info.cancel();
+            return;
+        }
+        // While an experiment plays itself, your own clicks stay out.
         if (ExperimentSolver.blocksManualClicks()) {
             info.cancel();
             return;
@@ -74,15 +87,17 @@ public abstract class AbstractContainerScreenMixin {
             return;
         }
 
-        // The loadout menu's page buttons sit on the mouse's side buttons.
         if (LoadoutManager.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.button())) {
             info.setReturnValue(true);
             return;
         }
 
-        // A bound slot's shift-click means a swap rather than the move across
-        // the inventory vanilla would make of it, so it has to be taken here
-        // before the screen acts on it.
+        if (ItemProtection.handleMouse((AbstractContainerScreen<?>) (Object) this, click.button())) {
+            info.setReturnValue(true);
+            return;
+        }
+
+        // A bound slot's shift-click is a swap, so it's taken before the screen moves the item.
         if (SlotBinds.handleShiftClick((AbstractContainerScreen<?>) (Object) this, click.button())) {
             info.setReturnValue(true);
         }
@@ -107,8 +122,12 @@ public abstract class AbstractContainerScreenMixin {
             return;
         }
 
-        // Before the hotbar keys get it: in the loadout menu, 1 to 0 put on a
-        // loadout rather than swap the hovered item.
+        if (ItemProtection.handleKey((AbstractContainerScreen<?>) (Object) this, event.key())) {
+            info.setReturnValue(true);
+            return;
+        }
+
+        // Before the hotbar keys: in the loadout menu, 1 to 0 put on a loadout.
         if (LoadoutManager.handleKeyPress((AbstractContainerScreen<?>) (Object) this, event.key())) {
             info.setReturnValue(true);
             return;

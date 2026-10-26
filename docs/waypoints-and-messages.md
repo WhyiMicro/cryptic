@@ -43,11 +43,13 @@ beside the switch:
 - **Dungeon Breaker:** hidden once its block is broken.
 - **Start:** where a route begins. Always an outline drawn through walls, so it
   can be seen from anywhere in the room.
+- **Alignment:** a spot to line up on. Always an outline, and never drawn
+  through walls.
 
-Etherwarp and Dungeon Breaker waypoints are never drawn through walls, because
-the block you can see is the one that matters for both. Start waypoints always
-are. A Dungeon Breaker box's sides that are against a solid block are drawn
-just inside the block, so the outline never shows on the block beside it.
+Etherwarp, Dungeon Breaker and Alignment waypoints are never drawn through
+walls, because the block you can see is the one that matters. Start waypoints
+always are. Dungeon Breaker waypoints in Boss Waypoints are drawn the same way
+as here, in the Dungeon Breaker colour and the style set here.
 
 A waypoint's title, and its kind with **Labels** on, is written in white with a
 shadow in the middle of its block, and can be read through walls.

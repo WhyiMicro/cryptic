@@ -6,14 +6,8 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
-import net.minecraft.core.component.DataComponents
-import net.minecraft.world.item.ItemStack
-import net.minecraft.world.item.component.CustomData
 
-/**
- * First-person view-model controls adapted from NoammAddons' CC0 Animations
- * feature for Cryptic's typed settings and profile system.
- */
+/** First-person view-model controls, adapted from NoammAddons' Animations. */
 object Animations {
 	@JvmField val itemScale = SliderModuleSetting(
 		"item_scale", "Item Scale", 0.0, -1.5, 1.5, 0.05,
@@ -47,22 +41,18 @@ object Animations {
 	@JvmField val disableSwingAnimation = ToggleModuleSetting(
 		"disable_swing_animation", "Disable swing animation", description = "Disables the held-item swing animation",
 	)
-	@JvmField val terminatorOnly = ToggleModuleSetting(
-		"terminator_only", "Terminator only", description = "Only disables swings while holding a Terminator",
-		visibleIf = { disableSwingAnimation.value },
-	)
 
 	@JvmField val swingSpeed = SliderModuleSetting(
 		"swing_speed", "Swing Speed", 0.0, -2.0, 1.0, 0.05,
-		visibleIf = { !disableSwingAnimation.value || terminatorOnly.value },
+		visibleIf = { !disableSwingAnimation.value },
 	)
 	@JvmField val ignoreHaste = ToggleModuleSetting(
 		"ignore_haste", "Ignore Haste", description = "Ignores Haste when calculating swing speed",
-		visibleIf = { !disableSwingAnimation.value || terminatorOnly.value },
+		visibleIf = { !disableSwingAnimation.value },
 	)
 	@JvmField val swingAffectsHand = ToggleModuleSetting(
 		"swing_affects_hand", "Swing speed affects hand", description = "Your empty hand swings at that speed too",
-		visibleIf = { !disableSwingAnimation.value || terminatorOnly.value },
+		visibleIf = { !disableSwingAnimation.value },
 	)
 
 	private val configurableSettings = listOf(
@@ -71,12 +61,11 @@ object Animations {
 		leftHand, blockHitting,
 		rotationX, rotationY, rotationZ,
 		swingX, swingY, swingZ,
-		disableHandMovement, disableEquipAnimation, disableSwingAnimation, terminatorOnly,
+		disableHandMovement, disableEquipAnimation, disableSwingAnimation,
 		swingSpeed, ignoreHaste, swingAffectsHand,
 	)
 
-	// The card is long enough that its controls are easier to find under the
-	// part of the view model each of them moves.
+	// Grouped under the part of the view model each control moves.
 	private val layout = listOf(
 		SectionModuleSetting("hand_section", "Hand"),
 		itemScale, positionX, positionY, positionZ, leftHand, blockHitting,
@@ -85,7 +74,7 @@ object Animations {
 		SectionModuleSetting("swing_section", "Swing"),
 		swingX, swingY, swingZ, swingSpeed, ignoreHaste, swingAffectsHand,
 		SectionModuleSetting("animation_section", "Animations"),
-		disableHandMovement, disableEquipAnimation, disableSwingAnimation, terminatorOnly,
+		disableHandMovement, disableEquipAnimation, disableSwingAnimation,
 	)
 
 	private val reset = ButtonModuleSetting("reset", "Reset", action = {
@@ -106,11 +95,4 @@ object Animations {
 		supportsKeybind = false,
 		settings = layout + reset,
 	)
-
-	@JvmStatic
-	fun isTerminator(stack: ItemStack): Boolean {
-		if (stack.isEmpty) return false
-		val data = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag()
-		return data.getString("id").orElse("") == "TERMINATOR"
-	}
 }

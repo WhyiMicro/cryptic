@@ -8,14 +8,12 @@ import imicro.cryptic.gui.menu.ManagerSection
 import imicro.cryptic.gui.menu.MenuStyle
 import imicro.cryptic.gui.menu.TextField
 import imicro.cryptic.gui.menu.UiText
+import imicro.cryptic.render.RoundRect
 import net.minecraft.client.Minecraft
 
 /**
- * The Carry Manager on its module's page.
- *
- * Two views, as the old window had: an overview of the carry under way, the
- * running totals, the warps and the last few finished; and the Voidgloom list,
- * where carries are added and counted.
+ * The Carry Manager: an overview (current carry, totals, warps, recent finishes) and the Voidgloom
+ * list where carries are added and counted.
  */
 class CarrySection : ManagerSection("Carries") {
 	private enum class View(val title: String) { OVERVIEW("Overview"), VOIDGLOOM("Voidgloom Seraph") }
@@ -40,8 +38,6 @@ class CarrySection : ManagerSection("Carries") {
 		return cy - y
 	}
 
-	// ---- Overview --------------------------------------------------------
-
 	private fun drawOverview(x: Float, y: Float, width: Float): Float {
 		var cy = y
 		val pad = 18f
@@ -57,7 +53,17 @@ class CarrySection : ManagerSection("Carries") {
 			ui.text(active.name, x + pad, cy + 32f, 17f, MenuStyle.TEXT, UiText.Face.MEDIUM)
 			ui.badge("T${active.tier}", x + pad + ui.width(active.name, 17f, UiText.Face.MEDIUM) + 10f, cy + 30f, height = 22f)
 			val count = "${active.done}/${active.ordered}"
-			ui.text(count, x + width - pad - ui.width(count, 17f, UiText.Face.MEDIUM), cy + 32f, 17f, MenuStyle.TEXT, UiText.Face.MEDIUM)
+			val countX = x + width - pad - ui.width(count, 17f, UiText.Face.MEDIUM)
+			ui.text(count, countX, cy + 32f, 17f, MenuStyle.TEXT, UiText.Face.MEDIUM)
+			// Fixes the count when a kill was missed or miscounted, as on the Voidgloom list.
+			ui.iconButton(Box(countX - 12f - 28f, cy + 26f, 28f, 28f), Sections.PLUS) {
+				active.done++
+				CarryStore.save()
+			}
+			ui.iconButton(Box(countX - 12f - 28f - 4f - 28f, cy + 26f, 28f, 28f), Sections.MINUS) {
+				if (active.done > 0) active.done--
+				CarryStore.save()
+			}
 			ui.progress(Box(x + pad, cy + 60f, width - pad * 2f, 6f), active.done / active.ordered.coerceAtLeast(1).toFloat())
 			val onBoss = CarryManager.currentBossMillis(active)
 			ui.text(if (onBoss > 0) "Boss up for ${Sections.duration(onBoss)}" else "Waiting for a boss", x + pad, cy + 74f, 12f, MenuStyle.MUTED)
@@ -81,9 +87,22 @@ class CarrySection : ManagerSection("Carries") {
 			ui.textCentered(value, Box(box.x, cy + 14f, column, 22f), 18f, MenuStyle.TEXT, UiText.Face.MEDIUM)
 			ui.textCentered(label, Box(box.x, cy + 42f, column, 16f), 12f, MenuStyle.MUTED)
 		}
+		// A record from a miscounted kill can be cleared; two clicks, like a delete.
+		if (totals.fastestKillMillis > 0) {
+			val right = x + width - 6f
+			if (deletes.isArmed(FASTEST_KEY)) {
+				val w = ui.width("Reset?", 12f, UiText.Face.MEDIUM) + 14f
+				val box = Box(right - w, cy + 6f, w, 22f)
+				RoundRect.fill(ui.graphics, box.x, box.y, box.right, box.bottom, MenuStyle.fade(Sections.DANGER, ui.alpha * 0.18f), 6f)
+				ui.textCentered("Reset?", box, 12f, Sections.DANGER, UiText.Face.MEDIUM)
+				ui.onClick(box) { if (deletes.click(FASTEST_KEY)) resetFastest() }
+			} else {
+				ui.iconButton(Box(right - 24f, cy + 6f, 24f, 24f), Sections.UNDO, MenuStyle.MUTED) { deletes.click(FASTEST_KEY) }
+			}
+		}
 		cy += statsH + 2f
 
-		// The two warps a carry goes back and forth between.
+		// The two warps a carry goes between.
 		val warpH = 58f
 		ui.card(Box(x, cy, width, warpH))
 		ui.text("Warp", x + pad, cy + (warpH - 14f) / 2f, 14f, MenuStyle.TEXT)
@@ -116,6 +135,11 @@ class CarrySection : ManagerSection("Carries") {
 		return cy - y
 	}
 
+	private fun resetFastest() {
+		CarryStore.totals.fastestKillMillis = 0L
+		CarryStore.save()
+	}
+
 	private fun warp(command: String) {
 		val minecraft = Minecraft.getInstance()
 		minecraft.execute {
@@ -123,8 +147,6 @@ class CarrySection : ManagerSection("Carries") {
 			minecraft.gui.setScreen(null)
 		}
 	}
-
-	// ---- Voidgloom ---------------------------------------------------------
 
 	private fun drawVoidgloom(x: Float, y: Float, width: Float): Float {
 		var cy = y
@@ -194,7 +216,7 @@ class CarrySection : ManagerSection("Carries") {
 		return h
 	}
 
-	/** Players in this lobby whose names start with what has been typed. */
+	/** Lobby players whose names start with what's typed. */
 	private fun lobbyMatches(): List<String> {
 		val typed = name.text.trim()
 		if (typed.isEmpty()) return emptyList()
@@ -217,5 +239,7 @@ class CarrySection : ManagerSection("Carries") {
 
 	private companion object {
 		const val MAX_ORDER = 100
+
+		val FASTEST_KEY = Any()
 	}
 }

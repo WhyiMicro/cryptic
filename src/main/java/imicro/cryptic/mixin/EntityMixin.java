@@ -11,7 +11,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Recolors only known dungeon teammates when vanilla requests their glow color. */
 @Mixin(Entity.class)
 public abstract class EntityMixin {
     @Inject(method = "getTeamColor", at = @At("HEAD"), cancellable = true)
@@ -30,11 +29,8 @@ public abstract class EntityMixin {
     public abstract float getYRot();
 
     /**
-     * Fixes the mouse lag while riding an entity, for Camera.
-     *
-     * Mojang's MC-206540, and the fix is isXander's from Debugify (LGPL-3.0) —
-     * read rather than copied, since what it amounts to is turning the rider
-     * with the mount in the same tick instead of a tick behind it.
+     * Fixes mouse lag while riding (MC-206540), for Camera: the rider turns with the mount in the
+     * same tick. Debugify's fix, read rather than copied.
      */
     @Inject(method = "onPassengerTurned", at = @At("HEAD"))
     private void cryptic$fixRidingInput(Entity passenger, CallbackInfo info) {

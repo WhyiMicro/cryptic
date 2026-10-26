@@ -40,28 +40,15 @@ import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.Vec3
 
 /**
- * Replaces the Spirit Leap menu with four corners, one per teammate.
- *
- * The menu is Odin's Leap Menu (BSD 3-Clause, Copyright (c) 2025 odtheking):
- * a box in each corner of the screen with the teammate's face, their name in
- * their class colour and their class under it, and a click anywhere in a
- * quarter of the screen leaping to whoever is in that corner — a quarter of the
- * screen being a much bigger thing to hit than a head in a chest. The corners
- * are filled by one of Odin's sortings, and can be pressed by key as well, per
+ * Replaces the Spirit Leap menu with four corners, one per teammate: Odin's Leap Menu, with the
+ * teammate's face, name in their class colour and class, and a click anywhere in that quarter of
+ * the screen leaping to them. Corners are filled by Odin's sortings and can be pressed by key, per
  * corner or per class.
  *
- * Its leap announcement is left out in favour of the Announce section's, which
- * is Blade Addons' Leap Message folded in.
- *
- * The rotate fix is RSM's Leap Rotate Fix (BSD 3-Clause, Copyright (c) 2026,
- * rice.who): after a leap you face the way the teammate does, and on being
- * put into a boss room you face into it.
- *
- * The leap count is Blade Addons' (CC0, BladeMasterGabe, who credits valley):
- * on an early-enter spot in Floor 7, how many of the party have made it there.
- *
- * Classes, names and who is dead all come from [DungeonTeam], and the class
- * colours from [ClassColors], so a colour changed there changes here too.
+ * The leap announcement is Blade Addons' Leap Message. The rotate fix is RSM's Leap Rotate Fix
+ * (face the way your teammate does; face into the boss room on entry). The leap count is Blade
+ * Addons' (credited to valley): how many of the party reached an F7 early-enter spot. Classes and
+ * colours come from [DungeonTeam] and [ClassColors].
  */
 object SpiritLeapOverlay {
 	private const val SORT_ODIN = 0
@@ -130,6 +117,19 @@ object SpiritLeapOverlay {
 	)
 
 	@JvmField
+	val colorOpacity = SliderModuleSetting(
+		id = "color_opacity",
+		label = "Opacity",
+		unit = "%",
+		defaultValue = 100.0,
+		min = 10.0,
+		max = 100.0,
+		step = 5.0,
+		description = "How solid the class colour is, so the teammate views behind show through.",
+		visibleIf = { colorStyle.value },
+	)
+
+	@JvmField
 	val backgroundColor = ColorModuleSetting(
 		id = "background_color",
 		label = "Background",
@@ -195,13 +195,9 @@ object SpiritLeapOverlay {
 	)
 
 	/**
-	 * Top left, top right, bottom left, bottom right — the order the corners
-	 * are numbered in, and 1 to 4 to begin with. In the menu those keys leap
-	 * rather than swap the hovered item into the hotbar.
-	 *
-	 * The ids gained a "leap_" when the defaults came in: every profile had
-	 * these saved unbound, and a saved value wins over a default, so under the
-	 * old ids nobody would ever have got 1 to 4.
+	 * Top left, top right, bottom left, bottom right, 1 to 4 by default; in the menu those keys
+	 * leap. The ids gained "leap_" when defaults were added, since saved unbound values would
+	 * otherwise win.
 	 */
 	private val cornerBinds = listOf(
 		cornerBind("leap_top_left_key", "Top left", InputConstants.KEY_1),
@@ -246,17 +242,13 @@ object SpiritLeapOverlay {
 		visibleIf = { leapCount.value },
 	)
 
-	// ---- Announcing the leap ---------------------------------------------
-
 	private val announceSection = SectionModuleSetting("announce_section", "Announce")
 
 	private const val PLAYER_TOKEN = "<player>"
 
 	/**
-	 * Says in party chat who you leaped to. Leap Message's job, folded in here
-	 * because it is about the same leap: ported from Blade Addons (MIT), and
-	 * triggered by Hypixel's "You have teleported to Steve!", the one sign of a
-	 * leap the client gets.
+	 * Says in party chat who you leaped to, from Hypixel's "You have teleported to Steve!". Blade
+	 * Addons' Leap Message.
 	 */
 	@JvmField
 	val announceLeap = ToggleModuleSetting(
@@ -277,6 +269,68 @@ object SpiritLeapOverlay {
 		visibleIf = { announceLeap.value },
 	)
 
+	private val previewSection = SectionModuleSetting(
+		"preview_section", "Teammate views",
+		visibleIf = { imicro.cryptic.gui.Restrictions.allows(imicro.cryptic.gui.Restriction.SEMI_LEGIT) },
+	)
+
+	@JvmField
+	val preview = ToggleModuleSetting(
+		id = "pov_preview",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
+		label = "Show their view",
+		defaultValue = true,
+		description = "Each corner shows what that teammate sees, so you can tell where a leap lands. " +
+			"Renders the world once more per view while the menu is open.",
+	)
+
+	@JvmField
+	val previewResolution = SliderModuleSetting(
+		id = "pov_resolution",
+		label = "Resolution",
+		unit = "%",
+		defaultValue = 50.0,
+		min = 25.0,
+		max = 100.0,
+		step = 5.0,
+		description = "How sharp each view is, against a quarter of your screen. Lower is cheaper.",
+		visibleIf = { preview.value },
+	)
+
+	@JvmField
+	val previewsPerFrame = SliderModuleSetting(
+		id = "pov_per_frame",
+		label = "Views per frame",
+		defaultValue = 1.0,
+		min = 1.0,
+		max = 4.0,
+		step = 1.0,
+		description = "At most this many views are redrawn in one frame; the others keep their last picture.",
+		visibleIf = { preview.value },
+	)
+
+	@JvmField
+	val previewRate = SliderModuleSetting(
+		id = "pov_rate",
+		label = "Updates",
+		unit = "/s",
+		defaultValue = 20.0,
+		min = 5.0,
+		max = 60.0,
+		step = 5.0,
+		description = "How often each view is redrawn. The cost stays the same whatever your frame rate; lower is cheaper.",
+		visibleIf = { preview.value },
+	)
+
+	@JvmField
+	val previewEntities = ToggleModuleSetting(
+		id = "pov_entities",
+		label = "Players and mobs",
+		defaultValue = false,
+		description = "Draws players, mobs and particles in the views. Off, only the world is drawn, which is much cheaper and enough to see where someone is.",
+		visibleIf = { preview.value },
+	)
+
 	private val configurable: List<ModuleSetting> = listOf(
 		sorting,
 		customOrder,
@@ -284,10 +338,12 @@ object SpiritLeapOverlay {
 		rotateFix,
 		bossRotateFix,
 		onlyClasses,
-		colorStyle,
+		colorStyle.withMore(colorOpacity),
 		backgroundColor,
 		cornerRadius,
 		renderScale,
+		previewSection,
+		preview.withMore(previewResolution, previewRate, previewsPerFrame, previewEntities),
 		keybindSection,
 		useKeybinds,
 		keybindMode,
@@ -303,17 +359,15 @@ object SpiritLeapOverlay {
 	@JvmField
 	val module = Module(
 		id = "spirit_leap_overlay",
-		name = "Spirit Leap Overlay",
-		description = "A four-corner Spirit Leap",
+		name = "Spirit Leap Features",
+		description = "Leap menu and views",
 		category = ModuleCategory.DUNGEON,
 		supportsKeybind = false,
 		settings = configurable,
 	)
 
-	/** Whether Floor 7's phase tracking is needed, which only the leap count wants. */
 	val needsFloor7: Boolean get() = module.enabled && leapCount.value
 
-	/** Whether the floor is needed at all: the leap count, and which boss room you are being put into. */
 	val needsDungeon: Boolean get() = module.enabled && (leapCount.value || bossRotateFix.value)
 
 	private var initialized = false
@@ -326,19 +380,14 @@ object SpiritLeapOverlay {
 		ClientTickEvents.END_CLIENT_TICK.register(::tickLeapCount)
 	}
 
-	/** A chat packet, on the client thread, before any mod has hidden it. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (!overlay) onGameMessage(message.string)
 	}
 
-	/** Hypixel's confirmation of a leap, e.g. "You have teleported to Steve!". */
 	private val leapPattern = Regex("^You have teleported to (.*)!$")
 
-	/**
-	 * Hypixel rate-limits commands, and a second announcement for one leap would
-	 * only earn a cooldown error, so repeats inside this window are dropped.
-	 */
+	/** Hypixel rate-limits commands, so a repeat for the same leap is dropped. */
 	private const val REPEAT_WINDOW_MS = 3_000L
 
 	private var lastTarget = ""
@@ -346,8 +395,7 @@ object SpiritLeapOverlay {
 
 	private fun onGameMessage(text: String) {
 		if (!module.enabled || !announceLeap.value) return
-		// No location check: only the Infinileap says this, and Hypixel refuses
-		// to let it be used outside a dungeon.
+		// No location check: only the Infinileap says this, and it only works in dungeons.
 		val target = leapPattern.find(text.replace(FORMATTING, "").trim())?.groupValues?.get(1) ?: return
 
 		val now = System.currentTimeMillis()
@@ -357,11 +405,10 @@ object SpiritLeapOverlay {
 
 		val body = leapMessage.value.replace(PLAYER_TOKEN, target).trim()
 		if (body.isEmpty()) return
-		// Hypixel rejects a command line over 256 characters outright.
+		// Hypixel rejects command lines over 256 characters.
 		val command = "pc $body".take(255)
 
-		// Previewed, the line is shown instead of sent, which is the only way to
-		// read it back without a party to send it to.
+		// Previewed, the line is shown instead of sent.
 		if (DebugOverrides.previewLeapMessage) {
 			Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(Component.literal("Leap announcement would send: /$command"))
 			return
@@ -369,26 +416,76 @@ object SpiritLeapOverlay {
 		Minecraft.getInstance().connection?.sendCommand(command)
 	}
 
-	/** Runs one announcement as if [target] had just been leaped to. */
 	fun simulateLeap(target: String) {
 		lastTarget = ""
 		onGameMessage("You have teleported to $target!")
 	}
 
-	// ---- The menu -----------------------------------------------------------
-
 	private class Teammate(val name: String, val clazz: DungeonClass, val dead: Boolean)
 
+	// ---- /cryptic debug leap_overlay ------------------------------------------
+
+	/** Four people from the lobby, shown instead of the party while the debug menu is open. */
+	private var debugParty: List<Teammate>? = null
+
+	/** The client-only screen the debug menu draws over; nothing in it reaches the server. */
+	private var debugScreen: Screen? = null
+
+	private const val DEBUG_TITLE = "Spirit Leap"
+
 	/**
-	 * The four corners, top left first, with null for an empty one.
-	 *
-	 * Built fresh each time it is asked for rather than kept: it is four names,
-	 * and a list kept around is a list that can be out of date the moment
-	 * someone dies.
+	 * Opens the menu with four random players from the lobby as the party, in your own settings,
+	 * anywhere. Players in view come first, so their teammate views have someone to show. Returns
+	 * what to say.
+	 */
+	fun openDebug(): String {
+		val client = Minecraft.getInstance()
+		val player = client.player ?: return "§cNot in a world."
+		val self = player.name.string
+		val nearby = client.level?.players().orEmpty().map { it.name.string }.filter { it != self && it.isNotBlank() }.shuffled()
+		val listed = client.connection?.onlinePlayers.orEmpty().map { it.profile.name() }
+			.filter { it != self && it.isNotBlank() && it.all { c -> c.isLetterOrDigit() || c == '_' } && it !in nearby }
+			.shuffled()
+		val names = (nearby + listed).distinct().take(CORNERS)
+		if (names.isEmpty()) return "§cThere's nobody else in this lobby to show."
+		val classes = DungeonClass.entries.filter { it != DungeonClass.UNKNOWN }.shuffled()
+		debugParty = names.mapIndexed { index, name -> Teammate(name, classes[index % classes.size], false) }
+		val menu = net.minecraft.world.inventory.ChestMenu.sixRows(DEBUG_CONTAINER_ID, player.inventory)
+		val screen = net.minecraft.client.gui.screens.inventory.ContainerScreen(menu, player.inventory, Component.literal(DEBUG_TITLE))
+		debugScreen = screen
+		// Next tick: the command runs while chat is closing, which would close this too.
+		openNextTick = true
+		val inView = names.count { it in nearby }
+		return "§7Showing §f${names.joinToString(", ")}§7. ${if (inView == 0) "Nobody is in view, so there are no teammate views." else "$inView in view."} Clicks don't leap."
+	}
+
+	/** Out of the range Hypixel uses, so it can't match a real menu. */
+	private const val DEBUG_CONTAINER_ID = 1_000
+
+	private var openNextTick = false
+
+	private fun tickDebug() {
+		val screen = debugScreen ?: return
+		val client = Minecraft.getInstance()
+		if (openNextTick) {
+			openNextTick = false
+			client.gui.setScreen(screen)
+			return
+		}
+		if (client.gui.screen() === screen) return
+		debugScreen = null
+		debugParty = null
+	}
+
+	private fun isDebug(screen: Screen): Boolean = debugScreen != null && screen === debugScreen
+
+	/**
+	 * The four corners, top left first, null for empty. Built fresh each time, since four names are
+	 * cheap and a kept list goes stale when someone dies.
 	 */
 	private fun corners(): List<Teammate?> {
 		val self = Minecraft.getInstance().player?.name?.string
-		val party = DungeonTeam.classes
+		val party = debugParty ?: DungeonTeam.classes
 			.filterKeys { it != self }
 			.map { (name, clazz) -> Teammate(name, clazz, name in DungeonTeam.dead) }
 
@@ -407,9 +504,8 @@ object SpiritLeapOverlay {
 	private fun List<Teammate>.padded(): List<Teammate?> = List(CORNERS) { getOrNull(it) }
 
 	/**
-	 * Odin's sorting: every class has a corner it belongs in, and the first of
-	 * a class to claim it keeps it. Whoever is left over fills the gaps in
-	 * order. Berserk claims first, then tank, then the rest.
+	 * Odin's sorting: each class has a home corner, and the first of a class to claim it keeps it;
+	 * the rest fill the gaps in order. Berserk claims first, then tank, then the others.
 	 */
 	private fun odinSorting(party: List<Teammate>): List<Teammate?> {
 		val result = arrayOfNulls<Teammate>(CORNERS)
@@ -439,31 +535,31 @@ object SpiritLeapOverlay {
 		else -> 2
 	}
 
-	/** The Spirit Leap chest, while the overlay has something to put over it. */
+	/** The Spirit Leap chest, while the overlay has something to draw. */
 	private fun leapScreen(screen: Screen?): AbstractContainerScreen<*>? {
-		if (!module.enabled) return null
 		val chest = screen as? AbstractContainerScreen<*> ?: return null
+		if (!module.enabled && !isDebug(chest)) return null
 		val title = chest.title.string
 		if (title != "Spirit Leap" && title != "Teleport to Player") return null
-		// With nobody to show, the chest is left alone — it still works, and
-		// four empty corners would not.
+		// With nobody to show, the chest is left as it is.
 		if (corners().all { it == null }) return null
 		return chest
 	}
 
-	/** How far each box has grown towards being hovered, 0 to 1, per corner. */
+	/** How far each box has grown toward hovered, 0 to 1. */
 	private val hover = FloatArray(CORNERS)
 	private var lastFrame = 0L
 
-	/** Draws the menu in place of the chest. True when it did, and the chest should not draw. */
+	/** Draws the menu instead of the chest. True when it did. */
 	@JvmStatic
 	fun render(screen: Screen, context: GuiGraphicsExtractor, mouseX: Int, mouseY: Int): Boolean {
 		leapScreen(screen) ?: return false
 		val client = Minecraft.getInstance()
 		val font = client.font
 
-		// The dimming the chest would have drawn, since the chest is not drawn.
+		// The dimming the chest would have drawn.
 		context.fillGradient(0, 0, context.guiWidth(), context.guiHeight(), BACKDROP_TOP, BACKDROP_BOTTOM)
+		LeapPreview.submit(context, corners().map { it?.takeIf { mate -> !mate.dead }?.name })
 
 		val now = System.nanoTime()
 		val step = if (lastFrame == 0L) 1f else ((now - lastFrame) / 1_000_000f / HOVER_MS).coerceIn(0f, 1f)
@@ -479,7 +575,7 @@ object SpiritLeapOverlay {
 			val column = corner % 2
 			val row = corner / 2
 
-			// The box grows out from the middle of the screen, never across it.
+			// Boxes grow out from the screen's middle, never across it.
 			val nearX = if (column == 0) halfW - CENTER_GAP else halfW + CENTER_GAP
 			val nearY = if (row == 0) halfH - CENTER_GAP else halfH + CENTER_GAP
 			val localX = if (column == 0) -BOX_WIDTH else 0
@@ -506,7 +602,7 @@ object SpiritLeapOverlay {
 				localY,
 				localX + BOX_WIDTH,
 				localY + BOX_HEIGHT,
-				if (colorStyle.value) classArgb else background,
+				if (colorStyle.value) net.minecraft.util.ARGB.color((colorOpacity.value / 100.0 * 255).toInt(), classArgb) else background,
 				cornerRadius.value.toFloat(),
 			)
 
@@ -518,7 +614,7 @@ object SpiritLeapOverlay {
 				if (onlyClasses.value) mate.clazz.name else mate.name,
 				textX,
 				localY + NAME_Y,
-				// White on the class colour, the class colour on the plain box.
+				// White on the class colour, or the class colour on a plain box.
 				if (colorStyle.value) WHITE else classArgb,
 			)
 			if (!onlyClasses.value || mate.dead) {
@@ -536,12 +632,11 @@ object SpiritLeapOverlay {
 		return true
 	}
 
-	/** A teammate's skin, and where it was found, for the menu and `/cryptic debug leap`. */
+	/** A teammate's skin and where it was found, for the menu and `/cryptic debug leap`. */
 	private fun skinSource(name: String): Pair<PlayerSkin, String>? {
 		val client = Minecraft.getInstance()
 		val connection = client.connection ?: return null
-		// The player standing in the world, by their own id: the one answer
-		// that cannot belong to anybody else.
+		// The player in the world, by their own id: the one answer that can't be someone else's.
 		client.level?.players()?.firstOrNull { it.name.string == name }?.let { player ->
 			connection.getPlayerInfo(player.uuid)?.let { return it.skin to "player entity" }
 		}
@@ -551,17 +646,11 @@ object SpiritLeapOverlay {
 	}
 
 	/**
-	 * A teammate's skin, or none at all.
-	 *
-	 * Odin falls back to your own face for a teammate it cannot find, which is
-	 * how the menu ended up showing your head on somebody else's box: on
-	 * Hypixel a teammate's own player entry is often not sent at all. Their
-	 * tab list row has their head on it whether or not, so that is asked next,
-	 * and a box with no face is better than one with the wrong face.
+	 * A teammate's skin, or none. On Hypixel a teammate's player entry often isn't sent, so their
+	 * tab row's head is tried next; no face beats the wrong one (Odin falls back to yours).
 	 */
 	private fun skinOf(name: String): PlayerSkin? = skinSource(name)?.first
 
-	/** For `/cryptic debug leap`: which corner holds whom, and whose face they are drawn with. */
 	fun describe(): List<String> {
 		val corners = corners()
 		if (corners.all { it == null }) return listOf("§8[Cryptic] §7Spirit Leap: no teammates read from the tab list.")
@@ -573,7 +662,7 @@ object SpiritLeapOverlay {
 		}
 	}
 
-	/** A click on the menu. Every click is taken, since the chest under it is not on screen. */
+	/** A click on the menu. Every click is taken, since the chest underneath isn't shown. */
 	@JvmStatic
 	fun handleMouseClick(screen: Screen, mouseX: Double, mouseY: Double): Boolean {
 		val chest = leapScreen(screen) ?: return false
@@ -588,10 +677,7 @@ object SpiritLeapOverlay {
 		return true
 	}
 
-	/**
-	 * A key pressed on the menu. Only a key bound here is taken: every other
-	 * one reaches the chest, so Escape and the inventory key still close it.
-	 */
+	/** A key on the menu. Only bound keys are taken, so Escape and the inventory key still close it. */
 	@JvmStatic
 	fun handleKeyPress(screen: Screen, key: Int): Boolean {
 		if (!useKeybinds.value) return false
@@ -617,13 +703,15 @@ object SpiritLeapOverlay {
 	}
 
 	/**
-	 * Clicks the teammate's head in the real chest, which is the leap.
-	 *
-	 * Found by the name on the head rather than by where the head is, because
-	 * Hypixel orders them its own way. The name is after the rank, if there is
-	 * one, and the colour codes are not part of it.
+	 * Clicks the teammate's head in the real chest. Found by the name on the head (after the rank,
+	 * without colour codes), since Hypixel orders them its own way.
 	 */
 	private fun leapTo(chest: AbstractContainerScreen<*>, mate: Teammate) {
+		if (isDebug(chest)) {
+			say("§7Would leap to §f${mate.name}§7 (debug menu).")
+			Minecraft.getInstance().gui.setScreen(null)
+			return
+		}
 		if (mate.dead) {
 			say("§cThis player is dead, can't leap.")
 			return
@@ -641,14 +729,14 @@ object SpiritLeapOverlay {
 		say("§7Teleporting to §f${mate.name}§7.")
 	}
 
-	/** How long after the click a teleport still counts as the leap. RSM's default. */
+	/** How long after the click a teleport still counts as the leap (RSM's default). */
 	private const val ROTATE_TIMEOUT_TICKS = 10
 
-	/** The way the teammate just leapt to was facing, as (pitch, yaw), until the leap lands. */
+	/** The leaped-to teammate's facing, as (pitch, yaw), until the leap lands. */
 	private var leapFacing: Pair<Float, Float>? = null
 	private var leapClickedAt = 0L
 
-	/** Whether [leapFacing] is a boss room's rather than a teammate's, so the right toggle is asked. */
+	/** Whether [leapFacing] is a boss room's, so the right toggle is checked. */
 	private var facingFromBoss = false
 
 	private fun noteLeapFacing(name: String) {
@@ -661,8 +749,8 @@ object SpiritLeapOverlay {
 	}
 
 	/**
-	 * Where each floor's boss fight puts you, and the way into the room from
-	 * there, as RSM has them. Floor and Master Mode share a room.
+	 * Where each floor's boss fight puts you and the way into the room, as RSM has them. Floor and
+	 * Master Mode share a room.
 	 */
 	private val BOSS_ENTRANCES = mapOf(
 		1 to (Vec3(-42.5, 71.5, 34.5) to 180f),
@@ -674,9 +762,8 @@ object SpiritLeapOverlay {
 	)
 
 	/**
-	 * A teleport about to be applied. When it lands exactly on the floor's
-	 * boss entrance, the room's facing is waiting for [afterServerTeleport].
-	 * Only on the client thread's pass, since the player is read.
+	 * A teleport about to land. Exactly on the floor's boss entrance, the room's facing waits for
+	 * [afterServerTeleport]. Client thread only.
 	 */
 	@JvmStatic
 	fun beforeServerTeleport(packet: ClientboundPlayerPositionPacket) {
@@ -693,9 +780,8 @@ object SpiritLeapOverlay {
 	}
 
 	/**
-	 * Where [name] is looking: from the world when they are loaded, otherwise
-	 * level and the way their map marker points. The map pairs markers with
-	 * living teammates in tab order, as the dungeon map does.
+	 * Where [name] is looking: from the world when loaded, otherwise level and their map marker's
+	 * direction (markers pair with living teammates in tab order).
 	 */
 	private fun facingOf(name: String): Pair<Float, Float>? {
 		val client = Minecraft.getInstance()
@@ -707,11 +793,9 @@ object SpiritLeapOverlay {
 	}
 
 	/**
-	 * The leap landing. Hypixel's leap teleport leaves your rotation as it
-	 * was, so you arrive looking wherever you were looking before; this turns
-	 * you the way your teammate faces instead. Only a teleport that arrives
-	 * soon after the click and changes nothing about the rotation is taken
-	 * for the leap — anything else is the server turning you on purpose.
+	 * The leap landing. Hypixel leaves your rotation unchanged, so you're turned to face the way
+	 * your teammate does. Only a teleport soon after the click that doesn't change rotation counts
+	 * as the leap; anything else is the server turning you on purpose.
 	 */
 	@JvmStatic
 	fun afterServerTeleport(packet: ClientboundPlayerPositionPacket) {
@@ -733,8 +817,8 @@ object SpiritLeapOverlay {
 		player.yRot = yRot
 		player.xRotO = xRot
 		player.yRotO = yRot
-		// As RSM does: the client takes the new rotation as already sent, so
-		// turning on the spot is not reported on its own.
+		// As RSM does: the new rotation is marked as already sent, so the turn isn't reported on
+		// its own.
 		(player as LocalPlayerAccessor).`cryptic$setServerXRot`(xRot)
 		(player as LocalPlayerAccessor).`cryptic$setServerYRot`(yRot)
 	}
@@ -743,9 +827,7 @@ object SpiritLeapOverlay {
 		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] $text"))
 	}
 
-	// ---- The leap count -----------------------------------------------------
-
-	/** Which early-enter spot you are on, 2 to 5, or -1 when not on one. */
+	/** Which early-enter spot you're on, 2 to 5, or -1. */
 	@Volatile
 	private var spot = -1
 
@@ -753,6 +835,7 @@ object SpiritLeapOverlay {
 	private var leapedCount = 0
 
 	private fun tickLeapCount(client: Minecraft) {
+		tickDebug()
 		val player = client.player
 		val level = client.level
 		if (!module.enabled || !leapCount.value || player == null || level == null ||
@@ -770,7 +853,7 @@ object SpiritLeapOverlay {
 		leapedCount = level.getEntities(player, REGIONS[spot - 1]) { isRealPlayer(it) }.size
 	}
 
-	/** Blade's spots, checked most specific first. */
+	/** Blade's spots, most specific first. */
 	private fun spotOf(position: Vec3): Int = when {
 		HEE2_BOX.contains(position) || EE2_BOX.contains(position) -> 2
 		EE3_BOX.contains(position) -> 3
@@ -786,11 +869,8 @@ object SpiritLeapOverlay {
 	}
 
 	/**
-	 * Whether an entity is a player rather than one of Hypixel's NPCs.
-	 *
-	 * Blade's test, and Blade calls it a hack: an NPC is drawn as a player but
-	 * has no proper tab list entry, while every real player has one with a name
-	 * that has no spaces in it.
+	 * Whether an entity is a real player: Hypixel's NPCs have no proper tab entry, while real
+	 * players' names have no spaces. Blade's test (Blade calls it a hack).
 	 */
 	private fun isRealPlayer(entity: Entity): Boolean {
 		if (entity !is Player) return false
@@ -799,7 +879,7 @@ object SpiritLeapOverlay {
 		return name.isNotEmpty() && ' ' !in name
 	}
 
-	/** Blade's own format: blue once it is one short of full or better, dark red until then. */
+	/** Blade's format: blue once one short of full or better, dark red before. */
 	private fun leapCountText(count: Int, max: Int): String =
 		(if (max - count <= 1) "§9" else "§4") + count + "§9/" + max + " Players Leaped"
 
@@ -828,44 +908,42 @@ object SpiritLeapOverlay {
 		}
 	}
 
-	// ---- Numbers ------------------------------------------------------------
-
 	private const val CORNERS = 4
 
-	/** Odin's box, and how far each one stands off the middle of the screen. */
+	/** Odin's box size, and how far each stands off the screen's middle. */
 	private const val BOX_WIDTH = 200
 	private const val BOX_HEIGHT = 75
 	private const val CENTER_GAP = 24
 
-	/** The face is three quarters of the box's height, inset from its corner. */
+	/** The face is three quarters of the box height, inset from its corner. */
 	private const val FACE = (BOX_HEIGHT * 0.76).toInt()
 	private const val FACE_INSET = 9
 	private const val TEXT_GAP = 6
 	private const val NAME_Y = (BOX_HEIGHT / 2.5).toInt()
 	private const val CLASS_Y = (BOX_HEIGHT / 1.7).toInt()
 
-	/** How far a hovered box grows on each side, and how long it takes to. */
+	/** How far a hovered box grows each side, and how long it takes. */
 	private const val GROW = 5f
 	private const val HOVER_MS = 200f
 
-	/** The five heads Hypixel puts in the menu, in the chest's middle row. */
+	/** The five heads Hypixel puts in the chest's middle row. */
 	private const val HEAD_SLOTS_START = 11
 	private const val HEAD_SLOTS_END = 16
 
-	/** Vanilla's in-game screen dimming, the same the terminal overlay paints. */
+	/** Vanilla's in-game screen dimming. */
 	private const val BACKDROP_TOP = 0xC0101010.toInt()
 	private const val BACKDROP_BOTTOM = 0xD0101010.toInt()
 
 	private const val WHITE = 0xFFFFFFFF.toInt()
 	private const val DEAD_RED = 0xFFFF5555.toInt()
 
-	/** Blade's element, whose width is what the count is centred in. */
+	/** Blade's element width, which the count is centred in. */
 	private const val COUNT_WIDTH = 110
 	private const val COUNT_HEIGHT = 10
 
 	private val FORMATTING = Regex("§.")
 
-	/** The Floor 7 boss room's early-enter spots and the area each one counts. Blade's numbers. */
+	/** The F7 boss room's early-enter spots and the area each counts (Blade's numbers). */
 	private val REGIONS = arrayOf(
 		AABB(91.0, 105.0, 46.0, 111.0, 127.0, 123.0),
 		AABB(17.0, 106.0, 121.0, 108.0, 145.0, 143.0),

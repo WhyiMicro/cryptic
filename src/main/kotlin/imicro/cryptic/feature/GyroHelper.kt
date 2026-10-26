@@ -24,31 +24,20 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.phys.Vec3
 
 /**
- * Shows where a Gyrokinetic Wand's storm will land, and how far it reaches.
- *
- * Ported from NoammAddons' Gyro Helper (CC0, Noamm9), with the cooldown
- * colouring from Odin's Gyro Wand (BSD 3-Clause, Copyright (c) 2025
- * odtheking). The wand drops a storm on the block you are pointing at and
- * pulls everything within ten blocks of it towards the middle — and neither of
- * those two numbers is shown anywhere. Aiming it is otherwise a matter of
- * throwing one and watching where it went.
- *
- * The block is found by the same ray Etherwarp uses, so the two agree about
- * what is in the way. It refuses to draw where the wand would refuse to land:
- * on air, and under anything that is neither air nor a carpet.
+ * Shows where a Gyrokinetic Wand's storm lands and its ten-block pull radius, neither of which the
+ * game shows. Uses the same ray as Etherwarp, and draws nothing where the wand wouldn't land (on
+ * air, or under anything but air or a carpet). From NoammAddons' Gyro Helper, with Odin's cooldown
+ * colouring.
  */
 object GyroHelper {
-	/** What the wand is called in SkyBlock. */
 	private const val WAND_ID = "GYROKINETIC_WAND"
 
-	/** How far the wand throws, and how far the storm pulls once it lands. */
 	private const val THROW_RANGE = 25.0
 	private const val STORM_RADIUS = 10.0
 
-	/** How high the ring floats over the block the storm lands on. */
 	private const val STORM_HEIGHT = 1.05
 
-	/** Gravity Storm's own cooldown, before any reduction. */
+	/** Gravity Storm's cooldown before reductions. */
 	private const val COOLDOWN_MILLIS = 30_000L
 
 	@JvmField
@@ -84,14 +73,6 @@ object GyroHelper {
 		label = "Phase",
 		defaultValue = true,
 		description = "Draws through whatever is in front of it.",
-	)
-
-	@JvmField
-	val hideBlockOutline = ToggleModuleSetting(
-		id = "hide_block_outline",
-		label = "Hide the block outline",
-		defaultValue = true,
-		description = "Drops the game's own outline while you aim, so only one box shows.",
 	)
 
 	@JvmField
@@ -138,7 +119,6 @@ object GyroHelper {
 		drawBox.withMore(boxColor),
 		drawRing.withMore(ringWidth, ringColor),
 		phase,
-		hideBlockOutline,
 		showCooldown.withMore(cooldownColor),
 	)
 
@@ -152,7 +132,6 @@ object GyroHelper {
 		settings = configurable,
 	)
 
-	/** When Gravity Storm was last cast, which is what the cooldown counts from. */
 	private var castAt = 0L
 
 	private var initialized = false
@@ -162,22 +141,16 @@ object GyroHelper {
 		initialized = true
 
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
-		// Cancelling the game's own outline whether or not Block Overlay is on,
-		// because the reason it is in the way is Cryptic's box rather than any
-		// particular one of them.
+		// Cancels the game's outline whether or not Block Overlay is on, since Cryptic's box is
+		// what's in the way.
 		LevelRenderEvents.BEFORE_BLOCK_OUTLINE.register { _, _ -> !hidesBlockOutline() }
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> castAt = 0L }
 	}
 
 	/**
-	 * Both halves of chat, from the packet: the mana cost is an action bar
-	 * message, but Hypixel moves it into the chat line itself while something
-	 * else is using the action bar.
-	 *
-	 * Read from the packet rather than from Fabric's chat event, which is
-	 * where it was read before. A mod that rewrites or hides the action bar —
-	 * SkyHanni and Skyblocker both can — cancels that event, and the cast was
-	 * never heard, so the colour never changed.
+	 * Chat and action bar from the packet. The mana cost is an action bar line, which Hypixel moves
+	 * into chat while something else uses the action bar. Read from the packet, since mods that
+	 * hide the action bar cancel Fabric's event.
 	 */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
@@ -186,11 +159,7 @@ object GyroHelper {
 		onCooldownMessage(text)
 	}
 
-	/**
-	 * The action bar's own packet, which is the other way Hypixel sends it.
-	 * Listening only to the chat packet's overlay half missed every cast that
-	 * came this way, and the colour never changed.
-	 */
+	/** The action bar's own packet, Hypixel's other way of sending it. */
 	@JvmStatic
 	fun onActionBarPacket(text: Component) {
 		onActionBar(text.string.replace(FORMATTING, ""))
@@ -198,16 +167,12 @@ object GyroHelper {
 
 	private val FORMATTING = Regex("§.")
 
-	/** Whether the last action bar already said Gravity Storm, so one cast is one cast. */
+	/** Whether the last action bar already said Gravity Storm, so one cast counts once. */
 	private var lastBarHadStorm = false
 
 	/**
-	 * The wand's own mana message, "-1200 Mana (Gravity Storm)".
-	 *
-	 * Matched on the ability's name alone rather than on the whole line: what
-	 * Hypixel writes around it is a mana cost that changes with your gear. The
-	 * line stays up for a few seconds and is sent again every second, so only
-	 * its first appearance is the cast — SkyHanni's rule.
+	 * The wand's mana line, "-1200 Mana (Gravity Storm)", matched on the ability's name. It's
+	 * resent every second while up, so only its first appearance is the cast (SkyHanni's rule).
 	 */
 	private fun onActionBar(text: String) {
 		if (!module.enabled) return
@@ -216,10 +181,7 @@ object GyroHelper {
 		lastBarHadStorm = hasStorm
 	}
 
-	/**
-	 * "This ability is on cooldown for 12s." — Hypixel saying exactly how long
-	 * is left, which puts the count right whatever it thought before.
-	 */
+	/** "This ability is on cooldown for 12s.": Hypixel's exact remaining time. */
 	private fun onCooldownMessage(text: String) {
 		if (!module.enabled || !isAiming()) return
 		val seconds = COOLDOWN_MESSAGE.find(text)?.groupValues?.get(1)?.toLongOrNull() ?: return
@@ -229,10 +191,9 @@ object GyroHelper {
 	private val COOLDOWN_MESSAGE = Regex("""^This ability is on cooldown for (\d+)s\.""")
 
 	/**
-	 * Gravity Storm's own sound, which is SkyHanni's way of seeing the cast:
-	 * an enderman teleport at a pitch nothing else uses, within a moment of you
-	 * left-clicking with the wand. It comes whether or not the action bar shows
-	 * the mana, which can be taken over by other messages.
+	 * Gravity Storm's sound (an enderman teleport at a pitch nothing else uses) right after a
+	 * left-click with the wand, SkyHanni's way of seeing the cast. Works when the action bar is
+	 * taken.
 	 */
 	@JvmStatic
 	fun onSound(packet: ClientboundSoundPacket) {
@@ -245,11 +206,9 @@ object GyroHelper {
 		cast()
 	}
 
-	/** When the wand was last swung, which the sound has to come right after. */
 	private var lastSwingAt = 0L
 	private var attackWasDown = false
 
-	/** Watches for a left click with the wand in hand. */
 	fun tick(client: Minecraft) {
 		val down = client.options.keyAttack.isDown
 		if (down && !attackWasDown && client.gui.screen() == null && isAiming()) lastSwingAt = System.currentTimeMillis()
@@ -265,9 +224,8 @@ object GyroHelper {
 	private const val CLICK_WINDOW_MILLIS = 400L
 
 	/**
-	 * Gravity Storm's cooldown, with a Mage's reduction in a dungeon taken off,
-	 * as SkyHanni works it out: a quarter off, or half for the party's only
-	 * mage, and another 1% for every two class levels.
+	 * Gravity Storm's cooldown with a Mage's reduction in a dungeon, as SkyHanni works it out: a
+	 * quarter off, half for the party's only mage, and 1% more per two class levels.
 	 */
 	private fun cooldownMillis(): Long {
 		val name = Minecraft.getInstance().player?.name?.string ?: return COOLDOWN_MILLIS
@@ -278,11 +236,9 @@ object GyroHelper {
 		return (COOLDOWN_MILLIS * multiplier.coerceAtLeast(0.0)).toLong()
 	}
 
-	/** True while the last cast is still cooling down. */
 	private fun onCooldown(): Boolean =
 		castAt != 0L && System.currentTimeMillis() - castAt < cooldownMillis()
 
-	/** Whether the wand is in hand, which is the whole of what makes this show. */
 	fun isAiming(): Boolean {
 		if (!module.enabled) return false
 		val held = Minecraft.getInstance().player?.mainHandItem ?: return false
@@ -292,22 +248,11 @@ object GyroHelper {
 	private fun holdsWand(stack: ItemStack): Boolean =
 		!stack.isEmpty && SkyblockItem.id(stack) == WAND_ID
 
-	/**
-	 * Whether the game's own block outline should be dropped.
-	 *
-	 * Only while there is something of ours to look at instead: an outline
-	 * removed with nothing in its place is a worse aim than the outline was.
-	 */
+	/** Whether to drop the game's outline: only while there's something of ours to aim with instead. */
 	fun hidesBlockOutline(): Boolean =
-		module.enabled && hideBlockOutline.value && isAiming() && landingBlock() != null
+		module.enabled && isAiming() && landingBlock() != null
 
-	/**
-	 * The block the storm would land on, or null when it would not land.
-	 *
-	 * The wand needs somewhere solid with room over it: Hypixel drops nothing
-	 * when the ray ends in air, and nothing when the space above is taken by
-	 * anything but a carpet.
-	 */
+	/** The block the storm would land on, or null. It needs a solid block with only air or a carpet above. */
 	private fun landingBlock(): BlockPos? {
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return null

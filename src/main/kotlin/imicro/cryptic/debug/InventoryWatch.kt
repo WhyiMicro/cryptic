@@ -10,34 +10,18 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 /**
- * Notices an inventory that cannot be clicked, puts it right, and says why.
- *
- * The game keeps two ideas of which menu is open: the screen on display, and
- * the menu the player is holding. Every click is checked against the second,
- * and one made in any other menu is thrown away with a line in the log and
- * nothing on screen — so when the two disagree the inventory looks perfectly
- * normal and does nothing at all, until closing it puts them back in step.
- *
- * That is what "I have to open my inventory twice" was. The cause found so far
- * was Cryptic's own: the Secrets module shut a chest by removing its screen,
- * which left the player holding the chest. That is fixed where it happened, and
- * this is the net under it — for the next cause, whoever's it turns out to be.
- *
- * Only the one state that cannot be anything else is repaired: the player's own
- * inventory on display while they hold some other menu. A mod that shows a
- * screen of its own over a chest it is still using looks similar and is left
- * strictly alone.
+ * Fixes an inventory that can't be clicked. The game tracks the screen shown and the menu the
+ * player holds separately; when they disagree, every click is silently dropped. Only the one
+ * unambiguous case is repaired: your own inventory shown while another menu is held.
  */
 object InventoryWatch {
 	private const val HISTORY = 8
 	private val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 
-	/** What has been opened and shut lately, newest last, for the debug command. */
 	private val history = ArrayDeque<String>()
 
 	private var repairs = 0
 
-	/** The menu the player held last tick, so a change can be written down. */
 	private var lastHeld = 0
 
 	fun note(event: String) {
@@ -58,7 +42,6 @@ object InventoryWatch {
 		val screen = client.gui.screen() as? InventoryScreen ?: return
 		if (screen.menu !== player.inventoryMenu) return
 
-		// The inventory is up and every click in it is being refused.
 		repairs++
 		val stale = held.containerId
 		note("repaired: inventory open while holding menu $stale")
@@ -69,13 +52,13 @@ object InventoryWatch {
 			history.joinToString(" | "),
 		)
 
-		// Told to the server as well, in case it is the one still holding it.
+		// Tell the server too, in case it still holds the old menu.
 		player.connection.send(ServerboundContainerClosePacket(stale))
 		player.containerMenu = player.inventoryMenu
 		lastHeld = player.inventoryMenu.containerId
 	}
 
-	/** The two ideas of what is open, side by side, for `/cryptic debug inventory`. */
+	/** For `/cryptic debug inventory`. */
 	fun describe(): List<String> {
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return listOf("§8[Cryptic] §7No player.")

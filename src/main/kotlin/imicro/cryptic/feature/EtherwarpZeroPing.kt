@@ -10,8 +10,11 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.core.component.DataComponents
 import net.minecraft.network.protocol.Packet
+import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket
 import net.minecraft.network.protocol.game.ServerboundUseItemPacket
+import net.minecraft.world.entity.PositionMoveRotation
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.component.CustomData
 import net.minecraft.world.level.block.AbstractCauldronBlock
@@ -30,77 +33,92 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Makes a teleport arrive before the server says so.
+ * Makes a teleport arrive before the server says so: etherwarp, Instant Transmission (Aspect of the
+ * End or Void), and Wither Impact, each with two switches. Ported from NoammAddons' NoRotate.
  *
- * Ported from NoammAddons' NoRotate (CC0), which covers the same three
- * teleports with the same two switches each: an **etherwarp**, the **Instant
- * Transmission** on an Aspect of the End or Void, and the **Wither Impact**
- * teleport on a Hyperion and its siblings. A teleport costs a round trip — the
- * click goes up, and only when the position packet comes back does anything
- * move — and both halves of this fill that gap from the client's own prediction
- * of where it lands.
+ * **Fake zpew** puts the camera at the predicted landing as soon as the click is sent; the player
+ * stays where the server has them, and when the teleport lands nothing visibly changes.
  *
- * **Fake zpew** puts the camera at the landing spot the moment the click is
- * sent. Nothing else moves: the player is still where the server thinks,
- * physics included, and when the real teleport lands the camera is already
- * there and nothing visibly changes.
+ * **No rotate**: Hypixel's teleport confirmation can carry a rotation, which would undo however far
+ * you turned while waiting, so your rotation is put back after the client accepts.
  *
- * **No rotate** is the other half of the same round trip. A Hypixel teleport
- * confirmation carries a rotation as well as a position, so the server hands
- * your head back the way it was pointing when the click was sent — undoing
- * however far you turned while waiting. The rotation is put back after the
- * client has answered.
- *
- * A prediction is only ever a guess, so it is kept for the resync timeout and
- * no longer; if the teleport never happens the camera falls back to the player.
+ * A prediction is kept for the resync timeout only; if no teleport comes, the camera returns to the
+ * player.
  */
 object EtherwarpZeroPing {
-	/** The three teleports, each switched on its own in the Etherwarp card. */
-	enum class Kind { ETHERWARP, TRANSMISSION, IMPACT }
+	/**
+	 * The teleports a click can be. The first three have their own Fake zpew and No rotate
+	 * switches; Sinrecall and the Leech's are only predicted for Smooth teleport.
+	 */
+	enum class Kind { ETHERWARP, TRANSMISSION, IMPACT, SINRECALL, WEIRD }
 
 	private const val TRANSMISSION_RANGE = 8.0
 	private const val IMPACT_RANGE = 10.0
+	private const val SINRECALL_RANGE = 4.0
+	private val LEECH_RANGES = mapOf("ASPECT_OF_THE_LEECH_1" to 3.0, "ASPECT_OF_THE_LEECH_2" to 4.0)
 
-	/** Hypixel takes a Wither Impact about eight times a second and no faster. */
+	/** Hypixel takes a Wither Impact about eight times a second at most. */
 	private const val IMPACT_GAP_MILLIS = 125L
 
-	/** Below a tenth of the bar there is not the mana for any of them. NoammAddons' rule. */
+	/** Below a tenth of the bar there isn't mana for any of them (NoammAddons' rule). */
 	private const val MANA_NEEDED = 0.1
 	private const val MANA_STALE_MILLIS = 3_000L
 
 	/** The three scrolls that make a sword's right click Wither Impact. */
 	private val IMPACT_SCROLLS = listOf("SHADOW_WARP_SCROLL", "IMPLOSION_SCROLL", "WITHER_SHIELD_SCROLL")
 
-	/** Rooms Hypixel does not let you teleport about in. */
+	/** Rooms Hypixel doesn't allow teleports in. */
 	private val NO_TELEPORT_ROOMS = setOf("New Trap", "Old Trap", "Teleport Maze", "Boulder")
+
+	/** Where outside dungeons Hypixel refuses teleports: the Glacite mineshafts. */
+	private const val NO_TELEPORT_AREA = "Mineshaft"
+
+	/** Zones, from the sidebar, where Hypixel refuses teleports. */
+	private const val JUNGLE_TEMPLE = "Jungle Temple"
+	private const val DOJO = "Dojo"
+
+	/** On someone else's island the teleport abilities don't work. */
+	private const val PRIVATE_ISLAND = "Private Island"
+	private const val YOUR_ISLAND = "Your Island"
 
 	private val FORMATTING = Regex("§.")
 	private val MANA = Regex("""([\d,]+)/([\d,]+)✎""")
 	private val OVERFLOW = Regex("""([\d,]+)ʬ""")
 
-	/** One predicted landing: where the feet end up, and when to stop believing it. */
+	/** One predicted landing and when to stop believing it. */
 	private class Pending(val kind: Kind, val feet: Vec3, var expiresAt: Long, val hardExpiresAt: Long)
 
 	/**
-	 * Predictions still waiting for their teleport, oldest first.
-	 *
-	 * A list rather than a single value because teleports chain: a second click
-	 * can be sent before the first has come back, and each one is aimed from
-	 * where the one before it is taking you.
-	 *
-	 * Only ever touched from the client thread — every entry point checks.
+	 * Predictions waiting for their teleport, oldest first. Teleports chain: a click can be sent
+	 * before the last came back, each aimed from where the one before lands. Client thread only.
 	 */
 	private val pending = ArrayDeque<Pending>()
 
-	/** When the last prediction was made, which is how a click is told from two. */
+	/**
+	 * Where the server has you and which way you face: the last position and rotation the client
+	 * sent. Not the player's own record, which only catches up on its next tick after a teleport is
+	 * accepted, so a click in between was predicted from before the last teleport.
+	 */
+	private var sentFeet: Vec3? = null
+	private var sentYaw: Float? = null
+	private var sentPitch: Float? = null
+
+	private fun forgetSent() {
+		sentFeet = null
+		sentYaw = null
+		sentPitch = null
+	}
+
+	/** Where the server has your feet, for the teleport log. */
+	val serverFeet: Vec3? get() = sentFeet
+
+	/** When the last prediction was made, to tell one click from two. */
 	private var lastPredictedAt = 0L
 	private var lastImpactAt = 0L
 
 	/**
-	 * How close together two predictions have to be to be one click.
-	 *
-	 * The game sends both of a click's packets in the same tick, microseconds
-	 * apart; nobody chains two real teleports inside a twentieth of a second.
+	 * How close two predictions must be to be one click: both of a click's packets go out in the
+	 * same tick, and nobody chains real teleports within a twentieth of a second.
 	 */
 	private const val SAME_CLICK_MILLIS = 50L
 
@@ -123,15 +141,13 @@ object EtherwarpZeroPing {
 		if (initialized) return
 		initialized = true
 
-		// A prediction belongs to the world it was made in, and a warp is a
-		// perfectly ordinary way to leave one.
-		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> pending.clear() }
-		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> pending.clear() }
-		// Mana is only ever written on the action bar.
+		// Predictions belong to the world they were made in.
+		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> pending.clear(); forgetSent() }
+		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> pending.clear(); forgetSent() }
+		// Mana is only shown on the action bar.
 		ClientReceiveMessageEvents.GAME.register { message, overlay -> if (overlay && (armed || SmoothTeleport.predictive)) readMana(message.string) }
 	}
 
-	/** True while either half wants to know which dungeon floor this is. */
 	val needsFloorTracking: Boolean
 		get() = armed
 
@@ -139,12 +155,14 @@ object EtherwarpZeroPing {
 		Kind.ETHERWARP -> Etherwarp.fakeZpew.value
 		Kind.TRANSMISSION -> Etherwarp.fakeZpewTransmission.value
 		Kind.IMPACT -> Etherwarp.fakeZpewImpact.value
+		Kind.SINRECALL, Kind.WEIRD -> false
 	}
 
 	private fun keepsRotation(kind: Kind): Boolean = when (kind) {
 		Kind.ETHERWARP -> Etherwarp.noRotate.value
 		Kind.TRANSMISSION -> Etherwarp.noRotateTransmission.value
 		Kind.IMPACT -> Etherwarp.noRotateImpact.value
+		Kind.SINRECALL, Kind.WEIRD -> false
 	}
 
 	private val armed: Boolean
@@ -159,15 +177,13 @@ object EtherwarpZeroPing {
 		manaSeenAt = System.currentTimeMillis()
 	}
 
-	/** True when the bar is known and too empty; an unknown bar is given the benefit of the doubt. */
+	/** True when the mana bar is known and too low; unknown is given the benefit of the doubt. */
 	internal fun outOfMana(): Boolean =
 		System.currentTimeMillis() - manaSeenAt < MANA_STALE_MILLIS && maxMana > 0 && mana < maxMana * MANA_NEEDED
 
 	/**
-	 * Which teleport a right click with [stack] is, and how far it goes.
-	 *
-	 * The same item is two of them: a merged Aspect etherwarps while you sneak
-	 * and transmits while you do not.
+	 * Which teleport a right click with [stack] is, and its range. A merged Aspect etherwarps while
+	 * sneaking and transmits otherwise.
 	 */
 	internal fun classify(stack: ItemStack, sneaking: Boolean): Pair<Kind, Double>? {
 		if (stack.isEmpty) return null
@@ -179,35 +195,49 @@ object EtherwarpZeroPing {
 			return Kind.TRANSMISSION to TRANSMISSION_RANGE + data.getByteOr("tuned_transmission", 0).toInt()
 		}
 
+		if (id == "SINSEEKER_SCYTHE") return Kind.SINRECALL to SINRECALL_RANGE + data.getByteOr("tuned_transmission", 0).toInt()
+		LEECH_RANGES[id]?.let { return Kind.WEIRD to it }
+
 		val scrolls = data.get("ability_scroll")?.toString() ?: return null
 		return if (IMPACT_SCROLLS.all { it in scrolls }) Kind.IMPACT to IMPACT_RANGE else null
 	}
 
 	/**
-	 * Called for every packet the client sends, which is where a teleport is
-	 * first knowable: the click has gone, and the server will answer it.
-	 *
-	 * Sending happens on whichever thread asked, so anything that reads the
-	 * world has to be turned away unless this is the client thread. A use is
-	 * always sent from there, so nothing is lost by the check.
+	 * Every packet the client sends: a teleport is first knowable when its click goes out. Sending
+	 * can happen on any thread, so world reads are limited to the client thread (where uses are
+	 * always sent).
 	 */
 	@JvmStatic
 	fun onPacketSent(packet: Packet<*>) {
-		if (!armed) return
 		val client = Minecraft.getInstance()
+		if (imicro.cryptic.debug.TeleportLog.recording && client.isSameThread) {
+			when (packet) {
+				is ServerboundUseItemPacket -> imicro.cryptic.debug.TeleportLog.click("use", packet.yRot, packet.xRot)
+				is ServerboundUseItemOnPacket -> (client.player as? LocalPlayerAccessor)?.let {
+					imicro.cryptic.debug.TeleportLog.click("useOn", it.`cryptic$serverYRot`(), it.`cryptic$serverXRot`())
+				}
+				else -> Unit
+			}
+		}
+		if (packet is ServerboundMovePlayerPacket) {
+			if (packet.hasPosition()) sentFeet = Vec3(packet.getX(0.0), packet.getY(0.0), packet.getZ(0.0))
+			if (packet.hasRotation()) {
+				sentYaw = packet.getYRot(0f)
+				sentPitch = packet.getXRot(0f)
+			}
+		}
+		if (!armed) return
 		if (!client.isSameThread) return
 
 		when (packet) {
-			// The rotation the packet carries is the one the server will warp
-			// from, which is not quite the one on screen if the mouse has moved
-			// since the tick.
+			// The packet's rotation is what the server warps from, which can differ from the
+			// screen's if the mouse moved since the tick.
 			is ServerboundUseItemPacket -> predict(packet.yRot, packet.xRot)
-			// A click on a block close enough to reach sends this one instead,
-			// and it carries no rotation of its own — so the last one the
-			// server was told is the one it will use.
+			// A click on a block in reach sends this instead, with no rotation, so the last
+			// rotation sent is what the server uses.
 			is ServerboundUseItemOnPacket -> client.player?.let { player ->
 				val known = player as LocalPlayerAccessor
-				predict(known.`cryptic$serverYRot`(), known.`cryptic$serverXRot`())
+				predict(sentYaw ?: known.`cryptic$serverYRot`(), sentPitch ?: known.`cryptic$serverXRot`())
 			}
 			else -> Unit
 		}
@@ -218,55 +248,49 @@ object EtherwarpZeroPing {
 		val player = client.player ?: return
 		if (player.isPassenger) return
 
-		// Sneaking is what arms a merged Aspect's etherwarp; without it the same
-		// click is its Instant Transmission.
-		val (kind, range) = classify(player.mainHandItem, client.options.keyShift.isDown) ?: return
-		if (!showsEarly(kind) && !keepsRotation(kind)) return
+		// Sneaking arms a merged Aspect's etherwarp; otherwise it's Instant Transmission.
+		val (kind, range) = classify(player.mainHandItem, client.options.keyShift.isDown) ?: return imicro.cryptic.debug.TeleportLog.skipped("not a teleport item")
+		if (!showsEarly(kind) && !keepsRotation(kind)) return imicro.cryptic.debug.TeleportLog.skipped("$kind: nothing wants it predicted")
 
-		// Hypixel refuses every teleport in Goldor's tower, so a click there is
-		// not one however good the target looks.
-		if (DungeonLocation.inFloor7 && DungeonRun.inBoss) return
-		if (DungeonMap.currentRoom()?.data?.name in NO_TELEPORT_ROOMS) return
-		if (outOfMana()) return
-		if (opensSomething() || client.hitResult is EntityHitResult) return
+		// Hypixel refuses teleports in Goldor's tower.
+		if (DungeonLocation.inFloor7 && DungeonRun.inBoss) return imicro.cryptic.debug.TeleportLog.skipped("Floor 7 boss")
+		if (DungeonMap.currentRoom()?.data?.name in NO_TELEPORT_ROOMS) return imicro.cryptic.debug.TeleportLog.skipped("no-teleport room")
+		if (imicro.cryptic.skyblock.SkyblockLocation.area == NO_TELEPORT_AREA) return imicro.cryptic.debug.TeleportLog.skipped("mineshaft")
+		noTeleportZone()?.let { return imicro.cryptic.debug.TeleportLog.skipped(it) }
+		if (outOfMana()) return imicro.cryptic.debug.TeleportLog.skipped("out of mana: $mana/$maxMana")
+		if (opensSomething() || client.hitResult is EntityHitResult) return imicro.cryptic.debug.TeleportLog.skipped("aiming at something clickable")
 
 		purge()
 
-		// One click on a block within arm's reach sends two packets: the game
-		// offers the click to the block first, and when the block has no use
-		// for it sends the plain use as well. Both are the same teleport, so the
-		// second replaces the first instead of being chained onto it. Chaining
-		// them is what sent the camera a whole extra warp down the same line and
-		// left it there until the resync pulled it back, and only ever within
-		// reach, because past that there is no block to offer the click to.
+		// A click on a block in reach sends two packets (the block first, then the plain use). Both
+		// are one teleport, so the second replaces the first instead of chaining, which used to
+		// send the camera an extra warp along the same line.
 		val now = System.currentTimeMillis()
 		val sameClick = now - lastPredictedAt < SAME_CLICK_MILLIS && pending.isNotEmpty()
 
 		if (kind == Kind.IMPACT && !sameClick) {
-			if (now - lastImpactAt <= IMPACT_GAP_MILLIS) return
+			if (now - lastImpactAt <= IMPACT_GAP_MILLIS) return imicro.cryptic.debug.TeleportLog.skipped("Wither Impact cooldown")
 			lastImpactAt = now
 		}
 
-		// From where the server has you, not from where you are on screen. The
-		// two are a fraction of a block apart the whole time you are moving,
-		// and the teleport is cast from the server's one.
+		// Cast from where the server has you, which differs slightly from the screen while moving.
 		val known = player as LocalPlayerAccessor
 		val chainedFrom = if (sameClick) pending.elementAtOrNull(pending.size - 2) else pending.lastOrNull()
 		val from = chainedFrom?.feet
+			?: sentFeet
 			?: Vec3(known.`cryptic$serverX`(), known.`cryptic$serverY`(), known.`cryptic$serverZ`())
 
-		// A second reading that lands nowhere leaves the first one standing:
-		// the click was still made, and the earlier guess is the better of the
-		// two answers available.
+		// A second reading that lands nowhere leaves the first one standing.
 		val look = lookVector(yaw, pitch)
 		val feet = when (kind) {
 			Kind.ETHERWARP -> {
 				val target = EtherwarpHelper.target(from, look, range)
-				if (!target.valid) return
+				if (!target.valid) return imicro.cryptic.debug.TeleportLog.skipped("etherwarp target not valid")
 				EtherwarpHelper.landing(target.pos ?: return)
 			}
-			else -> InstantTransmissionHelper.predict(range, from, look) ?: return
+			else -> InstantTransmissionHelper.predict(range, from, look) ?: return imicro.cryptic.debug.TeleportLog.skipped("no landing found")
 		}
+		imicro.cryptic.debug.TeleportLog.predicted(kind, from, feet, sameClick, pending.size)
 
 		if (sameClick) pending.removeLast()
 		lastPredictedAt = now
@@ -274,11 +298,21 @@ object EtherwarpZeroPing {
 		pending.addLast(Pending(kind, feet, now + timeout, now + timeout + Etherwarp.maxLagWait.value.toLong()))
 	}
 
+	/** The reason teleports don't work here, from the sidebar zone, or null. */
+	internal fun noTeleportZone(): String? {
+		val area = imicro.cryptic.skyblock.SkyblockLocation.area
+		val zone = imicro.cryptic.skyblock.SkyblockLocation.zone() ?: return null
+		return when {
+			zone == JUNGLE_TEMPLE -> "Jungle Temple"
+			zone.startsWith(DOJO) -> "Dojo"
+			area == PRIVATE_ISLAND && zone != YOUR_ISLAND -> "visiting an island"
+			else -> null
+		}
+	}
+
 	/**
-	 * Whether the click is going to open something rather than teleport.
-	 *
-	 * Hypixel lets a click reach a chest or a lever, and when it does the
-	 * teleport does not happen. The same list NoammAddons checks.
+	 * Whether the click will open something instead of teleporting (Hypixel lets clicks reach
+	 * chests and levers). NoammAddons' list.
 	 */
 	private fun opensSomething(): Boolean {
 		val client = Minecraft.getInstance()
@@ -295,41 +329,38 @@ object EtherwarpZeroPing {
 	}
 
 	/**
-	 * Where the camera belongs this frame, or null to leave it on the player.
-	 *
-	 * The eyes rather than the feet, because this replaces the position the
-	 * camera was about to be given, which is already an eye position. The
-	 * height is handed in rather than read off the player: the camera keeps its
-	 * own, eased between ticks, so crouching lowers the view over a few frames
-	 * instead of not at all.
+	 * Where the camera belongs this frame, or null. Eyes rather than feet, since this replaces an
+	 * eye position. The camera's own eased eye height is passed in, so crouching lowers the view
+	 * smoothly.
 	 */
 	@JvmStatic
 	fun cameraPosition(eyeHeight: Float): Vec3? {
 		if (!Etherwarp.module.enabled) return null
 		purge()
-		// The last one, not the first: with two teleports in flight the camera
-		// belongs where the pair of them ends up.
+		// The last one: with two in flight, the camera belongs where both end up.
 		val destination = pending.lastOrNull() ?: return null
 		if (!showsEarly(destination.kind)) return null
 		return destination.feet.add(0.0, eyeHeight.toDouble(), 0.0)
 	}
 
 	/**
-	 * The server's teleport, arriving. Retires the prediction it confirms, and
-	 * remembers where the head was pointing so [afterServerTeleport] can put it
-	 * back.
-	 *
-	 * Packet handlers run twice — once on the network thread, which throws
-	 * itself out and reschedules, and once on the client thread — so this only
-	 * answers the second.
+	 * The server's teleport arriving: retires the prediction it answers and saves the head's
+	 * rotation for [afterServerTeleport]. Handlers run twice; only the client-thread pass counts.
 	 */
 	@JvmStatic
-	fun beforeServerTeleport() {
+	fun beforeServerTeleport(packet: ClientboundPlayerPositionPacket) {
 		val client = Minecraft.getInstance()
 		if (!client.isSameThread) return
 		val player = client.player ?: return
+		restoreRotation = false
 
-		val ours = pending.removeFirstOrNull()
+		val answered = answered(player, packet)
+		lastWasTeleport = answered != NOT_A_TELEPORT
+		if (!lastWasTeleport) return
+
+		// The prediction it answers, and any earlier ones that never got an answer.
+		var ours: Pending? = null
+		repeat(if (answered == UNMATCHED) 1 else answered + 1) { ours = pending.removeFirstOrNull() }
 		restoreRotation = ours != null && Etherwarp.module.enabled && keepsRotation(ours.kind)
 		if (!restoreRotation) return
 
@@ -342,22 +373,57 @@ object EtherwarpZeroPing {
 	}
 
 	/**
-	 * Puts the head back, after the client has accepted the teleport.
-	 *
-	 * The acceptance the client just sent carries the server's own rotation, so
-	 * the server is answered with what it asked for and only the view is kept;
-	 * the next movement packet tells it where you are really looking.
+	 * Which waiting prediction [packet] answers, by queue position: the first whose landing it puts
+	 * you on, however short (a transmission into a wall moves one block). [UNMATCHED] when it lands
+	 * nowhere predicted but moves further than any correction (a mispredicted teleport);
+	 * [NOT_A_TELEPORT] otherwise.
+	 */
+	private fun answered(player: net.minecraft.world.entity.player.Player, packet: ClientboundPlayerPositionPacket): Int {
+		val now = PositionMoveRotation.of(player)
+		val then = PositionMoveRotation.calculateAbsolute(now, packet.change(), packet.relatives()).position()
+		val match = pending.indexOfFirst { then.distanceTo(it.feet) <= LANDING_MATCH }
+		if (match >= 0) return match
+		return if (then.distanceTo(now.position()) >= TELEPORT_DISTANCE) UNMATCHED else NOT_A_TELEPORT
+	}
+
+	private const val UNMATCHED = -1
+	private const val NOT_A_TELEPORT = -2
+
+	private const val LANDING_MATCH = 1.0
+
+	private const val TELEPORT_DISTANCE = 1.5
+
+	@JvmStatic
+	var lastWasTeleport = false
+		private set
+
+	fun unanswered(): Int {
+		purge()
+		return pending.size
+	}
+
+	/**
+	 * Restores the head after the client has accepted the teleport. The acceptance carried the
+	 * server's rotation, so only the view changes; the next movement packet reports where you
+	 * really look.
 	 */
 	@JvmStatic
 	fun afterServerTeleport() {
+		val client = Minecraft.getInstance()
+		if (!client.isSameThread) return
+		// Accepting just told the server where you are, facing the way it asked.
+		client.player?.let { player ->
+			sentFeet = player.position()
+			sentYaw = player.yRot
+			sentPitch = player.xRot
+		}
 		if (!restoreRotation) return
 		restoreRotation = false
 
 		val player = Minecraft.getInstance().player ?: return
 		player.yRot = savedYRot
 		player.xRot = savedXRot
-		// The previous tick's angles as well, or the frame in between is drawn
-		// halfway through a turn that never happened.
+		// Last tick's angles too, or the frame between shows a turn that never happened.
 		player.yRotO = savedYRotO
 		player.xRotO = savedXRotO
 		player.setYHeadRot(savedHeadRot)
@@ -365,19 +431,10 @@ object EtherwarpZeroPing {
 	}
 
 	/**
-	 * Drops predictions the server has had long enough to answer.
-	 *
-	 * While the server is not ticking at all, that time is not the prediction's
-	 * fault: the warp has been sent and the answer is stuck in the same freeze
-	 * as everything else. So the countdown does not merely pause, it starts
-	 * over — the server owes an answer from the moment it is running again, not
-	 * from whatever was left on the clock when it stopped. What happened
-	 * without this is worth naming: the timeout ran out mid-freeze, the camera
-	 * was pulled back, and then the real teleport arrived and threw it forward
-	 * again, which is the one thing zero ping exists to avoid.
-	 *
-	 * There is still a limit, set by [Etherwarp.maxLagWait], because a server
-	 * that never answers must not leave the camera somewhere the player is not.
+	 * Drops predictions the server has had long enough to answer. While the server isn't ticking at
+	 * all, the countdown restarts rather than pausing, since the answer is stuck in the freeze;
+	 * otherwise the camera was pulled back mid-freeze and thrown forward when the teleport arrived.
+	 * [Etherwarp.maxLagWait] still caps it, so an unanswered prediction can't strand the camera.
 	 */
 	private fun purge() {
 		val now = System.currentTimeMillis()
@@ -395,13 +452,10 @@ object EtherwarpZeroPing {
 		}
 	}
 
-	/**
-	 * How long the server may be silent before it counts as a freeze rather
-	 * than an ordinary gap between ticks.
-	 */
+	/** How long the server may be silent before it counts as a freeze. */
 	private const val STALL_MILLIS = 300L
 
-	/** The same view vector [net.minecraft.world.entity.Entity] builds from its angles. */
+	/** The view vector [net.minecraft.world.entity.Entity] builds from its angles. */
 	private fun lookVector(yaw: Float, pitch: Float): Vec3 {
 		val pitchRadians = pitch * PI / 180.0
 		val yawRadians = -yaw * PI / 180.0

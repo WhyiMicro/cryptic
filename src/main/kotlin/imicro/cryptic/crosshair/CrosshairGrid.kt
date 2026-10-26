@@ -6,22 +6,11 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * A crosshair as a square of painted cells.
+ * A crosshair as a square of painted cells, each holding a palette index (0 is empty), so
+ * recolouring a palette entry recolours every cell using it.
  *
- * Each cell holds a palette index: zero is empty, one upwards is a colour. An
- * index rather than a colour so that changing a palette entry recolours every
- * cell painted with it at once — which is how anybody editing a two-tone
- * crosshair expects it to behave.
- *
- * ## The centre
- *
- * Every size offered is even, because those are the sizes crosshair textures
- * come in. An even square has no middle pixel, and a crosshair with no middle
- * pixel cannot have a one-pixel-wide line through its centre. The convention
- * resource packs use settles it: the cell at `size / 2` is the centre, the
- * crosshair is drawn with that cell over the middle of the screen, and the
- * first row and column are a spare margin with nothing mirrored into them.
- * Vanilla's own 15×15 crosshair fits a 16 grid exactly this way.
+ * Sizes are even, like crosshair textures, so the cell at `size / 2` is the centre and the first
+ * row and column are a spare margin. Vanilla's 15×15 crosshair fits a 16 grid this way.
  */
 class CrosshairGrid(size: Int) {
 	var size: Int = size
@@ -29,10 +18,9 @@ class CrosshairGrid(size: Int) {
 
 	private var cells = IntArray(size * size)
 
-	/** The cell over the middle of the screen, on both axes. */
 	val centre: Int get() = size / 2
 
-	/** Bumped on every change, so a drawing cache knows when to rebuild. */
+	/** Bumped on every change, so drawing caches know to rebuild. */
 	var revision = 0
 		private set
 
@@ -62,24 +50,13 @@ class CrosshairGrid(size: Int) {
 		revision++
 	}
 
-	/**
-	 * The mirror of a coordinate about the centre cell, or -1 where it falls off.
-	 *
-	 * It falls off for exactly one row and column — the spare margin — which is
-	 * why a mirrored stroke there only ever paints one side.
-	 */
+	/** The mirror of a coordinate about the centre, or -1 for the spare margin. */
 	fun mirror(coordinate: Int): Int {
 		val mirrored = centre * 2 - coordinate
 		return if (mirrored in 0 until size) mirrored else -1
 	}
 
-	/**
-	 * Changes the size, keeping the drawing centred.
-	 *
-	 * Growing pads around it and shrinking crops the edges, both about the
-	 * centre cell — so a crosshair survives a size change looking like itself
-	 * rather than sliding into a corner.
-	 */
+	/** Changes the size, keeping the drawing centred. */
 	fun resize(newSize: Int) {
 		if (newSize == size) return
 		val oldCells = cells
@@ -100,12 +77,7 @@ class CrosshairGrid(size: Int) {
 		revision++
 	}
 
-	/**
-	 * Paints every connected cell of one colour, for the bucket tool.
-	 *
-	 * Iterative rather than recursive: a 64×64 grid is four thousand cells, and
-	 * a flood that recurses once per cell is a stack overflow waiting to happen.
-	 */
+	/** Flood fill for the bucket tool, iterative so a 64×64 grid can't overflow the stack. */
 	fun fill(x: Int, y: Int, value: Int) {
 		val target = this[x, y]
 		if (target == value || x !in 0 until size || y !in 0 until size) return
@@ -126,13 +98,7 @@ class CrosshairGrid(size: Int) {
 		revision++
 	}
 
-	/**
-	 * The grid as one digit per cell, for the profile.
-	 *
-	 * Row by row, top left first. A 64 grid is 4096 characters, which is large
-	 * for a setting and nothing for a file — and plain enough that a profile can
-	 * still be read and diffed by hand.
-	 */
+	/** One digit per cell, row by row, for the profile. */
 	fun encode(): String {
 		val builder = StringBuilder(cells.size)
 		for (value in cells) builder.append(Character.forDigit(value, RADIX))
@@ -145,11 +111,8 @@ class CrosshairGrid(size: Int) {
 		val SIZES = listOf(16, 24, 32, 48, 64)
 
 		/**
-		 * A grid from what [encode] wrote, re-centred into [size].
-		 *
-		 * The size the string was written at is worked out from its length, not
-		 * trusted to match: the size setting can be changed from the module card
-		 * without the editor ever opening, and the drawing has to follow it.
+		 * A grid from [encode]'s text, re-centred into [size]. The written size comes from the
+		 * text's length, since the size setting can change without the editor opening.
 		 */
 		fun decode(text: String, size: Int): CrosshairGrid {
 			val stored = sqrt(text.length.toDouble()).roundToInt()
@@ -166,14 +129,9 @@ class CrosshairGrid(size: Int) {
 	}
 }
 
-/**
- * Ready-made shapes, drawn about the centre cell at whatever size the grid is.
- *
- * Generated rather than stored, so every one of them works at every size and
- * stays one pixel thick.
- */
+/** Ready-made shapes, generated at any grid size. */
 enum class CrosshairPreset(val title: String) {
-	/** Vanilla's own: a 9×9 plus, read straight off `hud/crosshair.png`. */
+	/** Vanilla's 9×9 plus, as in `hud/crosshair.png`. */
 	VANILLA("Vanilla"),
 	DOT("Dot"),
 	PLUS("Plus"),
@@ -217,8 +175,7 @@ enum class CrosshairPreset(val title: String) {
 			}
 			CIRCLE -> {
 				val radius = maxOf(3.0, reach * 0.45)
-				// A ring one cell thick: a cell is on it when its centre is
-				// within half a cell of the radius.
+				// A ring one cell thick.
 				for (y in 0 until grid.size) {
 					for (x in 0 until grid.size) {
 						if (abs(hypot((x - c).toDouble(), (y - c).toDouble()) - radius) < 0.5) grid[x, y] = colour

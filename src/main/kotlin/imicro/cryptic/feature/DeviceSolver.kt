@@ -1,6 +1,7 @@
 package imicro.cryptic.feature
 
 import imicro.cryptic.device.ArrowAlign
+import imicro.cryptic.device.I4
 import imicro.cryptic.device.LightsOn
 import imicro.cryptic.device.SharpShooter
 import imicro.cryptic.device.SimonSays
@@ -11,6 +12,7 @@ import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.CrypticRenderPipelines
@@ -26,38 +28,25 @@ import net.minecraft.world.entity.decoration.ItemFrame
 import net.minecraft.world.item.Items
 
 /**
- * The four Floor 7 devices that stand between the terminals: the arrows, the
- * lights, Simon Says and Sharp Shooter.
- *
- * One module rather than four because they are one job — the things in
- * Goldor's tower that are not terminals — and because a party splitting up
- * still wants all four on at once. Each device is its own section, and each
- * has a switch of its own so the ones you do not run can be left off.
- *
- * The solving lives in [imicro.cryptic.device]; this is the part that draws,
- * and that decides whether a click is allowed out. Sources are named on each of
- * those files: the arrows and Sharp Shooter are NoammAddons', Simon Says is
- * Odin's, and the lights are Skyblocker's device.
+ * The four Floor 7 devices between the terminals: Arrow Align, Lights On, Simon Says and Sharp
+ * Shooter. One module, each device with its own section and switch. Solving lives in
+ * [imicro.cryptic.device]; this draws and decides whether clicks go out.
  */
 object DeviceSolver {
-	/** Indices into [arrowColorStyle]. */
 	private const val COLOR_DYNAMIC = 0
 
-	/** Indices into [simonStyle]. */
 	private const val STYLE_OUTLINE = 0
 	private const val STYLE_FILL = 1
 
-	/** Minecraft's own chat colours, which the defaults are built from. */
+	/** Minecraft's chat colours, which the defaults use. */
 	private const val MINECRAFT_GREEN = 0x55FF55
 	private const val MINECRAFT_GOLD = 0xFFAA00
 	private const val MINECRAFT_RED = 0xFF5555
 
-	/** Vanilla's own title timing, so the announcement looks like any other. */
+	/** Vanilla title timing. */
 	private const val TITLE_FADE_TICKS = 5
 	private const val TITLE_STAY_TICKS = 40
 
-
-	// ---- Arrow align -----------------------------------------------------
 
 	private val arrowSection = SectionModuleSetting(id = "arrow_section", label = "Arrow Align")
 
@@ -105,8 +94,6 @@ object DeviceSolver {
 		visibleIf = { arrowAlign.value && arrowBlockWrongClicks.value },
 	)
 
-	// ---- Lights on -------------------------------------------------------
-
 	private val lightsSection = SectionModuleSetting(id = "lights_section", label = "Lights On")
 
 	@JvmField
@@ -136,8 +123,6 @@ object DeviceSolver {
 		defaultAlpha = 0,
 		visibleIf = { lightsOn.value },
 	)
-
-	// ---- Simon says ------------------------------------------------------
 
 	private val simonSection = SectionModuleSetting(id = "simon_section", label = "Simon Says")
 
@@ -258,8 +243,6 @@ object DeviceSolver {
 		visibleIf = { simonSays.value },
 	)
 
-	// ---- Sharp shooter ---------------------------------------------------
-
 	private val sharpSection = SectionModuleSetting(id = "sharp_section", label = "Sharp Shooter (i4)")
 
 	@JvmField
@@ -336,7 +319,41 @@ object DeviceSolver {
 		visibleIf = { sharpShooter.value },
 	)
 
-	// ---- Drawing ---------------------------------------------------------
+	private val i4Section = SectionModuleSetting(id = "i4_section", label = "i4")
+
+	@JvmField
+	val i4Party = ToggleModuleSetting(
+		id = "i4_party",
+		label = "Party message",
+		defaultValue = true,
+		description = "Says how your i4 went in party chat. It's an i4 when you're on the Sharp Shooter plate as Goldor starts talking; leaving it before the device is done is a fail.",
+	)
+
+	@JvmField
+	val i4PartySuccess = TextModuleSetting("i4_party_success", "When done", "i4 done!", maxLength = 100)
+
+	@JvmField
+	val i4PartyFail = TextModuleSetting("i4_party_fail", "When failed", "i4 failed!", maxLength = 100)
+
+	@JvmField
+	val i4Title = ToggleModuleSetting(
+		id = "i4_title",
+		label = "Title",
+		defaultValue = true,
+		description = "A title on your screen when your i4 is done or fails.",
+	)
+
+	@JvmField
+	val i4TitleSuccess = TextModuleSetting("i4_title_success", "When done", "i4 Done!", maxLength = 40)
+
+	@JvmField
+	val i4TitleSuccessColor = ColorModuleSetting("i4_title_success_color", "Done color", MINECRAFT_GREEN)
+
+	@JvmField
+	val i4TitleFail = TextModuleSetting("i4_title_fail", "When failed", "i4 Failed!", maxLength = 40)
+
+	@JvmField
+	val i4TitleFailColor = ColorModuleSetting("i4_title_fail_color", "Failed color", MINECRAFT_RED)
 
 	private val drawingSection = SectionModuleSetting(
 		id = "drawing_section",
@@ -347,7 +364,7 @@ object DeviceSolver {
 	private fun anyDevice(): Boolean =
 		arrowAlign.value || lightsOn.value || simonSays.value || sharpShooter.value
 
-	/** The lights are always outlined; the other two only in a style that has one. */
+	/** Lights are always outlined; the others only in a style with an outline. */
 	private fun anyOutline(): Boolean =
 		lightsOn.value ||
 			(simonSays.value && simonStyle.selectedIndex != STYLE_FILL) ||
@@ -369,7 +386,7 @@ object DeviceSolver {
 		id = "through_walls",
 		label = "Phase",
 		defaultValue = true,
-		description = "Draws the devices through walls.",
+		description = "Draws the i4 and arrow device marks through walls. Simon Says never is.",
 		visibleIf = { anyDevice() },
 	)
 
@@ -381,7 +398,7 @@ object DeviceSolver {
 		category = ModuleCategory.FLOOR_7,
 		supportsKeybind = false,
 		settings = listOf(
-			// In the order a run reaches them, Sharp Shooter last.
+			// In the order a run reaches them.
 			simonSection, simonSays.withMore(simonStyle, simonFirstColor, simonSecondColor, simonThirdColor),
 			simonBlockWrong, simonBlockWrongStart.withMore(simonMaxStartClicks), simonLagGuard.withMore(simonLagMillis),
 			simonAnnounceProgress, simonBreakAlert,
@@ -390,24 +407,25 @@ object DeviceSolver {
 			arrowBlockWrongClicks.withMore(arrowInvertSneak),
 			sharpSection, sharpShooter.withMore(i4Style, i4TargetColor, i4DoneColor), i4Terminator,
 			i4ShowPrediction.withMore(i4PredictionColor), i4Announce,
+			i4Section, i4Party.withMore(i4PartySuccess, i4PartyFail),
+			i4Title.withMore(i4TitleSuccess, i4TitleSuccessColor, i4TitleFail, i4TitleFailColor),
 			drawingSection, lineWidth, throughWalls,
 		),
 
 	)
 
 	val arrowAlignEnabled: Boolean get() = module.enabled && arrowAlign.value
-	val lightsOnEnabled: Boolean get() = module.enabled && lightsOn.value
 	val simonSaysEnabled: Boolean get() = module.enabled && simonSays.value
 
 	val simonBreakAlertEnabled: Boolean get() = simonSaysEnabled && simonBreakAlert.value
 	val sharpShooterEnabled: Boolean get() = module.enabled && sharpShooter.value
+	val i4MessagesEnabled: Boolean get() = module.enabled && (i4Party.value || i4Title.value)
 
-	/** True while any of the four wants to know where in the tower the player is. */
 	val needsPhaseTracking: Boolean
 		get() = module.enabled &&
 			(arrowAlign.value || lightsOn.value || simonSays.value || sharpShooter.value)
 
-	/** What [once] remembers of the last use, so a second hand cannot re-run it. */
+	/** What [once] remembers of the last use. */
 	private var lastUseTick = Long.MIN_VALUE
 	private var lastUseTarget: Any? = null
 	private var lastUseBlocked = false
@@ -420,39 +438,37 @@ object DeviceSolver {
 
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
-		// Chat is heard in [onSystemChat], from the packet: Goldor's greeting is
-		// boss dialogue, which other mods hide, and a hidden line never reaches
-		// Fabric's chat event.
-		// Hypixel moves the party to a new server between floors, so nothing
-		// recorded from the last tower may survive into the next one.
+		// Chat is read in [onSystemChat] from the packet, since Goldor's greeting is boss dialogue
+		// that other mods hide. Each floor is a new server, so nothing carries over.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> forget() }
 	}
 
-	/** A chat packet, on the client thread, before any mod has hidden it. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay) return
 		SimonSays.onChatMessage(message.string)
 		SharpShooter.onChatMessage(message.string)
+		I4.onChatMessage(message.string)
 	}
 
 	private fun forget() {
 		ArrowAlign.reset()
 		SimonSays.forget()
 		SharpShooter.forget()
+		I4.forget()
 	}
 
-	/** Always called: the arrow scan lets go of what it was holding when off. */
+	/** Always called: the arrow scan releases what it held when off. */
 	fun tick(client: Minecraft) {
 		ArrowAlign.tick(client)
 		SharpShooter.tick(client)
+		I4.tick()
 	}
 
 	/**
-	 * The device reporting itself finished, which is the only certain end to it
-	 * — the count of blocks shot is the client's own tally and can be a block
-	 * out either way, so it is shown as what it is.
+	 * The device reporting itself finished, the only certain end. The shot count is the client's
+	 * own tally and can be a block off.
 	 */
 	fun announceSharpShooterDone(shot: Int, total: Int) {
 		if (!i4Announce.value) return
@@ -462,21 +478,32 @@ object DeviceSolver {
 		if (shot < total) client.gui.hud.setSubtitle(Component.literal("§eCounted $shot/$total"))
 	}
 
+	/** The i4's outcome, as set in the i4 section. Shown over Sharp Shooter's own finish title. */
+	fun announceI4(success: Boolean) {
+		if (!module.enabled) return
+		if (i4Party.value) {
+			val text = (if (success) i4PartySuccess else i4PartyFail).value.trim()
+			if (text.isNotEmpty()) PartyFeatures.enqueue("pc $text")
+		}
+		if (i4Title.value) {
+			val text = (if (success) i4TitleSuccess else i4TitleFail).value.trim()
+			val color = (if (success) i4TitleSuccessColor else i4TitleFailColor).rgb
+			if (text.isEmpty()) return
+			val hud = Minecraft.getInstance().gui.hud
+			hud.setTimes(TITLE_FADE_TICKS, TITLE_STAY_TICKS, TITLE_FADE_TICKS)
+			hud.setTitle(Component.literal(text).withColor(color))
+			hud.setSubtitle(Component.empty())
+		}
+	}
+
 	/**
-	 * A right click on a block, answered with whether it should be swallowed.
-	 *
-	 * Only Simon Says has anything to say about blocks; the arrows are frames,
-	 * which arrive through [blocksEntityUse] instead.
+	 * Whether to swallow a right click on a block. Only Simon Says uses blocks; the arrows are
+	 * frames ([blocksEntityUse]).
 	 */
 	@JvmStatic
 	fun blocksBlockUse(pos: BlockPos): Boolean = once(pos) { SimonSays.blocksClick(pos) }
 
-	/**
-	 * A right click on an entity, answered the same way, and the one place a
-	 * frame turning is recorded — a click that goes out has to move the count
-	 * on screen with it, or the next click is worked out against a frame that
-	 * has already turned.
-	 */
+	/** The same for an entity, and where a frame turn is recorded, so the count moves with the click. */
 	@JvmStatic
 	fun blocksEntityUse(entity: Entity): Boolean {
 		if (entity !is ItemFrame || entity.item.item != Items.ARROW) return false
@@ -492,13 +519,9 @@ object DeviceSolver {
 	}
 
 	/**
-	 * Answers a use of [target] once per tick, replaying the answer after that.
-	 *
-	 * The game tries a use with each hand in turn, and only stops trying once
-	 * one of them succeeds. That is two calls for one press of the button, and
-	 * both of the answers here have a memory behind them — a frame turning, a
-	 * press of the start button being counted — so a hand that fell through
-	 * would count a click the player only made once.
+	 * Answers a use of [target] once per tick. The game tries each hand in turn, and the answers
+	 * here have memory (a frame turning, a start press counted), so a second hand mustn't count
+	 * twice.
 	 */
 	private fun once(target: Any, decide: () -> Boolean): Boolean {
 		val tick = Minecraft.getInstance().level?.gameTime ?: 0L
@@ -518,13 +541,7 @@ object DeviceSolver {
 		renderSharpShooter(context)
 	}
 
-	/**
-	 * The lit block, the guess at the next one, and the ones already shot.
-	 *
-	 * Only while stood on the platform: from anywhere else in s4 these are
-	 * decoration on a far wall, and marking them there is clutter over a
-	 * section that has four terminals in it.
-	 */
+	/** The lit block, the guess at the next, and those already shot. Only from the platform. */
 	private fun renderSharpShooter(context: LevelRenderContext) {
 		if (!sharpShooter.value || Floor7.p3Section != 4 || !SharpShooter.onPlatform()) return
 
@@ -549,17 +566,15 @@ object DeviceSolver {
 		SharpShooter.done.forEach { mark(it, i4DoneColor) }
 
 		if (i4Terminator.value) {
-			// The aims are what to shoot at, so they take the target's colour;
-			// the lit block itself is left plain, as a mark on it would be a
-			// second thing to aim at.
+			// The aims take the target's colour; the lit block itself is left plain so there's one
+			// thing to aim at.
 			val aims = SharpShooter.aims
 			if (i4ShowPrediction.value) aims.getOrNull(1)?.let { mark(it, i4PredictionColor) }
 			aims.firstOrNull()?.let { mark(it, i4TargetColor) }
 			return
 		}
 
-		// The guess goes under the target, so a guess that turned out right is
-		// drawn as the target rather than as two boxes fighting over one block.
+		// The guess goes under the target, so a correct guess is drawn as the target.
 		SharpShooter.prediction?.takeIf { it != SharpShooter.target }?.let { mark(it, i4PredictionColor) }
 		SharpShooter.target?.let { mark(it, i4TargetColor) }
 	}
@@ -587,9 +602,8 @@ object DeviceSolver {
 	}
 
 	/**
-	 * Green while a frame is nearly there, amber past halfway and red for the
-	 * ones that will take the longest — so the frames worth starting on can be
-	 * picked out without reading a single number.
+	 * Green when nearly there, amber past halfway, red for the longest, so you can pick frames
+	 * without reading numbers.
 	 */
 	private fun arrowCountColor(count: Int): Int = when {
 		arrowColorStyle.selectedIndex != COLOR_DYNAMIC -> arrowTextColor.rgb
@@ -599,10 +613,8 @@ object DeviceSolver {
 	}
 
 	/**
-	 * Gated on the boss room rather than on a phase, which is what Skyblocker
-	 * does and what makes the device work when it is done early: the levers are
-	 * two phases below the fight when a party goes down to flip them, so asking
-	 * which phase is being fought would answer the wrong question.
+	 * Gated on the boss room rather than the phase (as Skyblocker does), since the levers are often
+	 * done early, two phases below the fight.
 	 */
 	private fun renderLights(context: LevelRenderContext) {
 		if (!lightsOn.value || !Floor7.inBossRoom) return
@@ -619,11 +631,8 @@ object DeviceSolver {
 				fillArgb = lightsFill.argb,
 				outline = outline,
 				fill = fill,
-				// Never through the wall, whatever **Through walls** says. The
-				// six levers sit on one flat face a couple of blocks apart, so
-				// a highlight that carried through would show the far side of
-				// the wall marked as well and there would be no telling which
-				// of the two you are looking at.
+				// Never through the wall: the six levers sit on one face, so a highlight carrying
+				// through would mark the other side too.
 				phase = false,
 				lineWidth = lineWidth.value.toFloat(),
 				fullBlock = false,
@@ -632,8 +641,8 @@ object DeviceSolver {
 	}
 
 	/**
-	 * The boxes trace the face of each button rather than the whole block, so
-	 * three of them stacked next to each other stay told apart.
+	 * The boxes trace each button's face rather than the whole block, so neighbouring buttons stay
+	 * distinct.
 	 */
 	private fun renderSimonSays(context: LevelRenderContext) {
 		if (!simonSays.value || !Floor7.inGoldor) return
@@ -663,7 +672,8 @@ object DeviceSolver {
 				fillArgb = color.argb,
 				outline = outline,
 				fill = fill,
-				phase = throughWalls.value,
+				// Never through walls: the board's buttons sit side by side, and the far side's would show too.
+				phase = false,
 				lineWidth = lineWidth.value.toFloat(),
 			)
 		}

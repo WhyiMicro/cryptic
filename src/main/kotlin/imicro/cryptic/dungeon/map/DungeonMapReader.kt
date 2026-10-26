@@ -11,20 +11,11 @@ import net.minecraft.world.level.saveddata.maps.MapId
 import kotlin.jvm.optionals.getOrNull
 
 /**
- * Turns Hypixel's dungeon map item into room progress and player markers.
- *
- * Ported from dtMap (BSD 3-Clause, Copyright (c) 2026 rice.who); the full
- * licence is in `licenses/dtMap-LICENSE.txt`. Hypixel paints one block of
- * pixels per room tile, the gaps between them are the doors, and the marker
- * decorations are where everyone is standing.
- *
- * This is the half of the map that knows how far the run has got. It writes
- * into [DungeonFloor] alongside [DungeonWorldScan] rather than rebuilding the
- * floor, because the scan has usually already named every room by the time the
- * first map update arrives.
+ * Reads Hypixel's dungeon map item into room progress and player markers: one block of pixels per
+ * room tile, gaps for doors, decorations for players. Writes into [DungeonFloor] alongside
+ * [DungeonWorldScan]. Ported from dtMap.
  */
 object DungeonMapReader {
-	/** Hypixel's grid: a room is 32 blocks, measured from this world corner. */
 	private const val WORLD_ORIGIN = 201.0
 	private const val BLOCKS_PER_TILE = 32.0
 	private const val PIXELS_PER_TILE = 20.0
@@ -35,17 +26,14 @@ object DungeonMapReader {
 	private var mapCenter: Vec2i? = null
 	private var sampleLoaded = false
 
-	/** Where the map item says each teammate is, in tab-list order. */
 	var markers: List<Marker> = emptyList()
 		private set
 
 	class Marker(val mapX: Int, val mapZ: Int, val yaw: Float)
 
-	/** What the last update did, which `/cryptic debug map` reports. */
 	var status: String = "no map seen yet"
 		private set
 
-	/** Drops everything on leaving a world, so no floor bleeds into the next. */
 	fun reset() {
 		status = "no map seen yet"
 		sampleLoaded = false
@@ -62,16 +50,11 @@ object DungeonMapReader {
 	}
 
 	/**
-	 * Takes a map update, and works out on its own whether it is the dungeon's.
-	 *
-	 * A client sees plenty of maps that are not this one, so the dungeon's is
-	 * claimed by what it looks like rather than by being the first to arrive:
-	 * the only map whose pixels start with a room-sized run of entrance green.
-	 * Claiming the first map instead is exactly how this managed to show
-	 * nothing at all — one unrelated map early in a session and every real
-	 * update afterwards was dropped as the wrong id.
+	 * A map update, checked for being the dungeon's: the only map whose pixels start with a
+	 * room-sized run of entrance green. Claiming the first map seen broke as soon as an unrelated
+	 * map arrived.
 	 */
-	/** Hands a finished run's score screen to [ScoreArt], which draws it. */
+	/** Hands a finished run's score screen to [ScoreArt]. */
 	private fun captureEndArt(packet: ClientboundMapItemDataPacket) {
 		val level = Minecraft.getInstance().level ?: return
 		val colors = level.getMapData(packet.mapId)?.colors ?: return
@@ -81,10 +64,7 @@ object DungeonMapReader {
 
 	fun accept(packet: ClientboundMapItemDataPacket) {
 		val level = Minecraft.getInstance().level ?: return
-		// A finished run has a score screen on its map rather than a floor,
-		// and it arrives as a map of its own rather than as an update to the
-		// one being read — so the id is not checked, because by now there is
-		// only one map left worth listening to.
+		// A finished run's score screen arrives as a new map, so its id isn't checked.
 		if (DungeonRun.ended) {
 			captureEndArt(packet)
 			return
@@ -104,12 +84,7 @@ object DungeonMapReader {
 		read(colors)
 	}
 
-	/**
-	 * Loads a stand-in floor, or clears one, for `/cryptic debug map`.
-	 *
-	 * Returns whether a sample is now loaded. A real update overwrites it the
-	 * moment one arrives, so leaving this on cannot hide a live map.
-	 */
+	/** Loads or clears a stand-in floor for `/cryptic debug map`. A real update overwrites it. */
 	fun toggleSample(): Boolean {
 		if (sampleLoaded) {
 			reset()
@@ -122,7 +97,6 @@ object DungeonMapReader {
 		return true
 	}
 
-	/** Reads a whole map's worth of pixels, wherever they came from. */
 	fun read(colors: ByteArray) {
 		if (startCoords == null && !initializeSizes(colors)) return
 
@@ -135,12 +109,8 @@ object DungeonMapReader {
 	}
 
 	/**
-	 * Works out where on the item the grid starts and how big a tile is.
-	 *
-	 * The first three floors are small enough that Hypixel centres their map
-	 * differently, and those offsets are fixed per floor. Anything else is found
-	 * from the entrance room, the one green run of pixels on the item, whose
-	 * length is also the size of a room tile.
+	 * Where the grid starts on the item and how big a tile is. The first three floors have fixed
+	 * offsets; others are found from the entrance's green run, whose length is the tile size.
 	 */
 	private fun initializeSizes(colors: ByteArray): Boolean {
 		var greenStart = -1
@@ -188,13 +158,7 @@ object DungeonMapReader {
 		return true
 	}
 
-	/**
-	 * Groups the grid's tiles into rooms and hands them to the floor.
-	 *
-	 * Two tiles belong to the same room when the pixels between them are
-	 * painted, which is how a 1x3 or an L tells itself apart from three rooms
-	 * in a row that happen to touch.
-	 */
+	/** Groups tiles into rooms: two tiles are one room when the pixels between them are painted. */
 	private fun readRooms(colors: ByteArray) {
 		val rs = roomSize ?: return
 		val sc = startCoords ?: return
@@ -279,17 +243,8 @@ object DungeonMapReader {
 	}
 
 	/**
-	 * Reads each room's progress from the middle of its tile, trying every tile
-	 * it covers because only the part you have seen is painted.
-	 *
-	 * The order the tiles are tried in is the whole trick. Hypixel paints a
-	 * room's progress onto one tile only — the top-left one — and leaves the
-	 * rest of a big room in its plain colour, so the tiles have to be read
-	 * top-left first rather than in whatever order the two sources happened to
-	 * claim them. [DungeonFloor.claim] grows a room outwards from the tile it
-	 * was first seen from, which for a room approached from its far side puts
-	 * the near tile at the front of the list: reading that one back gives plain
-	 * brown, and a cleared room is never seen to clear.
+	 * Reads each room's progress from the middle of its tiles. Hypixel paints progress on the
+	 * top-left tile only, so tiles are tried top-left first.
 	 */
 	private fun readStates(colors: ByteArray) {
 		val rs = roomSize ?: return
@@ -305,10 +260,8 @@ object DungeonMapReader {
 				if (index >= colors.size) return@firstNotNullOfOrNull null
 				colors[index].toInt().takeIf { it != 0 }?.let { tile to it }
 			}
-			// The checkmark moving is the only honest word on a room being
-			// finished — what clears one is not one thing, and Hypixel already
-			// knows the answer — so whoever cares is told here rather than
-			// left to notice by watching.
+			// The checkmark moving is the reliable sign of a room being finished, so listeners are
+			// told here.
 			if (room.updateState(painted?.first ?: fallback, painted?.second ?: 0)) {
 				RoomAlerts.onCheckmarkChanged(room)
 			}
@@ -316,10 +269,8 @@ object DungeonMapReader {
 	}
 
 	/**
-	 * Finds the doors, which are the painted gaps between two rooms.
-	 *
-	 * A gap inside one large room is painted along its whole width, so a gap is
-	 * only a door when the pixel beside it is bare.
+	 * Finds doors: painted gaps between rooms. A gap inside a large room is painted along its whole
+	 * width, so a door needs a bare pixel beside it.
 	 */
 	private fun readDoors(colors: ByteArray) {
 		val rs = roomSize ?: return
@@ -356,7 +307,7 @@ object DungeonMapReader {
 		else -> null
 	}
 
-	/** Teammates too far away to see are still on the map, as decorations. */
+	/** Teammates out of sight are still on the map as decorations. */
 	private fun readDecorations(packet: ClientboundMapItemDataPacket) {
 		val decorations = packet.decorations.getOrNull() ?: return
 		markers = decorations
@@ -364,7 +315,6 @@ object DungeonMapReader {
 			.map { Marker(it.x.toInt(), it.y.toInt(), it.rot() * 360f / 16f) }
 	}
 
-	/** Turns a decoration's position into the place it is drawn on the map. */
 	fun markerPosition(marker: Marker): Pair<Float, Float> {
 		val rs = roomSize ?: return 0f to 0f
 		val center = mapCenter ?: return 0f to 0f
@@ -374,7 +324,6 @@ object DungeonMapReader {
 		return pos.x.toFloat() to pos.z.toFloat()
 	}
 
-	/** The same, for a player Cryptic can see the real position of. */
 	fun worldPosition(x: Double, z: Double): Pair<Float, Float> = Pair(
 		((x + WORLD_ORIGIN) / (BLOCKS_PER_TILE / PIXELS_PER_TILE)).toFloat(),
 		((z + WORLD_ORIGIN) / (BLOCKS_PER_TILE / PIXELS_PER_TILE)).toFloat(),

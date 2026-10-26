@@ -33,10 +33,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.core.BlockPos
-import net.minecraft.network.chat.ClickEvent
 import net.minecraft.network.chat.Component
-import net.minecraft.network.chat.HoverEvent
-import net.minecraft.network.chat.Style
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.Blocks
@@ -44,23 +41,14 @@ import net.minecraft.world.level.block.state.BlockState
 import java.util.Locale
 
 /**
- * Every Catacombs puzzle, answered.
+ * Every Catacombs puzzle, answered. Water Board, Teleport Maze, Ice Fill, Blaze, Creeper Beams,
+ * Three Weirdos, Quiz and Boulder are ported from Odin; Tic Tac Toe, Ice Path and the Water Board
+ * previews are Cryptic's own, inspired by Skyblocker's.
  *
- * Ported from Odin's Puzzle Solvers (BSD 3-Clause, Copyright (c) 2025
- * odtheking) — Water Board, Teleport Maze, Ice Fill, Blaze, Creeper Beams,
- * Three Weirdos, Quiz and Boulder — with the two it does not have taken from
- * Skyblocker (LGPL-3.0): Tic Tac Toe and the silverfish's ice path. The water
- * board's two previews, the path the water will take and what a lever would
- * change, are Skyblocker's as well.
- *
- * Every solver works in the coordinates of its room's schematic, which is what
- * makes one answer fit every copy of the room ever built; `PuzzleRooms` turns
- * those into the world. None of them touches the game: each draws what it
- * knows and leaves the clicking to you.
+ * Solvers work in the room's schematic coordinates (`PuzzleRooms` converts to the world), so one
+ * answer fits every copy of a room. None of them clicks for you.
  */
 object PuzzleSolver {
-	// ---- Water Board -----------------------------------------------------
-
 	@JvmField
 	val waterEnabled = ToggleModuleSetting(
 		id = "water",
@@ -155,13 +143,7 @@ object PuzzleSolver {
 		description = "Look at a block to see what its lever would move, and the path it would make.",
 	)
 
-	/**
-	 * Solves the board again from where it stands.
-	 *
-	 * One button, because the solve reads every gate against where it started:
-	 * a board left half played and one put back by hand come out the same way,
-	 * with the pulls already made taken off and any made wrong put back on.
-	 */
+	/** Solves the board again from where it stands: pulls already made come off, wrong ones get an undo. */
 	@JvmField
 	val waterReset = ButtonModuleSetting(
 		"water_reset",
@@ -169,8 +151,6 @@ object PuzzleSolver {
 		action = { WaterSolver.reset() },
 		visibleIf = { waterEnabled.value },
 	)
-
-	// ---- Teleport Maze ---------------------------------------------------
 
 	@JvmField
 	val mazeEnabled = ToggleModuleSetting(
@@ -244,8 +224,6 @@ object PuzzleSolver {
 		visibleIf = { mazeEnabled.value },
 	)
 
-	// ---- Ice Fill --------------------------------------------------------
-
 	@JvmField
 	val iceFillEnabled = ToggleModuleSetting(
 		id = "ice_fill",
@@ -278,8 +256,6 @@ object PuzzleSolver {
 		action = { IceFillSolver.reset() },
 		visibleIf = { iceFillEnabled.value },
 	)
-
-	// ---- Blaze -----------------------------------------------------------
 
 	@JvmField
 	val blazeEnabled = ToggleModuleSetting(
@@ -377,8 +353,6 @@ object PuzzleSolver {
 		visibleIf = { blazeEnabled.value },
 	)
 
-	// ---- Creeper Beams ---------------------------------------------------
-
 	@JvmField
 	val beamsEnabled = ToggleModuleSetting(
 		id = "beams",
@@ -423,8 +397,6 @@ object PuzzleSolver {
 		step = 5.0,
 		visibleIf = { beamsEnabled.value },
 	)
-
-	// ---- Three Weirdos ---------------------------------------------------
 
 	@JvmField
 	val weirdosEnabled = ToggleModuleSetting(
@@ -474,8 +446,9 @@ object PuzzleSolver {
 	@JvmField
 	val weirdosInstant = ToggleModuleSetting(
 		id = "weirdos_instant",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Talk before they load",
-		description = "Draws a box where each weirdo will stand. Right-click a box to talk to that weirdo at once, or the moment it loads in. Lumen's Instant Three Weirdos.",
+		description = "Draws a box where each weirdo will stand. Right-click a box to talk to that weirdo at once, or the moment it loads in; the box fills in while it waits, and a second click cancels it.",
 		visibleIf = { weirdosEnabled.value },
 	)
 
@@ -497,8 +470,6 @@ object PuzzleSolver {
 		description = "Swallows a click on a chest that is known to be wrong, which is how the puzzle is failed.",
 		visibleIf = { weirdosEnabled.value },
 	)
-
-	// ---- Quiz ------------------------------------------------------------
 
 	@JvmField
 	val quizEnabled = ToggleModuleSetting(
@@ -542,11 +513,18 @@ object PuzzleSolver {
 		id = "quiz_timer",
 		label = "Answer timer",
 		defaultValue = true,
-		description = "Counts down the time left to answer, on the HUD.",
+		description = "Counts down the time left to answer, on the HUD, with the answer beside it as soon as it's known.",
 		visibleIf = { quizEnabled.value },
 	)
 
-	// ---- Boulder ---------------------------------------------------------
+	@JvmField
+	val quizParty = ToggleModuleSetting(
+		id = "quiz_party",
+		label = "Send answer in party chat",
+		defaultValue = false,
+		description = "Says each question's answer in party chat the moment it's known.",
+		visibleIf = { quizEnabled.value },
+	)
 
 	@JvmField
 	val boulderEnabled = ToggleModuleSetting(
@@ -594,8 +572,6 @@ object PuzzleSolver {
 		inlineWith = boulderEnabled,
 	)
 
-	// ---- Tic Tac Toe -----------------------------------------------------
-
 	@JvmField
 	val ticTacToeEnabled = ToggleModuleSetting(
 		id = "tic_tac_toe",
@@ -628,7 +604,7 @@ object PuzzleSolver {
 		id = "tic_tac_toe_pre_aim",
 		label = "Show before their move",
 		defaultValue = true,
-		description = "On the opponent's turn, marks the square that is your best move whatever they play, so you can aim at it before they move. Lumen's idea.",
+		description = "On the opponent's turn, marks the square that is your best move whatever they play, so you can aim at it before they move.",
 		visibleIf = { ticTacToeEnabled.value },
 	)
 
@@ -640,8 +616,6 @@ object PuzzleSolver {
 		defaultIndex = PuzzleRender.STYLE_BOTH,
 		visibleIf = { ticTacToeEnabled.value },
 	)
-
-	// ---- Ice Path --------------------------------------------------------
 
 	@JvmField
 	val silverfishEnabled = ToggleModuleSetting(
@@ -657,10 +631,16 @@ object PuzzleSolver {
 		label = "Route",
 		defaultRgb = 0xFF5555,
 		visibleIf = { silverfishEnabled.value },
-		inlineWith = silverfishEnabled,
 	)
 
-	// ---- All of them -----------------------------------------------------
+	@JvmField
+	val silverfishMovingColor = ColorModuleSetting(
+		id = "silverfish_moving_color",
+		label = "While it slides",
+		defaultRgb = 0x55FF55,
+		description = "The stretch the silverfish is sliding along, so you know to wait.",
+		visibleIf = { silverfishEnabled.value },
+	)
 
 	private val generalSection = SectionModuleSetting("general_section", "All puzzles")
 
@@ -677,12 +657,10 @@ object PuzzleSolver {
 		id = "draft_prompt",
 		label = "Draft prompt",
 		defaultValue = true,
-		description = "Offers a click to fetch an architect's draft when a puzzle fails.",
+		description = "Asks whether to fetch an architect's draft when a puzzle fails.",
 	)
 
-	// One switch per puzzle, with what tunes it in the switch's "⋯" panel.
-	// In the order a person would look for them, which is alphabetical by the
-	// name of the puzzle rather than the order they were written in.
+	// One switch per puzzle, tuning in its "⋯" panel, alphabetical by puzzle name.
 	private val puzzlesSection = SectionModuleSetting("puzzles_section", "Puzzles")
 
 	private val configurable: List<imicro.cryptic.gui.ModuleSetting> = listOf(
@@ -694,8 +672,8 @@ object PuzzleSolver {
 		boulderEnabled.withMore(boulderAll, boulderStyle, boulderPhase, boulderColor),
 		beamsEnabled.withMore(beamsStyle, beamsPhase, beamsTracer, beamsAlpha),
 		iceFillEnabled.withMore(iceFillColor, iceFillOptimized, iceFillReset),
-		silverfishEnabled.withMore(silverfishColor),
-		quizEnabled.withMore(quizColor, quizStyle, quizPhase, quizTimer),
+		silverfishEnabled.withMore(silverfishColor, silverfishMovingColor),
+		quizEnabled.withMore(quizColor, quizStyle, quizPhase, quizTimer, quizParty),
 		mazeEnabled.withMore(mazeColorOne, mazeColorMultiple, mazeColorVisited, mazeStyle, mazeTracer, mazeTracerColor, mazeReset),
 		weirdosEnabled.withMore(
 			weirdosColor, weirdosWrongColor, weirdosStyle,
@@ -732,15 +710,13 @@ object PuzzleSolver {
 		settings = configurable + reset,
 	)
 
-	/** When each puzzle was walked into, and whether its time has been said. */
+	/** When each puzzle was entered, and whether its time was reported. */
 	private class Attempt(val enteredAt: Long = System.currentTimeMillis(), var reported: Boolean = false)
 
 	private val attempts = HashMap<String, Attempt>()
 
-	/** The room the solvers were last told about, so entering is noticed once. */
 	private var lastRoom: DungeonRoom? = null
 
-	/** True once this room's solvers have been told about it. */
 	private var entered = false
 
 	private var ticks = 0
@@ -792,12 +768,8 @@ object PuzzleSolver {
 			entered = false
 		}
 
-		// A room is told to its solvers once, but not until its turn has been
-		// worked out: every position they hold is written in the room's own
-		// coordinates, and a room walked into before its chunks have settled
-		// has no turn yet. Waiting for one is why the quiz and the teleport
-		// maze had nothing to draw - both read their positions on the way in
-		// and never asked again.
+		// A room is announced to its solvers once its rotation is known, since all their positions
+		// are in room coordinates. Rooms entered before their chunks settle have no rotation yet.
 		if (room != null && !entered) {
 			val level = client.level
 			val resolved = level != null && room.resolveRotation(level)
@@ -808,18 +780,15 @@ object PuzzleSolver {
 		}
 
 		ticks++
-		// The two that read the world rather than a packet, on Odin's quarter
-		// second: both are a scan of a room, and neither changes faster. Each
-		// checks which room it is in for itself, so nothing is asked here about
-		// what kind of room this is - a puzzle whose type the map has not
-		// settled on yet is still the puzzle you are standing in.
+		// The two world scans run at Odin's quarter second. Each checks its own room, so a puzzle
+		// the map hasn't typed yet still works.
 		if (ticks % SCAN_INTERVAL == 0) {
 			if (blazeEnabled.value) BlazeSolver.scan()
 			if (waterEnabled.value) WaterSolver.scan()
 		}
 
-		// The gates, every tick: a pull is a gate moving, and a quarter second is
-		// most of the margin a timed pull has.
+		// Gates every tick: a pull is a gate moving, and a quarter second is most of a timed pull's
+		// margin.
 		if (waterEnabled.value) WaterSolver.tick()
 		WeirdosSolver.tick()
 		if (ticTacToeEnabled.value) TicTacToeSolver.tick()
@@ -856,8 +825,6 @@ object PuzzleSolver {
 		SilverfishSolver.render(context)
 	}
 
-	// ---- What the world tells us -----------------------------------------
-
 	@JvmStatic
 	fun onServerTick() {
 		if (!module.enabled) return
@@ -866,8 +833,8 @@ object PuzzleSolver {
 	}
 
 	/**
-	 * A right click, before the game handles it: Three Weirdos may take it, to
-	 * talk to a weirdo that has not loaded in yet. True when it did.
+	 * A right click before the game handles it: Three Weirdos may take it to talk to a weirdo not
+	 * loaded yet. True when taken.
 	 */
 	@JvmStatic
 	fun onUseItem(): Boolean {
@@ -875,11 +842,10 @@ object PuzzleSolver {
 		return WeirdosSolver.onUseItem()
 	}
 
-	/** An entity's data arriving, on the client thread. */
 	@JvmStatic
 	fun onEntityData(id: Int) {
 		if (!module.enabled) return
-		// Inside a packet handler, where anything thrown is the connection's problem.
+		// Inside a packet handler; anything thrown breaks the connection.
 		try {
 			WeirdosSolver.onEntityData(id)
 		} catch (error: RuntimeException) {
@@ -887,7 +853,7 @@ object PuzzleSolver {
 		}
 	}
 
-	/** A block being reached for: a lever pulled, or a boulder pushed. */
+	/** A block reached for: a lever pulled or a boulder pushed. */
 	@JvmStatic
 	fun onBlockUsed(pos: BlockPos) {
 		if (!module.enabled || !PuzzleRooms.clearing) return
@@ -899,18 +865,13 @@ object PuzzleSolver {
 	}
 
 	/**
-	 * Whether a click should be swallowed rather than sent.
-	 *
-	 * The only thing here that touches input, and it only ever takes a click
-	 * away: opening the wrong chest in Three Weirdos is how that puzzle is
-	 * failed, and the three stand close enough together to catch anybody.
+	 * Whether to swallow a click. Only ever removes clicks: opening the wrong Three Weirdos chest
+	 * fails the puzzle, and they stand close together.
 	 */
 	@JvmStatic
 	fun blocksClick(pos: BlockPos): Boolean {
 		if (!module.enabled || !PuzzleRooms.clearing) return false
-		// Crouching overrides every one of these, the way it does for the
-		// devices: a solver that has lost track must never be able to stop a
-		// puzzle being played by hand.
+		// Crouching always gets through, so a puzzle can be done by hand.
 		if (Minecraft.getInstance().player?.isShiftKeyDown == true) return false
 		return WeirdosSolver.blocksClick(pos) || TicTacToeSolver.blocksClick(pos)
 	}
@@ -918,15 +879,13 @@ object PuzzleSolver {
 	@JvmStatic
 	fun onTeleport(packet: ClientboundPlayerPositionPacket) {
 		if (!module.enabled || !mazeEnabled.value) return
-		// Packet handlers run twice: once on the network thread, which throws
-		// itself out and reschedules, and once on the client thread. Only the
-		// second is a real arrival, and only on it is the player's position
-		// still the one they are about to be moved from.
+		// Handlers run twice; only the client-thread pass is real, and only then is the player's
+		// position still the one they're about to leave.
 		if (!Minecraft.getInstance().isSameThread) return
 		TpMazeSolver.onTeleport(packet)
 	}
 
-	/** A block changing, which for the beams means one has been broken. */
+	/** A block changing (for the beams, one broken). */
 	@JvmStatic
 	fun onBlockUpdate(pos: BlockPos, old: BlockState, updated: BlockState) {
 		if (!module.enabled || !beamsEnabled.value) return
@@ -936,11 +895,8 @@ object PuzzleSolver {
 	}
 
 	/**
-	 * The animation Hypixel plays on a puzzle's own block when it is finished.
-	 *
-	 * Odin's trick, and the only reliable news that a puzzle is done: each of
-	 * the five has a block that is knocked when it completes, and where that
-	 * block is says which puzzle it was.
+	 * The knock Hypixel plays on a finished puzzle's block, Odin's trick: the block's position says
+	 * which puzzle.
 	 */
 	@JvmStatic
 	fun onBlockEvent(pos: BlockPos, block: Block) {
@@ -971,19 +927,24 @@ object PuzzleSolver {
 		if (!module.enabled || !PuzzleRooms.clearing) return
 
 		if (draftPrompt.value && PuzzleRooms.inPuzzle && failedPattern.containsMatchIn(line)) {
-			Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
-				Component.literal("§8[Cryptic] §7Click §ehere §7to fetch an architect's draft").withStyle(
-					Style.EMPTY
-						.withClickEvent(ClickEvent.RunCommand("gfs architect's first draft 1"))
-						.withHoverEvent(HoverEvent.ShowText(Component.literal("Click to fetch the architect's draft"))),
+			// With notifications off this is a chat line with clickable answers.
+			Toasts.ask(
+				source = "Puzzle Solver",
+				id = "draft_prompt",
+				life = 10.0,
+				footer = "§a[Y] §fYes   §c[N] §fNo",
+				keys = mapOf(
+					org.lwjgl.glfw.GLFW.GLFW_KEY_Y to {
+						Minecraft.getInstance().connection?.sendCommand("gfs architect's first draft 1")
+						Unit
+					},
+					org.lwjgl.glfw.GLFW.GLFW_KEY_N to {},
 				),
-			)
+			) { "Fetch an architect's draft?" }
 		}
 
 		if (weirdosEnabled.value) {
-			// Stripped before it is split. Hypixel colours the speaker's name,
-			// and a name carrying a colour code matches no armour stand in the
-			// room — so the line is read as plain text from here on.
+			// Stripped first: the speaker's coloured name wouldn't match any armour stand.
 			val plain = line.replace(FORMATTING, "")
 			npcPattern.find(plain)?.destructured?.let { (npc, message) ->
 				WeirdosSolver.onNpcMessage(npc.trim(), message)
@@ -993,11 +954,8 @@ object PuzzleSolver {
 	}
 
 	/**
-	 * Says how long a puzzle took, once per puzzle per run.
-	 *
-	 * A time only counts when the room was walked into before it was solved —
-	 * arriving at a puzzle somebody else has already done would otherwise be
-	 * reported as an extremely good one.
+	 * Reports how long a puzzle took, once per run. Only counts if the room was entered before it
+	 * was solved.
 	 */
 	fun onPuzzleComplete(name: String) {
 		val attempt = attempts[name] ?: return
@@ -1019,12 +977,8 @@ object PuzzleSolver {
 	}
 
 	/**
-	 * What the solvers think they are standing in, for `/cryptic debug room`.
-	 *
-	 * Every answer here is in the room's own coordinates, turned into the
-	 * world by the marker buried at one corner of the roof. When a solver draws
-	 * in the wrong place this is the line that says why: the wrong room, no
-	 * marker found, or a turn that does not match what you can see.
+	 * What the solvers think you're in, for `/cryptic debug room`: the room, its rotation marker,
+	 * and whether the rotation matches what you see.
 	 */
 	fun describeRoom(): List<String> {
 		val room = PuzzleRooms.room() ?: return listOf("Not in a room Cryptic has placed.")
@@ -1044,7 +998,6 @@ object PuzzleSolver {
 			lines += "You are at: ${relative?.let { "${it.x}, ${it.y}, ${it.z}" } ?: "unknown"} in the room"
 		}
 
-		// The one solver whose aim cannot be seen when it misses.
 		if (room.data?.name == "Water Board") lines += WaterSolver.describe() + WaterPreview.describe()
 		if (room.data?.name == "Teleport Maze") lines += TpMazeSolver.describe()
 		if (room.data?.name == "Three Weirdos") lines += WeirdosSolver.describe()
@@ -1053,7 +1006,6 @@ object PuzzleSolver {
 
 	private val npcPattern = Regex("""\[NPC] ([^:]+): (.+)""")
 
-	/** Hypixel's colour codes, written into the text of a line rather than its style. */
 	private val FORMATTING = Regex("§.")
 
 	private val failedPattern = Regex(
@@ -1062,14 +1014,12 @@ object PuzzleSolver {
 			"""I shall never forget this moment of misrememberance\.$""",
 	)
 
-	/** Four passes a second, which is Odin's rate for both room scans. */
+	/** Four passes a second, Odin's rate for both room scans. */
 	private const val SCAN_INTERVAL = 5
 
 	/**
-	 * The time left to answer Oruo, which exists nowhere on screen.
-	 *
-	 * Green while there is plenty, gold with a third gone and red at the end,
-	 * which is Odin's colouring.
+	 * Time left to answer Oruo, shown nowhere else. Green, then gold with a third gone, red at the
+	 * end (Odin's colours).
 	 */
 	private class QuizTimerElement : HudElement("quiz_timer", "Quiz Timer", 0.45, 0.55) {
 		private val font get() = Minecraft.getInstance().font
@@ -1078,18 +1028,16 @@ object PuzzleSolver {
 			val (left, length, stage) = QuizSolver.timer
 			val head = "§5Quiz §8(§f$stage§8/§f3§8): "
 
-			// While the wait for the next question is running, the wait. Once
-			// the question is up, the letter that answers it.
-			// Between questions the wait; during one the letter that answers
-			// it; and while Oruo is still reading it out, nothing to say yet.
-			if (left <= 0) return head + "§a" + (QuizSolver.correctLetter() ?: "§7...")
+			// The answer as soon as it's known, even while the countdown still runs.
+			val answer = QuizSolver.correctLetter()?.let { letter -> "§a" + letter + (QuizSolver.correctAnswer()?.let { " $it" } ?: "") }
+			if (left <= 0) return head + (answer ?: "§7...")
 
 			val color = when {
 				left >= length * 0.66 -> "§a"
 				left >= length * 0.33 -> "§6"
 				else -> "§c"
 			}
-			return head + color + String.format(Locale.ROOT, "%.1f", left / 20f) + "s"
+			return head + color + String.format(Locale.ROOT, "%.1f", left / 20f) + "s" + (answer?.let { " §8| $it" } ?: "")
 		}
 
 		override val width: Int get() = font.width(EXAMPLE)

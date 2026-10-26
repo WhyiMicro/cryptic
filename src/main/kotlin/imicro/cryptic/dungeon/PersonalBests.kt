@@ -10,11 +10,8 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
 /**
- * Personal bests that are not terminals: a time per name, lowest wins.
- *
- * A file of its own, like the terminal records, because a best is something
- * that happened rather than a preference, and switching profiles should not
- * switch it away.
+ * Personal bests other than terminals: a time per name, lowest wins. Its own file, so profiles
+ * don't swap them.
  */
 object PersonalBests {
 	private val gson = GsonBuilder().setPrettyPrinting().create()
@@ -28,7 +25,6 @@ object PersonalBests {
 		return times[name]
 	}
 
-	/** Records [seconds] for [name]. Returns the best before it, and whether this beat it. */
 	fun record(name: String, seconds: Double): Pair<Double?, Boolean> {
 		load()
 		val previous = times[name]

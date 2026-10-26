@@ -15,42 +15,32 @@ import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 
 /**
- * Queues the party for the same floor again once a run is over.
+ * Requeues the party for the same floor once a run ends. The score summary is the cue; after a
+ * short wait the leader's client sends the queue. Includes Check Party (no requeue with fewer than
+ * five, or if someone asked for downtime) and calls it off if someone leaves. From Odin's Dungeon
+ * Queue and NoammAddons' Auto Requeue.
  *
- * Odin's Dungeon Queue and NoammAddons' Auto Requeue (BSD 3-Clause, Copyright
- * (c) 2025 odtheking; CC0, Noamm9): the run's score summary is the cue, and
- * after a short wait the leader's client sends the requeue itself. NoammAddons'
- * Check Party is here too — no requeue with fewer than five, or with somebody
- * having asked for downtime — and so is Odin's rule that somebody leaving the
- * party calls it off.
+ * The leader and the party are followed in chat during the run instead of asking with `/pl` at the
+ * end: the run's start line ("Name entered The Catacombs") names the leader, and the party is as
+ * many as the tab list showed, minus anyone chat says left.
  *
- * Only the leader can queue, and the party has to still be whole, and both
- * are followed in chat through the run rather than asked for at the end — a
- * `/pl` at the end was one more command in the second Hypixel is strictest
- * about. The leader is named by every run's start ("Name entered The
- * Catacombs"), which only the leader can trigger; the party is as many as the
- * dungeon's tab list showed, less anybody chat says left.
- *
- * What neither does is pick the queue back up once the break is over. With
- * Wait for ready on, whoever asked for downtime saying `r` in party chat starts
- * the countdown again, for five minutes after the run; anybody saying `nr`
- * stops a countdown that is running.
+ * With Wait for ready on, whoever asked for downtime saying `r` restarts the countdown, within five
+ * minutes; anyone saying `nr` stops one.
  */
 object AutoRequeue {
-	private const val COMMAND_REQUEUE = 0
+	private const val COMMAND_AUTO = 0
+	private const val COMMAND_REQUEUE = 1
 
-	/** How long a break may last before nobody is listening for the end of it. */
+	/** How long after a run a break's end is listened for. */
 	private const val READY_WINDOW_MILLIS = 5 * 60 * 1000L
 
 	/**
-	 * The least time between this module's last command — the party message
-	 * saying it is about to queue — and the queue command. Hypixel refuses a
-	 * command that follows another too closely ("This command is on cooldown!
-	 * Try again in about a second!"), and the queue was the one refused.
+	 * The least time between this module's last command and the queue. Hypixel refuses a command
+	 * too soon after another ("This command is on cooldown!"), and the queue was the one refused.
 	 */
 	private const val COMMAND_GAP_MILLIS = 1_500L
 
-	/** How long the party list, asked for only when the leader is unknown, may take to answer. */
+	/** How long the party list (asked for only when the leader is unknown) may take. */
 	private const val LIST_TIMEOUT_MILLIS = 4_000L
 
 	/** What the party list is made of, so its answer can be kept out of chat. */
@@ -61,21 +51,18 @@ object AutoRequeue {
 		Regex("""^You are not currently in a party\.$"""),
 	)
 
-	/** When the party list was asked for, or 0 while no answer is awaited. */
 	private var listAskedAt = 0L
 
-	/** Whether the list has been asked for this run already, so it is asked once at most. */
 	private var askedThisRun = false
 
-	/** Until when an answering party list is kept out of chat, and whether its heading has been seen. */
+	/** Until when a party list answer is kept out of chat, and whether its heading has been seen. */
 	@Volatile
 	private var hideListUntil = 0L
 	private var hideSawHeading = false
 
 	/**
-	 * Whether a chat message is the answer to the party list this module asked
-	 * for, which is kept out of chat. Asked after every other part of Cryptic has
-	 * read it, so the leader it names is still taken.
+	 * Whether a chat message is the party list answer this module asked for, kept out of chat.
+	 * Asked after the rest of Cryptic has read it.
 	 */
 	@JvmStatic
 	fun hidesChat(message: Component, overlay: Boolean): Boolean {
@@ -84,31 +71,30 @@ object AutoRequeue {
 		if (lines.isEmpty() || !lines.all { line -> listLines.any { it.containsMatchIn(line) } }) return false
 		val heading = lines.any { listLines[1].matches(it) || listLines[3].matches(it) }
 		val rule = lines.any { listLines[0].matches(it) }
-		// The closing rule, after the heading, is the end of it.
+		// The closing rule after the heading ends it.
 		if (heading) hideSawHeading = true
 		if (hideSawHeading && rule && (lines.size > 1 || !heading)) hideListUntil = 0L
 		return true
 	}
 
-	/** A full party, which is what Check party wants to see. */
 	private const val PARTY_SIZE = 5
 
 	private val FORMATTING = Regex("§.")
 	private const val RANK = """(?:\[[^\]]+] )?"""
 
-	/** "Party > [MVP+] Name: what they said", the emblem after a name optional. */
+	/** "Party > [MVP+] Name: what they said", with an optional emblem. */
 	private val partyChat = Regex("""^Party > $RANK(\w{1,16})(?: [^\s:]+)?: ?(.*)$""")
 
 	private val downtimeCommand = Regex("""^!(?:dt|downtime)(?:\s|$)""", RegexOption.IGNORE_CASE)
 	private val undowntimeCommand = Regex("""^!(?:undt|undowntime)(?:\s|$)""", RegexOption.IGNORE_CASE)
 
-	/** Somebody leaving, or the party ending, either of which calls a requeue off. */
+	/** Someone leaving or the party ending, which calls a requeue off. */
 	private val memberGone = listOf(
 		Regex("""^$RANK(\w{1,16}) has left the party\."""),
 		Regex("""^$RANK(\w{1,16}) has been removed from the party\."""),
 		Regex("""^$RANK(\w{1,16}) was removed from your party because they disconnected"""),
 		Regex("""^Kicked $RANK(\w{1,16}) because they were offline"""),
-		// The leader leaving is only ever said as the party changing hands.
+		// The leader leaving shows only as the party changing hands.
 		Regex("""^The party was transferred to $RANK\w{1,16} because $RANK(\w{1,16}) left"""),
 	)
 	private val partyGone = listOf(
@@ -118,7 +104,7 @@ object AutoRequeue {
 		Regex("""^$RANK\w{1,16} has disbanded the party"""),
 	)
 
-	/** Hypixel's names for the floors, which is what its queue command takes. */
+	/** Hypixel's floor names, as its queue command takes them. */
 	private val FLOOR_NAMES = listOf("ENTRANCE", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN")
 
 	@JvmField
@@ -137,9 +123,9 @@ object AutoRequeue {
 	val command = DropdownModuleSetting(
 		id = "command",
 		label = "Command",
-		options = listOf("/instancerequeue", "/joininstance"),
-		defaultIndex = COMMAND_REQUEUE,
-		description = "How the queue is asked for. Once the party has left the dungeon, /joininstance is used either way.",
+		options = listOf("Auto", "/instancerequeue", "/joininstance"),
+		defaultIndex = COMMAND_AUTO,
+		description = "How the queue is asked for. Auto uses /instancerequeue while you're still in the dungeon and /joininstance for the floor once you've left.",
 	)
 
 	@JvmField
@@ -168,46 +154,55 @@ object AutoRequeue {
 	)
 
 	@JvmField
+	val hideQueueScreen = ToggleModuleSetting(
+		id = "hide_queue_screen",
+		label = "Hide queue screen",
+		defaultValue = false,
+		description = "Closes the \"Creating instance\" menu Hypixel opens after a queue, so you can keep moving while the dungeon starts.",
+	)
+
+	@JvmField
 	val module = Module(
 		id = "auto_requeue",
 		name = "Auto Requeue",
 		description = "Requeues after a run",
 		category = ModuleCategory.DUNGEON,
 		supportsKeybind = false,
-		settings = listOf(delay, command, checkParty, waitForReady, feedback),
+		settings = listOf(delay, command, checkParty, waitForReady, feedback, hideQueueScreen),
 	)
 
-	/** Who asked for downtime this run, until they say they are ready. */
+	/** Who asked for downtime this run, until they say ready. */
 	private val needsDowntime = LinkedHashSet<String>()
 
+	/** What each of them gave as the reason. */
+	private val reasons = HashMap<String, String>()
+
+	private fun downtimeMessage(names: Collection<String>): String =
+		names.joinToString(" | ") { "$it needs downtime. Reason: ${reasons[it] ?: "no reason given"}" }
+
 	/**
-	 * Who was asking for downtime when the last run ended, which is the break
-	 * that run's end answered. Only these are let go when the next run starts:
-	 * a `!dt` sent after the end — in the countdown, or in the new run's lobby
-	 * while Hypixel counts down to the start — is for the run about to begin.
+	 * Who wanted downtime when the last run ended, the break that end answered. Only these are
+	 * released when the next run starts; a `!dt` sent after the end is for the run about to begin.
 	 */
 	private val downtimeAtEnd = HashSet<String>()
 
-	/** Who has left the party since the run began. */
 	private val leftDuringRun = LinkedHashSet<String>()
 
 	/**
-	 * The most players the dungeon's tab list has shown this run, which is the
-	 * party: everybody in it is in the run. The most, because the list fills
-	 * in over the first seconds and a player who disconnects drops off it.
+	 * The most players the tab list has shown this run, which is the party (the list fills in over
+	 * the first seconds, and disconnected players drop off).
 	 */
 	private var teamSeen = 0
 
-	/** When this module last sent a command, so the next keeps its distance. */
 	private var lastCommandAt = 0L
 
-	/** The floor that was just played, for /joininstance. */
+	/** The floor just played, for /joininstance. */
 	private var floorCommand: String? = null
 
-	/** When the queue command goes out, or 0 when nothing is counting down. */
+	/** When the queue command goes out, or 0. */
 	private var requeueAt = 0L
 
-	/** Until when a break's end is listened for, or 0 when it is not. */
+	/** Until when a break's end is listened for, or 0. */
 	private var readyUntil = 0L
 
 	private var runEndHandled = false
@@ -218,13 +213,14 @@ object AutoRequeue {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		// Only the connection ending: the party moving from the dungeon to the
-		// hub is a server change, and the countdown has to survive it.
+		// Only on disconnect: moving from the dungeon to the hub is a server change the countdown
+		// must survive.
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> reset() }
 	}
 
 	private fun reset() {
 		needsDowntime.clear()
+		reasons.clear()
 		downtimeAtEnd.clear()
 		leftDuringRun.clear()
 		requeueAt = 0L
@@ -242,8 +238,7 @@ object AutoRequeue {
 			return
 		}
 
-		// A new run starts the count of who asked for what afresh, apart from a
-		// break asked for since the last run ended, which is for this one.
+		// A new run resets who asked for what, except a break asked for since the last run ended.
 		if (DungeonRun.started && !runStartSeen) {
 			runStartSeen = true
 			runEndHandled = false
@@ -267,7 +262,7 @@ object AutoRequeue {
 		}
 
 		val now = System.currentTimeMillis()
-		// The party list asked for because the leader was not known.
+		// The party list, asked for because the leader wasn't known.
 		if (listAskedAt != 0L) {
 			val answered = PartyFeatures.listedAt >= listAskedAt
 			val noParty = PartyFeatures.noPartyAt >= listAskedAt
@@ -306,12 +301,12 @@ object AutoRequeue {
 		decide()
 	}
 
-	/** The run is over: requeue, wait for a break to end, or say why not. */
+	/** The run is over: requeue, wait for a break, or say why not. */
 	private fun decide() {
 		val leader = PartyFeatures.leaderName()
 		if (leader == null && !DebugOverrides.previewPartyCommands) {
-			// Chat did not say — a run joined part way, or a reconnect — so it is
-			// asked once, and the decision waits for the answer.
+			// Chat didn't name the leader (joined late, reconnected), so the list is asked for once
+			// and the decision waits.
 			if (listAskedAt == 0L && !askedThisRun) {
 				askedThisRun = true
 				listAskedAt = System.currentTimeMillis()
@@ -332,33 +327,26 @@ object AutoRequeue {
 			return
 		}
 		if (needsDowntime.isNotEmpty()) {
-			val who = needsDowntime.joinToString(", ")
-			if (waitForReady.value) {
-				readyUntil = System.currentTimeMillis() + READY_WINDOW_MILLIS
-				tell("Not requeueing: $who needs downtime. Write r when ready (5 min).")
-			} else {
-				tell("Not requeueing: $who needs downtime.")
-			}
+			if (waitForReady.value) readyUntil = System.currentTimeMillis() + READY_WINDOW_MILLIS
+			tell(downtimeMessage(needsDowntime))
 			return
 		}
-		schedule("Requeueing in ${seconds()} seconds, write \"nr\" to stop auto requeue.")
+		schedule("Requeueing in ${seconds()} seconds. Write !dt or nr to stop the que")
 	}
 
-	/** What stops a requeue outright, as the party would be told it, or null for nothing. */
+	/** What blocks a requeue, worded for the party, or null. */
 	private fun blocker(): String? {
 		if (!checkParty.value) return null
 		leftDuringRun.firstOrNull()?.let { return "$it left the party" }
-		// The run's team, as the tab list showed it at its fullest. Nobody joins a
-		// party mid-run, and anybody who left is caught above.
+		// The team at its fullest; nobody joins mid-run, and leavers are caught above.
 		val size = maxOf(teamSeen, DungeonTeam.classes.size)
 		if (size in 1 until PARTY_SIZE) return "only $size/$PARTY_SIZE in the party"
 		return null
 	}
 
 	/**
-	 * Whether you lead the party, as last seen. Only a known yes counts: a
-	 * requeue sent by somebody who does not lead does nothing but get refused.
-	 * The debug preview has no party to ask, so there an unknown leader passes.
+	 * Whether you lead the party, as last seen. Only a known yes counts; the debug preview lets an
+	 * unknown leader pass.
 	 */
 	private fun leading(): Boolean {
 		val leader = PartyFeatures.leaderName() ?: return DebugOverrides.previewPartyCommands
@@ -382,17 +370,14 @@ object AutoRequeue {
 			tell("Not requeueing: $it.")
 			return
 		}
-		val queue = if (command.selectedIndex == COMMAND_REQUEUE && DungeonLocation.inDungeon) {
-			"instancerequeue"
-		} else {
-			floorCommand ?: "instancerequeue"
+		val queue = when (command.selectedIndex) {
+			COMMAND_AUTO -> if (DungeonLocation.inDungeon) "instancerequeue" else floorCommand ?: "instancerequeue"
+			COMMAND_REQUEUE -> "instancerequeue"
+			else -> floorCommand ?: "instancerequeue"
 		}
 		send(client, queue)
 	}
 
-	// ---- Chat ------------------------------------------------------------
-
-	/** A chat packet, on the client thread. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay || !module.enabled) return
@@ -418,23 +403,18 @@ object AutoRequeue {
 		when {
 			downtimeCommand.containsMatchIn(text) -> {
 				needsDowntime += sender
-				// Asked for after the run, while the countdown was already going.
+				reasons[sender] = text.split(Regex("""\s+"""), limit = 2).getOrNull(1)?.trim()?.take(40)?.ifBlank { null } ?: "no reason given"
+				// Asked for after the run, while a countdown is running.
 				if (requeueAt != 0L) {
 					requeueAt = 0L
 					downtimeAtEnd += sender
-					if (waitForReady.value) {
-						readyUntil = System.currentTimeMillis() + READY_WINDOW_MILLIS
-						tell("Requeue stopped: $sender needs downtime. Write r when ready (5 min).")
-					} else {
-						tell("Requeue stopped: $sender needs downtime.")
-					}
+					if (waitForReady.value) readyUntil = System.currentTimeMillis() + READY_WINDOW_MILLIS
+					tell(downtimeMessage(listOf(sender)))
 				} else if (readyUntil != 0L) {
-					// The run's end is still being answered, so this break is
-					// part of that answer.
+					// The run's end is still being answered, so this break is part of it.
 					downtimeAtEnd += sender
 				} else if (runEndHandled) {
-					// The queue has already gone out: kept for the end of the
-					// run about to start, which Hypixel's own countdown is for.
+					// The queue already went: kept for the end of the run about to start.
 					note("$sender needs downtime after the next run; no requeue then.")
 				}
 			}
@@ -455,7 +435,7 @@ object AutoRequeue {
 		}
 	}
 
-	/** One of the people on a break is back. The last of them starts the countdown. */
+	/** Someone on a break is back; the last one starts the countdown. */
 	private fun onReady(name: String) {
 		if (readyUntil == 0L) return
 		if (needsDowntime.isNotEmpty()) {
@@ -467,14 +447,14 @@ object AutoRequeue {
 			tell("$name ready again, but not requeueing: $it.")
 			return
 		}
-		schedule("$name ready again, que starts in ${seconds()} seconds, write \"nr\" to stop auto requeue")
+		schedule("$name ready again, requeueing in ${seconds()} seconds. Write !dt or nr to stop the que")
 	}
 
-	/** Somebody left the party, or it ended. Either way nobody is queued and nobody is waited for. */
+	/** Someone left or the party ended: nothing is queued or waited for. */
 	private fun onLeft(name: String?) {
 		if (name != null) {
 			leftDuringRun += name
-			// Somebody who has gone is not on a break: they are why there is no queue.
+			// Someone who left isn't on a break; they're why there's no queue.
 			needsDowntime.remove(name)
 		}
 		val wasWaiting = requeueAt != 0L || readyUntil != 0L
@@ -483,9 +463,7 @@ object AutoRequeue {
 		if (wasWaiting) note("Auto requeue off: ${name?.let { "$it left the party" } ?: "the party ended"}.")
 	}
 
-	// ---- Saying so -------------------------------------------------------
-
-	/** To the party if Party feedback is on, otherwise only to you. */
+	/** To the party with Party feedback on, otherwise just to you. */
 	private fun tell(message: String) {
 		if (feedback.value) send(Minecraft.getInstance(), "pc $message") else note(message)
 	}
@@ -500,11 +478,10 @@ object AutoRequeue {
 			note("Would send: §f/$command")
 			return
 		}
-		// Through Party Features' queue, which spaces every command Cryptic sends.
+		// Through Party Features' queue, which spaces Cryptic's commands.
 		PartyFeatures.enqueue(command)
 	}
 
-	/** For `/cryptic debug requeue`. */
 	fun describe(): List<String> {
 		val now = System.currentTimeMillis()
 		return listOf(

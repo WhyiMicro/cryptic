@@ -9,25 +9,15 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 /**
- * What SkyBlock items sell for, by item id.
- *
- * Odin's price table (Odin is BSD 3-Clause, Copyright (c) 2025 odtheking): a
- * seven-day average of the auction house's lowest prices and the bazaar's, in
- * one map. It names everything a dungeon chest can hold — enchanted books as
- * `ENCHANTED_BOOK-ULTIMATE_ONE_FOR_ALL-1`, essences as `ESSENCE_WITHER`,
- * shards as `SHARD_WITHER`, and the Dungeon Chest Key — so one request covers
- * a whole chest. A seven-day average rather than the lowest price of the
- * minute, so one underpriced listing does not make a chest look worth a key.
- *
- * Asked for only when something needs a price, and again after half an hour.
- * No account, key or player data is sent.
+ * Item prices by SkyBlock id, from Odin's table: a seven-day average of auction and bazaar prices,
+ * covering everything a dungeon chest holds in one request. Fetched when needed and refreshed every
+ * half hour; nothing about the player is sent.
  */
 object ItemPrices {
 	private const val URL = "https://lb.odtheking.com/averages/7day"
 
 	private const val REFRESH_INTERVAL_MS = 30 * 60 * 1000L
 
-	/** How long to wait before asking again after a request failed. */
 	private const val RETRY_INTERVAL_MS = 60 * 1000L
 
 	private val client: HttpClient by lazy {
@@ -49,10 +39,8 @@ object ItemPrices {
 	@Volatile
 	private var fetching = false
 
-	/** True once there is a table to read from. */
 	val loaded: Boolean get() = prices.isNotEmpty()
 
-	/** The price of one [id], or null when the table does not have it. */
 	fun price(id: String): Double? = prices[id]
 
 	/** Starts a request when the table is missing or old. Never blocks. */

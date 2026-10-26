@@ -31,35 +31,30 @@ import kotlin.math.max
 import kotlin.math.sign
 
 /**
- * Works out where an etherwarp would land.
- *
- * Ported from NoammAddons, which is public domain (CC0). Hypixel does not tell
- * the client where the teleport ends, so the ray has to be walked the same way
- * the server walks it: voxel by voxel, stopping at the first block that is
- * solid enough to stand on and has room for the player above it.
+ * Where an etherwarp lands, walking the ray voxel by voxel as the server does and stopping at the
+ * first solid block with room above it. Ported from NoammAddons.
  */
 object EtherwarpHelper {
-	/** Etherwarp is cast from the 1.8 eye height, not the client's own. */
+	/** Cast from the 1.8 eye height, not the client's. */
 	private const val EYE_HEIGHT = 1.62
 	private const val SNEAK_OFFSET = 0.35
 
 	/** Aspect of the End reaches 57 blocks, plus one per Tuned Transmission. */
 	private const val BASE_RANGE = 57.0
 
-	/** A ray that leaves the loaded world stops rather than running forever. */
 	private const val MAX_STEPS = 1000
 
-	/** Hypixel sets the feet a hair above what they land on, rather than in it. */
+	/** Hypixel sets the feet a hair above what they land on. */
 	private const val LANDING_GAP = 0.05
 
-	/** [pos] is the block the ray stopped on, valid only when it can be warped to. */
+	/** [pos] is the block the ray stopped on; valid only if it can be warped to. */
 	data class EtherwarpTarget(val valid: Boolean, val pos: BlockPos?) {
 		companion object {
 			val NONE = EtherwarpTarget(false, null)
 		}
 	}
 
-	/** The item's etherwarp range, or null when it cannot etherwarp at all. */
+	/** The item's etherwarp range, or null if it can't etherwarp. */
 	fun etherwarpRange(stack: ItemStack): Double? {
 		val data = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag()
 		val skyblockId = data.getString("id").orElse("")
@@ -69,12 +64,8 @@ object EtherwarpHelper {
 	}
 
 	/**
-	 * Where the player's feet end up after warping onto [pos].
-	 *
-	 * The same height [isValidTarget] checks the headroom from, which is what
-	 * makes the two agree: a fence is stood on from the block above it, and
-	 * everything else from the block it occupies. The last fraction is the gap
-	 * Hypixel leaves between the feet and what they are standing on.
+	 * Where the feet end up after warping onto [pos], at the same height [isValidTarget] checks
+	 * headroom from (a fence is stood on from the block above).
 	 */
 	fun landing(pos: BlockPos): Vec3 =
 		Vec3(pos.x + 0.5, feetHeight(pos) + LANDING_GAP, pos.z + 0.5)
@@ -86,9 +77,8 @@ object EtherwarpHelper {
 	}
 
 	/**
-	 * Amanatides-Woo voxel traversal: the ray jumps straight to the next voxel
-	 * boundary instead of being sampled at a fixed step, so nothing between the
-	 * player and the target can be missed however the ray is angled.
+	 * Amanatides-Woo traversal: the ray jumps from voxel boundary to boundary, so nothing is
+	 * skipped at any angle.
 	 */
 	private fun traverseVoxels(start: Vec3, end: Vec3): EtherwarpTarget {
 		var x = floor(start.x).toInt()
@@ -124,8 +114,8 @@ object EtherwarpHelper {
 
 		repeat(MAX_STEPS) {
 			cursor.set(x, y, z)
-			// An unloaded chunk answers as air, so the ray passes through it
-			// rather than reporting a target the server would not agree with.
+			// An unloaded chunk reads as air, so the ray passes through instead of claiming a
+			// target the server wouldn't agree with.
 			val chunk = level.getChunk(
 				SectionPos.blockToSectionCoord(x),
 				SectionPos.blockToSectionCoord(z),
@@ -160,7 +150,6 @@ object EtherwarpHelper {
 		return EtherwarpTarget.NONE
 	}
 
-	/** A block can be warped onto when it is solid and the player fits above it. */
 	private fun isValidTarget(pos: BlockPos, chunk: LevelChunk): Boolean {
 		val level = Minecraft.getInstance().level ?: return false
 		if (isPassable(pos, chunk)) return false
@@ -174,11 +163,8 @@ object EtherwarpHelper {
 	}
 
 	/**
-	 * The Y a player stands at after landing on [pos].
-	 *
-	 * Rounded up off the block's collision box, so a fence — which is a block
-	 * and a half tall — is stood on from the block above it rather than inside
-	 * itself, and everything shorter is stood on from the block it occupies.
+	 * The Y a player stands at after landing on [pos], rounded up off the collision box (a fence is
+	 * a block and a half).
 	 */
 	private fun feetHeight(pos: BlockPos): Int {
 		val level = Minecraft.getInstance().level ?: return pos.y + 1
@@ -187,7 +173,7 @@ object EtherwarpHelper {
 		return pos.y + max(1, ceil(collisionTop).toInt())
 	}
 
-	/** Blocks a player can walk through, but Hypixel refuses to land you inside. */
+	/** Blocks a player can walk through but Hypixel won't land you in. */
 	private fun blocksFeet(pos: BlockPos, chunk: LevelChunk): Boolean =
 		when (chunk.getBlockState(pos).block) {
 			is SkullBlock, is WallSkullBlock, is FlowerPotBlock, is LadderBlock, is VineBlock -> true
@@ -198,7 +184,7 @@ object EtherwarpHelper {
 		val level = Minecraft.getInstance().level ?: return true
 		val state = chunk.getBlockState(pos)
 		return when (state.block) {
-			// Signs have no collision box but still stop the ray.
+			// Signs have no collision but still stop the ray.
 			is SignBlock -> false
 			is ButtonBlock, is SkullBlock, is WallSkullBlock, is LadderBlock,
 			is BubbleColumnBlock, is FlowerPotBlock, is PistonHeadBlock, is LeverBlock,

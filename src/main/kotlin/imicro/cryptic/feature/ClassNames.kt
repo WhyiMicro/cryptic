@@ -10,18 +10,14 @@ import net.minecraft.util.Mth
 import net.minecraft.world.entity.player.Player
 
 /**
- * Draws dungeon teammates' name tags as their name and class letter.
- *
- * Ported from Blade Addons (MIT). Hypixel's own tag is hidden by
- * [imicro.cryptic.mixin.EntityRendererMixin] so the two do not stack. The
- * settings and the switch belong to [ClassColors], which is the one module for
- * everything that marks a teammate by their class; only the drawing lives here.
+ * Draws dungeon teammates' name tags as their name and class letter. Ported from Blade Addons.
+ * Hypixel's tag is hidden by [imicro.cryptic.mixin.EntityRendererMixin]. Settings live on
+ * [ClassColors]; only the drawing is here.
  */
 object ClassNames {
-	/** Blade Addons draws the class letter yellow whatever the class color is. */
+	/** Blade Addons draws the letter yellow whatever the class colour. */
 	private const val LETTER_COLOR = 0xFFFF55
 
-	/** The index of "Left" in [ClassColors.letterSide]. */
 	private const val LETTER_LEFT = 1
 
 	private var initialized = false
@@ -29,14 +25,10 @@ object ClassNames {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		// Submitted with everything else the frame draws; "through walls" is
-		// what keeps a label from being hidden by the teammate it belongs to,
-		// and that is the text's own display mode rather than a question of
-		// when it is handed over.
+		// "Through walls" keeps the label from being hidden by its own teammate.
 		LevelRenderEvents.COLLECT_SUBMITS.register(::renderNames)
 	}
 
-	/** True while this module owns a given player's name tag. */
 	@JvmStatic
 	fun replacesNameTag(player: Player): Boolean {
 		if (!isActive()) return false
@@ -64,16 +56,14 @@ object ClassNames {
 				.withColor(ClassColors.getClassColor(dungeonClass))
 			val text = when {
 				!ClassColors.showLetter.value -> name
-				// Built from whichever piece comes first, because a component
-				// is appended to rather than prepended to.
+				// Built from whichever piece comes first, since components only append.
 				ClassColors.letterSide.selectedIndex == LETTER_LEFT ->
 					Component.literal("[${dungeonClass.initial}] ").withColor(LETTER_COLOR).append(name)
 				else ->
 					name.append(Component.literal(" [${dungeonClass.initial}]").withColor(LETTER_COLOR))
 			}
 
-			// The entity's own interpolated position, so the label does not lag
-			// behind a moving teammate by a frame.
+			// The entity's interpolated position, so the label doesn't lag a frame.
 			WorldRender.drawText(
 				poseStack = context.poseStack(),
 				collector = context.submitNodeCollector(),

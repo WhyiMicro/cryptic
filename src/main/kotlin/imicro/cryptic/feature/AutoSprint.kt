@@ -3,14 +3,9 @@ package imicro.cryptic.feature
 import imicro.cryptic.gui.ModuleRegistry
 
 /**
- * Sprints for you, the way Odin's Auto Sprint does.
- *
- * Rather than setting the sprint flag once a tick from outside, the sprint key
- * reads as held at the one place the player's movement asks about it (see
- * `LocalPlayerMixin`). The game's own rules then decide, as they would for a
- * held key: no sprint while sneaking, hungry, blind, using an item or walking
- * backwards. The sprint also starts in the same tick as the movement, not one
- * tick after it.
+ * Sprints for you, as Odin's Auto Sprint does: the sprint key reads as held where movement asks for
+ * it (see `LocalPlayerMixin`), so the game's own rules apply (no sprinting while sneaking, hungry,
+ * blind, using an item or walking backwards).
  */
 object AutoSprint {
 	@JvmStatic

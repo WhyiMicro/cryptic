@@ -11,7 +11,7 @@ import net.minecraft.client.color.block.BlockTintSources
 import net.minecraft.client.renderer.block.FluidModel
 import net.minecraft.client.renderer.block.FluidStateModelSet
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer
-import net.minecraft.client.renderer.texture.TextureAtlas
+import net.minecraft.data.AtlasIds
 import net.minecraft.client.renderer.texture.TextureAtlasSprite
 import net.minecraft.client.resources.model.sprite.Material
 import net.minecraft.util.ARGB
@@ -20,17 +20,9 @@ import net.minecraft.world.level.material.Fluids
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Draws lava with the water texture.
- *
- * Ported from NoammAddons (CC0, Copyright (c) Noamm9). Lava is opaque and
- * bright, and swimming through it — which SkyBlock asks for constantly, in the
- * Crimson Isle and the Crystal Hollows — means moving blind through an orange
- * screen. Water is transparent, so the same swim is one you can see through.
- *
- * Nothing about the lava changes but its model: it still burns, still slows
- * you, and the server is not told anything different. Only the fog goes with
- * it, and only if asked, because a clear texture behind a solid orange fog is
- * no clearer than before.
+ * Draws lava with the water texture, so you can see while swimming through it (constantly needed in
+ * the Crimson Isle and Crystal Hollows). Only the model changes: it still burns and slows you. The
+ * fog goes too, if asked. Ported from NoammAddons.
  */
 object LavaToWater {
 	@JvmField
@@ -46,8 +38,16 @@ object LavaToWater {
 		id = "tint_color",
 		label = "Tint",
 		defaultRgb = 0x3F76E4,
-		visibleIf = { colorTint.value },
+		visibleIf = { colorTint.value || tintWater.value },
 		inlineWith = colorTint,
+	)
+
+	@JvmField
+	val tintWater = ToggleModuleSetting(
+		id = "tint_water",
+		label = "Tint water too",
+		defaultValue = false,
+		description = "Draws real water in the tint colour as well, so lava and water look the same.",
 	)
 
 	@JvmField
@@ -65,23 +65,21 @@ object LavaToWater {
 		description = "Draws lava as water",
 		category = ModuleCategory.VISUAL,
 		supportsKeybind = false,
-		settings = listOf(colorTint, tintColor, hideFog),
+		settings = listOf(colorTint, tintColor, tintWater, hideFog),
 	)
 
 	/**
-	 * What the fluid models were when this was last applied.
-	 *
-	 * Fluid models are baked into the chunk meshes, so changing the answer means
-	 * rebuilding them — and rebuilding every chunk is far too expensive to do
-	 * on the chance that something changed. Watching the two settings that
-	 * matter is how it is done only when it has.
+	 * What the fluid models were when last applied. Changing them means rebuilding every chunk
+	 * mesh, so it only happens when these settings actually change.
 	 */
 	private var appliedEnabled = false
 	private var appliedTint = 0
+	private var appliedLavaTint = false
+	private var appliedWaterTint = false
 
 	/**
-	 * How many times lava's model has been swapped since the chunks were last
-	 * rebuilt, for the debug command. Counted from the chunk builders' threads.
+	 * Times lava's model was swapped since the last rebuild, for the debug command. Counted from
+	 * chunk builder threads.
 	 */
 	private val swaps = AtomicLong()
 	private var rebuilds = 0
@@ -89,7 +87,6 @@ object LavaToWater {
 	@JvmStatic
 	fun hidesFog(): Boolean = module.enabled && hideFog.value
 
-	/** The tint to draw lava fog in, or null to leave water's own colour. */
 	@JvmStatic
 	fun fogTint(): Int? = if (module.enabled && colorTint.value) tintColor.argb else null
 
@@ -97,58 +94,47 @@ object LavaToWater {
 	fun isEnabled(): Boolean = module.enabled
 
 	/**
-	 * Hands back water's model when the game asks for lava's.
-	 *
-	 * Returning null means "leave it alone", which is every fluid that is not
-	 * lava and every moment the module is off.
+	 * Water's model when the game asks for lava's; null leaves other fluids, and everything while
+	 * off, alone.
 	 */
 	@JvmStatic
 	fun replacement(models: FluidStateModelSet, state: FluidState): FluidModel? {
 		if (!module.enabled) return null
+		if (state.type == Fluids.WATER || state.type == Fluids.FLOWING_WATER) {
+			return if (tintWater.value) tinted else null
+		}
 		if (state.type != Fluids.LAVA && state.type != Fluids.FLOWING_LAVA) return null
 
 		swaps.incrementAndGet()
 		val water = models.get(Fluids.WATER.defaultFluidState())
 		if (!colorTint.value) return water
 
-		// Built on the client thread and only read here: this is a chunk
-		// builder's thread, which has no business looking a sprite up.
+		// Built on the client thread; this is a chunk builder thread and shouldn't look up sprites.
 		return tinted ?: water
 	}
 
 	/**
-	 * The model a tinted lava is drawn with, or null before it has been built.
-	 *
-	 * Cryptic's own water rather than the game's, and the reason is the tint. A
-	 * tint multiplies the texture, so the colour you pick only comes out as that
-	 * colour on a texture that is white — and whether the game's water is white
-	 * is up to the resource pack. Vanilla's is grey and relies on the biome to
-	 * colour it, but a pack that draws its water blue makes every tint a shade
-	 * of blue, white included. So a tinted lava uses a texture nobody else gets
-	 * to replace: near-white, with ripples of its own. Untinted, the pack's
-	 * water is exactly what was asked for and is left alone.
+	 * The model for tinted lava. Uses Cryptic's own near-white water texture, since a tint
+	 * multiplies the texture and resource packs often draw water blue. Untinted lava uses the
+	 * pack's water.
 	 */
 	@Volatile
 	private var tinted: FluidModel? = null
 
-	/** The sprites [tinted] was built from, which is how a resource reload is noticed. */
+	/** The sprites [tinted] was built from, to notice resource reloads. */
 	private var tintedStill: TextureAtlasSprite? = null
 
 	private val STILL = Cryptic.id("block/water_still")
 	private val FLOWING = Cryptic.id("block/water_flow")
 
 	/**
-	 * Builds [tinted] for the colour currently chosen. True if it changed.
-	 *
-	 * The sprites are looked up again every time, cheaply, because a resource
-	 * reload stitches a new atlas and the old sprites point into a texture that
-	 * is gone.
+	 * Builds [tinted] for the chosen colour; true if it changed. Sprites are looked up each time,
+	 * since a reload replaces the atlas.
 	 */
 	private fun buildTinted(client: Minecraft): Boolean {
-		val atlas = client.textureManager.getTexture(TextureAtlas.LOCATION_BLOCKS) as? TextureAtlas ?: return false
-		// The atlas is only stitched once the first resource reload finishes, and
-		// a mod that closes the loading screen early lets ticks run before that.
-		// Not ready yet is tried again next tick.
+		val atlas = runCatching { client.atlasManager.getAtlasOrThrow(AtlasIds.BLOCKS) }.getOrNull() ?: return false
+		// The atlas is stitched after the first resource reload; mods that close the loading screen
+		// early let ticks run before that.
 		val still = try {
 			atlas.getSprite(STILL)
 		} catch (_: IllegalStateException) {
@@ -160,48 +146,44 @@ object LavaToWater {
 		val flowing = atlas.getSprite(FLOWING)
 		tintedStill = still
 		tinted = FluidModel(
-			// The texture is part see-through, like the water it stands in for.
+			// Part see-through, like the water it imitates.
 			ChunkSectionLayer.TRANSLUCENT,
 			Material.Baked(still, false),
 			Material.Baked(flowing, false),
-			// The face against glass, which the game draws with the flowing
-			// texture's layout.
+			// The face against glass, drawn with the flowing texture's layout.
 			Material.Baked(flowing, false),
-			// Opaque, because the renderer takes this as the whole colour of every
-			// vertex, alpha included.
+			// Opaque, since this is each vertex's whole colour, alpha included.
 			BlockTintSources.constant(tint, tint),
 		)
 		return true
 	}
 
 	/**
-	 * Rebuilds the world's meshes, which is the only way a model swap is seen.
-	 *
-	 * Called from the tick rather than from the settings, because a colour
-	 * picker being dragged would otherwise rebuild every chunk on every frame
-	 * of the drag.
+	 * Rebuilds the world's meshes when needed. Called from the tick, so dragging a colour picker
+	 * doesn't rebuild every frame.
 	 */
 	fun tick(client: Minecraft) {
-		// No world, no chunks to rebuild: the title screen can wait for one.
 		if (client.level == null) return
 		val enabled = module.enabled
-		val tint = if (enabled && colorTint.value) ARGB.opaque(tintColor.rgb) else 0
-		// Also true after a resource reload, when the sprites are new ones.
+		val lavaTint = enabled && colorTint.value
+		val waterTint = enabled && tintWater.value
+		val tint = if (lavaTint || waterTint) ARGB.opaque(tintColor.rgb) else 0
+		// Also true after a resource reload.
 		val rebuilt = tint != 0 && buildTinted(client)
-		if (enabled == appliedEnabled && tint == appliedTint && !rebuilt) return
+		if (enabled == appliedEnabled && tint == appliedTint && lavaTint == appliedLavaTint &&
+			waterTint == appliedWaterTint && !rebuilt
+		) return
 
 		appliedEnabled = enabled
 		appliedTint = tint
+		appliedLavaTint = lavaTint
+		appliedWaterTint = waterTint
 		rebuild()
 	}
 
 	/**
-	 * Throws away every compiled chunk, so the next frame rebuilds them with the
-	 * model swap applied.
-	 *
-	 * Through the level extractor, which is the call the video settings and F3+A
-	 * make in 26.2: it clears the colour caches as well, and leaves the renderer
-	 * to throw its meshes away at the point in the frame it expects to.
+	 * Throws away every compiled chunk so the next frame rebuilds them. Goes through the level
+	 * extractor, as the video settings and F3+A do in 26.2.
 	 */
 	private fun rebuild() {
 		swaps.set(0)
@@ -210,13 +192,9 @@ object LavaToWater {
 	}
 
 	/**
-	 * What lava is actually being drawn as, for `/cryptic debug lava`.
-	 *
-	 * The model is asked for the way a chunk builder asks for it, so the answer
-	 * has been through every mod that has a say in it — this one, and any other
-	 * that swaps fluid models, of which SkyHanni is one. If what comes back here
-	 * is right and the world is still wrong, the chunks have not been rebuilt;
-	 * if what comes back is wrong, something after Cryptic changed it.
+	 * What lava is drawn as, for `/cryptic debug lava`, asked the way a chunk builder asks, so
+	 * other mods' fluid swaps (SkyHanni's among them) are included. Right here but wrong in the
+	 * world means the chunks weren't rebuilt.
 	 */
 	fun describe(): List<String> {
 		val client = Minecraft.getInstance()

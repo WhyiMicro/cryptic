@@ -9,18 +9,10 @@ import imicro.cryptic.feature.DungeonWaypoints.CustomType
 import java.nio.file.Files
 
 /**
- * Dungeon Waypoints' packs: custom waypoints by room name.
- *
- * The **Default** row is Devonian's secret spots, which ship with Cryptic. It
- * is listed with the packs so it can be hidden in the same place, but it cannot
- * be edited, renamed or deleted: it is data rather than anybody's work.
- *
- * Shared packs are written the way Odin writes them — room name to a list of
- * waypoints with a block position, a box and a type — so Odin can read what
- * Cryptic exports, and Cryptic what Odin does.
- *
- * Kept in `config/cryptic/waypoint-packs.json`. The single file the first
- * version of the module wrote becomes a pack called "My Waypoints".
+ * Dungeon Waypoints' packs: custom waypoints by room name. **Default** is Devonian's secret spots,
+ * shipped with Cryptic: it can be hidden but not edited, renamed or deleted. Packs are written in
+ * Odin's format, so the two can read each other's exports. Saved in
+ * `config/cryptic/waypoint-packs.json`.
  */
 object WaypointPacks : PackStore<Custom>("Waypoint Packs", "waypoint-packs.json", Custom::class.java, "My Waypoints") {
 	override val defaultRow = DefaultRow(
@@ -30,10 +22,7 @@ object WaypointPacks : PackStore<Custom>("Waypoint Packs", "waypoint-packs.json"
 		setEnabled = { DungeonWaypoints.secrets.value = it },
 	)
 
-	/**
-	 * The entrance has nothing to find, and a waypoint placed there could end
-	 * up outside the room, beside Mort, where it could not be clicked off.
-	 */
+	/** The entrance has nothing to find, and a waypoint there could land outside the room by Mort. */
 	override val excludedKeys = setOf("Entrance")
 
 	override fun loadLegacy() {
@@ -70,7 +59,7 @@ object WaypointPacks : PackStore<Custom>("Waypoint Packs", "waypoint-packs.json"
 					addProperty("filled", waypoint.kind == CustomType.ETHERWARP)
 					addProperty("depth", true)
 					waypoint.title?.let { addProperty("title", it) }
-					// Odin has no breaker or start kind, so to Odin they are plain waypoints.
+					// Odin has no breaker or start kind, so they export as plain waypoints.
 					addProperty("type", if (waypoint.kind == CustomType.BREAKER || waypoint.kind == CustomType.START) "NORMAL" else waypoint.kind.name)
 					addProperty("crypticType", waypoint.kind.name)
 				})

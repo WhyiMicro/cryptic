@@ -11,21 +11,32 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Swaps the arrow hit sound for the one Arrow Hit Sound was given. */
 @Mixin(SoundManager.class)
 public abstract class SoundManagerMixin {
     @Inject(method = "play", at = @At("HEAD"), cancellable = true)
     private void cryptic$replaceArrowHit(SoundInstance instance, CallbackInfoReturnable<SoundEngine.PlayResult> cir) {
         if (ArrowHitSound.intercept(instance)) {
+            imicro.cryptic.debug.SoundLog.muted(instance, "Arrow Hit Sound");
             cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
             return;
         }
-        // Treasure chest sounds Nucleus QoL was asked to mute.
         if (NucleusQol.mutes(instance)) {
+            imicro.cryptic.debug.SoundLog.muted(instance, "Nucleus Features");
             cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
             return;
         }
-        // For the Sound Manager's Recent list, which is how a sound just heard is found.
+        if (imicro.cryptic.feature.ChocolateFactory.mutes(instance)) {
+            imicro.cryptic.debug.SoundLog.muted(instance, "Chocolate Factory");
+            cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
+            return;
+        }
+        // For the Sound Manager's Recent list.
         SoundVolumes.onPlay(instance);
+    }
+
+    /** For `/cryptic debug sounds`: whether a server sound really started. */
+    @Inject(method = "play", at = @At("RETURN"))
+    private void cryptic$notePlayed(SoundInstance instance, CallbackInfoReturnable<SoundEngine.PlayResult> cir) {
+        imicro.cryptic.debug.SoundLog.played(instance, cir.getReturnValue());
     }
 }

@@ -17,27 +17,15 @@ import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 
 /**
- * Tops your dungeon consumables back up from your sacks with `/gfs`.
- *
- * NoammAddons' Auto GFS (CC0, Noamm9). Pearls, superbooms, Jerries and leaps
- * all run out partway through a run, and fetching them from the sacks by hand
- * means opening a menu at the worst moment. This sends the same `/gfs` you
- * would have typed: on a timer, one item per check, or — with Refill at the
- * end of a run — everything once the run is over, when nobody is in a hurry.
- *
- * Only items you are already carrying are topped up, and only when at least
- * four are missing, which is NoammAddons' rule: an item you have none of is
- * one you chose not to bring. A sack that answers that it is empty is not
- * asked again until the next server.
- *
- * Twilight arrow poison is asked for at three moments of Master Mode 7 rather
- * than on a timer, each for the classes that want it then.
+ * Tops up dungeon consumables from your sacks with `/gfs`: on a timer, one item per check, or
+ * everything at the end of a run. Only items you carry with at least four missing (an item you have
+ * none of is one you didn't bring). An empty sack isn't asked again until the next server. Twilight
+ * arrow poison is asked for at three moments of M7, for the classes that want it then. NoammAddons'
+ * Auto GFS.
  */
 object AutoGfs {
-	/** Fewer missing than this is not worth a command. */
 	private const val MIN_MISSING = 4
 
-	/** The gap between two commands of an end-of-run refill. */
 	private const val END_SPACING_TICKS = 25
 
 	private val FORMATTING = Regex("§.")
@@ -47,7 +35,7 @@ object AutoGfs {
 	private const val CORE_OPENING = "The Core entrance is opening!"
 	private const val WITHER_KING_RELICS = "[BOSS] Wither King: I no longer wish to fight, but I know that will not stop you."
 
-	/** One consumable: its id in the sacks and on the item, and how many make a full stack. */
+	/** One consumable: its sack id, item id, and full stack size. */
 	private class Refill(val sackId: String, val itemId: String, val full: Int, val toggle: ToggleModuleSetting)
 
 	private val timingSection = SectionModuleSetting("timing_section", "When")
@@ -154,13 +142,12 @@ object AutoGfs {
 		Refill("spirit_leap", "SPIRIT_LEAP", 16, leaps),
 	)
 
-	/** Sacks that said they are empty, by their gfs id, until the next server. */
+	/** Sacks that said they're empty, until the next server. */
 	private val emptySacks = HashSet<String>()
 
 	private var nextCheck = 0L
 	private var cursor = 0
 
-	/** Commands an end-of-run refill still has to send, one at a time. */
 	private val endQueue = ArrayDeque<String>()
 	private var endCooldown = 0
 	private var runEndHandled = false
@@ -206,7 +193,7 @@ object AutoGfs {
 			return
 		}
 
-		// On a timer: only during a run, never with a menu open, never dead.
+		// On a timer: only during a run, with no menu open and not dead.
 		val now = System.currentTimeMillis()
 		if (now < nextCheck) return
 		nextCheck = now + (delay.value * 1000).toLong()
@@ -218,7 +205,6 @@ object AutoGfs {
 		send(client, waiting[cursor++ % waiting.size])
 	}
 
-	/** A `gfs` command for every consumable that is carried, switched on and running low. */
 	private fun pending(client: Minecraft): List<String> {
 		val inventory = client.player?.inventory ?: return emptyList()
 		val counts = HashMap<String, Int>()
@@ -245,7 +231,6 @@ object AutoGfs {
 		client.connection?.sendCommand(command)
 	}
 
-	/** A chat packet, on the client thread. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay || !module.enabled) return
@@ -259,7 +244,7 @@ object AutoGfs {
 	private fun onLine(line: String) {
 		sackEmpty.matchEntire(line)?.let {
 			val named = it.groupValues[1].lowercase().replace(' ', '_')
-			// Hypixel names the item the way its gfs id spells it, spaces for underscores.
+			// Hypixel names the item as its gfs id spells it, with spaces for underscores.
 			emptySacks += named
 			return
 		}

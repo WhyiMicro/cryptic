@@ -6,16 +6,8 @@ import net.minecraft.client.Minecraft
 import net.minecraft.world.entity.decoration.ArmorStand
 
 /**
- * Which blaze to shoot next.
- *
- * Ported from Odin (BSD 3-Clause, Copyright (c) 2025 odtheking). The puzzle is
- * to kill ten blazes in order of health, and the health is written on each
- * one's nametag — so the order is a sort, and the difficulty is only ever
- * reading twenty numbers in the air fast enough. Lower Blaze counts down from
- * the highest, Higher Blaze counts up from the lowest.
- *
- * The blazes themselves are armour stands: the tag is the entity, and the
- * blaze under it is drawn from the tag's own box moved down.
+ * Blaze: which blaze to shoot next, sorted by the health on their tags. Lower Blaze goes from
+ * highest health down, Higher Blaze from lowest up. Ported from Odin.
  */
 object BlazeSolver {
 	private const val LOWER = "Lower Blaze"
@@ -25,21 +17,14 @@ object BlazeSolver {
 
 	private val blazes = mutableListOf<ArmorStand>()
 
-	/** How many were up last time, so the last one dying can be noticed. */
 	private var lastCount = 10
 
 	/**
-	 * A blaze's health tag, read as loosely as it can safely be.
-	 *
-	 * Odin matches the whole line, level prefix and all, with the health as
-	 * plain digits and commas. Hypixel writes big numbers short - 12.4M - and
-	 * puts a level prefix on some floors and not others, so this looks only for
-	 * the part that matters: the word Blaze, a fraction, and the heart that
-	 * ends every health tag in the game.
+	 * Matches only the essentials (the word Blaze, a fraction, and the heart), since Hypixel
+	 * shortens big numbers (12.4M) and only sometimes adds a level prefix.
 	 */
 	private val healthTag = Regex("""Blaze\s+[\d.,]+[kKmMbB]?\s*/\s*([\d.,]+)([kKmMbB]?)\x{2764}""")
 
-	/** `12.4M` as a number, so two tags can be put in order. */
 	private fun healthOf(name: String): Double? {
 		val match = healthTag.find(name) ?: return null
 		val digits = match.groupValues[1].replace(",", "").toDoubleOrNull() ?: return null
@@ -51,13 +36,10 @@ object BlazeSolver {
 		}
 	}
 
-	/** Re-read every few ticks: a blaze dying changes the whole order. */
 	fun scan() {
 		if (!PuzzleRooms.clearing) return
-		// A room Cryptic has not named yet is still scanned, which is Odin's
-		// behaviour and worth keeping: the tags are the puzzle, and a room whose
-		// chunks arrived late would otherwise be missed for as long as the map
-		// took to catch up.
+		// Rooms not identified yet are still scanned, so a room whose chunks arrived late isn't
+		// missed.
 		val room = PuzzleRooms.name()
 		if (room != null && room !in ROOMS) {
 			blazes.clear()
@@ -74,8 +56,6 @@ object BlazeSolver {
 			blazes.add(entity)
 		}
 
-		// Lower Blaze is shot from the biggest health down, Higher Blaze from
-		// the smallest up.
 		if (room == LOWER) blazes.sortByDescending { health[it] } else blazes.sortBy { health[it] }
 	}
 
@@ -89,8 +69,7 @@ object BlazeSolver {
 		blazes.removeAll { level.getEntity(it.id) == null }
 
 		if (blazes.isEmpty()) {
-			// One left last frame and none now is the puzzle being finished,
-			// which nothing else announces.
+			// One left and now none: the puzzle is done, which nothing else announces.
 			if (lastCount == 1) {
 				room?.let(PuzzleSolver::onPuzzleComplete)
 				if (PuzzleSolver.blazeSendComplete.value) {
@@ -129,13 +108,7 @@ object BlazeSolver {
 		}
 	}
 
-	/**
-	 * Every armour stand near you and what this solver makes of its name.
-	 *
-	 * For `/cryptic debug blaze`. The whole puzzle is a health tag read off a
-	 * nametag, so when it draws nothing the only question worth asking is what
-	 * the tags actually say - and that is a thing no log will ever show.
-	 */
+	/** Every named entity nearby and what the solver makes of it, for `/cryptic debug blaze`. */
 	fun describe(): List<String> {
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return listOf("No player.")
@@ -145,9 +118,6 @@ object BlazeSolver {
 			"Blaze: room=${PuzzleRooms.name() ?: "unnamed"} clearing=${PuzzleRooms.clearing} tracked=${blazes.size}",
 		)
 
-		// Every named entity, not only the armour stands this solver reads, so
-		// that a tag carried by something else shows up here rather than as
-		// nothing at all.
 		level.getEntities(player, player.boundingBox.inflate(DEBUG_RADIUS)) { true }.forEach { entity ->
 			val name = entity.name.string
 			if (name.isBlank() || name == "Armor Stand") return@forEach

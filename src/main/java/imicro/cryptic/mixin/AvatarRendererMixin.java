@@ -13,28 +13,29 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Lets the player see their own name tag, and resizes the model.
- *
- * Adapted from NoammAddons (CC0). The game deliberately never names the player
- * to themselves, and forcing that decision here rather than writing a tag by
- * hand is what makes it the real one: what gets drawn is the display name the
- * server dressed the player in, so Hypixel's rank, colours and SkyBlock level
- * all come along without Cryptic having to reassemble any of it.
+ * Shows your own name tag and resizes the model. Forcing vanilla's own tag means Hypixel's rank,
+ * colours and level come along. Adapted from NoammAddons.
  */
 @Mixin(AvatarRenderer.class)
 public abstract class AvatarRendererMixin {
+    /** Capes from the cape mods, and your own. */
+    @Inject(
+        method = "extractRenderState(Lnet/minecraft/world/entity/Avatar;Lnet/minecraft/client/renderer/entity/state/AvatarRenderState;F)V",
+        at = @At("TAIL")
+    )
+    private void cryptic$cape(Avatar entity, net.minecraft.client.renderer.entity.state.AvatarRenderState state, float partialTicks, CallbackInfo info) {
+        state.skin = imicro.cryptic.feature.Capes.skinFor(entity, state.skin);
+        imicro.cryptic.feature.HideArmor.apply(entity, state);
+    }
+
     @Inject(method = "shouldShowName(Lnet/minecraft/world/entity/Avatar;D)Z", at = @At("HEAD"), cancellable = true)
     private void cryptic$showOwnNameTag(Avatar entity, double distanceToCameraSq, CallbackInfoReturnable<Boolean> cir) {
         if (CustomNametags.showsOwnNameTag(entity)) cir.setReturnValue(true);
     }
 
     /**
-     * Multiplies Custom Scale's own factor onto the one vanilla just applied.
-     *
-     * On the call rather than the method so it lands inside vanilla's own
-     * transform, where the model is already standing on its feet — scaling
-     * around any other origin sinks the player into the floor or lifts them off
-     * it. The same point Athen (BSD 3-Clause) uses.
+     * Multiplies Custom Scale's factor onto vanilla's, inside vanilla's transform so the model
+     * stays on its feet. The same point Athen uses.
      */
     @Inject(
         method = "scale(Lnet/minecraft/client/renderer/entity/state/AvatarRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;)V",

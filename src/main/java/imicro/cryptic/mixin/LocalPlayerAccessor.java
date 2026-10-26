@@ -5,16 +5,8 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 /**
- * Where the server thinks you are, and which way it thinks you are facing.
- *
- * These are the values the client last sent, kept so it can tell whether
- * anything has changed since. They matter to anything predicting what the
- * server is about to do: an etherwarp is cast from the server's idea of you,
- * not from the client's, and while you are moving the two are a fraction of a
- * block apart — enough for a predicted landing to be visibly off the one that
- * arrives.
- *
- * NoammAddons (CC0) reads the same five fields for the same reason.
+ * Where the server thinks you are and which way you face: what the client last sent. An etherwarp
+ * is cast from these, so predictions use them. NoammAddons reads the same fields.
  */
 @Mixin(LocalPlayer.class)
 public interface LocalPlayerAccessor {
@@ -33,7 +25,7 @@ public interface LocalPlayerAccessor {
     @Accessor("xRotLast")
     float cryptic$serverXRot();
 
-    /** What the client believes it last told the server, so a rotation it sets itself is not sent on. */
+    /** What the client believes it last sent, so a rotation it sets itself isn't sent on. */
     @Accessor("yRotLast")
     void cryptic$setServerYRot(float yRot);
 

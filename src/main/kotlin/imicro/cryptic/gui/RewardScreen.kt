@@ -29,11 +29,8 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * The daily reward picker: Hypixel's three cards, turned over and claimed in
- * game, in the look of Cryptic's menu.
- *
- * Laid out in design pixels at 1080p and scaled to the window, as the menu is,
- * so it is the same size whatever the GUI scale.
+ * The daily reward picker: Hypixel's three cards, turned over and claimed in game, in the menu's
+ * style. Laid out in 1080p design pixels and scaled to the window.
  */
 class RewardScreen private constructor() : Screen(Component.literal("Daily Reward")) {
 	private sealed class State {
@@ -44,10 +41,9 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 
 	private var state: State = State.Loading
 
-	/** When the cards arrived, for the ad's countdown. */
 	private var shownAt = 0L
 
-	/** How far each card has turned over, 0 face down to 1 face up, and where it is going. */
+	/** How far each card has turned, 0 face down to 1 face up. */
 	private val flip = FloatArray(3)
 	private val flipping = BooleanArray(3)
 	private val flipDelay = FloatArray(3)
@@ -74,8 +70,7 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 	fun show(offer: RewardOffer) {
 		state = State.Ready(offer)
 		shownAt = System.currentTimeMillis()
-		// "Already turned over": face up from the start, with no turning and no
-		// sound for each card.
+		// "Already turned over": face up from the start, with no animation or sounds.
 		if (DailyRewards.reveal.selectedIndex == DailyRewards.REVEAL_ON_OPEN) {
 			for (i in 0 until 3) {
 				flipping[i] = true
@@ -91,7 +86,7 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 
 	override fun isPauseScreen() = false
 
-	/** Set when you close the picker yourself, which is the only close let through while it opens. */
+	/** Set when you close the picker yourself, the only close allowed while it opens. */
 	var closedByUser = false
 		private set
 
@@ -100,7 +95,6 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		super.onClose()
 	}
 
-	/** "Close menu on reward claim", once "Claimed" has had a moment on screen. */
 	override fun tick() {
 		super.tick()
 		if (closeAt != 0L && System.currentTimeMillis() >= closeAt) {
@@ -113,7 +107,6 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		graphics.fill(0, 0, width, height, 0x99000000.toInt())
 	}
 
-	/** Design pixels per GUI unit: 1080p design, whatever the GUI scale. */
 	private fun scale(): Float {
 		val window = minecraft.window
 		return (window.screenHeight / DESIGN_HEIGHT) / window.guiScale.toFloat()
@@ -216,7 +209,6 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		graphics: GuiGraphicsExtractor, offer: RewardOffer,
 		winX: Float, winY: Float, winW: Float, mx: Float, my: Float, dt: Float, alpha: Float,
 	) {
-		// The ad's progress, under the header, while it runs.
 		val adTotal = offer.adSeconds
 		if (adTotal > 0 && claimed < 0) {
 			val left = adRemaining(offer)
@@ -234,7 +226,6 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		val best = bestRevealed(offer)
 
 		for (i in 0 until count) {
-			// A card waiting its turn in "all at once" counts its delay down first.
 			if (flipping[i] && flipDelay[i] > 0f) {
 				flipDelay[i] -= dt
 			} else if (flipping[i]) {
@@ -268,7 +259,7 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		val dim = if (claimed >= 0 && claimed != index) 0.45f else 1f
 		val a = alpha * dim
 
-		// Turning over: the card narrows to its edge and opens out on the other face.
+		// Turning over: the card narrows to its edge and opens on the other face.
 		val turn = flip[index]
 		val squash = max(0.02f, abs(cos(turn * PI).toFloat()))
 		val pose = graphics.pose()
@@ -363,7 +354,6 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		}
 	}
 
-	/** The reward's item, three times its size, centred on [cx]. */
 	private fun drawIcon(graphics: GuiGraphicsExtractor, card: RewardCard, cx: Float, y: Float, a: Float) {
 		if (a < 0.5f) return
 		val pose = graphics.pose()
@@ -381,7 +371,6 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		val right = "Current §f$streak  §7Best §f${max(streak, offer.bestStreak)}"
 		val plain = right.replace(Regex("§."), "")
 		val rightX = x + width - UiText.width(plain, 13f)
-		// Two tones by hand: the counts in white, their labels muted.
 		var penX = rightX
 		for ((text, color) in listOf("Current " to MenuStyle.MUTED, "$streak" to MenuStyle.TEXT, "   Best " to MenuStyle.MUTED, "${max(streak, offer.bestStreak)}" to MenuStyle.TEXT)) {
 			UiText.draw(graphics, text, penX, y + 1f, 13f, fade(color, alpha))
@@ -403,7 +392,7 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		UiText.draw(graphics, text, cx - UiText.width(text, size, face) / 2f, y, size, color, face)
 	}
 
-	/** [text] broken into at most [lines] lines no wider than [width], the last cut short if need be. */
+	/** [text] in at most [lines] lines no wider than [width], the last cut short if needed. */
 	private fun wrap(text: String, size: Float, width: Float, lines: Int, face: UiText.Face = UiText.Face.REGULAR): List<String> {
 		val out = mutableListOf<String>()
 		var line = ""
@@ -424,8 +413,6 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		if (line.isNotEmpty()) out += UiText.fit(line, size, width, face)
 		return out.take(lines)
 	}
-
-	// --- Input --------------------------------------------------------------
 
 	override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
 		val k = scale()
@@ -463,7 +450,7 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		val index = event.key() - GLFW.GLFW_KEY_1
 		val current = state
 		if (current is State.Ready && index in 0 until current.offer.cards.size.coerceAtMost(3)) {
-			// The number turns a card over, and once it is up, claims it.
+			// The number key turns a card over, then claims it.
 			if (flip[index] >= 1f && buttonBoxes[index] != Box.NONE) claim(current.offer, index) else turnOver(index)
 			return true
 		}
@@ -473,7 +460,6 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 	private fun turnOver(index: Int) {
 		if (flipping[index] || claimed >= 0) return
 		if (DailyRewards.reveal.selectedIndex != DailyRewards.REVEAL_ONE) {
-			// The one clicked first, then the others one after another.
 			var order = 0
 			for (i in listOf(index) + (0 until 3).filter { it != index }) {
 				if (flipping[i]) continue
@@ -494,7 +480,6 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 			if (error == null) {
 				claimed = index
 				if (DailyRewards.sounds.value) minecraft.soundManager.play(SimpleSoundInstance.forUI(SoundEvents.PLAYER_LEVELUP, 1.2f))
-				// Long enough to see "Claimed" before it goes.
 				if (DailyRewards.closeOnClaim.value) closeAt = System.currentTimeMillis() + CLOSE_DELAY_MS
 			} else {
 				claimError = error
@@ -513,15 +498,12 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		minecraft.soundManager.play(sound)
 	}
 
-	// --- Helpers --------------------------------------------------------------
-
 	private fun adRemaining(offer: RewardOffer): Int {
 		if (offer.adSeconds <= 0) return 0
 		val passed = ((System.currentTimeMillis() - shownAt) / 1000).toInt()
 		return (offer.adSeconds - passed).coerceAtLeast(0)
 	}
 
-	/** The rarest card turned over, for the glow. */
 	private fun bestRevealed(offer: RewardOffer): Int {
 		var best = -1
 		for (i in offer.cards.indices.take(3)) {
@@ -551,7 +533,6 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		private const val FLIP_SECONDS = 0.38f
 		private const val CLOSE_DELAY_MS = 800L
 
-		/** Font Awesome's gift and fire. */
 		private val GIFT = Char(0xF06B).toString()
 		private val FIRE = Char(0xF06D).toString()
 
@@ -559,7 +540,6 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 
 		fun ready(offer: RewardOffer) = RewardScreen().also { it.show(offer) }
 
-		/** What each kind of reward looks like, from Minecraft's own items. */
 		private fun iconFor(card: RewardCard): ItemStack = ItemStack(
 			when (card.type) {
 				"coins" -> Items.GOLD_INGOT

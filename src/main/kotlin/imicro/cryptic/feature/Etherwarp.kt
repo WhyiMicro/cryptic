@@ -19,27 +19,19 @@ import net.minecraft.network.protocol.game.ClientboundSoundPacket
 import net.minecraft.sounds.SoundEvents
 
 /**
- * Shows where a sneak-click would etherwarp to, and optionally replaces the
- * teleport sound.
- *
- * Ported from NoammAddons (CC0). The overlay only appears while sneak is held
- * with a merged Aspect of the End or Void in hand, which is exactly when the
- * teleport is armed.
+ * Shows where a sneak-click would etherwarp to, while a merged Aspect of the End or Void is held
+ * with sneak. Also Fake zpew, No rotate, Smooth teleport and a custom teleport sound. The overlay
+ * is ported from NoammAddons.
  */
 object Etherwarp {
 	private const val MODE_OUTLINE = 0
 	private const val MODE_FILL = 1
 
-	/**
-	 * Hypixel plays the teleport as an ender dragon hurt at this pitch. Nothing
-	 * else in Skyblock uses the pair, so it identifies the sound on its own.
-	 */
+	/** Hypixel plays the teleport as an ender dragon hurt at this pitch; nothing else uses the pair. */
 	private const val TELEPORT_SOUND_PITCH = 0.53968257f
 
-	/** NoammAddons' own default highlight colour, kept so the overlay looks familiar. */
 	private const val DEFAULT_HIGHLIGHT_RGB = 0x0086FF
 
-	/** Fills are drawn faint, matching the alpha NoammAddons ships with. */
 	private const val DEFAULT_FILL_ALPHA = 50
 
 	private val soundOptions = SoundChoices.options
@@ -131,14 +123,13 @@ object Etherwarp {
 		visibleIf = { overlay.value && showFail.value && mode.selectedIndex != MODE_OUTLINE },
 	)
 
-	// One switch per teleport for each half, the way NoammAddons lays them out:
-	// somebody who wants the camera to jump ahead on an etherwarp does not
-	// necessarily want it on every Hyperion click. The two etherwarp ones keep
-	// the ids they had when they were the only two.
+	// One switch per teleport for each half, as NoammAddons lays them out. The two etherwarp ones
+	// keep their original ids.
 
 	@JvmField
 	val fakeZpew = ToggleModuleSetting(
 		id = "fake_zpew",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Etherwarp",
 		defaultValue = false,
 		description = "Puts your view at the landing spot as you click an etherwarp. Can't be on while Smooth teleport glides etherwarps.",
@@ -147,6 +138,7 @@ object Etherwarp {
 	@JvmField
 	val fakeZpewTransmission = ToggleModuleSetting(
 		id = "fake_zpew_transmission",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Instant Transmission",
 		defaultValue = false,
 		description = "The same for the eight-block teleport on an Aspect of the End or Void.",
@@ -155,6 +147,7 @@ object Etherwarp {
 	@JvmField
 	val fakeZpewImpact = ToggleModuleSetting(
 		id = "fake_zpew_impact",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Wither Impact",
 		defaultValue = false,
 		description = "The same for the teleport on a Hyperion, Valkyrie, Astraea or Scylla.",
@@ -163,6 +156,7 @@ object Etherwarp {
 	@JvmField
 	val noRotate = ToggleModuleSetting(
 		id = "no_rotate",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Etherwarp",
 		defaultValue = false,
 		description = "Keeps your head where you have turned it when an etherwarp lands.",
@@ -171,6 +165,7 @@ object Etherwarp {
 	@JvmField
 	val noRotateTransmission = ToggleModuleSetting(
 		id = "no_rotate_transmission",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Instant Transmission",
 		defaultValue = false,
 		description = "The same for the eight-block teleport on an Aspect of the End or Void.",
@@ -179,19 +174,18 @@ object Etherwarp {
 	@JvmField
 	val noRotateImpact = ToggleModuleSetting(
 		id = "no_rotate_impact",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 		label = "Wither Impact",
 		defaultValue = false,
 		description = "The same for the teleport on a Hyperion, Valkyrie, Astraea or Scylla.",
 	)
-
-	// ---- Smooth teleport -------------------------------------------------
 
 	@JvmField
 	val smoothTeleport = ToggleModuleSetting(
 		id = "smooth_teleport",
 		label = "Smooth teleport",
 		defaultValue = false,
-		description = "Glides the camera from where a teleport started to where it landed, instead of snapping, as Skyblocker's Smooth AOTE does. Only the view moves.",
+		description = "Glides the camera from where a teleport started to where it landed, instead of snapping. Only the view moves.",
 	)
 
 	@JvmField
@@ -200,8 +194,7 @@ object Etherwarp {
 		label = "Smooth these",
 		options = SmoothTeleport.KINDS,
 		defaultSelected = setOf(SmoothTeleport.INSTANT, SmoothTeleport.ETHER, SmoothTeleport.IMPACT),
-		description = "Instant Transmission: Aspect of the End or Void. Etherwarp: a merged Aspect while sneaking, or the Etherwarp Conduit. " +
-			"Wither Impact: Hyperion, Astraea, Scylla, Valkyrie, Necron's Blade. Sinrecall: Sinseeker Scythe. Weird Transmission: Aspect of the Leech. A kind can't be ticked while its Fake zpew switch is on.",
+		description = "Which teleports glide: AOTE/AOTV, Etherwarp, Wither Impact, Sinseeker's Sinrecall and the Leech's Weird Transmission. A kind can't be ticked while its Fake zpew is on.",
 		visibleIf = { smoothTeleport.value },
 	)
 
@@ -241,11 +234,25 @@ object Etherwarp {
 		min = 0.0,
 		max = 500.0,
 		step = 5.0,
-		description = "How long the glide takes: Skyblocker's Maximum Added Lag. Lower is faster, and 0 turns it off. The teleport itself is never held up.",
+		description = "How long a glide may run on after the server answers, and how long the whole glide takes with Predictive off. Lower is snappier. The teleport itself is never held up.",
 		visibleIf = { smoothTeleport.value },
 	)
 
-	/** True while any of the six is on, which is when the three timing settings mean anything. */
+	/** Etherwarp's own, since it's usually wanted snappier than the others (NEU's 50 against 125). */
+	@JvmField
+	val smoothTimeEther = SliderModuleSetting(
+		id = "smooth_lag_etherwarp",
+		label = "Smoothing time (Etherwarp)",
+		unit = "ms",
+		defaultValue = 50.0,
+		min = 0.0,
+		max = 500.0,
+		step = 5.0,
+		description = "The same, for etherwarps alone.",
+		visibleIf = { smoothTeleport.value },
+	)
+
+	/** True while any of the six is on, when the timing settings matter. */
 	private fun predicts(): Boolean =
 		fakeZpew.value || fakeZpewTransmission.value || fakeZpewImpact.value ||
 			noRotate.value || noRotateTransmission.value || noRotateImpact.value
@@ -332,32 +339,31 @@ object Etherwarp {
 		visibleIf = { customSound.value },
 	)
 
+	private fun semiAllowed() = imicro.cryptic.gui.Restrictions.allows(imicro.cryptic.gui.Restriction.SEMI_LEGIT)
+
 	@JvmField
 	val module = Module(
 		id = "etherwarp",
-		name = "Etherwarp Customization",
-		// Etherwarp lives on an item rather than in dungeons, so the module sits
-		// under General even though dungeons are where it is used most.
+		name = "Teleport Features",
+		// Etherwarp is on an item, not dungeon-only, so it sits under General.
 		description = "Overlay, zpew and no rotate",
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
-		// One switch a row on the card, with what tunes it in the switch's "⋯"
-		// panel: the overlay's shape and colours, the timing every prediction
-		// shares, the glide, and the sound.
+		// One switch per row, with what tunes it in its "⋯" panel.
 		settings = listOf(
 			SectionModuleSetting("overlay_section", "Overlay"),
 			overlay.withMore(mode, lineWidth, fullBlock, phase, outlineColor, fillColor),
 			showFail.withMore(invalidOutlineColor, invalidFillColor),
-			SectionModuleSetting("zero_ping_section", "Fake zpew").withMore(resyncTimeout, waitOutLag, maxLagWait),
+			SectionModuleSetting("zero_ping_section", "Fake zpew", visibleIf = ::semiAllowed).withMore(resyncTimeout, waitOutLag, maxLagWait),
 			fakeZpew,
 			fakeZpewTransmission,
 			fakeZpewImpact,
-			SectionModuleSetting("no_rotate_section", "No rotate"),
+			SectionModuleSetting("no_rotate_section", "No rotate", visibleIf = ::semiAllowed),
 			noRotate,
 			noRotateTransmission,
 			noRotateImpact,
 			SectionModuleSetting("smooth_section", "Smooth teleport"),
-			smoothTeleport.withMore(smoothPredictive, smoothThirdPerson, smoothOutsideDungeons, smoothTime),
+			smoothTeleport.withMore(smoothPredictive, smoothThirdPerson, smoothOutsideDungeons, smoothTime, smoothTimeEther),
 			smoothKinds,
 			SectionModuleSetting("sound_section", "Sound"),
 			customSound.withMore(sound, customSoundId, volume, pitch, previewSound),
@@ -370,36 +376,37 @@ object Etherwarp {
 		if (initialized) return
 		initialized = true
 
-		// Pipelines are gathered while the game starts, so they are registered
-		// now rather than on the first frame that draws the overlay.
+		// Pipelines are registered at startup, not on the first frame.
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::renderOverlay)
 		EtherwarpZeroPing.initialize()
 		SmoothTeleport.initialize()
 	}
 
-	/** True while the zero-ping halves need to know which dungeon floor this is. */
+	/** True while the zero-ping halves need the dungeon floor. */
 	val needsFloorTracking: Boolean
 		get() = EtherwarpZeroPing.needsFloorTracking ||
 			(module.enabled && smoothTeleport.value && (smoothOutsideDungeons.value || smoothPredictive.value))
 
-	/**
-	 * Called by the client packet mixin. Returns true when Hypixel's teleport
-	 * sound should be swallowed, because Cryptic is playing its own instead.
-	 */
+	/** True when Hypixel's teleport sound should be swallowed because Cryptic plays its own. */
 	@JvmStatic
 	fun replaceTeleportSound(packet: ClientboundSoundPacket): Boolean {
 		if (!module.enabled || !customSound.value) return false
 		if (packet.sound.value() != SoundEvents.ENDER_DRAGON_HURT) return false
 		if (packet.pitch != TELEPORT_SOUND_PITCH) return false
 
-		// The packet may still be on the network thread here, and the sound
-		// manager expects to be touched from the client thread.
+		// Possibly on the network thread; the sound manager wants the client thread.
 		Minecraft.getInstance().execute(::playCustomSound)
 		return true
 	}
 
+	/** Whether the overlay drew a block last frame; [BlockOverlay] steps aside while it does. */
+	@Volatile
+	var overlayShown = false
+		private set
+
 	private fun renderOverlay(context: LevelRenderContext) {
+		overlayShown = false
 		if (!module.enabled || !overlay.value) return
 
 		val client = Minecraft.getInstance()
@@ -412,6 +419,7 @@ object Etherwarp {
 		val target = EtherwarpHelper.target(player.position(), player.lookAngle, range)
 		if (!target.valid && !showFail.value) return
 		val pos = target.pos ?: return
+		overlayShown = true
 
 		WorldRender.drawBlock(
 			poseStack = context.poseStack(),
@@ -427,14 +435,7 @@ object Etherwarp {
 		)
 	}
 
-	/**
-	 * Whether the player is lining up an etherwarp right now.
-	 *
-	 * Crouching with an item that can warp, which is the whole of what makes
-	 * the overlay appear. [BlockOverlay] asks so it can get out of the way:
-	 * two boxes on two different blocks, one under the crosshair and one where
-	 * you would land, is a confusing thing to aim with.
-	 */
+	/** Whether you're lining up an etherwarp (crouching with a warp item). */
 	fun isAiming(): Boolean {
 		val client = Minecraft.getInstance()
 		if (!client.options.keyShift.isDown) return false
@@ -445,11 +446,7 @@ object Etherwarp {
 	/** Command-friendly names for [soundOptions], e.g. "experience_orb". */
 	val soundIds: List<String> = soundOptions.map { it.first.lowercase().replace(' ', '_') }
 
-	/**
-	 * Selects a sound by its [soundIds] name and plays it, so the command both
-	 * applies the choice and lets you hear it. Returns the label that was
-	 * selected, or null when the name is not one Cryptic offers.
-	 */
+	/** Selects a sound by its [soundIds] name and plays it. Returns its label, or null if unknown. */
 	fun selectSound(id: String): String? {
 		val index = soundIds.indexOf(id.lowercase()).takeIf { it >= 0 } ?: return null
 		sound.selectedIndex = index

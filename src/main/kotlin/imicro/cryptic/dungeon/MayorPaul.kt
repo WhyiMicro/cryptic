@@ -11,19 +11,13 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 /**
- * Whether Mayor Paul's EZPZ perk is handing out ten free points.
- *
- * Ported from dtMap (BSD 3-Clause, Copyright (c) 2026 rice.who); the full
- * licence is in `licenses/dtMap-LICENSE.txt`. The perk is worth ten bonus
- * score, which is the difference between a 290 and a 300, so a score that
- * ignores it is wrong for a whole mayoral term. Hypixel publishes who won the
- * election on a public endpoint, which is asked once and remembered — no
- * account, key or player data is involved.
+ * Whether Mayor Paul's EZPZ perk is giving ten bonus points (the difference between 290 and 300).
+ * Hypixel's public election endpoint is asked once and remembered; nothing about the player is
+ * sent. Ported from dtMap.
  */
 object MayorPaul {
 	private const val ELECTION_URL = "https://api.hypixel.net/resources/skyblock/election"
 
-	/** A mayor holds office for days, so one answer lasts the whole session. */
 	private const val REFRESH_INTERVAL_MS = 30 * 60 * 1000L
 
 	private val client: HttpClient by lazy {
@@ -42,13 +36,9 @@ object MayorPaul {
 	@Volatile
 	private var fetching = false
 
-	/** True once Hypixel has answered, which is what "Auto" waits for. */
 	val known: Boolean get() = fetchedAt != 0L
 
-	/**
-	 * Whether the ten points should be counted, which the player can override
-	 * either way for a mayor Cryptic could not reach the API to check.
-	 */
+	/** Whether to count the ten points; the player can override it. */
 	val active: Boolean
 		get() = when (DungeonScore.paulMode.selectedIndex) {
 			1 -> true
@@ -57,12 +47,9 @@ object MayorPaul {
 		}
 
 	fun reset() {
-		// The election result is not run-specific, so only the in-flight state
-		// is dropped; the answer itself stays until it goes stale.
 		fetching = false
 	}
 
-	/** Asks Hypixel who the mayor is, at most once per refresh interval. */
 	fun ensureFetched() {
 		if (fetching) return
 		val now = System.currentTimeMillis()
@@ -90,10 +77,7 @@ object MayorPaul {
 			}
 	}
 
-	/**
-	 * Paul being mayor is not enough on its own: the ten points come from the
-	 * EZPZ perk, and a mayor is elected with only some of their perks.
-	 */
+	/** Paul alone isn't enough: the points come from the EZPZ perk, which he may not have. */
 	private fun hasEzpz(body: String): Boolean {
 		val mayor = JsonParser.parseString(body).asJsonObject.getAsJsonObject("mayor") ?: return false
 		if (mayor.get("name")?.asString != "Paul") return false

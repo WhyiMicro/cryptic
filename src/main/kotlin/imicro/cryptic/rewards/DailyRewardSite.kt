@@ -17,7 +17,6 @@ import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 
-/** How rare a card is, with Hypixel's own colours for each. */
 enum class RewardRarity(val label: String, val color: Int) {
 	COMMON("Common", 0xFFB4B4B4.toInt()),
 	RARE("Rare", 0xFF6CDBD8.toInt()),
@@ -29,7 +28,6 @@ enum class RewardRarity(val label: String, val color: Int) {
 	}
 }
 
-/** One of the three cards: what it gives, how much, and how rare it is. */
 data class RewardCard(
 	val type: String,
 	val rarity: RewardRarity,
@@ -38,34 +36,25 @@ data class RewardCard(
 	val description: String,
 )
 
-/**
- * A day's reward as Hypixel's site offers it: three cards to pick one of, the
- * streak, and what the claim has to send back.
- */
+/** A day's reward: three cards to pick from, the streak, and what the claim must send back. */
 data class RewardOffer(
 	val id: String,
 	val cards: List<RewardCard>,
-	/** How far along the nine-step streak bar you are. */
 	val streakStep: Int,
 	val streak: Int,
 	val bestStreak: Int,
 	val activeAd: Int,
-	/** How long Hypixel's ad runs before a card may be claimed, when it cannot be skipped. */
+	/** How long Hypixel's ad runs before a card can be claimed. */
 	val adSeconds: Int,
 	val token: String,
-	/** A made-up offer from `/cryptic debug reward`, which claims nothing. */
+	/** A made-up offer from `/cryptic debug reward`; claims nothing. */
 	val sample: Boolean = false,
 )
 
 /**
- * Hypixel's daily reward site, read and answered the way the page itself
- * does: the reward link's page carries the three cards and a security token
- * in its scripts, and a claim is a POST back with the chosen card.
- *
- * Ported from DailyRewards (LGPL-3.0, Copyright (c) Cqseur): the page's
- * `appData`, `i18n` and token, the names it gives each reward and game, and
- * the claim request. RewardClaim by ThatGravyBoat was read for how the ad and
- * the cookies are handled; none of its code is used.
+ * Hypixel's daily reward site. The page's scripts hold the cards (`appData`), the names (`i18n`)
+ * and a security token; a claim POSTs the chosen card back. Inspired by the DailyRewards and
+ * RewardClaim mods.
  */
 object DailyRewardSite {
 	private const val PAGE_URL = "https://rewards.hypixel.net/claim-reward/"
@@ -78,7 +67,7 @@ object DailyRewardSite {
 	private val I18N = Regex("""window\.i18n\s*=\s*(\{[\s\S]*?\});""")
 	private val I18N_LINE = Regex(""""([^"]+)"\s*:\s*"([^"]*)"""")
 
-	/** The page sets cookies the claim must send back, so one client keeps them. */
+	/** One client keeps the page's cookies for the claim. */
 	private val http: HttpClient by lazy {
 		HttpClient.newBuilder()
 			.cookieHandler(CookieManager())
@@ -91,7 +80,6 @@ object DailyRewardSite {
 		Thread(task, "Cryptic daily reward").apply { isDaemon = true }
 	}
 
-	/** Reads the reward behind link [id], off the game thread. */
 	fun fetch(id: String): CompletableFuture<RewardOffer> = CompletableFuture.supplyAsync({
 		val request = HttpRequest.newBuilder(URI.create(PAGE_URL + id))
 			.timeout(Duration.ofSeconds(15))
@@ -103,7 +91,6 @@ object DailyRewardSite {
 		parse(id, response.body())
 	}, executor)
 
-	/** Claims card [option] of [offer], off the game thread. */
 	fun claim(offer: RewardOffer, option: Int): CompletableFuture<Unit> = CompletableFuture.supplyAsync({
 		val query = listOf(
 			"option" to option.toString(),
@@ -127,7 +114,6 @@ object DailyRewardSite {
 		}
 	}, executor)
 
-	/** The page, read: its token, its cards in the order the claim numbers them, and the streak. */
 	fun parse(id: String, page: String): RewardOffer {
 		val token = TOKEN.find(page)?.groupValues?.get(1)
 			?: error("Hypixel didn't recognise this reward link. It may have run out, or been claimed already.")
@@ -171,7 +157,7 @@ object DailyRewardSite {
 		JsonParser.parseReader(reader)
 	}.getOrNull()
 
-	/** The page's translations, as JSON or, when that fails, line by line. */
+	/** The page's translations, as JSON or line by line when that fails. */
 	private fun translations(page: String): Map<String, String> {
 		val block = I18N.find(page)?.groupValues?.get(1)?.replace("\\'", "'") ?: return emptyMap()
 		lenient(block)?.takeIf { it.isJsonObject }?.asJsonObject?.let { json ->
@@ -185,7 +171,6 @@ object DailyRewardSite {
 		var name = base.replace("{\$game}", game ?: "").replace("{game}", game ?: "").trim()
 		if (game != null && type in setOf("coins", "tokens") && !name.contains(game, ignoreCase = true)) name = "$game $name"
 		if (type == "dust") name = "Mystery Dust"
-		// Vanity and housing rewards name what they are through a key of their own.
 		reward.string("key")?.let { key -> names["vanity.$key"]?.let { return it } }
 		reward.string("package")?.let { pack ->
 			names["housing.skull.${pack.removePrefix("specialoccasion_reward_card_skull_")}"]?.let { return it }
@@ -210,20 +195,22 @@ object DailyRewardSite {
 		"adsense_token" to "A daily reward token",
 	)
 
-	/** Hypixel's game ids, as people know the games. */
-	private fun gameName(type: String): String = when (type) {
-		"WALLS3" -> "Mega Walls"
-		"SURVIVAL_GAMES" -> "Blitz SG"
-		"TNTGAMES" -> "TNT Games"
-		"MCGO" -> "Cops and Crims"
-		"BATTLEGROUND" -> "Warlords"
-		"SUPER_SMASH" -> "Smash Heroes"
-		"SKYWARS" -> "SkyWars"
-		"BEDWARS" -> "Bed Wars"
-		"BUILD_BATTLE" -> "Build Battle"
-		"MURDER_MYSTERY" -> "Murder Mystery"
-		"LEGACY" -> "Classic Games"
-		"SKYBLOCK" -> "SkyBlock"
-		else -> type.lowercase().split('_').joinToString(" ") { word -> word.replaceFirstChar { it.titlecase() } }
-	}
+	/** Hypixel's game ids as people know the games. */
+	private val GAME_NAMES = mapOf(
+		"BATTLEGROUND" to "Warlords",
+		"BEDWARS" to "Bed Wars",
+		"BUILD_BATTLE" to "Build Battle",
+		"LEGACY" to "Classic Games",
+		"MCGO" to "Cops and Crims",
+		"MURDER_MYSTERY" to "Murder Mystery",
+		"SKYBLOCK" to "SkyBlock",
+		"SKYWARS" to "SkyWars",
+		"SUPER_SMASH" to "Smash Heroes",
+		"SURVIVAL_GAMES" to "Blitz SG",
+		"TNTGAMES" to "TNT Games",
+		"WALLS3" to "Mega Walls",
+	)
+
+	private fun gameName(id: String): String =
+		GAME_NAMES[id] ?: id.lowercase().split('_').joinToString(" ") { word -> word.replaceFirstChar { it.titlecase() } }
 }
