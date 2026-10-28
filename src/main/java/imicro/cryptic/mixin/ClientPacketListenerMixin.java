@@ -274,6 +274,8 @@ public abstract class ClientPacketListenerMixin {
     private void cryptic$hideParticles(ClientboundLevelParticlesPacket packet, CallbackInfo info) {
         NucleusQol.onParticle(packet);
         imicro.cryptic.feature.WishingCompass.onParticle(packet);
+        imicro.cryptic.feature.Farming.onParticle(packet);
+        imicro.cryptic.debug.LaserDebug.onParticle(packet);
         imicro.cryptic.feature.WitherDragons.onParticle(packet);
         if (imicro.cryptic.feature.Fishing.onParticle(packet) || MageBeam.onParticle(packet) || RenderOptimizer.blocksParticle(packet)
             || imicro.cryptic.feature.SlayerFeatures.hidesParticle(packet)) info.cancel();
@@ -466,6 +468,10 @@ public abstract class ClientPacketListenerMixin {
         imicro.cryptic.feature.ClassAbilities.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.feature.Mining.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.feature.Bazaar.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.AuctionHouse.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.WitherCloakEffect.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.skyblock.SackContents.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.Farming.onSystemChat(packet.content(), packet.overlay());
         // Last: Better Chat hides a line from the chat window, never from the mod.
         if (BetterChat.hidesChat(packet.content(), packet.overlay())
                 || AutoRequeue.hidesChat(packet.content(), packet.overlay())

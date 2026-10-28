@@ -1,13 +1,9 @@
 package imicro.cryptic.feature
 
 import imicro.cryptic.dungeon.DungeonLocation
-import imicro.cryptic.gui.ColorModuleSetting
-import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.ToggleModuleSetting
-import imicro.cryptic.gui.withMore
-import imicro.cryptic.render.BoxColors
 import net.minecraft.client.player.AbstractClientPlayer
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.EquipmentSlot
@@ -49,78 +45,10 @@ object HiddenMobs {
 		description = "The Watcher's mobs and the giants.",
 	)
 
-	private val highlightSection = SectionModuleSetting("highlight_section", "Highlight")
-
-	/**
-	 * Boxing lives here too, since revealing a mob and marking it go together; [Highlight] does the
-	 * drawing and reads these settings.
-	 */
-	@JvmField
-	val highlightFels = ToggleModuleSetting(
-		id = "highlight_fels",
-		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
-		label = "Highlight Fels",
-		description = "Boxes them as well as revealing them.",
-	)
-
-	@JvmField
-	val felColor = ColorModuleSetting(
-		id = "fel_color",
-		label = "Fel fill",
-		defaultRgb = 0xFF55FF,
-		supportsAlpha = true,
-		defaultAlpha = 0x80,
-		visibleIf = { highlightFels.value },
-	)
-
-	@JvmField
-	val felOutlineColor = ColorModuleSetting(
-		id = "fel_outline_color",
-		label = "Fel outline",
-		defaultRgb = 0xFF55FF,
-		supportsAlpha = true,
-		visibleIf = { highlightFels.value },
-	)
-
-	@JvmField
-	val highlightShadowAssassins = ToggleModuleSetting(
-		id = "highlight_shadow_assassins",
-		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
-		label = "Highlight Shadow Assassins",
-		description = "Boxes one after it blinks, which is the moment it is about to be behind you.",
-	)
-
-	@JvmField
-	val shadowAssassinColor = ColorModuleSetting(
-		id = "shadow_assassin_color",
-		label = "Assassin fill",
-		defaultRgb = 0xFFFFFF,
-		supportsAlpha = true,
-		defaultAlpha = 0x80,
-		visibleIf = { highlightShadowAssassins.value },
-	)
-
-	@JvmField
-	val shadowAssassinOutlineColor = ColorModuleSetting(
-		id = "shadow_assassin_outline_color",
-		label = "Assassin outline",
-		defaultRgb = 0xFFFFFF,
-		supportsAlpha = true,
-		visibleIf = { highlightShadowAssassins.value },
-	)
-
-	const val SHADOW_ASSASSIN_NAME = SHADOW_ASSASSIN
-
-	val felColors = BoxColors(felColor, felOutlineColor)
-	val shadowAssassinColors = BoxColors(shadowAssassinColor, shadowAssassinOutlineColor)
-
 	private val configurableSettings = listOf(
 		fels,
 		shadowAssassins,
 		stealthyMobs,
-		highlightSection,
-		highlightFels.withMore(felColor, felOutlineColor),
-		highlightShadowAssassins.withMore(shadowAssassinColor, shadowAssassinOutlineColor),
 	)
 
 	@JvmField

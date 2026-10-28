@@ -81,13 +81,23 @@ object Fishing {
 	val goneAlert = ToggleModuleSetting("gone_alert", "Alert when gone", true, "A title and a sound when the hotspot you're fishing in disappears.")
 
 	@JvmField
+	val radarTracer = ToggleModuleSetting("radar_tracer", "Line to it", true, "A line from the crosshair to where the radar points.")
+
+	@JvmField
+	val radarGuess = ToggleModuleSetting(
+		"radar_guess", "Hotspot radar guess", true,
+		"Using a Hotspot Radar sends a trail of flames toward the nearest hotspot. The trail is followed to its end, " +
+			"and that spot is marked with its distance.",
+	).withMore(radarTracer)
+
+	@JvmField
 	val module = Module(
 		id = "fishing",
 		name = "Fishing",
 		description = "QoL fishing features",
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
-		settings = listOf(hotspotSection, highlight, hideParticles, bobberInside, foundMessage, goneAlert),
+		settings = listOf(hotspotSection, highlight, hideParticles, bobberInside, foundMessage, goneAlert, radarGuess),
 	)
 
 	/** The rim's height above the water, as SkyOcean draws it. */
@@ -160,6 +170,13 @@ object Fishing {
 			fishedLevel = level
 			announced.clear()
 			radiusCounts.clear()
+			clearRadar()
+		}
+		if (imicro.cryptic.skyblock.SkyblockItem.id(player.mainHandItem) == "HOTSPOT_RADAR") radarHeldAt = System.currentTimeMillis()
+		radarGuessAt?.let { found ->
+			val at = radarAt ?: return@let
+			val flat = Vec3(at.x - player.x, 0.0, at.z - player.z).length()
+			if (flat < RADAR_ARRIVED || System.currentTimeMillis() - found > RADAR_MILLIS) clearRadar()
 		}
 		if (--scanTicks <= 0) {
 			scanTicks = 10
@@ -193,7 +210,11 @@ object Fishing {
 	 */
 	@JvmStatic
 	fun onParticle(packet: ClientboundLevelParticlesPacket): Boolean {
-		if (Minecraft.getInstance().isSameThread || !module.enabled) return false
+		if (Minecraft.getInstance().isSameThread) {
+			radarParticle(packet)
+			return false
+		}
+		if (!module.enabled) return false
 		val current = spots
 		if (current.isEmpty() || !isHotspotParticle(packet)) return false
 		val limit = maxRadiusSquared()
@@ -291,7 +312,67 @@ object Fishing {
 			it.withClickEvent(ClickEvent.RunCommand(command)).withHoverEvent(HoverEvent.ShowText(Component.literal(hover)))
 		}
 
+	// ---- Hotspot radar -------------------------------------------------------------------------
+
+	/** When the radar was last in your hand; its trail is only read just after. */
+	private var radarHeldAt = 0L
+	private val radarTrail = imicro.cryptic.skyblock.ParticleTrail()
+
+	/** Where the radar's last trail leads, and when it was found. */
+	private var radarAt: Vec3? = null
+	private var radarGuessAt: Long? = null
+
+	private const val RADAR_HELD_MILLIS = 1_500L
+	private const val RADAR_MILLIS = 60_000L
+	private const val RADAR_ARRIVED = 10.0
+	private const val RADAR_MAX_DISTANCE = 400.0
+	private const val RADAR_COLOR = 0xFFFF55FF.toInt()
+
+	/** The radar's flames, one at a time along the trail. Client thread. */
+	private fun radarParticle(packet: ClientboundLevelParticlesPacket) {
+		if (!module.enabled || !radarGuess.value || !SkyblockLocation.onSkyblock) return
+		if (packet.particle.type != ParticleTypes.FLAME || packet.count != 1 || packet.maxSpeed != 0f) return
+		val now = System.currentTimeMillis()
+		if (now - radarHeldAt > RADAR_HELD_MILLIS) return
+		val player = Minecraft.getInstance().player ?: return
+		val end = radarTrail.offer(Vec3(packet.x, packet.y, packet.z), player.eyePosition, now) ?: return
+		if (end.distanceTo(player.position()) > RADAR_MAX_DISTANCE) return
+		radarAt = end
+		radarGuessAt = now
+	}
+
+	private fun clearRadar() {
+		radarAt = null
+		radarGuessAt = null
+		radarTrail.clear()
+	}
+
+	private fun renderRadar(context: LevelRenderContext) {
+		val at = radarAt ?: return
+		val client = Minecraft.getInstance()
+		val player = client.player ?: return
+		val poseStack = context.poseStack()
+		val collector = context.submitNodeCollector()
+		WorldRender.drawBox(
+			poseStack, collector, at.x - 0.15, at.y, at.z - 0.15, at.x + 0.15, at.y + 40.0, at.z + 0.15,
+			outlineArgb = 0, fillArgb = 0x60000000 or (RADAR_COLOR and 0xFFFFFF), outline = false, fill = true, phase = true, lineWidth = 1f,
+		)
+		if (radarTracer.value) WorldRender.drawTracer(poseStack, collector, at.x, at.y, at.z, RADAR_COLOR, 2f, phase = true)
+		val distance = player.eyePosition.distanceTo(at)
+		WorldRender.drawText(
+			poseStack = poseStack,
+			collector = collector,
+			orientation = client.gameRenderer.mainCamera().rotation(),
+			text = Component.literal("§d§lHotspot §e${distance.toInt()}m"),
+			x = at.x, y = at.y + 1.5, z = at.z,
+			scale = (distance / 12.0).coerceIn(1.0, 6.0).toFloat(),
+			seeThrough = true,
+			centered = true,
+		)
+	}
+
 	private fun render(context: LevelRenderContext) {
+		if (module.enabled && radarGuess.value) renderRadar(context)
 		if (!module.enabled || !highlight.value || hotspots.isEmpty()) return
 		val client = Minecraft.getInstance()
 		val hook = bobber()

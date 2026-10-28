@@ -145,6 +145,27 @@ object BazaarMarket {
 	@Volatile
 	private var npcPrices: Map<String, Double> = emptyMap()
 
+	/** An item's rarity as the items list gives it ("EPIC"), or null when it doesn't. */
+	fun tier(id: String): String? = tiers[id]
+
+	/** An item's name as the items list writes it ("Enchanted Wild Rose"), by its id. */
+	fun nameOf(id: String): String? = namesById[id]
+
+	@Volatile
+	private var namesById: Map<String, String> = emptyMap()
+
+	@Volatile
+	private var tiers: Map<String, String> = emptyMap()
+
+	/**
+	 * What upgrading an item costs, for those that can be: `upgrade_costs` (one list per star) and
+	 * `gemstone_slots` (with what unlocking each costs), as the items list has them.
+	 */
+	fun upgrades(id: String): JsonObject? = upgrades[id]
+
+	@Volatile
+	private var upgrades: Map<String, JsonObject> = emptyMap()
+
 	/** Loads the items list (names and NPC prices) if it isn't yet, without the Bazaar. */
 	fun ensureItems() = ensureNames()
 
@@ -175,15 +196,29 @@ object BazaarMarket {
 	private fun readNames(body: String) {
 		val table = HashMap<String, MutableList<String>>()
 		val npc = HashMap<String, Double>()
+		val tier = HashMap<String, String>()
+		val byId = HashMap<String, String>()
+		val upgrade = HashMap<String, JsonObject>()
 		JsonParser.parseString(body).asJsonObject.getAsJsonArray("items")?.forEach { element ->
 			val item = element.asJsonObject
 			val id = item.get("id")?.asString ?: return@forEach
 			item.get("npc_sell_price")?.takeIf { it.isJsonPrimitive }?.asDouble?.let { npc[id] = it }
-			val name = item.get("name")?.asString?.replace(Regex("§."), "")?.trim()?.lowercase(Locale.ROOT) ?: return@forEach
-			table.getOrPut(name) { ArrayList() } += id
+			item.get("tier")?.takeIf { it.isJsonPrimitive }?.asString?.let { tier[id] = it }
+			if (item.has("upgrade_costs") || item.has("gemstone_slots")) {
+				upgrade[id] = JsonObject().apply {
+					item.get("upgrade_costs")?.let { add("upgrade_costs", it) }
+					item.get("gemstone_slots")?.let { add("gemstone_slots", it) }
+				}
+			}
+			val shown = item.get("name")?.asString?.replace(Regex("§."), "")?.trim() ?: return@forEach
+			byId[id] = shown
+			table.getOrPut(shown.lowercase(Locale.ROOT)) { ArrayList() } += id
 		}
 		idsByName = table
+		namesById = byId
 		npcPrices = npc
+		tiers = tier
+		upgrades = upgrade
 	}
 
 	private fun get(url: String) = http.sendAsync(

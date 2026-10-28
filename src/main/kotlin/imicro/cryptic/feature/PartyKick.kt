@@ -288,11 +288,16 @@ object PartyKick {
 			ownPick = null
 		}
 		if (runBegan) return
+		// Who is in this run comes from the tab list; until it's read, nobody is compared. Picks
+		// heard from earlier groups stay in [partyClasses] when a group ends without saying so.
+		val team = DungeonTeam.classes.keys
+		if (team.isEmpty()) return
+		val me = Minecraft.getInstance().player?.gameProfile?.name
 		// What the lobby lines said, then the tab list where it knows better, except for your own
 		// pick, which is newer than the tab list for a while.
-		val known = HashMap(partyClasses)
+		val known = HashMap(partyClasses.filterKeys { it in team || it == me })
 		DungeonTeam.classes.forEach { (name, clazz) -> if (clazz != DungeonTeam.DungeonClass.UNKNOWN) known[name] = clazz }
-		ownPick?.let { pick -> Minecraft.getInstance().player?.gameProfile?.name?.let { known[it] = pick } }
+		ownPick?.let { pick -> me?.let { known[it] = pick } }
 		val dupes = known.entries
 			.groupBy({ it.value }, { it.key })
 			.filterValues { it.size > 1 }

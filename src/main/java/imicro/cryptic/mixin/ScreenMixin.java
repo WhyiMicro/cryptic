@@ -41,13 +41,19 @@ public abstract class ScreenMixin {
 
     /**
      * The experiment solver paints over the chest rather than replacing it, since the board is
-     * what's being memorised.
+     * what's being memorised. Drawn before the tooltips, so a tooltip stays on top of these.
      */
-    @Inject(method = "extractRenderStateWithTooltipAndSubtitles", at = @At("TAIL"))
+    @Inject(
+        method = "extractRenderStateWithTooltipAndSubtitles",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/GuiGraphicsExtractor;extractDeferredElements(IIF)V")
+    )
     private void cryptic$drawExperiment(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo info) {
         ExperimentSolver.render((Screen) (Object) this, graphics);
         SlotBinds.render((Screen) (Object) this, graphics, mouseX, mouseY);
         CroesusHelper.renderOverlay((Screen) (Object) this, graphics, mouseX, mouseY);
         imicro.cryptic.feature.Bazaar.renderOverlay((Screen) (Object) this, graphics);
+        imicro.cryptic.feature.BazaarPresets.render((Screen) (Object) this, graphics, mouseX, mouseY);
+        imicro.cryptic.feature.Farming.renderList((Screen) (Object) this, graphics, mouseX, mouseY);
+        imicro.cryptic.feature.Farming.renderMousemat((Screen) (Object) this, graphics, mouseX, mouseY);
     }
 }

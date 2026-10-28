@@ -9,7 +9,6 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
@@ -26,9 +25,10 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * Replaces Hypixel's Creeper Veil charged-creeper overlay with orbiting shields. The veil is
- * noticed by Hypixel's chat line, the invisible creeper being drawn, or a slow scan for it. The
- * shield texture is NotEnoughUpdates'.
+ * Replaces Hypixel's Creeper Veil charged-creeper overlay with orbiting shields. Only your own veil
+ * turns it on, by Hypixel's chat line; the invisible charged creepers elsewhere (the Dwarven
+ * Mines' ghosts) are never taken for it. While it's on, only the creeper at you loses its charge
+ * layer. The shield texture is NotEnoughUpdates'.
  */
 object WitherCloakEffect {
 	private val shieldCount = SliderModuleSetting(
@@ -109,7 +109,6 @@ object WitherCloakEffect {
 	private var initialized = false
 	private var cloakActive = false
 	private var lastCloakCreeperSeenAt = 0L
-	private var lastDeactivatedAt = 0L
 	private var ticksUntilScan = 0
 	private var renderSnapshot: RenderSnapshot? = null
 
@@ -117,12 +116,6 @@ object WitherCloakEffect {
 		if (initialized) return
 		initialized = true
 
-		ClientReceiveMessageEvents.GAME.register { message, _ ->
-			onGameMessage(message.string)
-		}
-		ClientReceiveMessageEvents.CHAT.register { message, _, _, _, _ ->
-			onGameMessage(message.string)
-		}
 		LevelExtractionEvents.END_EXTRACTION.register(::extractRenderState)
 		LevelRenderEvents.COLLECT_SUBMITS.register(::submitRenderState)
 	}
@@ -148,25 +141,13 @@ object WitherCloakEffect {
 			return
 		}
 
-		// The scan is only a fallback; chat and the render layer activate it at once. A few times a
-		// second stays inside the grace periods below.
-		if (ticksUntilScan-- <= 0) {
+		// Only keeps an active veil alive while its creeper is still around you; never starts one.
+		if (cloakActive && ticksUntilScan-- <= 0) {
 			ticksUntilScan = SCAN_INTERVAL_TICKS
-
-			var foundCloakCreeper = false
-			for (entity in level.entitiesForRendering()) {
-				if (entity !is Creeper || !entity.isPowered || !entity.isInvisible) continue
-				if (entity.distanceToSqr(player) >= CLOAK_CREEPER_RANGE_SQUARED) continue
-				foundCloakCreeper = true
-				break
+			val around = level.entitiesForRendering().any { entity ->
+				entity is Creeper && entity.isPowered && entity.isInvisible && entity.distanceToSqr(player) < CLOAK_CREEPER_RANGE_SQUARED
 			}
-
-			if (foundCloakCreeper) {
-				lastCloakCreeperSeenAt = now
-				if (now - lastDeactivatedAt >= VANILLA_OVERLAY_GRACE_PERIOD_MS) {
-					cloakActive = true
-				}
-			}
+			if (around) lastCloakCreeperSeenAt = now
 		}
 
 		if (cloakActive && now - lastCloakCreeperSeenAt > CREEPER_GRACE_PERIOD_MS) {
@@ -174,27 +155,19 @@ object WitherCloakEffect {
 		}
 	}
 
+	/** Hides the charge layer of your veil's creeper only: invisible, charged, and at you. */
 	@JvmStatic
 	fun shouldHideVanillaPower(state: CreeperRenderState): Boolean {
-		if (!active || !state.isPowered) return false
-		val now = System.currentTimeMillis()
-		val looksLikeCloakCreeper =
-			(state.isInvisible || state.isInvisibleToPlayer) &&
-				state.distanceToCameraSq < CLOAK_CREEPER_FALLBACK_RANGE_SQUARED
+		if (!active || !cloakActive || !state.isPowered) return false
+		val yours = (state.isInvisible || state.isInvisibleToPlayer) && state.distanceToCameraSq < CLOAK_CREEPER_FALLBACK_RANGE_SQUARED
+		if (yours) lastCloakCreeperSeenAt = System.currentTimeMillis()
+		return yours
+	}
 
-		if (cloakActive) {
-			lastCloakCreeperSeenAt = now
-			return true
-		}
-
-		if (looksLikeCloakCreeper) {
-			lastCloakCreeperSeenAt = now
-			if (now - lastDeactivatedAt >= VANILLA_OVERLAY_GRACE_PERIOD_MS) cloakActive = true
-			// Hypixel can keep the creeper a moment after it ends; keep its layer hidden without
-			// reactivating.
-			return true
-		}
-		return false
+	/** Hypixel's veil lines, from the chat packet so another mod hiding them can't hide them from this. */
+	@JvmStatic
+	fun onSystemChat(message: net.minecraft.network.chat.Component, overlay: Boolean) {
+		if (!overlay) onGameMessage(message.string)
 	}
 
 	private fun onGameMessage(text: String) {
@@ -309,7 +282,6 @@ object WitherCloakEffect {
 	}
 
 	private fun deactivate(now: Long) {
-		if (cloakActive) lastDeactivatedAt = now
 		cloakActive = false
 		renderSnapshot = null
 	}
@@ -317,7 +289,6 @@ object WitherCloakEffect {
 	private fun reset() {
 		cloakActive = false
 		lastCloakCreeperSeenAt = 0L
-		lastDeactivatedAt = 0L
 		ticksUntilScan = 0
 		renderSnapshot = null
 	}
@@ -338,7 +309,6 @@ object WitherCloakEffect {
 	private const val CLOAK_CREEPER_FALLBACK_RANGE_SQUARED = 16.0 * 16.0
 	private const val SCAN_INTERVAL_TICKS = 4
 	private const val CREEPER_GRACE_PERIOD_MS = 2_000L
-	private const val VANILLA_OVERLAY_GRACE_PERIOD_MS = 300L
 	private const val DEGREES_TO_RADIANS = PI / 180.0
 
 	private const val DEGREES_PER_SECOND_PER_SPEED = 50.0 / 3.0

@@ -277,6 +277,7 @@ object CrypticClient : ClientModInitializer {
 		imicro.cryptic.feature.Mining.initialize()
 		imicro.cryptic.feature.Fishing.initialize()
 		imicro.cryptic.feature.Bazaar.initialize()
+		imicro.cryptic.feature.Farming.initialize()
 		imicro.cryptic.feature.TooltipFeatures.initialize()
 		SpiritBear.initialize()
 		LividSolver.initialize()
@@ -649,6 +650,35 @@ object CrypticClient : ClientModInitializer {
 								}
 								1
 							})
+							.then(ClientCommands.literal("focus")
+								.executes { context ->
+									context.source.sendFeedback(Component.literal(imicro.cryptic.debug.FocusDebug.start(60)))
+									1
+								}
+								.then(ClientCommands.argument("seconds", com.mojang.brigadier.arguments.IntegerArgumentType.integer(5, 600)).executes { context ->
+									val seconds = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "seconds")
+									context.source.sendFeedback(Component.literal(imicro.cryptic.debug.FocusDebug.start(seconds)))
+									1
+								}))
+							.then(ClientCommands.literal("temple").executes { context ->
+								NucleusQol.describeTemple().forEach { context.source.sendFeedback(Component.literal(it)) }
+								1
+							})
+							.then(ClientCommands.literal("lasers")
+								.executes { context ->
+									imicro.cryptic.debug.LaserDebug.snapshot().forEach { context.source.sendFeedback(Component.literal(it)) }
+									1
+								}
+								.then(ClientCommands.literal("watch")
+									.executes { context ->
+										context.source.sendFeedback(Component.literal(imicro.cryptic.debug.LaserDebug.watch(30)))
+										1
+									}
+									.then(ClientCommands.argument("seconds", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 300)).executes { context ->
+										val seconds = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "seconds")
+										context.source.sendFeedback(Component.literal(imicro.cryptic.debug.LaserDebug.watch(seconds)))
+										1
+									})))
 							.then(ClientCommands.literal("tooltip").executes { context ->
 								context.source.sendFeedback(Component.literal(imicro.cryptic.feature.TooltipFeatures.startDump()))
 								1
@@ -763,10 +793,17 @@ object CrypticClient : ClientModInitializer {
 								}
 								1
 							})
+							.then(ClientCommands.literal("farming").executes { context ->
+								imicro.cryptic.feature.Farming.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
 							.then(ClientCommands.literal("bazaar").executes { context ->
 								imicro.cryptic.feature.Bazaar.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
+								context.source.sendFeedback(Component.literal(imicro.cryptic.skyblock.AuctionPrices.describe))
 								1
 							})
 							.then(ClientCommands.literal("requeue").executes { context ->
@@ -789,6 +826,11 @@ object CrypticClient : ClientModInitializer {
 								context.source.sendFeedback(Component.literal("§8[Cryptic] " + SpiritLeapOverlay.openDebug()))
 								1
 							})
+							.then(
+								ClientCommands.literal("update")
+									.executes { imicro.cryptic.feature.UpdateChecker.simulate(fail = false); 1 }
+									.then(ClientCommands.literal("fail").executes { imicro.cryptic.feature.UpdateChecker.simulate(fail = true); 1 }),
+							)
 							.then(ClientCommands.literal("secret_sync").executes { context ->
 								imicro.cryptic.dungeon.SecretSync.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
@@ -1154,6 +1196,7 @@ object CrypticClient : ClientModInitializer {
 				SlotBinds.module.enabled || NucleusQol.module.enabled || CarryManager.module.enabled || imicro.cryptic.feature.SlayerFeatures.needsSkyblock || imicro.cryptic.feature.ChocolateFactory.needsSkyblock ||
 					LoadoutManager.needsSkyblock || imicro.cryptic.feature.ItemProtection.module.enabled ||
 					imicro.cryptic.feature.Mining.needsSkyblock || RenderOptimizer.needsSkyblock || imicro.cryptic.feature.Fishing.needsSkyblock || imicro.cryptic.feature.Bazaar.needsSkyblock || imicro.cryptic.feature.TooltipFeatures.needsSkyblock ||
+					imicro.cryptic.feature.AuctionHouse.module.enabled || imicro.cryptic.feature.Farming.module.enabled ||
 					KeybindManager.needsSkyblock ||
 					SmoothTeleport.predictive ||
 					DungeonWarpCooldown.module.enabled,
@@ -1200,7 +1243,7 @@ object CrypticClient : ClientModInitializer {
 				TerminalEsp.module.enabled || TerminalOrder.module.enabled ||
 					DeviceSolver.needsPhaseTracking || F7Qol.module.enabled || MelodyHud.wanted ||
 					NoItemPlace.module.enabled ||
-					SpiritLeapOverlay.needsFloor7 || ILoveGlass.needsPhase || KeybindManager.needsPhase || SmoothTeleport.predictive ||
+					ILoveGlass.needsPhase || KeybindManager.needsPhase || SmoothTeleport.predictive ||
 						imicro.cryptic.feature.WitherDragons.needsPhase || imicro.cryptic.feature.Relics.needsPhase,
 			)
 			Floor7Progress.tick(client, TerminalOrder.needsProgressTracking)
@@ -1259,6 +1302,12 @@ object CrypticClient : ClientModInitializer {
 			imicro.cryptic.feature.Mining.tick(client)
 			imicro.cryptic.feature.Fishing.tick(client)
 			imicro.cryptic.feature.Bazaar.tick(client)
+			imicro.cryptic.feature.BazaarPresets.tick()
+			imicro.cryptic.feature.Farming.tick(client)
+			imicro.cryptic.debug.LaserDebug.tick()
+			imicro.cryptic.debug.FocusDebug.tick(client)
+			// For the rarity colours in the Auction House's notifications.
+			if (imicro.cryptic.feature.AuctionHouse.module.enabled && SkyblockLocation.onSkyblock) imicro.cryptic.skyblock.BazaarMarket.ensureItems()
 			imicro.cryptic.feature.TooltipFeatures.tick()
 			imicro.cryptic.feature.QueueScreen.tick(client)
 			imicro.cryptic.feature.PartyKick.tick()

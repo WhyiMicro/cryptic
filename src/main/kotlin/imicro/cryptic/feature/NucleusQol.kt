@@ -79,7 +79,16 @@ object NucleusQol {
 
 	private val waypointsSection = SectionModuleSetting("waypoints_section", "Waypoints")
 
-	private val calculate = ButtonModuleSetting("calculate", "Calculate waypoints", action = { calculate() })
+	@JvmField
+	val autoWaypoints = ToggleModuleSetting(
+		"auto_waypoints", "Jungle Temple waypoints", true,
+		"Sets the temple's waypoints by itself once you're near its door: from where the right-hand Kalhuiki Door Guardian " +
+			"stands, the spot the waypoints are measured from. The temple always faces the same way.",
+	)
+
+	private val calculate = ButtonModuleSetting(
+		"calculate", "Calculate waypoints", action = { calculate() }, visibleIf = { !autoWaypoints.value },
+	)
 
 	private val clear = ButtonModuleSetting(
 		id = "clear",
@@ -484,7 +493,7 @@ object NucleusQol {
 		category = ModuleCategory.GENERAL,
 		settings = listOf(
 			warpKey,
-			waypointsSection, calculate, clear, mode, fillColor, outlineColor, lineWidth, phase,
+			waypointsSection, autoWaypoints, calculate, clear, mode, fillColor, outlineColor, lineWidth, phase,
 			crystalsSection, crystalSlots, crystalPickups, crystalStyle,
 			amberColor, amethystColor, topazColor, jadeColor, sapphireColor,
 			placesSection, HollowsMap.labels.withMore(HollowsMap.poiPlaces), structureScanner.withMore(scanPlaces),
@@ -665,6 +674,10 @@ object NucleusQol {
 
 		if (ticksUntilScan-- > 0) return
 		ticksUntilScan = 10
+		if (autoWaypoints.value && waypoints.isEmpty()) templeDoor(client)?.let { door ->
+			waypoints = OFFSETS.map { (x, y, z) -> door.offset(x, y, z) }
+			Toasts.show(SOURCE, "Set §f${waypoints.size} §7waypoints from the Jungle Temple's door", color = Toasts.Colors.MINING)
+		}
 		inNucleus = isInNucleus(client)
 		updateInMines(client)
 		scanArea(client)
@@ -686,6 +699,42 @@ object NucleusQol {
 	}
 
 	private val FORMATTING = Regex("§.")
+
+	private const val DOOR_GUARDIAN = "Kalhuiki Door Guardian"
+
+	/** The guardians flanking the temple's door, where each stands, from the nameplates over them. */
+	private fun doorGuardians(client: Minecraft): List<BlockPos> {
+		val level = client.level ?: return emptyList()
+		return level.entitiesForRendering()
+			.filter { it is net.minecraft.world.entity.decoration.ArmorStand && it.customName?.string?.replace(FORMATTING, "")?.contains(DOOR_GUARDIAN) == true }
+			.mapNotNull { stand ->
+				// The guardian is the NPC under its nameplate; its feet are the spot.
+				level.players().firstOrNull { npc ->
+					npc !== client.player && Math.abs(npc.x - stand.x) < 0.6 && Math.abs(npc.z - stand.z) < 0.6 && stand.y - npc.y in 0.0..3.5
+				}?.blockPosition()
+			}
+			.distinct()
+	}
+
+	/**
+	 * The spot the waypoints are measured from: the right-hand guardian as you face the door. The
+	 * temple opens toward +z, so facing in, the right hand is the smaller x. Null until both are seen.
+	 */
+	private fun templeDoor(client: Minecraft): BlockPos? {
+		val guardians = doorGuardians(client)
+		if (guardians.size != 2) return null
+		return guardians.minBy { it.x }
+	}
+
+	/** For `/cryptic debug temple`: the guardians found and which one the waypoints come from. */
+	fun describeTemple(): List<String> {
+		val client = Minecraft.getInstance()
+		val guardians = doorGuardians(client)
+		if (guardians.isEmpty()) return listOf("No Kalhuiki Door Guardians in sight.")
+		val door = templeDoor(client)
+		return guardians.map { "Guardian at ${it.x} ${it.y} ${it.z}${if (it == door) " §a(used)" else ""}" } +
+			listOfNotNull(door?.let { "Waypoints: " + OFFSETS.joinToString { (x, y, z) -> "${it.x + x} ${it.y + y} ${it.z + z}" } })
+	}
 
 	private enum class Crystal(val title: String, val box: AABB, val color: () -> ColorModuleSetting) {
 		AMBER("Amber", slot(474, 524), { amberColor }),
@@ -902,7 +951,9 @@ object NucleusQol {
 			}
 		}
 		val box = AABB(minX.toDouble(), minY.toDouble(), minZ.toDouble(), maxX + 1.0, maxY + 1.0, maxZ + 1.0)
-		return BarrierCluster(box.inflate(0.002), count, if (overflow) null else crystalSpace(box))
+		// The Nucleus's slots are crystal-sized, and scans from just outside its square reach them.
+		val inNucleus = box.center.x in NUCLEUS_MIN..NUCLEUS_MAX && box.center.z in NUCLEUS_MIN..NUCLEUS_MAX
+		return BarrierCluster(box.inflate(0.002), count, if (overflow || inNucleus) null else crystalSpace(box))
 	}
 
 	/**

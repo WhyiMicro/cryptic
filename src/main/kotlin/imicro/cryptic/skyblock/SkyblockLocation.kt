@@ -81,6 +81,20 @@ object SkyblockLocation {
 		return zoneFrom(lines, area)
 	}
 
+	private val pursePattern = Regex("""(?:Purse|Piggy): ([\d,.]+)""")
+
+	/** Your coins, from the sidebar's "Purse: 150,632,185 (+5)" line, or null when it isn't there. */
+	fun purse(): Double? {
+		val scoreboard = Minecraft.getInstance().level?.scoreboard ?: return null
+		val objective = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR) ?: return null
+		for (entry in scoreboard.listPlayerScores(objective)) {
+			val team = scoreboard.getPlayersTeam(entry.owner())
+			val line = PlayerTeam.formatNameForTeam(team, entry.ownerName()).string.replace(formattingPattern, "").trim()
+			pursePattern.find(line)?.let { return it.groupValues[1].replace(",", "").toDoubleOrNull() }
+		}
+		return null
+	}
+
 	fun zoneFrom(lines: List<String>, island: String?): String? {
 		// Hypixel's area icon (U+E067, or U+E020 in the Rift) marks the location line.
 		lines.firstOrNull { line -> line.any { it == AREA_ICON || it == RIFT_AREA_ICON } }?.let { line ->

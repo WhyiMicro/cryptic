@@ -41,12 +41,13 @@ object CreditList {
 					"Skyblocker",
 					"Tic Tac Toe, Ice Path and the Water Board's previews, Lights On, Smooth teleport, the Booster Cookie reading, " +
 						"Nucleus Features's lock picks and Crystal Hollows map, the Pickobulus overlay, Item Protection's protected menus, " +
-						"and the idea of the Party Finder.",
+						"Farming's visitor list and the pests' head textures, and the idea of the Party Finder.",
 					"LGPL-3.0", "https://github.com/SkyblockerMod/Skyblocker",
 				),
 				Credit(
 					"SkyHanni",
-					"Nucleus Features: the crystal slots, the Metal Detector solver and the treasure chest timers, and the Croesus profit lists.",
+					"Nucleus Features: the crystal slots, the Metal Detector solver and the treasure chest timers, the Croesus profit lists, " +
+						"the idea of the tooltip's estimated item value, the mousemat's angles, the hotspot radar guess, and how Hypixel shapes a vacuum's trail and sack changes.",
 					"LGPL-2.1", "https://github.com/hannibal002/SkyHanni",
 				),
 				Credit("dtMap", "The dungeon map, its room database and the score.", "BSD 3-Clause", "https://github.com/ricedotwho/dtMap"),
@@ -77,7 +78,7 @@ object CreditList {
 				),
 				Credit(
 					"Blade Addons",
-					"The secret spawn timer, Spirit Leap Features' leap count and Class Colors' labels.",
+					"The secret spawn timer, Positional Messages' leap count and Class Colors' labels.",
 					"CC0", "https://github.com/BladeMasterGabe/blade-addons",
 				),
 				Credit("RSM", "Spirit Leap Features' two rotate fixes.", "BSD 3-Clause", "https://github.com/rs-mod/rsm"),
@@ -115,7 +116,7 @@ object CreditList {
 				Credit("ADM", "Spirit Leap's teammate views.", url = "https://github.com/undonecoffee/adm"),
 				Credit("quoi", "The blocks that give each Crystal Hollows place away to the structure scanner (after GumTuneClient), the Bazaar's escrow fix, the autoclicker blacklist, and the Chocolate Factory's Time Tower and Coach upgrades.", "GPL-3.0", "https://github.com/jcnlk/quoi"),
 				Credit("Enhanced Chat","Better Chat's tabs, search, right-click menu, merged repeats and longer history.", "GPL-3.0", "https://github.com/KdGaming0/Enhanced-Chat"),
-				Credit("NoFrills", "Better Chat's skipped command confirmations and kept history, Item Protection's rules and override key, and the pickaxe ability timer.", "GPL-3.0", "https://github.com/WhatYouThing/NoFrills"),
+				Credit("NoFrills", "Better Chat's skipped command confirmations and kept history, Item Protection's rules and override key, the pickaxe ability timer, and Farming's vacuum solver.", "GPL-3.0", "https://github.com/WhatYouThing/NoFrills"),
 				Credit("BtrBz", "The Bazaar module: order tracking, undercut alerts and tooltip prices.", "LGPL-3.0", "https://github.com/LutzLuca/BtrBz"),
 				Credit("Feesh", "Fishing's hotspot found message and gone alert.", "Apache-2.0", "https://github.com/Sleepy-Panda/Feesh"),
 				Credit("Debugify", "Camera's riding input fix.", "LGPL-3.0", "https://github.com/isXander/Debugify"),
@@ -136,7 +137,10 @@ object CreditList {
 						"and the door key sound.",
 					"BSD 3-Clause", "https://github.com/ricedotwho/dtMap",
 				),
-				Credit("Odin", "The puzzle answer files and the Croesus Helper's price table.", "BSD 3-Clause", "https://github.com/odtheking/Odin"),
+				Credit(
+					"Odin", "The puzzle answer files, and the price service behind the Croesus Helper and the tooltip's auction prices.",
+					"BSD 3-Clause", "https://github.com/odtheking/Odin",
+				),
 				Credit("Devonian", "Every room's secret spots, for Dungeon Waypoints.", "GPL-3.0", "https://github.com/Synnerz/Devonian"),
 				Credit(
 					"SkyHanni Repository",
@@ -145,8 +149,15 @@ object CreditList {
 				),
 				Credit(
 					"Skyblocker",
-					"The Water Board's starting gates, the Lights On levers and how the Wishing Compass solver reads a compass.",
+					"The Water Board's starting gates, the Lights On levers, how the Wishing Compass solver reads a compass, " +
+						"and the price service the tooltip falls back on.",
 					"LGPL-3.0", "https://github.com/SkyblockerMod/Skyblocker",
+				),
+				Credit(
+					"SkyHelper Networth",
+					"For the tooltip's estimated value (as Skyblocker uses it): how much of its price each applied upgrade keeps, " +
+						"which stone gives each reforge, and which item takes an enchantment past its top book.",
+					"MIT", "https://github.com/Altpapier/SkyHelper-Networth",
 				),
 				Credit("NotEnoughUpdates", "The Wither Cloak's shield texture.", "LGPL-3.0", "https://github.com/NotEnoughUpdates/NotEnoughUpdates"),
 			),

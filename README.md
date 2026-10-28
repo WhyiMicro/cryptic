@@ -23,7 +23,8 @@ Minecraft's own renderer, so it works on the OpenGL and Vulkan graphics APIs ali
   tick-accurate timers.
 - **Crystal Hollows:** a Hollows map, structure and crystal scanning, the Metal
   Detector and Wishing Compass solvers, and lock-pick helpers.
-- **Everyday:** Bazaar orders and prices, Item Protection, Slayer and carry
+- **Everyday:** Bazaar orders, Auction House alerts, tooltip prices (lowest
+  BIN, 3-day average, estimated value), Item Protection, Slayer and carry
   tools, fishing and mining helpers, Better Chat, Item Outline, capes, Smooth
   teleport, and a HUD editor for all of it.
 - **Client Restrictions** (Settings tab) switches between Legit, Semi-legit and

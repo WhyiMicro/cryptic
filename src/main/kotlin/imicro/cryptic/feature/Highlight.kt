@@ -56,7 +56,6 @@ object Highlight {
 	private const val PRINCE_NAME = "Prince"
 
 	/** Fels are named Dinnerbone (which flips them); the tag is dropped even though the Fel is marked. */
-	private const val FEL_NAME = "Dinnerbone"
 
 	/** Mobs whose names stay even unstarred: mini bosses are why you're in the room. */
 	private val miniBossNames = setOf(
@@ -90,9 +89,9 @@ object Highlight {
 
 	/** Whether anything in the special-mob group is on. */
 	private fun marksAnySpecial(): Boolean =
-		highlightBats.value || highlightMimic.value || highlightPrince.value ||
-			HiddenMobs.highlightFels.value || HiddenMobs.highlightShadowAssassins.value
+		highlightBats.value || highlightMimic.value || highlightPrince.value
 
+	private const val FEL_NAME = "Dinnerbone"
 	private const val SCAN_RADIUS = 16
 	private const val SCAN_HEIGHT = 8
 	private const val BLOCK_SCAN_INTERVAL_TICKS = 20
@@ -664,24 +663,11 @@ object Highlight {
 		return when {
 			entity is Bat ->
 				if (highlightBats.value && !entity.isInvisible && !entity.isPassenger) specialColors else null
-			// Both belong to Hidden Mobs, which configures revealing them; only the drawing is
-			// here.
-			entity is EnderMan ->
-				if (HiddenMobs.highlightFels.value && entity.customName?.string == FEL_NAME) {
-					HiddenMobs.felColors
-				} else {
-					null
-				}
-			entity is Player && isShadowAssassin(entity) ->
-				if (HiddenMobs.highlightShadowAssassins.value) HiddenMobs.shadowAssassinColors else null
 			entity is Zombie && entity.isBaby ->
 				if (highlightMimic.value && isMimic(entity)) specialColors else null
 			else -> if (highlightPrince.value && entity in princes) specialColors else null
 		}
 	}
-
-	private fun isShadowAssassin(entity: Player): Boolean =
-		entity.displayName.string.contains(HiddenMobs.SHADOW_ASSASSIN_NAME)
 
 	/**
 	 * Whether a baby zombie is the mimic rather than a weapon's summon (Ragnarök makes them too):

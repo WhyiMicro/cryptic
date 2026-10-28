@@ -97,4 +97,13 @@ public abstract class MinecraftMixin {
         AutoClicker.frame();
     }
 
+    /**
+     * No pause menu for losing focus while the Experimentation Table runs itself: between games no
+     * menu is open, and the pause menu would swallow the click that reopens the table.
+     */
+    @Inject(method = "pauseIfInactive", at = @At("HEAD"), cancellable = true)
+    private void cryptic$keepRunning(CallbackInfo ci) {
+        if (imicro.cryptic.experiment.ExperimentRunner.keepsGameRunning()) ci.cancel();
+    }
+
 }

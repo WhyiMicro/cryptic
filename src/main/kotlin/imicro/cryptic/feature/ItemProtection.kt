@@ -14,7 +14,10 @@ import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
 import imicro.cryptic.mixin.ContainerScreenAccessor
+import imicro.cryptic.skyblock.AuctionPrices
+import imicro.cryptic.skyblock.BazaarMarket
 import imicro.cryptic.skyblock.ItemPrices
+import imicro.cryptic.skyblock.ItemValue
 import imicro.cryptic.skyblock.SkyblockItem
 import imicro.cryptic.skyblock.SkyblockLocation
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback
@@ -110,7 +113,8 @@ object ItemProtection {
 		min = 0.5,
 		max = 500.0,
 		step = 0.5,
-		description = "In millions of coins, from the seven-day auction and bazaar average.",
+		description = "In millions of coins, by the estimated item value: the item with everything applied to it, counted " +
+			"the way Tooltip Features counts it (market value or rebuild cost).",
 	)
 
 	@JvmField
@@ -244,7 +248,8 @@ object ItemProtection {
 
 	/** The rules as one string; any change to them clears what was worked out. */
 	private fun rules(): String =
-		"${starred.value}${recombobulated.value}${maxQuality.value}${consumables.value}${byValue.value}${minValue.value}${ItemPrices.loaded}"
+		"${starred.value}${recombobulated.value}${maxQuality.value}${consumables.value}${byValue.value}${minValue.value}" +
+			"${ItemPrices.loaded}${AuctionPrices.loaded}${BazaarMarket.products.isNotEmpty()}${TooltipFeatures.valueMode.selectedIndex}"
 
 	fun reasonFor(stack: ItemStack): Reason? {
 		if (stack.isEmpty) return null
@@ -268,12 +273,21 @@ object ItemProtection {
 		if (recombobulated.value && data.getIntOr("rarity_upgrades", 0) > 0) return Reason.RECOMBOBULATED
 		if (maxQuality.value && data.getIntOr("baseStatBoostPercentage", 0) >= 50) return Reason.MAX_QUALITY
 		if (consumables.value && id in VALUABLE_CONSUMABLES) return Reason.CONSUMABLE
-		if (byValue.value) {
-			ItemPrices.ensureFetched()
-			val each = ItemPrices.price(id)
-			if (each != null && each * stack.count >= minValue.value * 1_000_000) return Reason.VALUE
-		}
+		if (byValue.value && worth(stack, id)?.let { it >= minValue.value * 1_000_000 } == true) return Reason.VALUE
 		return null
+	}
+
+	/**
+	 * What a stack is worth: its estimated item value, as the tooltip shows it. Until those prices
+	 * have arrived, the seven-day average stands in.
+	 */
+	private fun worth(stack: ItemStack, id: String): Double? {
+		AuctionPrices.refresh(lowestBin = true, threeDay = true)
+		BazaarMarket.refresh(120_000L)
+		ItemPrices.ensureFetched()
+		val mode = if (TooltipFeatures.valueMode.selectedIndex == 1) ItemValue.Mode.REBUILD else ItemValue.Mode.MARKET
+		val each = ItemValue.estimate(stack, mode)?.total ?: ItemPrices.price(id) ?: return null
+		return each * stack.count
 	}
 
 	// ---- Refusing ----------------------------------------------------------------------
@@ -459,19 +473,15 @@ object ItemProtection {
 		}
 	}
 
-	/** A 5 by 6 padlock with a dark shadow, so it reads over any item. */
+	private val LOCK = net.minecraft.resources.Identifier.fromNamespaceAndPath("cryptic", "textures/gui/protected_lock.png")
+
+	/**
+	 * A 5 by 6 padlock with a dark shadow, so it reads over any item: one image, tinted. Drawn as
+	 * eight fills it cost half the frame in a full chest, since each piece over an item makes
+	 * Minecraft search everything under it.
+	 */
 	private fun drawLock(graphics: GuiGraphicsExtractor, x: Int, y: Int, color: Int) {
-		val shadow = 0xC0000000.toInt()
-		for ((dx, dy, c) in listOf(Triple(1, 1, shadow), Triple(0, 0, color))) {
-			val left = x + dx
-			val top = y + dy
-			// Shackle.
-			graphics.fill(left + 1, top, left + 4, top + 1, c)
-			graphics.fill(left + 1, top + 1, left + 2, top + 2, c)
-			graphics.fill(left + 3, top + 1, left + 4, top + 2, c)
-			// Body.
-			graphics.fill(left, top + 2, left + 5, top + 6, c)
-		}
+		graphics.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, LOCK, x, y, 0f, 0f, 6, 7, 6, 7, color)
 	}
 
 	// ---- Saving --------------------------------------------------------------------------

@@ -37,7 +37,8 @@ import kotlin.math.floor
  * Says something in party chat when you reach a place: "at" a point within a radius, or "in" a box
  * between two corners, each with a delay, colour and message. From Odin's Positional Messages.
  * Suggested coordinates round x and z to the nearest half block of where you stand (Odin used the
- * block corner), so circles centre on you. Saved in `config/cryptic/positional-messages.json`,
+ * block corner), so circles centre on you. A message can also count, while you're in its spot, how
+ * many of the party have leaped to you (Blade Addons' leap count, credited to valley). Saved in `config/cryptic/positional-messages.json`,
  * outside profiles.
  */
 object PositionalMessages {
@@ -100,7 +101,8 @@ object PositionalMessages {
 
 	/**
 	 * One message. "At" has a [distance] and no second corner; "in" has the corner and no distance.
-	 * [send] false only draws it, to mark a spot.
+	 * [send] false only draws it, to mark a spot. [leapCount] is how many teammates to count in, or
+	 * null for no count.
 	 */
 	data class PosMessage(
 		val x: Double,
@@ -114,8 +116,12 @@ object PositionalMessages {
 		val color: String,
 		val message: String,
 		val send: Boolean = true,
+		val leapCount: Int? = null,
 	) {
 		val box: AABB? get() = if (x2 != null && y2 != null && z2 != null) AABB(x, y, z, x2, y2, z2) else null
+
+		fun contains(at: Vec3): Boolean =
+			box?.contains(at) ?: distance?.let { at.distanceToSqr(x, y, z) <= it * it } ?: false
 		val center: Vec3 get() = box?.center ?: Vec3(x, y, z)
 		val argb: Int get() = 0xFF000000.toInt() or (COLORS[color.lowercase(Locale.ROOT)] ?: 0xFFFFFF)
 	}
@@ -147,6 +153,7 @@ object PositionalMessages {
 		initialized = true
 		load()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
+		imicro.cryptic.hud.Hud.register(LeapCountElement())
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> forget() }
 	}
@@ -183,12 +190,10 @@ object PositionalMessages {
 		if (!active()) return
 		val player = client.player ?: return
 
+		countLeaps(client)
 		for (message in messages) {
 			if (!message.send || message in sent) continue
-			val reached = message.box?.contains(player.position())
-				?: message.distance?.let { player.distanceToSqr(message.x, message.y, message.z) <= it * it }
-				?: false
-			if (!reached) continue
+			if (!message.contains(player.position())) continue
 			sent += message
 			pending += message to ticks + message.delay
 		}
@@ -197,6 +202,54 @@ object PositionalMessages {
 		if (due.isEmpty()) return
 		pending.removeAll(due)
 		due.forEach { (message, _) -> say(client, message.message) }
+	}
+
+	// ---- Leap count ---------------------------------------------------------------------------
+
+	/** The message whose spot you're in that counts leaps, and how many of the party are there. */
+	private var counting: PosMessage? = null
+	private var leaped = 0
+
+	private fun countLeaps(client: Minecraft) {
+		val player = client.player ?: return
+		val level = client.level ?: return
+		val message = messages.firstOrNull { it.leapCount != null && it.contains(player.position()) }
+		counting = message
+		leaped = if (message == null) 0 else level.players().count { it !== player && isRealPlayer(it) && message.contains(it.position()) }
+	}
+
+	/**
+	 * Whether a player is a real one: Hypixel's NPCs have no proper tab entry, while real players'
+	 * names have no spaces. Blade's test.
+	 */
+	private fun isRealPlayer(entity: net.minecraft.world.entity.player.Player): Boolean {
+		val info = Minecraft.getInstance().connection?.getPlayerInfo(entity.uuid) ?: return false
+		val name = info.profile.name()
+		return name.isNotEmpty() && ' ' !in name
+	}
+
+	/** Blade's format: blue once one short of full or better, dark red before. */
+	private fun leapCountText(count: Int, max: Int): String =
+		(if (max - count <= 1) "§9" else "§4") + count + "§9/" + max + " Players Leaped"
+
+	/** The count while you're in such a spot; same id as Spirit Leap's old one, so its place carries over. */
+	private class LeapCountElement : imicro.cryptic.hud.HudElement("leap_count", "Leap Count", 0.45, 0.6) {
+		private val font get() = Minecraft.getInstance().font
+
+		override val width: Int = 110
+		override val height: Int = 10
+
+		override fun isVisible(): Boolean = active() && counting != null
+
+		override fun showInEditor(): Boolean = module.enabled && messages.any { it.leapCount != null }
+
+		override fun render(context: net.minecraft.client.gui.GuiGraphicsExtractor) = draw(context, leapCountText(leaped, counting?.leapCount ?: 0))
+
+		override fun renderExample(context: net.minecraft.client.gui.GuiGraphicsExtractor) = draw(context, leapCountText(2, 4))
+
+		private fun draw(context: net.minecraft.client.gui.GuiGraphicsExtractor, text: String) {
+			context.text(font, text, (width - font.width(text)) / 2, (height - font.lineHeight) / 2 + 1, -1)
+		}
 	}
 
 	private fun say(client: Minecraft, text: String) {
@@ -333,7 +386,7 @@ object PositionalMessages {
 	fun command(): LiteralArgumentBuilder<FabricClientCommandSource> =
 		ClientCommands.literal("posmsg")
 			.executes { context ->
-				feedback(context, "/cryptic posmsg add at|in|here ..., remove <message>, list, clear")
+				feedback(context, "/cryptic posmsg add at|in|here ..., leapcount <off|1-4> <message>, remove <message>, list, clear")
 				1
 			}
 			.then(
@@ -385,6 +438,42 @@ object PositionalMessages {
 					),
 			)
 			.then(
+				// How many teammates to count in a message's spot, after it's made.
+				ClientCommands.literal("leapcount").then(
+					ClientCommands.argument("count", StringArgumentType.word())
+						.suggests { _, builder ->
+							listOf("off", "1", "2", "3", "4").filter { it.startsWith(builder.remainingLowerCase) }.forEach(builder::suggest)
+							builder.buildFuture()
+						}
+						.then(
+							ClientCommands.argument("message", StringArgumentType.greedyString())
+								.suggests { _, builder ->
+									messages.map { it.message }.filter { it.lowercase().startsWith(builder.remainingLowerCase) }
+										.forEach(builder::suggest)
+									builder.buildFuture()
+								}
+								.executes { context ->
+									val raw = StringArgumentType.getString(context, "count").lowercase(Locale.ROOT)
+									val count = if (raw == "off") null else raw.toIntOrNull()?.takeIf { it in 1..4 }
+									if (raw != "off" && count == null) {
+										feedback(context, "§cThe count is off or 1 to 4: how many teammates should reach you.")
+										return@executes 0
+									}
+									val wanted = text(context).trim()
+									val index = messages.indexOfFirst { it.message.equals(wanted, ignoreCase = true) }
+									if (index < 0) {
+										feedback(context, "§cNo message \"$wanted\".")
+										return@executes 0
+									}
+									messages[index] = messages[index].copy(leapCount = count)
+									save()
+									feedback(context, if (count == null) "No leap count on \"$wanted\"." else "\"$wanted\" now counts leaps, out of $count.")
+									1
+								},
+						),
+				),
+			)
+			.then(
 				ClientCommands.literal("remove").then(
 					ClientCommands.argument("message", StringArgumentType.greedyString())
 						.suggests { _, builder ->
@@ -421,7 +510,8 @@ object PositionalMessages {
 							} else {
 								"at ${trim(it.x)}, ${trim(it.y)}, ${trim(it.z)} r${trim(it.distance ?: 0.0)}"
 							}
-							feedback(context, "${index + 1}. §f\"${it.message}\" §7$where, ${it.delay}t, ${it.color}${if (it.send) "" else ", drawn only"}")
+							val leaps = it.leapCount?.let { count -> ", leap count of $count" } ?: ""
+							feedback(context, "${index + 1}. §f\"${it.message}\" §7$where, ${it.delay}t, ${it.color}${if (it.send) "" else ", drawn only"}$leaps")
 						}
 					}
 					1

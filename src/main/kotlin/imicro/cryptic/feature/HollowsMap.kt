@@ -149,8 +149,9 @@ object HollowsMap {
 	val poiPlaces = imicro.cryptic.gui.MultiSelectModuleSetting(
 		id = "hollows_poi_places",
 		label = "Show",
-		options = Place.entries.map { it.title },
-		description = "Which places get a waypoint. The map shows them all.",
+		// The compass target is always shown: it's the solver's answer, and hiding it looked like the solver failing.
+		options = Place.entries.filter { it != Place.COMPASS_TARGET }.map { it.title },
+		description = "Which places get a waypoint. The map shows them all, and a Wishing Compass's target is always marked.",
 		visibleIf = { labels.value },
 	)
 
@@ -373,14 +374,14 @@ object HollowsMap {
 	}
 
 	private fun render(context: LevelRenderContext) {
-		if (!NucleusQol.module.enabled || !labels.value || !SkyblockLocation.inCrystalHollows || marks.isEmpty()) return
+		if (!NucleusQol.module.enabled || !SkyblockLocation.inCrystalHollows || marks.isEmpty()) return
 		val client = Minecraft.getInstance()
 		val eye = client.player?.eyePosition ?: return
 		val orientation = client.gameRenderer.mainCamera().rotation()
 		// Down on screen, so the second line sits under the first however you look at it.
 		val down = org.joml.Vector3f(0f, -1f, 0f).rotate(orientation)
 		for ((place, mark) in marks) {
-			if (!poiPlaces.isSelected(place.title)) continue
+			if (place != Place.COMPASS_TARGET && (!labels.value || !poiPlaces.isSelected(place.title))) continue
 			val at = Vec3.atCenterOf(mark.pos)
 			val distance = eye.distanceTo(at)
 			if (distance < 6) continue

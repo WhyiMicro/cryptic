@@ -97,9 +97,19 @@ object Capes {
 		HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NORMAL).build()
 	}
 
-	/** [skin] with the cape this module gives [entity], if any. Called for every player drawn. */
+	/**
+	 * [skin] with the cape this module gives [entity], if any. Called for every player drawn, so it
+	 * never throws: an error here would crash the game mid-frame.
+	 */
 	@JvmStatic
-	fun skinFor(entity: Any, skin: PlayerSkin): PlayerSkin {
+	fun skinFor(entity: Any, skin: PlayerSkin): PlayerSkin = try {
+		capeSkin(entity, skin)
+	} catch (error: RuntimeException) {
+		Cryptic.LOGGER.warn("Capes: skipped a player after an error", error)
+		skin
+	}
+
+	private fun capeSkin(entity: Any, skin: PlayerSkin): PlayerSkin {
 		if (!module.enabled || entity !is Player) return skin
 		val profile = entity.gameProfile
 		val client = Minecraft.getInstance()
@@ -169,7 +179,8 @@ object Capes {
 		players[uuid] = Entry.Loading
 		inFlight.incrementAndGet()
 		val providers = buildList<() -> CompletableFuture<List<NativeImage>?>> {
-			if (optifine.value) add { png("http://s.optifine.net/capes/$name.png") }
+			// Only a real account name; Hypixel's fake players can have spaces and symbols in theirs.
+			if (optifine.value && ACCOUNT_NAME.matches(name)) add { png("http://s.optifine.net/capes/$name.png") }
 			if (labymod.value) add { png("https://dl.labymod.net/capes/$uuid") }
 			if (minecraftCapes.value) add { minecraftCapes(uuid) }
 		}
@@ -212,8 +223,15 @@ object Capes {
 			}
 		}
 
+	private val ACCOUNT_NAME = Regex("[A-Za-z0-9_]{1,16}")
+
 	private fun bytes(url: String): CompletableFuture<ByteArray?> {
-		val request = HttpRequest.newBuilder(URI.create(url))
+		val uri = try {
+			URI.create(url)
+		} catch (error: IllegalArgumentException) {
+			return CompletableFuture.completedFuture(null)
+		}
+		val request = HttpRequest.newBuilder(uri)
 			.header("User-Agent", "Cryptic")
 			.timeout(Duration.ofSeconds(10))
 			.GET()

@@ -107,6 +107,29 @@ object WorldRender {
 		poseStack.popPose()
 	}
 
+	/** A filled four-cornered panel, seen from both sides, corners in order around its edge. */
+	fun drawPanel(
+		poseStack: PoseStack,
+		collector: SubmitNodeCollector,
+		a: Vec3,
+		b: Vec3,
+		c: Vec3,
+		d: Vec3,
+		argb: Int,
+		phase: Boolean,
+	) {
+		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
+		poseStack.pushPose()
+		poseStack.translate(-camera.x, -camera.y, -camera.z)
+		val layer = if (phase) CrypticRenderLayers.FILLED_THROUGH_WALLS else CrypticRenderLayers.FILLED
+		collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
+			fun f(v: Double) = v.toFloat()
+			consumer.addQuad(pose, f(a.x), f(a.y), f(a.z), f(b.x), f(b.y), f(b.z), f(c.x), f(c.y), f(c.z), f(d.x), f(d.y), f(d.z), argb)
+			consumer.addQuad(pose, f(d.x), f(d.y), f(d.z), f(c.x), f(c.y), f(c.z), f(b.x), f(b.y), f(b.z), f(a.x), f(a.y), f(a.z), argb)
+		}
+		poseStack.popPose()
+	}
+
 	/**
 	 * A line from the view to a point, starting a little in front of the eyes so the near plane
 	 * doesn't clip it.

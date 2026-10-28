@@ -174,6 +174,21 @@ object SlayerFeatures {
 	)
 
 	@JvmField
+	val laserColor = ColorModuleSetting("laser_color", "Laser colour", defaultRgb = 0xFF2020)
+
+	@JvmField
+	val laserFill = ColorModuleSetting("laser_fill", "Fill", defaultRgb = 0xFF2020, supportsAlpha = true, defaultAlpha = 0x10)
+
+	@JvmField
+	val customLaser = ToggleModuleSetting(
+		id = "custom_laser",
+		label = "Custom laser",
+		defaultValue = true,
+		description = "The laser phase drawn as four walls, in place of Minecraft's guardian beams and their bubbles: the " +
+			"top and bottom beam of each direction, joined at both ends and filled between. Only on the End's island.",
+	).withMore(laserColor, laserFill)
+
+	@JvmField
 	val killTime = ToggleModuleSetting(
 		id = "kill_time",
 		label = "Kill time in chat",
@@ -340,6 +355,7 @@ object SlayerFeatures {
 			bossSection,
 			bossLabel.withMore(labelPlace, labelSize, labelThroughWalls, healthColour),
 			hideParticles,
+			customLaser,
 			killTime.withMore(phaseTimes),
 			beaconSection,
 			highlightBeacons, beaconColor,
@@ -363,9 +379,13 @@ object SlayerFeatures {
 	}
 
 	/** One boss, and how its fight has gone so far. */
-	private class Fight(val bossId: Int, val tier: Int, val since: Long) {
+	private class Fight(val bossId: Int, val tier: Int, var since: Long) {
 		var phase: Phase? = null
 		var phaseSince = since
+
+		/** The despawn timer's seconds as last read, and whether a change of it has pinned [since]. */
+		var timerSeconds: Int? = null
+		var timerPinned = false
 		val spent = EnumMap<Phase, Long>(Phase::class.java)
 
 		/** When its name stand was last seen; a dying boss loses it before the death event. */
@@ -579,8 +599,44 @@ object SlayerFeatures {
 		return free.filter { it.boss.position().distanceTo(at) <= FOCUS_RANGE }.minByOrNull { it.boss.position().distanceToSqr(at) }
 	}
 
+	/** "03:56" over the boss: how long is left of the four minutes it has before it despawns. */
+	private val timerPattern = Regex("""^(\d{1,2}):(\d{2})$""")
+	private val colourCodes = Regex("§.")
+	private const val BOSS_LIMIT_SECONDS = 240
+
+	/** The despawn timer's stand, a little over the boss's name stand. */
+	private fun timerLeft(seen: VoidgloomBosses.Seen): Int? {
+		val stand = seen.nameStand
+		val level = stand.level()
+		return level.getEntitiesOfClass(ArmorStand::class.java, stand.boundingBox.inflate(0.6, 1.5, 0.6)) { other ->
+			other !== stand && other.y >= stand.y
+		}.firstNotNullOfOrNull { other ->
+			timerPattern.matchEntire(other.customName?.string?.replace(colourCodes, "")?.trim() ?: return@firstNotNullOfOrNull null)
+				?.let { it.groupValues[1].toInt() * 60 + it.groupValues[2].toInt() }
+		}
+	}
+
+	/**
+	 * Dates the fight from the despawn timer. The moment its seconds change is a whole second, so
+	 * the first change seen pins the start to the millisecond; until then, the middle of the second
+	 * shown is the best guess.
+	 */
+	private fun syncStart(fight: Fight, seen: VoidgloomBosses.Seen, now: Long) {
+		if (fight.timerPinned) return
+		val left = timerLeft(seen) ?: return
+		val changed = fight.timerSeconds?.let { it != left } == true
+		fight.timerSeconds = left
+		val elapsed = (BOSS_LIMIT_SECONDS - left) * 1000L + if (changed) 0L else 500L
+		val start = now - elapsed
+		// Phase timing started with the fight; it moves with it until the first phase begins.
+		if (fight.phaseSince == fight.since) fight.phaseSince = start
+		fight.since = start
+		if (changed) fight.timerPinned = true
+	}
+
 	private fun read(fight: Fight, seen: VoidgloomBosses.Seen, now: Long) {
 		fight.lastSeen = now
+		syncStart(fight, seen, now)
 
 		val ride = seen.boss.vehicle
 		// What follows the tier: "67 Hits", or health as "266k/750k" (or "45M❤").
@@ -772,11 +828,55 @@ object SlayerFeatures {
 		return doubleArrayOf(x - half, y - half, z - half, x + half, y + half, z + half)
 	}
 
+	/** A laser-phase beam to replace: an invisible guardian's, on the boss's island. */
+	@JvmStatic
+	fun hidesBeam(guardian: net.minecraft.world.entity.monster.Guardian): Boolean =
+		active && customLaser.value && guardian.isInvisible
+
+	private const val LASER_WIDTH = 6f
+
+	/** One hidden beam, from the guardian's eye to the middle of what it aims at. */
+	private class Beam(val from: Vec3, val to: Vec3)
+
+	/**
+	 * The hidden beams as walls. Each direction has three beams one above another, aimed at stands
+	 * sharing an x and z; the top and bottom ones are kept, joined at both ends and filled between.
+	 */
+	private fun renderLasers(context: LevelRenderContext, partialTick: Float) {
+		if (!customLaser.value) return
+		val level = Minecraft.getInstance().level ?: return
+		val beams = level.entitiesForRendering().mapNotNull { entity ->
+			val guardian = entity as? net.minecraft.world.entity.monster.Guardian ?: return@mapNotNull null
+			if (!hidesBeam(guardian) || !guardian.hasActiveAttackTarget()) return@mapNotNull null
+			val target = guardian.activeAttackTarget ?: return@mapNotNull null
+			Beam(guardian.getEyePosition(partialTick), target.getPosition(partialTick).add(0.0, target.bbHeight * 0.5, 0.0))
+		}
+		if (beams.isEmpty()) return
+		val poseStack = context.poseStack()
+		val collector = context.submitNodeCollector()
+		val line = 0xFF000000.toInt() or (laserColor.argb and 0xFFFFFF)
+		fun draw(vararg points: Vec3) = WorldRender.drawLine(poseStack, collector, points.toList(), line, LASER_WIDTH, phase = false)
+		val directions = beams.groupBy { Math.round(it.to.x * 4) to Math.round(it.to.z * 4) }
+		for (wall in directions.values) {
+			val bottom = wall.minBy { it.from.y }
+			val top = wall.maxBy { it.from.y }
+			if (bottom === top) {
+				draw(bottom.from, bottom.to)
+				continue
+			}
+			draw(bottom.from, bottom.to, top.to, top.from, bottom.from)
+			if (laserFill.argb ushr 24 != 0) {
+				WorldRender.drawPanel(poseStack, collector, bottom.from, bottom.to, top.to, top.from, laserFill.argb, phase = false)
+			}
+		}
+	}
+
 	private fun render(context: LevelRenderContext) {
 		val client = Minecraft.getInstance()
 		// The veil works on every island; the rest is the End's.
 		renderVeil(context, client.deltaTracker.getGameTimeDeltaPartialTick(false), System.currentTimeMillis())
 		if (!active) return
+		renderLasers(context, client.deltaTracker.getGameTimeDeltaPartialTick(false))
 		val level = client.level ?: return
 		val poseStack = context.poseStack()
 		val collector = context.submitNodeCollector()

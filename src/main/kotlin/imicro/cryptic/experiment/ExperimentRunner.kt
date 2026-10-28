@@ -166,6 +166,10 @@ object ExperimentRunner {
 		status = "table reopened, trying again"
 	}
 
+	/** While it runs the table, the game mustn't pause itself for being tabbed out. */
+	@JvmStatic
+	fun keepsGameRunning(): Boolean = ExperimentSolver.module.enabled && ExperimentSolver.runTable.value && !finished
+
 	fun tick(client: Minecraft) {
 		val running = ExperimentSolver.module.enabled && ExperimentSolver.runTable.value
 
@@ -460,6 +464,8 @@ object ExperimentRunner {
 				nextActionAt = System.currentTimeMillis() + delay()
 			}
 			ReopenStage.OPENING -> {
+				// A pause menu from before the run (or another mod) would take the click instead.
+				if (client.gui.screen() is net.minecraft.client.gui.screens.PauseScreen) client.gui.setScreen(null)
 				val use = client.options.keyUse
 				val key = (use as? KeyMappingAccessor)?.`cryptic$key`()
 				if (use.isUnbound || key == null) {

@@ -150,6 +150,7 @@ boss fight. Each message is sent once per server.
 | `/cryptic posmsg add here <delay> <distance> <color> <send> <message>` | At the middle of the block you stand on |
 | `/cryptic posmsg add at <x> <y> <z> <delay> <distance> <color> <send> <message>` | At a point |
 | `/cryptic posmsg add in <x> <y> <z> <x2> <y2> <z2> <delay> <color> <send> <message>` | Inside a box |
+| `/cryptic posmsg leapcount <1-4|off> <message>` | Counts leaps in its spot |
 | `/cryptic posmsg remove <message>` | Removes it |
 | `/cryptic posmsg list` | Lists every message |
 | `/cryptic posmsg clear` | Removes them all |
@@ -158,6 +159,11 @@ boss fight. Each message is sent once per server.
 - **send** `false` only draws the spot and never says anything.
 - **color** is one of Minecraft's sixteen colours, written as one word:
   `darkblue`, `lightpurple`, `white` and so on.
+- **leapcount** shows, while you stand in that message's circle or box, how
+  many of the party are in it with you, out of the number you give: "2/4
+  Players Leaped", blue once one short or better. It's Blade Addons' leap count,
+  which used to sit on fixed Floor 7 spots in Spirit Leap Overlay. Move it in
+  the HUD editor (Leap Count).
 
 Odin suggests the corner of the block you are standing on as the coordinates,
 which leaves the circle half a block off from where you stood. Cryptic suggests

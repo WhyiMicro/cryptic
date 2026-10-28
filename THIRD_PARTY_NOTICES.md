@@ -55,7 +55,7 @@ Several features are ported from other mods, whose licences travel with them:
   renderer and so work on Vulkan as well as OpenGL.
   Licence in [`licenses/Odin-LICENSE.txt`](licenses/Odin-LICENSE.txt).
 - **[Blade Addons](https://github.com/BladeMasterGabe/blade-addons)** (CC0) — the
-  secret spawn timer, the leap count in Spirit Leap Features, and the height
+  secret spawn timer, the leap count (now on Positional Messages), and the height
   Class Colors' name labels are drawn at.
 - **[NoammAddons](https://github.com/Noamm9/NoammAddons)** (CC0) — door-key
   highlighting, room alerts, the map's room styles, Breaker Helper, hidden mobs,
@@ -136,13 +136,20 @@ left. What is still theirs is data and artwork, kept as it is:
 - **[Skyblocker](https://github.com/SkyblockerMod/Skyblocker)** (LGPL-3.0) — the
   table of where every Water Board gate starts on each of the four boards, the six Lights On lever
   positions, and the Croesus Helper's list of drops whose names are not their
-  ids (with Odin's); and, as facts only, the Wishing Compass solver's zones,
+  ids (with Odin's); and, as facts only, the pests' head textures for Farming's
+  pest tracers, the Wishing Compass solver's zones,
   what each zone's compass leads to and the Jungle Temple door's offset. Licence in
   [`licenses/Skyblocker-LICENSE.txt`](licenses/Skyblocker-LICENSE.txt).
 - **[SkyHanni repository](https://github.com/hannibal002/SkyHanni-REPO)** (MIT,
   Copyright (c) 2022 hannibal2) — the 39 places the Mines of Divan treasure
   turns up, for Nucleus Features' Metal Detector solver. Licence in
   [`licenses/SkyHanni-REPO-LICENSE.txt`](licenses/SkyHanni-REPO-LICENSE.txt).
+- **[SkyHelper Networth](https://github.com/Altpapier/SkyHelper-Networth)** (MIT,
+  Copyright (c) 2022 Altpapier) — the share of its price each applied upgrade
+  keeps, which stone gives each reforge, which item takes an enchantment past its
+  top book, and which enchantments level up by use, for Tooltip Features'
+  estimated value. Licence in
+  [`licenses/SkyHelper-Networth-LICENSE.txt`](licenses/SkyHelper-Networth-LICENSE.txt).
 - **[NotEnoughUpdates](https://github.com/NotEnoughUpdates/NotEnoughUpdates)**
   (LGPL-3.0) — the Wither Cloak effect's shield texture. Notice in
   [`src/main/resources/META-INF/notices/`](src/main/resources/META-INF/notices/).

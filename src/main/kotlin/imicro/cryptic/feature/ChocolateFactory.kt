@@ -162,7 +162,9 @@ object ChocolateFactory {
 
 	val needsSkyblock: Boolean get() = module.enabled && eggWaypoints.value
 
-	private var lastClickAt = 0L
+	/** When the menu was last clicked; read by `/cryptic debug focus`. */
+	var lastClickAt = 0L
+		private set
 	private var lastUpgradeAt = 0L
 	private var ticks = 0
 

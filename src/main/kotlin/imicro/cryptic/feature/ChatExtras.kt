@@ -1,5 +1,6 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.skyblock.HypixelServer
 import imicro.cryptic.mixin.ChatComponentAccessor
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents
@@ -78,7 +79,8 @@ object ChatExtras {
 		if (!BetterChat.module.enabled) return false
 		val text = plain(message.content())
 		if (BetterChat.hideGuild.value && isGuild(text) && tab != Tab.GUILD) return true
-		if (tab != Tab.ALL && tabOf(text) != tab) return true
+		// Hypixel's channels; elsewhere the tab is kept but doesn't filter.
+		if (tab != Tab.ALL && HypixelServer.connected && tabOf(text) != tab) return true
 		if (query.isNotBlank()) {
 			val lower = text.lowercase()
 			if (query.lowercase().split(' ').filter { it.isNotEmpty() }.any { it !in lower }) return true
@@ -179,7 +181,7 @@ object ChatExtras {
 		var x = 2
 		val y = height - 27
 		tabBoxes = emptyList()
-		if (BetterChat.tabs.value) {
+		if (BetterChat.tabs.value && HypixelServer.connected) {
 			tabBoxes = Tab.entries.map { each ->
 				val w = client.font.width(each.shown) + 8
 				TabBox(each, x, y, w).also { x += w + 1 }

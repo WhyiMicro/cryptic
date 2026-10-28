@@ -594,6 +594,43 @@ so they can be seen and placed without a blessing, a pair of boots or a boss.
 
 ---
 
+## Boss beams
+
+```
+/cryptic debug lasers
+/cryptic debug lasers watch [seconds]
+```
+
+The first lists every guardian within 48 blocks, invisible ones too: where it
+is, what it rides, and whether its beam is on, at whom, and how far it has
+charged. `watch` records for 30 seconds (or as long as you say, up to 300): each
+guardian's beam and visibility as they change, and every kind of particle that
+falls near you, with how many and where the first few were. It's saved to
+`config/cryptic/debug/lasers.txt`. Made for Voidgloom's laser phase, whose
+beams come from a guardian above the boss.
+
+## The Jungle Temple's door
+
+```
+/cryptic debug temple
+```
+
+The Kalhuiki Door Guardians in sight, where each stands, and which one Nucleus
+Features' automatic waypoints are measured from (the right-hand one as you face
+the door), with the three waypoints it gives.
+
+## Tabbed out
+
+```
+/cryptic debug focus [seconds]
+```
+
+For a minute (or as long as you say, 5 to 600 seconds), once a second to the
+game log: whether the window is focused or minimised, how many ticks ran, the
+frame rate, which menu is open, when Chocolate Factory last clicked, and what
+the Experimentation Table is waiting on. Open the menu, run it, tab out, come
+back, and the log shows what stopped.
+
 ## Things that need no switch
 
 A few states are easier to fake directly than to add a command for.
@@ -692,7 +729,7 @@ practice without touching what happens in a real dungeon.
 ```
 /cryptic debug toast <seconds> <title> <message>
 /cryptic debug toast head <player> <seconds> <title> <message>
-/cryptic debug toast sample <invite|carry|cookie|downtime|update|error|all>
+/cryptic debug toast sample <kind>
 ```
 
 Raises a notification, to see how one looks without waiting for whatever
@@ -700,5 +737,16 @@ would raise it. Quote a title with spaces: `"&dHello there"`. Both the title
 and the message take `&` colour codes, and a title that opens with one is drawn
 in that colour, the way each module's own titles are. `head` puts a player's
 face on the left, from the tab list or looked up by name. `sample` shows the
-real kinds with made-up details; the invite answers to Y and N as the real one
-does.
+real kinds with made-up details; tab completes the list (party invite, friend
+request, Bazaar, Item Protection, the update prompt and more), and `all` goes
+through every one, a second and a half apart. The questions answer to Y and N
+as the real ones do, but do nothing.
+
+```
+/cryptic debug update
+/cryptic debug update fail
+```
+
+The Update Checker's question and what follows, with a made-up next version:
+answering Y pretends to download for two seconds, then says it worked (or, with
+`fail`, that it failed). Nothing is downloaded or installed.

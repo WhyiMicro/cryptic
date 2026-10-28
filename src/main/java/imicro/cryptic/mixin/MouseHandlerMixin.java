@@ -64,7 +64,7 @@ public abstract class MouseHandlerMixin {
             return;
         }
 
-        if (button.button() == 0 && Toasts.onMousePressed()) {
+        if (button.button() == 0 && (Toasts.onMousePressed() || imicro.cryptic.feature.Farming.onMousePressed())) {
             cryptic$swallowedButton = 0;
             ci.cancel();
             return;

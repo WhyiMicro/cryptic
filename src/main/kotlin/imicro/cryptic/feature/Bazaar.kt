@@ -7,6 +7,7 @@ import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
 import imicro.cryptic.dungeon.DungeonLocation
@@ -15,6 +16,7 @@ import net.minecraft.client.gui.screens.Screen
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.skyblock.BazaarMarket
+import imicro.cryptic.skyblock.ItemRarity
 import imicro.cryptic.skyblock.SkyblockItem
 import imicro.cryptic.skyblock.SkyblockLocation
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback
@@ -55,8 +57,14 @@ object Bazaar {
 		val price: Double = 0.0,
 		var filled: Int = 0,
 		var expired: Boolean = false,
+		/** Who placed it, as Co-op Bazaar Orders says; empty when the menu doesn't. */
+		val owner: String = "",
 	) {
 		val kind: String get() = if (sell) "SELL" else "BUY"
+
+		/** Placed by someone else in your co-op. */
+		val coopMember: Boolean
+			get() = owner.isNotEmpty() && !owner.equals(Minecraft.getInstance().player?.gameProfile?.name, ignoreCase = true)
 	}
 
 	private val ordersSection = SectionModuleSetting("orders_section", "Orders")
@@ -65,6 +73,12 @@ object Bazaar {
 	val menuStatus = ToggleModuleSetting(
 		"menu_status", "Status in the orders menu", true,
 		"Tints each order in Bazaar Orders by where it stands (top, matched, undercut, filled) and says so in its tooltip.",
+	)
+
+	@JvmField
+	val breakdown = ToggleModuleSetting(
+		"breakdown", "Orders breakdown", true,
+		"Beside Bazaar Orders, each order's worth and the totals: what your sell offers bring in once they all fill (after the sell tax), and what your buy orders cost.",
 	)
 
 	@JvmField
@@ -80,6 +94,12 @@ object Bazaar {
 	val filledAlert = ToggleModuleSetting("filled_alert", "Notify when filled", true, "A notification when one of your orders fills.")
 
 	@JvmField
+	val coopAlerts = ToggleModuleSetting(
+		"coop_alerts", "Co-op members' orders", true,
+		"Also notifies for orders your co-op members placed: when theirs fill, and when theirs are undercut.",
+	)
+
+	@JvmField
 	val sounds = ToggleModuleSetting(
 		"sounds", "Sounds", true,
 		"BtrBz's sounds with the notifications: a chime when an order is back on top or matched, two quick pings when it's undercut.",
@@ -91,6 +111,22 @@ object Bazaar {
 		"After you cancel an order, Bazaar Orders shows it as an item: click it to open that product's page and relist. " +
 			"Hold Ctrl while cancelling to copy the amount that hadn't filled.",
 	)
+
+	@JvmField
+	val presetAmounts = TextModuleSetting(
+		id = "preset_amounts",
+		label = "Amounts",
+		defaultValue = "64, 160, 640, 1024, 2240",
+		hint = "64, 640, 2240",
+		description = "The amounts offered, separated by commas.",
+	)
+
+	@JvmField
+	val presets = ToggleModuleSetting(
+		"presets", "Amount presets", true,
+		"Buttons beside a buy order's \"How many do you want?\" and an instant buy's menu that fill in Custom Amount for you: your amounts, the most " +
+			"your purse allows, and when relisting a cancelled order with the reopen item, what of it hadn't filled.",
+	).withMore(presetAmounts)
 
 	@JvmField
 	val quietInDungeons = ToggleModuleSetting("quiet_in_dungeons", "Not in dungeons", true, "No Bazaar notifications while you're in a dungeon.")
@@ -116,7 +152,7 @@ object Bazaar {
 		min = 0.0,
 		max = 2.0,
 		step = 0.125,
-		description = "Taken off what instant sells count towards the limit.",
+		description = "Taken off what instant sells count towards the limit, and off sell offers in the orders breakdown.",
 	)
 
 	@JvmField
@@ -147,7 +183,7 @@ object Bazaar {
 		description = "Bazaar orders and prices",
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
-		settings = listOf(ordersSection, menuStatus, ordersHud, undercutAlert, filledAlert, sounds, quietInDungeons, reopen, marketSection, dailyLimit, escrowFix, hideProgress),
+		settings = listOf(ordersSection, menuStatus, breakdown, ordersHud, undercutAlert, filledAlert, coopAlerts, sounds, quietInDungeons, reopen, presets, marketSection, dailyLimit, escrowFix, hideProgress),
 	)
 
 	private val client: Minecraft get() = Minecraft.getInstance()
@@ -217,6 +253,7 @@ object Bazaar {
 		if (stamp == pageStamp) return
 		pageStamp = stamp
 		val name = screen.title.string.replace(FORMATTING, "").substringAfterLast("➜").trim()
+		lastProduct = name
 		val id = BazaarMarket.idForName(name) ?: return
 		fun levels(stack: ItemStack?) = stack?.get(DataComponents.LORE)?.lines()?.mapNotNull { line ->
 			bookLine.find(line.string.replace(FORMATTING, "").trim())?.let { match ->
@@ -237,6 +274,8 @@ object Bazaar {
 	private val orderTitle = Regex("""^(BUY|SELL) (.+)$""")
 	private val amountLine = Regex("""^(?:Order|Offer) amount: ([\d,]+)x""")
 	private val filledLine = Regex("""^Filled: ([\d,.]+[kKmM]?)/""")
+	/** "By: [MVP+] Name", on a co-op's orders. */
+	private val ownerLine = Regex("""^By: (?:\[[^]]+] )?(\S+)""")
 	private val priceLine = Regex("""^Price per unit: ([\d,.]+) coins""")
 
 	private fun readMenu(screen: AbstractContainerScreen<*>) {
@@ -265,7 +304,8 @@ object Bazaar {
 			lines.any { it.startsWith("Filled:") && it.endsWith("100%!") } -> amount
 			else -> lines.firstNotNullOfOrNull { filledLine.find(it)?.groupValues?.get(1) }?.let(::parseCompact) ?: 0
 		}
-		return Order(title.groupValues[2], title.groupValues[1] == "SELL", amount, price, filled, lines.any { it == "Expired!" })
+		val owner = lines.firstNotNullOfOrNull { ownerLine.find(it)?.groupValues?.get(1) } ?: ""
+		return Order(title.groupValues[2], title.groupValues[1] == "SELL", amount, price, filled, lines.any { it == "Expired!" }, owner)
 	}
 
 	/** "1,234", "12.5k", "3M". */
@@ -283,7 +323,8 @@ object Bazaar {
 
 	private val setUp = Regex("""^\[Bazaar] (Buy Order|Sell Offer) Setup! ([\d,]+)x (.+) for ([\d,.]+) coins\.""")
 	private val instant = Regex("""^\[Bazaar] (Bought|Sold) [\d,]+x .+ for ([\d,.]+) coins!""")
-	private val filledMessage = Regex("""^\[Bazaar] Your (Buy Order|Sell Offer) for ([\d,]+)x (.+) was filled!""")
+	/** Yours or a co-op member's: "Your co-op Sell Offer for 1x Plant Matter was filled!". */
+	private val filledMessage = Regex("""^\[Bazaar] Your (co-op )?(Buy Order|Sell Offer) for ([\d,]+)x (.+) was filled!""")
 	private val progress = setOf(
 		"[Bazaar] Cancelling order...", "[Bazaar] Putting goods in escrow...", "[Bazaar] Submitting buy order...",
 		"[Bazaar] Claiming order...", "[Bazaar] Submitting sell offer...", "[Bazaar] Executing instant sell...",
@@ -321,14 +362,22 @@ object Bazaar {
 			return
 		}
 		filledMessage.find(line)?.let { match ->
-			val sell = match.groupValues[1] == "Sell Offer"
-			val amount = match.groupValues[2].replace(",", "").toIntOrNull() ?: return
-			val name = match.groupValues[3]
+			val coop = match.groupValues[1].isNotEmpty()
+			val sell = match.groupValues[2] == "Sell Offer"
+			val amount = match.groupValues[3].replace(",", "").toIntOrNull() ?: return
+			val name = match.groupValues[4]
+			// Hypixel writes the name in its rarity's colour; kept for this item's other notifications.
+			Regex("""x((?:§.)*) ?""" + Regex.escape(name)).find(message.string)?.groupValues?.get(1)
+				?.let { codes -> Regex("§[0-9a-f]").findAll(codes).lastOrNull()?.value }
+				?.let { nameCodes[name] = it }
 			client.execute {
 				orders.firstOrNull { it.sell == sell && it.name == name && it.amount == amount && it.filled < it.amount }?.filled = amount
 				updateStatuses()
 				save()
-				if (filledAlert.value) notify("§7Your ${if (sell) "sell offer" else "buy order"} for §f${amount}x $name §7was ${Status.FILLED.code}filled§7.")
+				if (filledAlert.value && (!coop || coopAlerts.value)) {
+					val whose = if (coop) "Your co-op's" else "Your"
+					notify("§7$whose ${if (sell) "sell offer" else "buy order"} for §f${amount}x ${named(name)} §7was ${Status.FILLED.code}filled§7.")
+				}
 			}
 		}
 	}
@@ -371,9 +420,10 @@ object Bazaar {
 			val beaten = now == Status.UNDERCUT && (was == Status.TOP || was == Status.MATCHED)
 			val matched = now == Status.MATCHED && was == Status.TOP
 			val backOnTop = now == Status.TOP && (was == Status.MATCHED || was == Status.UNDERCUT)
-			if (undercutAlert.value && (beaten || matched || backOnTop)) {
+			if (undercutAlert.value && (beaten || matched || backOnTop) && (coopAlerts.value || !order.coopMember)) {
 				val best = BazaarMarket.idForName(order.name)?.let(BazaarMarket::product)?.let { if (order.sell) it.sellOffers else it.buyOrders }?.firstOrNull()
-				val what = "§7Your ${if (order.sell) "sell offer" else "buy order"} for §f${order.name} §7"
+				val whose = if (order.coopMember) "§f${order.owner}§7's" else "Your"
+				val what = "§7$whose ${if (order.sell) "sell offer" else "buy order"} for ${named(order.name)} §7"
 				if (backOnTop) {
 					notify(what + "is ${now.code}back on top§7.")
 				} else {
@@ -410,7 +460,11 @@ object Bazaar {
 	// ---- Reopening a cancelled order -------------------------------------------------------
 
 	/** An order, as clicked in Bazaar Orders. [left] is how many hadn't filled. */
-	private class Picked(val name: String, val icon: ItemStack, val left: Int)
+	private class Picked(val name: String, val icon: ItemStack, val left: Int, val sell: Boolean)
+
+	/** The product whose Bazaar page was open last, for the amount presets. */
+	var lastProduct: String? = null
+		private set
 
 	private var picked: Picked? = null
 	private var cancelled: Picked? = null
@@ -466,15 +520,17 @@ object Bazaar {
 	fun onSlotClicked(screen: AbstractContainerScreen<*>, slot: Slot?): Boolean {
 		if (!module.enabled || !reopen.value || slot == null) return false
 		if (isReopenSlot(screen, slot)) {
-			val name = cancelled?.name ?: return true
+			val order = cancelled ?: return true
+			val name = order.name
 			cancelled = null
+			BazaarPresets.relisting(name, order.sell, order.left)
 			// The click never reaches Hypixel, so its click sound is played here.
 			client.soundManager.play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1f))
 			client.player?.connection?.sendCommand("bz $name")
 			return true
 		}
 		if (inOrdersMenu(screen) && slot.container !is Inventory) {
-			parseOrder(slot.item)?.let { order -> picked = Picked(order.name, slot.item.copy(), order.amount - order.filled) }
+			parseOrder(slot.item)?.let { order -> picked = Picked(order.name, slot.item.copy(), order.amount - order.filled, order.sell) }
 			return false
 		}
 		val name = slot.item.hoverName.string.replace(FORMATTING, "").trim()
@@ -498,9 +554,18 @@ object Bazaar {
 		}
 	}
 
+	/** Colours read off Hypixel's own messages, by item name. */
+	private val nameCodes = HashMap<String, String>()
+
+	/** [name] in its rarity's colour: as Hypixel last wrote it, or from the items list. */
+	private fun named(name: String): String = (nameCodes[name] ?: ItemRarity.codeForName(name) ?: "§f") + name
+
 	/** A notification (a chat line with notifications off). */
 	private fun notify(message: String) {
-		if (quietInDungeons.value && DungeonLocation.inDungeon) return
+		// Logged either way, so a notification that seemed missing can be traced.
+		val quiet = quietInDungeons.value && DungeonLocation.inDungeon
+		Cryptic.LOGGER.info("Bazaar notification{}: {}", if (quiet) " (held back in a dungeon)" else "", message.replace(FORMATTING, ""))
+		if (quiet) return
 		Toasts.show("Bazaar", message, color = Toasts.Colors.BAZAAR)
 	}
 
@@ -559,8 +624,10 @@ object Bazaar {
 	 */
 	@JvmStatic
 	fun renderOverlay(screen: Screen, graphics: GuiGraphicsExtractor) {
-		if (!module.enabled || !dailyLimit.value || !inBazaar(screen)) return
+		if (!module.enabled || !inBazaar(screen)) return
 		val accessor = screen as? ContainerScreenAccessor ?: return
+		if (breakdown.value && inOrdersMenu(screen)) drawBreakdown(screen as AbstractContainerScreen<*>, accessor, graphics)
+		if (!dailyLimit.value) return
 		val font = client.font
 		val used = used()
 		val cap = limit.value * 1e9
@@ -571,6 +638,70 @@ object Bazaar {
 	}
 
 	fun statusFor(order: Order): Status = statuses[key(order)] ?: statusOf(order)
+
+	// ---- The orders breakdown ------------------------------------------------------------------
+
+	private const val BREAKDOWN_GAP = 8
+	private const val COLUMN_GAP = 12
+	private const val MIN_SCALE = 0.5f
+	private const val RULE_COLOR = 0x40FFFFFF
+
+	/** A line of the breakdown: words, and a value on the right; null words make a rule. */
+	private class Line(val left: String?, val right: String? = null)
+
+	/**
+	 * Right of the orders menu, the orders it shows now: each one's worth and the totals. A sell
+	 * offer counts whole, filled or not, since its coins are yours either way once it fills.
+	 */
+	private fun drawBreakdown(screen: AbstractContainerScreen<*>, accessor: ContainerScreenAccessor, graphics: GuiGraphicsExtractor) {
+		val shown = screen.menu.slots
+			.filter { it.container !is Inventory }
+			.mapNotNull { slot -> parsed.getOrPut(slot.item) { parseOrder(slot.item) ?: NOT_AN_ORDER }.takeIf { it !== NOT_AN_ORDER } }
+		if (shown.isEmpty()) return
+		val keep = 1 - tax.value / 100
+		val (sells, buys) = shown.partition { it.sell }
+		val lines = ArrayList<Line>()
+		// A square in the order's status colour, as its slot is tinted.
+		fun row(order: Order, worth: Double) =
+			Line("${statusFor(order).code}■ §7${order.amount}x ${named(order.name)}", "§6${short(worth)}")
+		if (sells.isNotEmpty()) {
+			lines += Line("§7Sell offers")
+			sells.forEach { lines += row(it, it.amount * it.price * keep) }
+			lines += Line("§fAll sold", "§6${short(sells.sumOf { it.amount * it.price * keep })}")
+		}
+		if (buys.isNotEmpty()) {
+			if (lines.isNotEmpty()) lines += Line(null)
+			lines += Line("§7Buy orders")
+			buys.forEach { lines += row(it, it.amount * it.price) }
+			lines += Line("§fCost", "§6${short(buys.sumOf { it.amount * it.price })}")
+		}
+
+		val font = client.font
+		val height = font.lineHeight + 2
+		val valued = lines.filter { it.right != null }
+		val width = maxOf(
+			lines.filter { it.right == null }.maxOfOrNull { font.width(it.left ?: "") } ?: 0,
+			(valued.maxOfOrNull { font.width(it.left!!) } ?: 0) + COLUMN_GAP + (valued.maxOfOrNull { font.width(it.right!!) } ?: 0),
+		)
+		val right = accessor.`cryptic$leftPos`() + accessor.`cryptic$imageWidth`() + BREAKDOWN_GAP
+		val room = (graphics.guiWidth() - right - 2).toFloat()
+		val scale = if (width <= room) 1f else (room / width.coerceAtLeast(1)).coerceAtLeast(MIN_SCALE)
+		val y = accessor.`cryptic$topPos`() + accessor.`cryptic$imageHeight`() / 2f - (lines.size * height - 2) * scale / 2f
+		val pose = graphics.pose()
+		pose.pushMatrix()
+		pose.translate(right.toFloat(), maxOf(2f, y))
+		pose.scale(scale, scale)
+		lines.forEachIndexed { i, line ->
+			val rowY = i * height
+			if (line.left == null) {
+				graphics.fill(0, rowY + (height - 2) / 2, width, rowY + (height - 2) / 2 + 1, RULE_COLOR)
+				return@forEachIndexed
+			}
+			graphics.text(font, line.left, 0, rowY, -1)
+			line.right?.let { graphics.text(font, it, width - font.width(it), rowY, -1) }
+		}
+		pose.popMatrix()
+	}
 
 	// ---- The menu ----------------------------------------------------------------------------
 

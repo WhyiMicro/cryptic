@@ -116,6 +116,8 @@ object ModuleIcons {
 		"toasts" to "\uf0f3", // bell
 		"item_protection" to "\uf132", // shield
 		"bazaar" to "\uf54e", // store
+		"auction_house" to "\uf0e3", // gavel
+		"farming" to "\uf4d8", // seedling
 		"mining" to "\uf85e", // person-digging
 		"fishing" to "\uf578", // fish
 		"hud_editor" to "\uf26c", // display

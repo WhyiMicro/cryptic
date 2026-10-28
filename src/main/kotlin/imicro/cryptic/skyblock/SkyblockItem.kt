@@ -8,9 +8,15 @@ import net.minecraft.world.item.component.CustomData
 object SkyblockItem {
 	fun id(stack: ItemStack): String {
 		if (stack.isEmpty) return ""
-		val data = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag()
-		return data.getString("id").orElse("")
+		return data(stack).getString("id").orElse("")
 	}
+
+	/**
+	 * The stack's custom data as it is, not a copy: asked for every slot every frame, where copying
+	 * all of Hypixel's data each time showed in profiles. Never change what this returns.
+	 */
+	fun data(stack: ItemStack): net.minecraft.nbt.CompoundTag =
+		(stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY) as imicro.cryptic.mixin.CustomDataAccessor).`cryptic$tag`()
 
 	/**
 	 * A player head's texture, as the base64 Hypixel sends. Often the only way to tell Hypixel's

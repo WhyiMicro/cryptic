@@ -71,6 +71,7 @@ public abstract class AbstractContainerScreenMixin {
             return;
         }
         CroesusHelper.onSlotClicked(slotId);
+        imicro.cryptic.feature.Farming.onSlotClicked((AbstractContainerScreen<?>) (Object) this, slotId);
         LoadoutManager.onSlotClicked(slotId, button, input);
         if (TerminalSolver.handleSlotClick(slotId, button, input)) info.cancel();
     }
@@ -78,6 +79,16 @@ public abstract class AbstractContainerScreenMixin {
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void cryptic$clickTerminal(MouseButtonEvent click, boolean doubleClick, CallbackInfoReturnable<Boolean> info) {
         if (SpiritLeapOverlay.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y())) {
+            info.setReturnValue(true);
+            return;
+        }
+
+        if (click.button() == 0 && imicro.cryptic.feature.Farming.handleMouseClick(click.x(), click.y())) {
+            info.setReturnValue(true);
+            return;
+        }
+
+        if (click.button() == 0 && imicro.cryptic.feature.BazaarPresets.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y())) {
             info.setReturnValue(true);
             return;
         }

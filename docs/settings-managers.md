@@ -93,13 +93,24 @@ Volumes are kept in `config/cryptic/sound-volumes.json`.
 On by default. Once per session, on the first server you join, it reads the
 latest release on GitHub and compares it with the version you have installed.
 
-If the release is newer, you get two things:
+Only a release with a jar for your Minecraft version is offered. If it's
+newer, what happens depends on **Install updates automatically**:
 
-- A notification that stays up for thirty seconds.
-- A line in chat. Click it to open the release page.
+- **Off (the default):** a notification asks "A new update for Cryptic is
+  available! (0.87.0 -> 0.88.0) Would you like to install it now?". Press
+  **Y** to download it, or **N** for not now, which leaves the release page in
+  chat. With notifications off, the question is a chat line with clickable
+  **[Y]** and **[N]**.
+- **On:** it downloads without asking.
+
+Either way, once the download is done you're told whether it worked. A
+downloaded update is installed as the game closes, so restart the game to apply
+it. A failed one says why and leaves the release page in chat.
 
 **Check now**, or `/cryptic update`, checks straight away and also tells you
-when you're already up to date.
+when you're already up to date. `/cryptic debug update` shows the whole thing
+with a made-up next version, and `/cryptic debug update fail` makes its pretend
+download fail; neither downloads anything.
 
 ## Party Blacklist
 

@@ -23,7 +23,8 @@ import java.time.Duration
 /**
  * Checks GitHub for a newer Cryptic once a session, on the first server joined. Compares release
  * tags (`v0.20.0-26.2`) with the installed version, counting only releases with a jar for this
- * Minecraft version, and announces one with a notification and a clickable chat line.
+ * Minecraft version. A new one is installed on its own with automatic updates on; otherwise you're
+ * asked, and a yes downloads it to be installed when the game closes.
  */
 object UpdateChecker {
 	/** Recent releases rather than just the latest, which may be for another Minecraft version. */
@@ -36,7 +37,7 @@ object UpdateChecker {
 		id = "auto_update",
 		label = "Install updates automatically",
 		defaultValue = false,
-		description = "Downloads a new release, then installs it when you close the game.",
+		description = "Downloads a new release, then installs it when you close the game. Off, you're asked first.",
 	)
 
 	private val checkNow = ButtonModuleSetting("check_now", "Check now", action = { check(manual = true) })
@@ -128,7 +129,12 @@ object UpdateChecker {
 		if (compatible != null) {
 			val version = tag(compatible).removePrefix("v")
 			val page = compatible.get("html_url")?.asString ?: RELEASES_PAGE
-			if (autoUpdate.value && AutoUpdater.supported) update(compatible, version, page) else announce(version, page)
+			when {
+				!AutoUpdater.supported -> announce(version, page)
+				AutoUpdater.waiting == version -> downloaded(version)
+				autoUpdate.value -> install(version, page) { done -> AutoUpdater.download(compatible, version, done) }
+				else -> ask(version, page) { install(version, page) { done -> AutoUpdater.download(compatible, version, done) } }
+			}
 			return
 		}
 		val elsewhere = newer.firstOrNull()
@@ -163,27 +169,82 @@ object UpdateChecker {
 		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(line)
 	}
 
+	private const val PROMPT_ID = "update_prompt"
+	private const val PROMPT_SECONDS = 60.0
+
 	/**
-	 * With automatic updates on: downloaded in the background and installed when the game closes. A
-	 * failed download falls back to the announcement with the link.
+	 * Asks whether to install [latest]; yes runs [onYes]. With notifications off the question is a
+	 * chat line with clickable answers. No leaves the release page in chat for later.
 	 */
-	private fun update(release: JsonObject, latest: String, page: String) {
-		if (AutoUpdater.waiting == latest) {
-			Toasts.show(SOURCE, "§fCryptic $latest §7installs when you close the game", life = TOAST_SECONDS, color = Toasts.Colors.GOOD)
-			return
-		}
-		Toasts.show(SOURCE, "Downloading §fCryptic $latest§7...", color = Toasts.Colors.GOOD)
-		AutoUpdater.download(release, latest) { result ->
+	private fun ask(latest: String, page: String, current: String = installed, onYes: () -> Unit) {
+		Toasts.ask(
+			source = SOURCE,
+			id = PROMPT_ID,
+			life = PROMPT_SECONDS,
+			color = Toasts.Colors.GOOD,
+			footer = "§a[Y] §fInstall   §c[N] §fNot now",
+			keys = mapOf(
+				org.lwjgl.glfw.GLFW.GLFW_KEY_Y to onYes,
+				org.lwjgl.glfw.GLFW.GLFW_KEY_N to { later(latest, page) },
+			),
+		) { "A new update for Cryptic is available! §8(${short(current)} -> ${short(latest)}) §7Would you like to install it now?" }
+	}
+
+	/** A version without its Minecraft part: "0.87.0-26.2" reads "0.87.0". */
+	private fun short(version: String): String = version.substringBefore('-')
+
+	/** The release page as a chat link, after [text]. */
+	private fun linkLine(text: String, page: String): Component {
+		val link = Component.literal("release page")
+			.withStyle(ChatFormatting.AQUA, ChatFormatting.UNDERLINE)
+			.withStyle { it.withClickEvent(ClickEvent.OpenUrl(URI.create(page))).withHoverEvent(HoverEvent.ShowText(Component.literal(page))) }
+		return Component.literal("§8[Cryptic] §7$text").append(link).append(Component.literal("§7."))
+	}
+
+	private fun later(latest: String, page: String) {
+		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
+			linkLine("Cryptic §f${short(latest)}§7 wasn't installed. Use §fCheck now §7in Update Checker, or get it from the ", page),
+		)
+	}
+
+	/**
+	 * Downloads [latest] through [download] and says how it went: a download installs when the game
+	 * closes, so it asks for a restart; a failure leaves the release page.
+	 */
+	private fun install(latest: String, page: String = RELEASES_PAGE, download: ((Result<String>) -> Unit) -> Unit) {
+		Toasts.show(SOURCE, "Downloading §fCryptic ${short(latest)}§7...", color = Toasts.Colors.GOOD)
+		download { result ->
 			Minecraft.getInstance().execute {
-				result.onSuccess {
-					Toasts.show(SOURCE, "§fCryptic $latest §7installs when you close the game", life = TOAST_SECONDS, color = Toasts.Colors.GOOD)
-					Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
-						Component.literal("§8[Cryptic] §7Downloaded Cryptic §f$latest§7. It installs when you close the game."),
-					)
-				}.onFailure { error ->
+				result.onSuccess { downloaded(latest) }.onFailure { error ->
 					Cryptic.LOGGER.warn("Update download failed", error)
-					Toasts.show(SOURCE, "Couldn't download §fCryptic $latest§7: ${error.message}", error = true)
-					announce(latest, page)
+					Toasts.show(SOURCE, "§cThe update failed: §7${error.message}", life = TOAST_SECONDS, error = true)
+					Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
+						linkLine("You can still get Cryptic §f${short(latest)} §7from the ", page),
+					)
+				}
+			}
+		}
+	}
+
+	/** Told once: a notification, which falls back to chat when notifications are off. */
+	private fun downloaded(latest: String) {
+		Toasts.show(
+			SOURCE, "§aUpdate downloaded! §7Restart the game to apply §fCryptic ${short(latest)}§7.",
+			life = TOAST_SECONDS, color = Toasts.Colors.GOOD,
+		)
+	}
+
+	/**
+	 * `/cryptic debug update`: the prompt and the download's outcome with a made-up next version.
+	 * Nothing is downloaded or installed; [fail] makes the pretend download fail.
+	 */
+	fun simulate(fail: Boolean) {
+		val parts = numbers(installed) ?: listOf(0, 0, 0)
+		val next = "${parts[0]}.${parts[1] + 1}.0" + installed.substringAfter('-', "").let { if (it.isEmpty()) "" else "-$it" }
+		ask(next, RELEASES_PAGE) {
+			install(next) { done ->
+				java.util.concurrent.CompletableFuture.delayedExecutor(2, java.util.concurrent.TimeUnit.SECONDS).execute {
+					done(if (fail) Result.failure(IllegalStateException("pretend failure (debug), nothing was downloaded")) else Result.success(next))
 				}
 			}
 		}

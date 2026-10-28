@@ -4,7 +4,6 @@ import imicro.cryptic.debug.DebugOverrides
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonTeam
 import imicro.cryptic.dungeon.DungeonTeam.DungeonClass
-import imicro.cryptic.dungeon.Floor7
 import imicro.cryptic.dungeon.map.DungeonMapReader
 import imicro.cryptic.mixin.LocalPlayerAccessor
 import imicro.cryptic.gui.ColorModuleSetting
@@ -19,8 +18,6 @@ import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
 import com.mojang.blaze3d.platform.InputConstants
-import imicro.cryptic.hud.Hud
-import imicro.cryptic.hud.HudElement
 import imicro.cryptic.render.RoundedRect
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.minecraft.client.Minecraft
@@ -30,13 +27,11 @@ import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket
-import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.PositionMoveRotation
 import net.minecraft.world.entity.Relative
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.entity.player.PlayerSkin
 import net.minecraft.world.inventory.ContainerInput
-import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.Vec3
 
 /**
@@ -46,9 +41,8 @@ import net.minecraft.world.phys.Vec3
  * corner or per class.
  *
  * The leap announcement is Blade Addons' Leap Message. The rotate fix is RSM's Leap Rotate Fix
- * (face the way your teammate does; face into the boss room on entry). The leap count is Blade
- * Addons' (credited to valley): how many of the party reached an F7 early-enter spot. Classes and
- * colours come from [DungeonTeam] and [ClassColors].
+ * (face the way your teammate does; face into the boss room on entry). Classes and colours come from
+ * [DungeonTeam] and [ClassColors].
  */
 object SpiritLeapOverlay {
 	private const val SORT_ODIN = 0
@@ -214,34 +208,6 @@ object SpiritLeapOverlay {
 		DungeonClass.TANK to classBind("tank_key", "Tank"),
 	)
 
-	private val leapCountSection = SectionModuleSetting("leap_count_section", "Leap count")
-
-	@JvmField
-	val leapCount = ToggleModuleSetting(
-		id = "leap_count",
-		label = "Player leap count",
-		defaultValue = false,
-		description = "On an early-enter spot in Floor 7, how many of the party are there with you.",
-	)
-
-	@JvmField
-	val assumeCore = ToggleModuleSetting(
-		id = "assume_core",
-		label = "Assume core",
-		defaultValue = false,
-		description = "Counts to three on EE3, for a party that leaves someone at core.",
-		visibleIf = { leapCount.value },
-	)
-
-	@JvmField
-	val assumeSplitEe2 = ToggleModuleSetting(
-		id = "assume_split_ee2",
-		label = "Assume split EE2",
-		defaultValue = false,
-		description = "Counts to three on EE2, for a party that splits it.",
-		visibleIf = { leapCount.value },
-	)
-
 	private val announceSection = SectionModuleSetting("announce_section", "Announce")
 
 	private const val PLAYER_TOKEN = "<player>"
@@ -348,10 +314,6 @@ object SpiritLeapOverlay {
 		useKeybinds,
 		keybindMode,
 	) + cornerBinds + classBinds.values + listOf(
-		leapCountSection,
-		leapCount,
-		assumeCore,
-		assumeSplitEe2,
 		announceSection,
 		announceLeap.withMore(leapMessage),
 	)
@@ -366,9 +328,8 @@ object SpiritLeapOverlay {
 		settings = configurable,
 	)
 
-	val needsFloor7: Boolean get() = module.enabled && leapCount.value
 
-	val needsDungeon: Boolean get() = module.enabled && (leapCount.value || bossRotateFix.value)
+	val needsDungeon: Boolean get() = module.enabled && bossRotateFix.value
 
 	private var initialized = false
 
@@ -376,8 +337,7 @@ object SpiritLeapOverlay {
 		if (initialized) return
 		initialized = true
 
-		Hud.register(LeapCountElement())
-		ClientTickEvents.END_CLIENT_TICK.register(::tickLeapCount)
+		ClientTickEvents.END_CLIENT_TICK.register { tickDebug() }
 	}
 
 	@JvmStatic
@@ -827,87 +787,6 @@ object SpiritLeapOverlay {
 		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] $text"))
 	}
 
-	/** Which early-enter spot you're on, 2 to 5, or -1. */
-	@Volatile
-	private var spot = -1
-
-	@Volatile
-	private var leapedCount = 0
-
-	private fun tickLeapCount(client: Minecraft) {
-		tickDebug()
-		val player = client.player
-		val level = client.level
-		if (!module.enabled || !leapCount.value || player == null || level == null ||
-			!DungeonLocation.inFloor7 || !Floor7.inBossRoom
-		) {
-			spot = -1
-			return
-		}
-
-		spot = spotOf(player.position())
-		if (spot < 1) {
-			leapedCount = 0
-			return
-		}
-		leapedCount = level.getEntities(player, REGIONS[spot - 1]) { isRealPlayer(it) }.size
-	}
-
-	/** Blade's spots, most specific first. */
-	private fun spotOf(position: Vec3): Int = when {
-		HEE2_BOX.contains(position) || EE2_BOX.contains(position) -> 2
-		EE3_BOX.contains(position) -> 3
-		CORE_BOX.contains(position) -> 4
-		RELIC_BOX.contains(position) && Floor7.phase != 5 -> 5
-		else -> -1
-	}
-
-	private fun maxCount(): Int = when {
-		spot == 2 && assumeSplitEe2.value -> 3
-		spot == 3 && assumeCore.value -> 3
-		else -> CORNERS
-	}
-
-	/**
-	 * Whether an entity is a real player: Hypixel's NPCs have no proper tab entry, while real
-	 * players' names have no spaces. Blade's test (Blade calls it a hack).
-	 */
-	private fun isRealPlayer(entity: Entity): Boolean {
-		if (entity !is Player) return false
-		val info = Minecraft.getInstance().connection?.getPlayerInfo(entity.uuid) ?: return false
-		val name = info.profile.name()
-		return name.isNotEmpty() && ' ' !in name
-	}
-
-	/** Blade's format: blue once one short of full or better, dark red before. */
-	private fun leapCountText(count: Int, max: Int): String =
-		(if (max - count <= 1) "§9" else "§4") + count + "§9/" + max + " Players Leaped"
-
-	private class LeapCountElement: HudElement("leap_count", "Leap Count", 0.45, 0.6) {
-		private val font get() = Minecraft.getInstance().font
-
-		override val width: Int = COUNT_WIDTH
-		override val height: Int = COUNT_HEIGHT
-
-		override fun isVisible(): Boolean = module.enabled && leapCount.value && spot >= 1
-
-		override fun showInEditor(): Boolean = module.enabled && leapCount.value
-
-		override fun render(context: GuiGraphicsExtractor) = draw(context, leapCountText(leapedCount, maxCount()))
-
-		override fun renderExample(context: GuiGraphicsExtractor) = draw(context, leapCountText(2, CORNERS))
-
-		private fun draw(context: GuiGraphicsExtractor, text: String) {
-			context.text(
-				font,
-				text,
-				(COUNT_WIDTH - font.width(text)) / 2,
-				(COUNT_HEIGHT - font.lineHeight) / 2 + 1,
-				WHITE,
-			)
-		}
-	}
-
 	private const val CORNERS = 4
 
 	/** Odin's box size, and how far each stands off the screen's middle. */
@@ -937,23 +816,6 @@ object SpiritLeapOverlay {
 	private const val WHITE = 0xFFFFFFFF.toInt()
 	private const val DEAD_RED = 0xFFFF5555.toInt()
 
-	/** Blade's element width, which the count is centred in. */
-	private const val COUNT_WIDTH = 110
-	private const val COUNT_HEIGHT = 10
-
 	private val FORMATTING = Regex("§.")
 
-	/** The F7 boss room's early-enter spots and the area each counts (Blade's numbers). */
-	private val REGIONS = arrayOf(
-		AABB(91.0, 105.0, 46.0, 111.0, 127.0, 123.0),
-		AABB(17.0, 106.0, 121.0, 108.0, 145.0, 143.0),
-		AABB(-2.0, 106.0, 51.0, 20.0, 145.0, 128.0),
-		AABB(20.0, 26.0, 29.0, 191.0, 145.0, 58.0),
-		AABB(3.0, 5.0, 0.0, 128.0, 48.0, 140.0),
-	)
-	private val EE2_BOX = AABB(57.0, 108.0, 130.0, 59.0, 110.0, 132.0)
-	private val HEE2_BOX = AABB(59.0, 132.0, 138.0, 62.0, 133.0, 140.0)
-	private val EE3_BOX = AABB(1.0, 108.0, 103.0, 3.0, 110.0, 105.0)
-	private val CORE_BOX = AABB(53.5, 114.0, 49.5, 55.5, 116.0, 51.5)
-	private val RELIC_BOX = AABB(51.5, 3.0, 73.5, 57.5, 8.0, 79.5)
 }
