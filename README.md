@@ -1,18 +1,24 @@
-<p align="center">
-  <img src="src/main/resources/assets/cryptic/icon.png" alt="Cryptic" width="128" height="128">
-</p>
+
+<div align="center">
+
+<img src="src/main/resources/assets/cryptic/icon.png" alt="Cryptic Logo" width="112" height="112">
 
 # Cryptic
 
-A Hypixel SkyBlock mod for Fabric, built to replace the handful of dungeon mods
-it would otherwise take to get the same features: one mod, one menu, one config.
+**The all-in-one Hypixel SkyBlock mod.**
 
-Minecraft **26.2**, Fabric Loader, Kotlin. Everything Cryptic draws goes through
-Minecraft's own renderer, so it works on the OpenGL and Vulkan graphics APIs alike.
+A modern, feature-rich Fabric mod designed to bring everything you need into one place.
 
-**[Download](https://github.com/WhyiMicro/cryptic/releases/latest)** ·
-[Website](https://modworks.tf/cryptic) ·
-[Changelog](https://github.com/WhyiMicro/cryptic/releases)
+One mod. One menu. One config.
+
+[![Minecraft](https://img.shields.io/badge/Minecraft-26.2-62B47A?style=flat-square)](https://minecraft.net)
+[![Fabric](https://img.shields.io/badge/Loader-Fabric-DBD0B4?style=flat-square)](https://fabricmc.net/)
+[![Java](https://img.shields.io/badge/Java-25-ED8B00?style=flat-square)](https://openjdk.org/)
+[![License](https://img.shields.io/badge/License-Non--Commercial-777777?style=flat-square)](LICENSE)
+
+[**Download**](https://github.com/WhyiMicro/cryptic/releases/latest) · [Website](https://modworks.tf/cryptic) · [Changelog](https://github.com/WhyiMicro/cryptic/releases)
+
+</div>
 
 ## What's in it
 
