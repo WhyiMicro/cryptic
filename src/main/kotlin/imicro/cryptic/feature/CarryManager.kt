@@ -18,7 +18,8 @@ import imicro.cryptic.gui.withMore
 import imicro.cryptic.render.CrypticRenderPipelines
 import imicro.cryptic.render.WorldRender
 import imicro.cryptic.skyblock.SkyblockLocation
-import imicro.cryptic.slayer.VoidgloomBosses
+import imicro.cryptic.slayer.SlayerBosses
+import imicro.cryptic.slayer.SlayerType
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.KeyMapping
@@ -30,17 +31,15 @@ import net.minecraft.world.entity.Entity
 
 /**
  * Tracks slayer carries you're running for others: how many of each order are done, which bosses in
- * the lobby are theirs, and when to stop. Shaped after Athen's `SlayerCarryTracker`, but managed in
- * a window, and carries are added by hand rather than inferred from payments. Kills are counted
+ * the lobby are theirs (by the owner stand over each, [SlayerBosses]), and when to stop. Shaped after
+ * Athen's `SlayerCarryTracker`, but managed in a window, and carries are added by hand rather than
+ * inferred from payments. Kills are counted
  * from the boss's death animation, since Hypixel says nothing about other people's bosses.
  */
 object CarryManager {
 	private const val STYLE_OUTLINE = 0
 	private const val STYLE_FILL_OUTLINE = 1
 	private const val STYLE_GLOW = 2
-
-	/** Often enough to see a boss teleport to its summoner. */
-	private const val SCAN_INTERVAL_TICKS = 5
 
 	/** How long a kill's count stays on screen. */
 	private const val COUNT_TOAST_SECONDS = 5.0
@@ -61,62 +60,6 @@ object CarryManager {
 	private const val FADE_OUT_TICKS = 10
 
 	private val voidgloomSection = SectionModuleSetting("voidgloom_section", "Voidgloom Seraph")
-
-	@JvmField
-	val confirmBoss = ToggleModuleSetting(
-		id = "confirm_boss",
-		label = "Confirm boss",
-		defaultValue = false,
-		description = "When a boss is given to someone you're carrying, a notification asks if it's really theirs. Y keeps it; N passes it to the next likeliest player. No answer counts as yes.",
-	)
-
-	@JvmField
-	val customWeights = ToggleModuleSetting(
-		id = "custom_weights",
-		label = "Owner guess weights",
-		defaultValue = false,
-		description = "Set how much each sign counts when working out whose boss is whose. Off, Cryptic's own values are used.",
-	)
-
-	private fun weight(id: String, label: String, default: Double, description: String) = SliderModuleSetting(
-		id = id, label = label, defaultValue = default, min = 0.0, max = 20.0, step = 0.5,
-		description = description, visibleIf = { customWeights.value },
-	)
-
-	@JvmField val hitWeight = weight("weight_hit", "Their hits", 6.0, "Points for the player who hits the boss, per hit.")
-	@JvmField val carrierHitWeight = weight("weight_carrier_hit", "Your hits", 6.0, "Points your own hit gives the client near the boss (shared if there are several), per hit.")
-	@JvmField val lookWeight = weight("weight_look", "Looking at them", 2.0, "Points, four times a second, for the player the boss looks straight at.")
-	@JvmField val moveWeight = weight("weight_move", "Walking toward them", 2.0, "Points, four times a second, for the player the boss walks toward.")
-	@JvmField val nearWeight = weight("weight_near", "Closeness", 1.0, "Points, four times a second, for being right next to the boss, less with distance.")
-	@JvmField val safespotWeight = weight("weight_safespot", "Safespot", 3.0, "Points, four times a second, for standing in the safespot over the boss, shared by everyone there.")
-
-	@JvmField
-	val carriedShare = SliderModuleSetting(
-		id = "share_carried", label = "Sure enough (client)", defaultValue = 75.0, min = 50.0, max = 100.0, step = 1.0, unit = "%",
-		description = "The share of the odds that gives a boss to someone you're carrying.", visibleIf = { customWeights.value },
-	)
-
-	@JvmField
-	val otherShare = SliderModuleSetting(
-		id = "share_other", label = "Sure enough (others)", defaultValue = 99.0, min = 50.0, max = 100.0, step = 1.0, unit = "%",
-		description = "The share of the odds that gives a boss to anyone else.", visibleIf = { customWeights.value },
-	)
-
-	@JvmField
-	val watchSeconds = SliderModuleSetting(
-		id = "watch_seconds", label = "Watch time", defaultValue = 10.0, min = 3.0, max = 30.0, step = 1.0, unit = "s",
-		description = "After this long, a client who's the favourite is given the boss even below their share.", visibleIf = { customWeights.value },
-	)
-
-	@JvmField
-	val assignKey = imicro.cryptic.gui.KeybindModuleSetting(
-		id = "assign_key",
-		label = "Assign or remove boss",
-		description = "Look at a boss and press: takes it off the carry it's counted for, or gives it to the carry standing nearest it.",
-	)
-
-	/** How long the confirmation waits for Y or N. */
-	private const val CONFIRM_SECONDS = 10.0
 
 	@JvmField
 	val counterHud = ToggleModuleSetting(
@@ -283,9 +226,6 @@ object CarryManager {
 		keybind = openKeybind,
 		settings = listOf(
 			counterHud,
-			confirmBoss,
-			assignKey,
-			customWeights.withMore(hitWeight, carrierHitWeight, lookWeight, moveWeight, nearWeight, safespotWeight, carriedShare, otherShare, watchSeconds),
 			voidgloomSection,
 			highlightBoss.withMore(highlightStyle, outlineColor, fillColor, lineWidth, phase),
 			tracer.withMore(tracerColor),
@@ -306,8 +246,6 @@ object CarryManager {
 	/** Bosses drawn this tick, so rendering does no scanning. */
 	private var boxes: List<Entity> = emptyList()
 
-	private var ticksUntilScan = 0
-
 	private var initialized = false
 
 	fun initialize() {
@@ -317,16 +255,11 @@ object CarryManager {
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		imicro.cryptic.hud.Hud.register(CounterElement())
-		VoidgloomBosses.carried = { name -> carries.any { !it.finished && it.name.equals(name, ignoreCase = true) } }
-		VoidgloomBosses.weights = {
-			if (!customWeights.value) VoidgloomBosses.Weights() else VoidgloomBosses.Weights(
-				hit = hitWeight.value, carrierHit = carrierHitWeight.value, look = lookWeight.value, move = moveWeight.value,
-				near = nearWeight.value, safespot = safespotWeight.value,
-				carriedShare = carriedShare.value / 100.0, otherShare = otherShare.value / 100.0,
-				watchMillis = (watchSeconds.value * 1000).toLong(),
-			)
-		}
 	}
+
+	/** Whether [name] has an unfinished carry. */
+	fun isCarried(name: String): Boolean =
+		module.enabled && carries.any { !it.finished && it.name.equals(name, ignoreCase = true) }
 
 	/** Each unfinished carry's count, one per line. */
 	private class CounterElement : imicro.cryptic.hud.HudElement("carry_counter", "Carry Counter", 0.005, 0.3) {
@@ -438,14 +371,7 @@ object CarryManager {
 			killed.removeIf { level.getEntity(it) == null }
 		}
 
-		val assignDown = client.gui.screen() == null && assignKey.isDown(client.window)
-		if (assignDown && !assignKeyDown) assignLookedAt(client)
-		assignKeyDown = assignDown
-
-		if (ticksUntilScan-- <= 0) {
-			ticksUntilScan = SCAN_INTERVAL_TICKS
-			scan(client)
-		}
+		scan(client)
 
 		boxes = if (highlightBoss.value || tracer.value) {
 			tracked.keys.mapNotNull { level?.getEntity(it) }
@@ -454,89 +380,21 @@ object CarryManager {
 		}
 	}
 
-	private var assignKeyDown = false
-
-	/** How far off the crosshair a boss may be and still be the one looked at. */
-	private const val AIM_DEGREES = 8.0
-	private const val AIM_REACH = 48.0
-
-	/**
-	 * The boss under the crosshair taken off its carry, or given to the carried player nearest it
-	 * (the first unfinished carry when none is in sight). Fixes a wrong guess in one press.
-	 */
-	private fun assignLookedAt(client: Minecraft) {
-		val level = client.level ?: return
-		val player = client.player ?: return
-		val eye = player.eyePosition
-		val look = player.lookAngle
-		val seen = VoidgloomBosses.visible(level).filter { it.boss.distanceTo(player) <= AIM_REACH }.minByOrNull { entry ->
-			val to = entry.boss.boundingBox.center.subtract(eye).normalize()
-			Math.toDegrees(kotlin.math.acos(look.dot(to).coerceIn(-1.0, 1.0)))
-		}?.takeIf { entry ->
-			val to = entry.boss.boundingBox.center.subtract(eye).normalize()
-			Math.toDegrees(kotlin.math.acos(look.dot(to).coerceIn(-1.0, 1.0))) <= AIM_DEGREES
-		}
-		if (seen == null) {
-			Toasts.show("Carry Manager", "Look at a boss first", true)
-			return
-		}
-		val boss = seen.boss
-		tracked.remove(boss.id)?.let { removed ->
-			VoidgloomBosses.reject(boss.id, removed.carry.name)
-			Toasts.show("Carry Manager", "Took the boss off §f${removed.carry.name}", head = removed.carry.name)
-			return
-		}
-		val open = carries.filter { !it.finished }
-		val carry = open.mapNotNull { carry ->
-			level.players().firstOrNull { it.gameProfile.name.equals(carry.name, ignoreCase = true) }?.let { carry to it.distanceTo(boss) }
-		}.minByOrNull { it.second }?.first
-			?: open.firstOrNull { it.tier == seen.tier }
-			?: open.firstOrNull()
-		if (carry == null) {
-			Toasts.show("Carry Manager", "No carry to give it to", true)
-			return
-		}
-		// Back-dated to when the client first saw it, as a spotted boss is.
-		val since = System.currentTimeMillis() - boss.tickCount * 50L
-		VoidgloomBosses.assign(boss.id, carry.name, seen.tier, since)
-		tracked[boss.id] = TrackedBoss(carry, since)
-		Toasts.show("Carry Manager", "Gave the boss to §f${carry.name}", head = carry.name)
-	}
-
+	/** Each new Voidgloom whose owner stand names a carried player. */
 	private fun scan(client: Minecraft) {
-		for (sighting in VoidgloomBosses.sightings(client)) {
-			if (tracked.containsKey(sighting.boss.id) || sighting.boss.id in killed) continue
+		val now = System.currentTimeMillis()
+		for (seen in SlayerBosses.bosses) {
+			if (seen.type != SlayerType.VOIDGLOOM || seen.owner == null) continue
+			if (tracked.containsKey(seen.boss.id) || seen.boss.id in killed) continue
 
 			val carry = carries.firstOrNull {
-				!it.finished && it.name.equals(sighting.owner, ignoreCase = true) && it.tier == sighting.tier
+				!it.finished && it.name.equals(seen.owner, ignoreCase = true) && it.tier == seen.tier
 			} ?: continue
 
-			// Timed from when the boss was first seen, not from when its owner was decided.
-			tracked[sighting.boss.id] = TrackedBoss(carry, sighting.since)
+			// Back-dated to when the client first saw the boss.
+			tracked[seen.boss.id] = TrackedBoss(carry, now - seen.boss.tickCount * 50L)
 			announceSpawn(client, carry)
-			if (confirmBoss.value) askToConfirm(sighting.boss.id, carry)
 		}
-	}
-
-	/** Y keeps the boss; N takes it off this carry and lets the next likeliest player have it. */
-	private fun askToConfirm(bossId: Int, carry: Carry) {
-		val id = "carry_confirm_$bossId"
-		Toasts.ask(
-			source = "Carry Manager",
-			id = id,
-			life = CONFIRM_SECONDS,
-			head = carry.name,
-			footer = "§a[Y] §fYes   §c[N] §fNo",
-			keys = mapOf(
-				org.lwjgl.glfw.GLFW.GLFW_KEY_Y to {},
-				org.lwjgl.glfw.GLFW.GLFW_KEY_N to {
-					if (tracked[bossId]?.carry === carry) tracked.remove(bossId)
-					VoidgloomBosses.reject(bossId, carry.name)
-					// Re-read now, so the boss can go to someone else straight away.
-					scan(Minecraft.getInstance())
-				},
-			),
-		) { "Is this §d${carry.name}§7's boss?" }
 	}
 
 	private fun announceSpawn(client: Minecraft, carry: Carry) {
@@ -552,7 +410,7 @@ object CarryManager {
 	@JvmStatic
 	fun onEntityDied(entityId: Int) {
 		if (!module.enabled) return
-		val boss = tracked.remove(entityId) ?: settled(entityId) ?: return
+		val boss = tracked.remove(entityId) ?: return
 		killed.add(entityId)
 		val carry = boss.carry
 
@@ -588,13 +446,6 @@ object CarryManager {
 			return
 		}
 		CarryStore.save()
-	}
-
-	/** A boss that died while its owner was still being worked out, if it was a carried player's. */
-	private fun settled(entityId: Int): TrackedBoss? {
-		val sighting = VoidgloomBosses.settle(entityId) ?: return null
-		val carry = carries.firstOrNull { !it.finished && it.name.equals(sighting.owner, ignoreCase = true) && it.tier == sighting.tier } ?: return null
-		return TrackedBoss(carry, sighting.since)
 	}
 
 	/** The outline colour for [entity] (the glow style). Asked per entity per frame, so cheap tests first. */

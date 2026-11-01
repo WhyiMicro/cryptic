@@ -590,6 +590,16 @@ class SectionModuleSetting(
 ): ModuleSetting(id, label, visibleIf)
 
 /**
+ * Splits a module's page into tabs, picked in its title row. Every setting after one is on it, up to
+ * the next; a module that has them starts its list with one.
+ */
+class TabModuleSetting(
+	id: String,
+	label: String,
+	visibleIf: () -> Boolean = { true },
+): ModuleSetting(id, label, visibleIf)
+
+/**
  * The registry shared by the menu and the config. Ids are separate from display names, so wording
  * can change without breaking profiles.
  */
@@ -693,6 +703,7 @@ object ModuleRegistry {
 		imicro.cryptic.feature.Mining.module,
 		imicro.cryptic.feature.Fishing.module,
 		imicro.cryptic.feature.Farming.module,
+		imicro.cryptic.feature.Rift.module,
 		imicro.cryptic.feature.ItemOutline.module,
 		imicro.cryptic.feature.Capes.module,
 		imicro.cryptic.feature.Freelook.module,

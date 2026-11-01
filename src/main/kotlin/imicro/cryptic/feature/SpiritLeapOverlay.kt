@@ -2,6 +2,7 @@ package imicro.cryptic.feature
 
 import imicro.cryptic.debug.DebugOverrides
 import imicro.cryptic.dungeon.DungeonLocation
+import imicro.cryptic.dungeon.DungeonRun
 import imicro.cryptic.dungeon.DungeonTeam
 import imicro.cryptic.dungeon.DungeonTeam.DungeonClass
 import imicro.cryptic.dungeon.map.DungeonMapReader
@@ -19,6 +20,7 @@ import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
 import com.mojang.blaze3d.platform.InputConstants
 import imicro.cryptic.render.RoundedRect
+import imicro.cryptic.skyblock.SkyblockItem
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -27,11 +29,13 @@ import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket
+import net.minecraft.world.InteractionHand
 import net.minecraft.world.entity.PositionMoveRotation
 import net.minecraft.world.entity.Relative
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.entity.player.PlayerSkin
 import net.minecraft.world.inventory.ContainerInput
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.phys.Vec3
 
 /**
@@ -42,7 +46,8 @@ import net.minecraft.world.phys.Vec3
  *
  * The leap announcement is Blade Addons' Leap Message. The rotate fix is RSM's Leap Rotate Fix
  * (face the way your teammate does; face into the boss room on entry). Classes and colours come from
- * [DungeonTeam] and [ClassColors].
+ * [DungeonTeam] and [ClassColors]. Before the blood door opens, a leap can go straight to the healer;
+ * a leap on cooldown can wait until it's ready.
  */
 object SpiritLeapOverlay {
 	private const val SORT_ODIN = 0
@@ -235,6 +240,29 @@ object SpiritLeapOverlay {
 		visibleIf = { announceLeap.value },
 	)
 
+	private val quickSection = SectionModuleSetting(
+		"quick_section", "Quick leaps",
+		visibleIf = { imicro.cryptic.gui.Restrictions.allows(imicro.cryptic.gui.Restriction.CHEAT) },
+	)
+
+	@JvmField
+	val fastLeap = ToggleModuleSetting(
+		id = "fast_leap",
+		restriction = imicro.cryptic.gui.Restriction.CHEAT,
+		label = "Fast leap during blood rush",
+		defaultValue = false,
+		description = "Before the blood door opens, right-clicking your leap goes straight to your healer, with no menu.",
+	)
+
+	@JvmField
+	val leapQueue = ToggleModuleSetting(
+		id = "leap_queue",
+		restriction = imicro.cryptic.gui.Restriction.CHEAT,
+		label = "Leap queue",
+		defaultValue = false,
+		description = "Right-clicking your leap while it's on cooldown leaps as soon as it's ready, as long as you keep holding it.",
+	)
+
 	private val previewSection = SectionModuleSetting(
 		"preview_section", "Teammate views",
 		visibleIf = { imicro.cryptic.gui.Restrictions.allows(imicro.cryptic.gui.Restriction.SEMI_LEGIT) },
@@ -308,6 +336,9 @@ object SpiritLeapOverlay {
 		backgroundColor,
 		cornerRadius,
 		renderScale,
+		quickSection,
+		fastLeap,
+		leapQueue,
 		previewSection,
 		preview.withMore(previewResolution, previewRate, previewsPerFrame, previewEntities),
 		keybindSection,
@@ -329,7 +360,7 @@ object SpiritLeapOverlay {
 	)
 
 
-	val needsDungeon: Boolean get() = module.enabled && bossRotateFix.value
+	val needsDungeon: Boolean get() = module.enabled && (bossRotateFix.value || fastLeap.value)
 
 	private var initialized = false
 
@@ -337,12 +368,103 @@ object SpiritLeapOverlay {
 		if (initialized) return
 		initialized = true
 
-		ClientTickEvents.END_CLIENT_TICK.register { tickDebug() }
+		ClientTickEvents.END_CLIENT_TICK.register { client ->
+			tickDebug()
+			tickQueue(client)
+			if (!DungeonRun.started) bloodOpened = false
+			if (fastScreen != null && client.gui.screen() !== fastScreen) fastScreen = null
+		}
 	}
 
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
-		if (!overlay) onGameMessage(message.string)
+		if (overlay) return
+		val line = message.string.replace(FORMATTING, "").trim()
+		if (line == BLOOD_OPENED) bloodOpened = true
+		onCooldownLine(line)
+		onGameMessage(message.string)
+	}
+
+	// ---- Fast leap and queue ------------------------------------------------------------------
+
+	private const val BLOOD_OPENED = "The BLOOD DOOR has been opened!"
+	private val LEAPS = setOf("SPIRIT_LEAP", "INFINITE_SPIRIT_LEAP")
+
+	private var bloodOpened = false
+
+	/** The menu the fast leap has decided about, and whether it's being skipped. */
+	private var fastScreen: Screen? = null
+	private var fastWanted = false
+	private var fastClicked = false
+	private var fastOpenedAt = 0L
+
+	/** How long the menu stays hidden for a leap that doesn't go through, before it's shown after all. */
+	private const val FAST_LEAP_MILLIS = 1_000L
+
+	private val rushing: Boolean
+		get() = fastLeap.value && DungeonLocation.inDungeon && DungeonRun.started && !bloodOpened && !DungeonRun.inBoss
+
+	/**
+	 * Whether this menu is being skipped: its heads arrive a moment after it opens, so it stays
+	 * hidden until the healer's can be clicked. With no healer alive, it opens as usual.
+	 */
+	private fun fastLeaping(chest: AbstractContainerScreen<*>): Boolean {
+		val now = System.currentTimeMillis()
+		if (fastScreen !== chest) {
+			fastScreen = chest
+			fastWanted = rushing && !isDebug(chest)
+			fastClicked = false
+			fastOpenedAt = now
+		}
+		if (!fastWanted || now - fastOpenedAt > FAST_LEAP_MILLIS) return false
+		if (fastClicked) return true
+		val healer = corners().firstOrNull { it != null && it.clazz == DungeonClass.HEALER && !it.dead } ?: return false
+		if (headSlot(chest, healer) == null) return true
+		fastClicked = true
+		leapTo(chest, healer)
+		return true
+	}
+
+	private val cooldownLine = Regex("""^This ability is on cooldown for (\d+)s\.$""")
+
+	/** When your leap was last right-clicked, to tell its cooldown line from another item's. */
+	private var leapUsedAt = 0L
+	private var retryAt = 0L
+	private var retries = 0
+
+	private const val COOLDOWN_LINE_MILLIS = 1_000L
+	private const val RETRY_MARGIN_MILLIS = 100L
+	private const val MAX_RETRIES = 8
+
+	@JvmStatic
+	fun onItemUsed(stack: ItemStack) {
+		if (module.enabled && leapQueue.value && SkyblockItem.id(stack) in LEAPS) leapUsedAt = System.currentTimeMillis()
+	}
+
+	private fun onCooldownLine(line: String) {
+		if (!module.enabled || !leapQueue.value) return
+		val seconds = cooldownLine.matchEntire(line)?.groupValues?.get(1)?.toLong() ?: return
+		val now = System.currentTimeMillis()
+		if (now - leapUsedAt > COOLDOWN_LINE_MILLIS || retries >= MAX_RETRIES) return
+		retryAt = now + seconds * 1000 + RETRY_MARGIN_MILLIS
+	}
+
+	private fun tickQueue(client: Minecraft) {
+		val now = System.currentTimeMillis()
+		if (retryAt == 0L) {
+			if (now - leapUsedAt > COOLDOWN_LINE_MILLIS) retries = 0
+			return
+		}
+		val player = client.player
+		// Any menu means something else happened; putting the leap away means you changed your mind.
+		if (player == null || !leapQueue.value || client.gui.screen() != null || SkyblockItem.id(player.mainHandItem) !in LEAPS) {
+			retryAt = 0L
+			return
+		}
+		if (now < retryAt) return
+		retryAt = 0L
+		retries++
+		client.gameMode?.useItem(player, InteractionHand.MAIN_HAND)
 	}
 
 	private val leapPattern = Regex("^You have teleported to (.*)!$")
@@ -513,7 +635,8 @@ object SpiritLeapOverlay {
 	/** Draws the menu instead of the chest. True when it did. */
 	@JvmStatic
 	fun render(screen: Screen, context: GuiGraphicsExtractor, mouseX: Int, mouseY: Int): Boolean {
-		leapScreen(screen) ?: return false
+		val chest = leapScreen(screen) ?: return false
+		if (fastLeaping(chest)) return true
 		val client = Minecraft.getInstance()
 		val font = client.font
 
@@ -677,16 +800,20 @@ object SpiritLeapOverlay {
 			return
 		}
 
-		val slots = chest.menu.slots
-		val slot = (HEAD_SLOTS_START until minOf(HEAD_SLOTS_END, slots.size)).firstOrNull { index ->
-			slots[index].item.hoverName.string.replace(FORMATTING, "").substringAfter(' ').equals(mate.name, ignoreCase = true)
-		} ?: return
+		val slot = headSlot(chest, mate) ?: return
 
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return
 		noteLeapFacing(mate.name)
 		client.gameMode?.handleContainerInput(chest.menu.containerId, slot, 0, ContainerInput.PICKUP, player)
 		say("§7Teleporting to §f${mate.name}§7.")
+	}
+
+	private fun headSlot(chest: AbstractContainerScreen<*>, mate: Teammate): Int? {
+		val slots = chest.menu.slots
+		return (HEAD_SLOTS_START until minOf(HEAD_SLOTS_END, slots.size)).firstOrNull { index ->
+			slots[index].item.hoverName.string.replace(FORMATTING, "").substringAfter(' ').equals(mate.name, ignoreCase = true)
+		}
 	}
 
 	/** How long after the click a teleport still counts as the leap (RSM's default). */

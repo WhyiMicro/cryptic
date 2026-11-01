@@ -7,30 +7,34 @@ import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.TabModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
-import imicro.cryptic.hud.Hud
-import imicro.cryptic.hud.HudElement
 import imicro.cryptic.render.WorldRender
 import imicro.cryptic.skyblock.SkyblockItem
 import imicro.cryptic.skyblock.SkyblockLocation
-import imicro.cryptic.slayer.VoidgloomBosses
+import imicro.cryptic.slayer.SlayerBosses
+import imicro.cryptic.slayer.SlayerType
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.client.renderer.entity.state.EntityRenderState
+import net.minecraft.client.resources.sounds.SoundInstance
+import net.minecraft.core.particles.ParticleType
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket
 import net.minecraft.util.ARGB
 import net.minecraft.util.Mth
 import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.phys.AABB
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.world.entity.EquipmentSlot
 import net.minecraft.world.entity.decoration.ArmorStand
+import net.minecraft.world.entity.monster.Guardian
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
 import net.minecraft.world.level.block.Blocks
@@ -41,19 +45,23 @@ import kotlin.math.ceil
 import org.joml.Vector3f
 
 /**
- * Voidgloom Seraph help: the boss's phase and how long is left of it, how long the fight has taken,
- * and its Yang Glyphs (beacons) and Nukekubi Fixations (skulls) marked out.
+ * Slayer help, a tab per boss. Every boss in sight gets its stats; whose each is comes from the
+ * `<player>'s SLAYER BOSS` stand over it ([SlayerBosses]), so kill times, highlights and alerts
+ * are for your own boss (or a carried player's).
  *
- * Every boss in sight gets its stats; beacons and skulls are looked for around one: yours or a carried
- * player's when the Carry Manager knows it, otherwise the nearest. The phase comes off its name
- * stand ("50 Hits" while shielded, health otherwise), and the laser from the armour stand it rides;
- * that lasts 8.2 seconds from when it mounts (Athen, BSD-3).
+ * Voidgloom: the phase comes off its name stand ("50 Hits" while shielded, health otherwise), and
+ * the laser from the armour stand it rides; that lasts 8.2 seconds from when it mounts (Athen,
+ * BSD-3). A beacon, skull or laser belongs to the Voidgloom nearest it; only yours and a carried
+ * player's are marked.
  *
  * The Fire Veil overlay is IQ's (Apache 2.0): the wand's 3.5-block ring for the five seconds it
  * burns, and its flames hidden for nine seconds from the cast.
  */
 object SlayerFeatures {
 	private const val VOIDGLOOM_ISLAND = "The End"
+	private const val INFERNO_ISLAND = "Crimson Isle"
+	private const val TARANTULA_ISLAND = "Spider's Den"
+	private val SVEN_ISLANDS = setOf("Hub", "The Park")
 
 	/** The laser, in ticks of the stand the boss rides. */
 	private const val LASER_TICKS = 164
@@ -61,12 +69,14 @@ object SlayerFeatures {
 	/** A Yang Glyph goes off this long after it lands. */
 	private const val BEACON_MILLIS = 5_000L
 
-	/** A boss this close becomes the one followed, and stays it until this far. */
-	private const val FOCUS_RANGE = 20.0
-	private const val FOCUS_DROP = 40.0
+	/** A mini-boss this close when it spawns is called. */
+	private const val MINIBOSS_RANGE = 20.0
 
-	/** Glyphs and skulls further than this from the followed boss (or you) are somebody else's. */
+	/** Glyphs and skulls are their nearest Voidgloom's, up to this far from it. */
 	private const val NEAR = 16.0
+
+	/** A laser guardian is the beam of the Voidgloom nearest it, within this. */
+	private const val LASER_REACH = 5.0
 
 	/** The Nukekubi skull's skin id, which a re-signed texture keeps. */
 	private const val NUKEKUBI_SKIN = "eb07594e2df273921a77c101d0bfdfa1115abed5b9b2029eb496ceba9bdbb4b3"
@@ -86,7 +96,6 @@ object SlayerFeatures {
 	private const val VEIL_MILLIS = 5_000L
 	private const val VEIL_FLAME_MILLIS = 9_000L
 
-
 	/** Flames this close to you while the veil burns are its own. */
 	private const val VEIL_FLAME_REACH = 6.0
 
@@ -99,22 +108,74 @@ object SlayerFeatures {
 	/** One line of world text, in blocks at size one: the font's 10 px at [WorldRender]'s scale. */
 	private const val LINE_HEIGHT = 0.25
 
-	/** A tier's hits shield, and its health before mayor buffs, tier I first. */
+	/** A Voidgloom tier's hits shield. */
 	private val MAX_HITS = listOf(15, 30, 60, 100)
-	private val MAX_HEALTH = listOf(300_000.0, 12_000_000.0, 50_000_000.0, 210_000_000.0)
 
-	/** The boss's own smoke, flames and spell particles, as SkyHanni hides them. */
-	private val BOSS_PARTICLES = setOf(ParticleTypes.LARGE_SMOKE, ParticleTypes.FLAME, ParticleTypes.WITCH)
+	/** Each boss's health before mayor buffs, tier I first. */
+	private val MAX_HEALTH = mapOf(
+		SlayerType.REVENANT to listOf(500.0, 20_000.0, 400_000.0, 1_500_000.0, 10_000_000.0),
+		SlayerType.TARANTULA to listOf(750.0, 30_000.0, 900_000.0, 2_400_000.0, 10_000_000.0),
+		SlayerType.SVEN to listOf(2_000.0, 40_000.0, 750_000.0, 2_000_000.0),
+		SlayerType.VOIDGLOOM to listOf(300_000.0, 12_000_000.0, 50_000_000.0, 210_000_000.0),
+		SlayerType.INFERNO to listOf(2_500_000.0, 10_000_000.0, 45_000_000.0, 150_000_000.0),
+		SlayerType.RIFTSTALKER to listOf(625.0, 1_100.0, 1_800.0, 2_400.0, 3_000.0),
+	)
+
+	/** The four minutes a Voidgloom has before it despawns, which dates a fight seen part way in. */
+	private const val VOIDGLOOM_LIMIT_SECONDS = 240
+
+	/** The Voidgloom's own smoke, flames and spell particles, as SkyHanni hides them. */
+	private val VOIDGLOOM_PARTICLES = setOf(ParticleTypes.LARGE_SMOKE, ParticleTypes.FLAME, ParticleTypes.WITCH)
+
+	/** The Demonlord's and its demons' fire, smoke and lava. */
+	private val INFERNO_PARTICLES = setOf(
+		ParticleTypes.FLAME, ParticleTypes.SOUL_FIRE_FLAME, ParticleTypes.SMOKE, ParticleTypes.LARGE_SMOKE,
+		ParticleTypes.LAVA, ParticleTypes.DRIPPING_LAVA, ParticleTypes.FALLING_LAVA, ParticleTypes.LANDING_LAVA,
+	)
 
 	/** Particles this far from a boss's hitbox are its own. */
 	private const val PARTICLE_REACH = 3.0
 
-	private const val BOSS_NAME = "Voidgloom Seraph"
+	/** Stands this close to your boss are about it (its attacks' names). */
+	private const val STAND_REACH = 3.0
+
+	/** A fire pillar this close to your boss (or you) is in your fight; it's called from this many seconds. */
+	private const val PILLAR_REACH = 22.0
+	private const val PILLAR_SECONDS = 5
+
+	/** A Demonlord's or demon's attunement is written this close over it. */
+	private const val ATTUNEMENT_REACH = 2.5
+
+	/** A mini-boss is only called when it has just spawned. */
+	private const val MINIBOSS_NEW_TICKS = 40
 
 	private val hitsPattern = Regex("""(\d+) Hits""")
 
 	/** Health as "266k/750k", current first, or as "45M❤". */
 	private val healthPattern = Regex("""^([\d.,]+[kMB]?)(?:/([\d.,]+[kMB]?))?""")
+
+	/** An Inferno Demonlord's fire pillar: "4s 8 hits". */
+	private val pillarPattern = Regex("""^(\d+)s \d+ hits$""")
+
+	/** A Tarantula's egg sac's timer, "5s 1/3", beside its "SHOOT ME!". */
+	private val eggSacPattern = Regex("""^\d+s \d+/\d+$""")
+
+	private val attunementPattern = Regex("""\b(ASHEN|SPIRIT|CRYSTAL|AURIC|IMMUNE)\b""")
+	private val ATTUNEMENT_COLOURS = mapOf(
+		"ASHEN" to 0x555555, "SPIRIT" to 0xFFFFFF, "CRYSTAL" to 0x55FFFF, "AURIC" to 0xFFFF55, "IMMUNE" to 0xFF5555,
+	)
+
+	/** A Riftstalker that can be staked has this in its name. */
+	private const val STEAK_MARK = "҉"
+
+	private val STAKES = setOf("STEAK_STAKE", "SHARP_STEAK_STAKE")
+
+	/** How close to your boss a hit still counts as on it, since the name stand and the body are apart. */
+	private const val STAKE_REACH = 2.0
+
+	// ---- General -------------------------------------------------------------------------------
+
+	private val generalTab = TabModuleSetting("general_tab", "General")
 
 	private val bossSection = SectionModuleSetting("boss_section", "Boss")
 
@@ -123,7 +184,7 @@ object SlayerFeatures {
 		id = "boss_label",
 		label = "Stats on boss",
 		defaultValue = true,
-		description = "The phase, the laser's time left, and hits or health, written on every boss. At its feet, you see them looking down in first person. The kill time stays there a moment after it dies.",
+		description = "Health on every slayer boss, shaded by what's left, and how long its fight has taken. A Voidgloom's shows its phase, the laser's time left and its hits. At its feet, you see them looking down in first person. The kill time stays there a moment after it dies.",
 	)
 
 	@JvmField
@@ -161,32 +222,9 @@ object SlayerFeatures {
 		label = "Health colour",
 		options = listOf("By phase", "By total health"),
 		defaultIndex = BY_PHASE,
-		description = "Whether health goes green to red over each phase, or over the whole fight.",
+		description = "Whether a Voidgloom's health goes green to red over each phase, or over the whole fight.",
 		visibleIf = { bossLabel.value },
 	)
-
-	@JvmField
-	val hideParticles = ToggleModuleSetting(
-		id = "hide_particles",
-		label = "Hide boss particles",
-		defaultValue = true,
-		description = "Hides the smoke, flames and purple spell particles around Voidgloom bosses.",
-	)
-
-	@JvmField
-	val laserColor = ColorModuleSetting("laser_color", "Laser colour", defaultRgb = 0xFF2020)
-
-	@JvmField
-	val laserFill = ColorModuleSetting("laser_fill", "Fill", defaultRgb = 0xFF2020, supportsAlpha = true, defaultAlpha = 0x10)
-
-	@JvmField
-	val customLaser = ToggleModuleSetting(
-		id = "custom_laser",
-		label = "Custom laser",
-		defaultValue = true,
-		description = "The laser phase drawn as four walls, in place of Minecraft's guardian beams and their bubbles: the " +
-			"top and bottom beam of each direction, joined at both ends and filled between. Only on the End's island.",
-	).withMore(laserColor, laserFill)
 
 	@JvmField
 	val killTime = ToggleModuleSetting(
@@ -201,55 +239,105 @@ object SlayerFeatures {
 		id = "phase_times",
 		label = "Time per phase",
 		defaultValue = true,
-		description = "Adds how long was spent in hits, damage and laser phases.",
+		description = "For a Voidgloom, adds how long was spent in hits, damage and laser phases.",
 		visibleIf = { killTime.value },
 	)
 
-	private val beaconSection = SectionModuleSetting("beacon_section", "Beacons")
-
 	@JvmField
-	val highlightBeacons = ToggleModuleSetting(
-		id = "highlight_beacons",
-		label = "Highlight beacons",
-		defaultValue = true,
-		description = "Boxes a thrown beacon in the air and where it lands, with the seconds until it goes off.",
+	val highlightOwn = ToggleModuleSetting(
+		id = "highlight_own",
+		label = "Highlight your boss",
+		defaultValue = false,
+		description = "Makes your own boss glow, so it stands out from everyone else's.",
 	)
 
 	@JvmField
-	val beaconColor = ColorModuleSetting(
-		id = "beacon_color",
-		label = "Beacon",
-		defaultRgb = 0xFF5555,
+	val ownColor = ColorModuleSetting(
+		id = "own_color",
+		label = "Your boss",
+		defaultRgb = 0x55FF55,
+		visibleIf = { highlightOwn.value },
+		inlineWith = highlightOwn,
+	)
+
+	@JvmField
+	val lineToOwn = ToggleModuleSetting(
+		id = "line_to_own",
+		label = "Line to your boss",
+		defaultValue = false,
+		description = "A line from you to your own boss.",
+	)
+
+	@JvmField
+	val lineColor = ColorModuleSetting(
+		id = "line_color",
+		label = "Line",
+		defaultRgb = 0x55FF55,
 		supportsAlpha = true,
-		defaultAlpha = 0x80,
-		visibleIf = { highlightBeacons.value },
-		inlineWith = highlightBeacons,
+		visibleIf = { lineToOwn.value },
+		inlineWith = lineToOwn,
 	)
 
 	@JvmField
-	val beaconTracer = ToggleModuleSetting(
-		id = "beacon_tracer",
-		label = "Beacon tracer",
+	val fadeOpacity = SliderModuleSetting(
+		id = "fade_opacity",
+		label = "Opacity",
+		unit = "%",
+		defaultValue = 25.0,
+		min = 5.0,
+		max = 90.0,
+		step = 5.0,
+	)
+
+	@JvmField
+	val fadePlayers = ToggleModuleSetting(
+		id = "fade_players",
+		label = "Players too",
+		defaultValue = false,
+		description = "Fades other players as well as mobs.",
+	)
+
+	@JvmField
+	val fadeOthers = ToggleModuleSetting(
+		id = "fade_others",
+		label = "Fade others while fighting",
+		defaultValue = false,
+		description = "While your boss is up, every other mob (other players' bosses too) is drawn see-through, so yours stands out. Your mini-bosses stay solid.",
+	).withMore(fadeOpacity, fadePlayers)
+
+	private val alertSection = SectionModuleSetting("alert_section", "Alerts")
+
+	@JvmField
+	val cocoonAlert = ToggleModuleSetting(
+		id = "cocoon_alert",
+		label = "Cocoon alert",
 		defaultValue = true,
-		description = "A line from you to each beacon.",
+		description = "A title and a sound when you cocoon your boss.",
 	)
 
 	@JvmField
-	val beaconTracerColor = ColorModuleSetting(
-		id = "beacon_tracer_color",
-		label = "Beacon tracer",
-		defaultRgb = 0xFF5555,
-		supportsAlpha = true,
-		visibleIf = { beaconTracer.value },
-		inlineWith = beaconTracer,
+	val highlightMinibosses = ToggleModuleSetting(
+		id = "highlight_minibosses",
+		label = "Highlight mini-bosses",
+		defaultValue = false,
+		description = "Makes slayer mini-bosses glow.",
 	)
 
 	@JvmField
-	val beaconAlert = ToggleModuleSetting(
-		id = "beacon_alert",
-		label = "Beacon alert",
-		defaultValue = true,
-		description = "A title and a sound when the boss throws a beacon.",
+	val minibossColor = ColorModuleSetting(
+		id = "miniboss_color",
+		label = "Mini-boss",
+		defaultRgb = 0x5555FF,
+		visibleIf = { highlightMinibosses.value },
+		inlineWith = highlightMinibosses,
+	)
+
+	@JvmField
+	val minibossAlert = ToggleModuleSetting(
+		id = "miniboss_alert",
+		label = "Mini-boss alert",
+		defaultValue = false,
+		description = "A title with its name when a slayer mini-boss spawns near you.",
 	)
 
 	private val veilSection = SectionModuleSetting("veil_section", "Fire Veil")
@@ -308,6 +396,151 @@ object SlayerFeatures {
 		description = "Hides the flame particles the wand puts around you.",
 	)
 
+	// ---- Revenant ------------------------------------------------------------------------------
+
+	private val revenantTab = TabModuleSetting("revenant_tab", "Revenant")
+
+	@JvmField
+	val boomAlert = ToggleModuleSetting(
+		id = "boom_alert",
+		label = "Boom alert",
+		defaultValue = true,
+		description = "A title when your Atoned Horror is about to explode.",
+	)
+
+	// ---- Tarantula -----------------------------------------------------------------------------
+
+	private val tarantulaTab = TabModuleSetting("tarantula_tab", "Tarantula")
+
+	@JvmField
+	val highlightEggSacs = ToggleModuleSetting(
+		id = "highlight_egg_sacs",
+		label = "Highlight egg sacs",
+		defaultValue = true,
+		description = "Makes the Conjoined Brood's egg sacs glow, so they're shot before they hatch.",
+	)
+
+	@JvmField
+	val eggSacColor = ColorModuleSetting(
+		id = "egg_sac_color",
+		label = "Egg sac",
+		defaultRgb = 0xFF55FF,
+		visibleIf = { highlightEggSacs.value },
+		inlineWith = highlightEggSacs,
+	)
+
+	@JvmField
+	val muteSpiders = ToggleModuleSetting(
+		id = "mute_spiders",
+		label = "Mute spider sounds",
+		defaultValue = false,
+		description = "Silences spiders in the Spider's Den.",
+	)
+
+	// ---- Sven ----------------------------------------------------------------------------------
+
+	private val svenTab = TabModuleSetting("sven_tab", "Sven")
+
+	@JvmField
+	val pupsAlert = ToggleModuleSetting(
+		id = "pups_alert",
+		label = "Pups alert",
+		defaultValue = true,
+		description = "A title when your Sven calls its pups.",
+	)
+
+	@JvmField
+	val muteWolves = ToggleModuleSetting(
+		id = "mute_wolves",
+		label = "Mute wolf sounds",
+		defaultValue = false,
+		description = "Silences wolves in the Hub and the Park.",
+	)
+
+	// ---- Voidgloom -----------------------------------------------------------------------------
+
+	private val voidgloomTab = TabModuleSetting("voidgloom_tab", "Voidgloom")
+
+	private val voidgloomSection = SectionModuleSetting("voidgloom_section", "Boss")
+
+	@JvmField
+	val hideParticles = ToggleModuleSetting(
+		id = "hide_particles",
+		label = "Hide boss particles",
+		defaultValue = true,
+		description = "Hides the smoke, flames and purple spell particles around Voidgloom bosses.",
+	)
+
+	@JvmField
+	val laserColor = ColorModuleSetting("laser_color", "Laser colour", defaultRgb = 0xFF2020)
+
+	@JvmField
+	val laserFill = ColorModuleSetting("laser_fill", "Fill", defaultRgb = 0xFF2020, supportsAlpha = true, defaultAlpha = 0x10)
+
+	@JvmField
+	val customLaser = ToggleModuleSetting(
+		id = "custom_laser",
+		label = "Custom laser",
+		defaultValue = true,
+		description = "The laser phase drawn as four walls, in place of Minecraft's guardian beams and their bubbles: the " +
+			"top and bottom beam of each direction, joined at both ends and filled between. Only on the End's island.",
+	).withMore(laserColor, laserFill)
+
+	@JvmField
+	val hideOtherLasers = ToggleModuleSetting(
+		id = "hide_other_lasers",
+		label = "Hide others' lasers",
+		defaultValue = false,
+		description = "Hides the laser of every boss that isn't yours or a carried player's, custom or not.",
+	)
+
+	private val beaconSection = SectionModuleSetting("beacon_section", "Beacons")
+
+	@JvmField
+	val highlightBeacons = ToggleModuleSetting(
+		id = "highlight_beacons",
+		label = "Highlight beacons",
+		defaultValue = true,
+		description = "Boxes a beacon your boss (or a carried player's) throws, in the air and where it lands, with the seconds until it goes off.",
+	)
+
+	@JvmField
+	val beaconColor = ColorModuleSetting(
+		id = "beacon_color",
+		label = "Beacon",
+		defaultRgb = 0xFF5555,
+		supportsAlpha = true,
+		defaultAlpha = 0x80,
+		visibleIf = { highlightBeacons.value },
+		inlineWith = highlightBeacons,
+	)
+
+	@JvmField
+	val beaconTracer = ToggleModuleSetting(
+		id = "beacon_tracer",
+		label = "Beacon tracer",
+		defaultValue = true,
+		description = "A line from you to each beacon.",
+	)
+
+	@JvmField
+	val beaconTracerColor = ColorModuleSetting(
+		id = "beacon_tracer_color",
+		label = "Beacon tracer",
+		defaultRgb = 0xFF5555,
+		supportsAlpha = true,
+		visibleIf = { beaconTracer.value },
+		inlineWith = beaconTracer,
+	)
+
+	@JvmField
+	val beaconAlert = ToggleModuleSetting(
+		id = "beacon_alert",
+		label = "Beacon alert",
+		defaultValue = true,
+		description = "A title and a sound when the boss throws a beacon.",
+	)
+
 	private val skullSection = SectionModuleSetting("skull_section", "Skulls")
 
 	@JvmField
@@ -315,7 +548,7 @@ object SlayerFeatures {
 		id = "highlight_skulls",
 		label = "Highlight skulls",
 		defaultValue = true,
-		description = "Outlines the Nukekubi skulls floating around the boss.",
+		description = "Outlines the Nukekubi skulls floating around your boss, or a carried player's.",
 	)
 
 	@JvmField
@@ -345,18 +578,113 @@ object SlayerFeatures {
 		inlineWith = skullTracer,
 	)
 
+	// ---- Inferno -------------------------------------------------------------------------------
+
+	private val infernoTab = TabModuleSetting("inferno_tab", "Inferno")
+
+	@JvmField
+	val attunementColours = ToggleModuleSetting(
+		id = "attunement_colours",
+		label = "Attunement colours",
+		defaultValue = true,
+		description = "Makes the Demonlord and its demons glow in the colour of the dagger they need: grey Ashen, white Spirit, aqua Crystal, yellow Auric, and red while immune.",
+	)
+
+	@JvmField
+	val hideInfernoParticles = ToggleModuleSetting(
+		id = "hide_inferno_particles",
+		label = "Hide boss particles",
+		defaultValue = false,
+		description = "Hides the fire, smoke and lava particles around Inferno Demonlords and their demons, and the fire on them.",
+	)
+
+	@JvmField
+	val pillarAlert = ToggleModuleSetting(
+		id = "pillar_alert",
+		label = "Fire pillar alert",
+		defaultValue = true,
+		description = "A title counting down the last five seconds of a fire pillar near your boss, with a sound.",
+	)
+
+	@JvmField
+	val muteBlazes = ToggleModuleSetting(
+		id = "mute_blazes",
+		label = "Mute blaze sounds",
+		defaultValue = false,
+		description = "Silences blazes on the Crimson Isle.",
+	)
+
+	// ---- Riftstalker ---------------------------------------------------------------------------
+
+	private val riftstalkerTab = TabModuleSetting("riftstalker_tab", "Riftstalker")
+
+	@JvmField
+	val steakAlert = ToggleModuleSetting(
+		id = "steak_alert",
+		label = "Steak alert",
+		defaultValue = true,
+		description = "A title while your Bloodfiend can be finished with the Steak Stake.",
+	)
+
+	@JvmField
+	val autoStake = ToggleModuleSetting(
+		id = "auto_stake",
+		label = "Auto stake",
+		defaultValue = false,
+		description = "Hitting your Bloodfiend while it can be staked switches to the Steak Stake in your hotbar first, so the hit kills it.",
+		restriction = imicro.cryptic.gui.Restriction.CHEAT,
+	)
+
+	@JvmField
+	val twinclawsAlert = ToggleModuleSetting(
+		id = "twinclaws_alert",
+		label = "Twinclaws alert",
+		defaultValue = true,
+		description = "A title when your Bloodfiend starts Twinclaws: time for Holy Ice.",
+	)
+
+	@JvmField
+	val maniaAlert = ToggleModuleSetting(
+		id = "mania_alert",
+		label = "Mania alert",
+		defaultValue = false,
+		description = "A title when your Bloodfiend starts Mania.",
+	)
+
 	@JvmField
 	val module = Module(
 		id = "slayer_features",
 		name = "Slayer Features",
-		description = "Voidgloom stats, Fire Veil",
+		description = "Boss stats, alerts, lasers",
 		category = ModuleCategory.GENERAL,
 		settings = listOf(
+			generalTab,
 			bossSection,
 			bossLabel.withMore(labelPlace, labelSize, labelThroughWalls, healthColour),
+			killTime.withMore(phaseTimes),
+			highlightOwn, ownColor,
+			lineToOwn, lineColor,
+			fadeOthers,
+			alertSection,
+			cocoonAlert,
+			highlightMinibosses, minibossColor,
+			minibossAlert,
+			veilSection,
+			fireVeil.withMore(veilStyle, veilColor, veilWidth, veilThroughWalls),
+			hideVeilFlames,
+			revenantTab,
+			boomAlert,
+			tarantulaTab,
+			highlightEggSacs, eggSacColor,
+			muteSpiders,
+			svenTab,
+			pupsAlert,
+			muteWolves,
+			voidgloomTab,
+			voidgloomSection,
 			hideParticles,
 			customLaser,
-			killTime.withMore(phaseTimes),
+			hideOtherLasers,
 			beaconSection,
 			highlightBeacons, beaconColor,
 			beaconTracer, beaconTracerColor,
@@ -364,9 +692,16 @@ object SlayerFeatures {
 			skullSection,
 			highlightSkulls, skullColor,
 			skullTracer, skullTracerColor,
-			veilSection,
-			fireVeil.withMore(veilStyle, veilColor, veilWidth, veilThroughWalls),
-			hideVeilFlames,
+			infernoTab,
+			hideInfernoParticles,
+			attunementColours,
+			pillarAlert,
+			muteBlazes,
+			riftstalkerTab,
+			steakAlert,
+			autoStake,
+			twinclawsAlert,
+			maniaAlert,
 		),
 	)
 
@@ -379,7 +714,10 @@ object SlayerFeatures {
 	}
 
 	/** One boss, and how its fight has gone so far. */
-	private class Fight(val bossId: Int, val tier: Int, var since: Long) {
+	private class Fight(val bossId: Int, val type: SlayerType, val tier: Int, var since: Long) {
+		/** Kept from its stand, which a dying boss loses before the death event. */
+		var owner: String? = null
+
 		var phase: Phase? = null
 		var phaseSince = since
 
@@ -388,20 +726,18 @@ object SlayerFeatures {
 		var timerPinned = false
 		val spent = EnumMap<Phase, Long>(Phase::class.java)
 
-		/** When its name stand was last seen; a dying boss loses it before the death event. */
 		var lastSeen = since
 
 		/** Hits left on the shield, or null outside one. */
 		var hits: Int? = null
 
 		/** Health as last read off the name; the name shows hits instead during a shield. */
-		var health = MAX_HEALTH.getOrElse(tier - 1) { MAX_HEALTH.last() }
+		var health = MAX_HEALTH[type]?.let { it.getOrElse(tier - 1) { _ -> it.last() } } ?: 1.0
 		var maxHealth = health
 		var healthText: String? = null
 
 		/** Milliseconds left of the laser, or null outside it. */
 		var laserLeft: Long? = null
-
 
 		fun enter(next: Phase, now: Long) {
 			if (next == phase) return
@@ -419,25 +755,10 @@ object SlayerFeatures {
 	/** Every boss in sight, by entity id. */
 	private val fights = HashMap<Int, Fight>()
 
-	/** The boss beacons and skulls are looked for around. */
-	private var focusId = -1
-
 	/** Kill times left where each boss died, until [KILL_LABEL_MILLIS] after. */
 	private class KillLabel(val text: String, val where: Vec3, val at: Long)
 
 	private val killLabels = ArrayList<KillLabel>()
-
-	/**
-	 * A kill whose owner is unknown, waiting for Hypixel to say your own boss died, and when that
-	 * last said so, for a line that comes first.
-	 */
-	private class Kill(val fight: Fight, val where: Vec3, val at: Long)
-
-	private val unclaimed = ArrayList<Kill>()
-	private var slainSaidAt = 0L
-
-	/** How far apart a death and Hypixel's "boss slain" line can be and still go together. */
-	private const val CLAIM_MILLIS = 2_000L
 
 	/** A boss whose name stand has been gone this long is forgotten. */
 	private const val FORGET_MILLIS = 2_000L
@@ -451,14 +772,30 @@ object SlayerFeatures {
 	private val placed = HashMap<BlockPos, Long>()
 
 	private var skulls: List<ArmorStand> = emptyList()
-	private var skullIds: Set<Int> = emptySet()
+
+	/** Glow colours by entity id, for the outline hook; replaced whole each tick. */
+	private var glows: Map<Int, Int> = emptyMap()
+
+	/** Every Voidgloom in sight, and whether it's yours or a client's, for the beam hook. */
+	private class LaserBoss(val boss: Entity, val ours: Boolean)
+
+	private var laserBosses: List<LaserBoss> = emptyList()
+
+	/** While your boss is up: the entities left solid by Fade others. */
+	private var fadeKeep: Set<Int>? = null
+
+	/** Inferno bosses and demons, whose fire isn't drawn. */
+	private var unlit: Set<Int> = emptySet()
+
+	/** A boss's hitbox grown by [PARTICLE_REACH], and the particles hidden in it. */
+	private class ParticleZone(val box: AABB, val types: Set<ParticleType<*>>)
 
 	/**
-	 * Every boss's hitbox, grown by [PARTICLE_REACH], for the particle hook. Read on the network
-	 * thread, so the list is replaced whole each tick, never changed.
+	 * The zones for the particle hook. Read on the network thread, so the list is replaced whole each
+	 * tick, never changed.
 	 */
 	@Volatile
-	private var particleZones: List<AABB> = emptyList()
+	private var particleZones: List<ParticleZone> = emptyList()
 
 	/** When the Fire Veil was last cast, and where you were last tick; both read by the particle hook. */
 	@Volatile
@@ -467,9 +804,17 @@ object SlayerFeatures {
 	@Volatile
 	private var playerAt: Vec3 = Vec3.ZERO
 
-
 	/** Whether each skull texture seen is a Nukekubi, so each is decoded once. */
 	private val skullTextures = HashMap<String, Boolean>()
+
+	/** Alerts already given, so each is said once while it lasts. */
+	private var steakShown = false
+	private var twinclawsShown = false
+	private var maniaShown = false
+	private var boomShown = false
+	private var pupsShown = false
+	private val pillarsCalled = HashSet<Int>()
+	private val minibossesSeen = HashSet<Int>()
 
 	private var initialized = false
 
@@ -480,8 +825,11 @@ object SlayerFeatures {
 	}
 
 	private val active: Boolean
-		get() = module.enabled &&
-			((SkyblockLocation.onSkyblock && SkyblockLocation.area == VOIDGLOOM_ISLAND) || DebugOverrides.slayerAnywhere)
+		get() = module.enabled && (SkyblockLocation.onSkyblock || DebugOverrides.slayerAnywhere)
+
+	private fun onIsland(name: String): Boolean = SkyblockLocation.area == name || DebugOverrides.slayerAnywhere
+
+	private val inEnd: Boolean get() = active && onIsland(VOIDGLOOM_ISLAND)
 
 	fun tick(client: Minecraft) {
 		val level = client.level
@@ -493,45 +841,343 @@ object SlayerFeatures {
 		}
 		val now = System.currentTimeMillis()
 
-		val seen = VoidgloomBosses.visible(level)
+		val seen = SlayerBosses.bosses
 		for (entry in seen) {
 			// Back-dated to when the client first saw the boss.
-			val fight = fights.getOrPut(entry.boss.id) { Fight(entry.boss.id, entry.tier, now - entry.boss.tickCount * 50L) }
+			val fight = fights.getOrPut(entry.boss.id) { Fight(entry.boss.id, entry.type, entry.tier, now - entry.boss.tickCount * 50L) }
 			read(fight, entry, now)
 		}
 		fights.values.removeIf { now - it.lastSeen > FORGET_MILLIS || level.getEntity(it.bossId) == null }
-		focusId = pickFocus(seen, player.gameProfile.name, player.position())?.boss?.id ?: -1
-		unclaimed.removeIf { now - it.at > CLAIM_MILLIS }
 		killLabels.removeIf { now - it.at > KILL_LABEL_MILLIS }
 
-		val centre = level.getEntity(focusId)?.position() ?: player.position()
-		trackBeacons(level, centre, now)
-		skulls = if (highlightSkulls.value || skullTracer.value) {
-			level.entitiesForRendering().filterIsInstance<ArmorStand>().filter { stand ->
-				stand.position().distanceTo(centre) <= NEAR && isNukekubi(stand)
+		val glow = HashMap<Int, Int>()
+		val mine = SlayerBosses.mine()
+		if (highlightOwn.value && mine != null) glow[mine.boss.id] = ARGB.opaque(ownColor.rgb)
+		tickMinibosses(player, glow)
+		tickAlerts(level, mine, player.position(), now)
+		val zones = ArrayList<ParticleZone>()
+		if (onIsland(INFERNO_ISLAND) && (attunementColours.value || hideInfernoParticles.value)) {
+			val demons = attunedMobs(level)
+			if (attunementColours.value) demons.forEach { (mob, colour) -> glow[mob.id] = ARGB.opaque(colour) }
+			if (hideInfernoParticles.value) {
+				val burning = seen.filter { it.type == SlayerType.INFERNO }.map { it.boss } + demons.map { it.first }
+				unlit = burning.mapTo(HashSet()) { it.id }
+				burning.mapTo(zones) { ParticleZone(it.boundingBox.inflate(PARTICLE_REACH), INFERNO_PARTICLES) }
+			} else {
+				unlit = emptySet()
 			}
 		} else {
-			emptyList()
+			unlit = emptySet()
 		}
-		skullIds = skulls.mapTo(HashSet()) { it.id }
-		particleZones = if (hideParticles.value) seen.map { it.boss.boundingBox.inflate(PARTICLE_REACH) } else emptyList()
+		if (highlightEggSacs.value && onIsland(TARANTULA_ISLAND)) findEggSacs(level, player.position(), glow)
+
+		val voidglooms = seen.filter { it.type == SlayerType.VOIDGLOOM }
+		if (inEnd) {
+			trackBeacons(level, voidglooms, now)
+			skulls = if (highlightSkulls.value || skullTracer.value) {
+				level.entitiesForRendering().filterIsInstance<ArmorStand>().filter { stand ->
+					isNukekubi(stand) && belongsToOurs(stand.position(), voidglooms)
+				}
+			} else {
+				emptyList()
+			}
+			if (highlightSkulls.value) skulls.forEach { glow[it.id] = ARGB.opaque(skullColor.rgb) }
+			laserBosses = voidglooms.map { LaserBoss(it.boss, ours(it.owner)) }
+			if (hideParticles.value) voidglooms.mapTo(zones) { ParticleZone(it.boss.boundingBox.inflate(PARTICLE_REACH), VOIDGLOOM_PARTICLES) }
+		} else {
+			flying.clear()
+			placed.clear()
+			skulls = emptyList()
+			laserBosses = emptyList()
+		}
+		particleZones = zones
+		fadeKeep = if (fadeOthers.value && mine != null) {
+			HashSet<Int>().apply {
+				add(mine.boss.id)
+				SlayerBosses.minibosses.forEach { add(it.mob.id) }
+			}
+		} else {
+			null
+		}
+		glows = glow
+	}
+
+	/** Whether [at] is nearest a Voidgloom that's yours or a client's, and near enough to it. */
+	private fun belongsToOurs(at: Vec3, voidglooms: List<SlayerBosses.Seen>): Boolean {
+		val nearest = voidglooms.minByOrNull { it.boss.position().distanceToSqr(at) } ?: return false
+		return ours(nearest.owner) && nearest.boss.position().distanceTo(at) <= NEAR
 	}
 
 	private fun clear() {
 		fights.clear()
-		focusId = -1
 		killLabels.clear()
-		unclaimed.clear()
 		flying.clear()
 		placed.clear()
 		skulls = emptyList()
-		skullIds = emptySet()
+		glows = emptyMap()
+		laserBosses = emptyList()
+		fadeKeep = null
+		unlit = emptySet()
 		particleZones = emptyList()
+		pillarsCalled.clear()
+		minibossesSeen.clear()
+		steakShown = false
+		twinclawsShown = false
+		maniaShown = false
+		boomShown = false
+		pupsShown = false
 	}
 
 	/**
-	 * Whether a particle is a boss's own, or the Fire Veil's, to be dropped. Network thread: reads
-	 * only the volatile fields.
+	 * A hit about to go out. Runs before the game sends the held slot, so the swap reaches the server
+	 * ahead of the hit.
+	 */
+	@JvmStatic
+	fun beforeAttack(player: net.minecraft.world.entity.player.Player, target: Entity) {
+		if (!active || !autoStake.value) return
+		val mine = SlayerBosses.mine() ?: return
+		if (mine.type != SlayerType.RIFTSTALKER || STEAK_MARK !in mine.name) return
+		if (target.id != mine.boss.id && target.distanceToSqr(mine.boss) > STAKE_REACH * STAKE_REACH) return
+		val inventory = player.inventory
+		val slot = (0 until net.minecraft.world.entity.player.Inventory.getSelectionSize()).firstOrNull { SkyblockItem.id(inventory.getItem(it)) in STAKES } ?: return
+		inventory.selectedSlot = slot
+	}
+
+	/** Yours, or a carried player's. */
+	private fun ours(owner: String?): Boolean = SlayerBosses.isMe(owner) || (owner != null && CarryManager.isCarried(owner))
+
+	// ---- Stats ---------------------------------------------------------------------------------
+
+	/**
+	 * Dates a Voidgloom's fight from the despawn timer. The moment its seconds change is a whole
+	 * second, so the first change seen pins the start to the millisecond; until then, the middle of
+	 * the second shown is the best guess.
+	 */
+	private fun syncStart(fight: Fight, seen: SlayerBosses.Seen, now: Long) {
+		if (fight.timerPinned || fight.type != SlayerType.VOIDGLOOM) return
+		val left = seen.timeLeft ?: return
+		val changed = fight.timerSeconds?.let { it != left } == true
+		fight.timerSeconds = left
+		val elapsed = (VOIDGLOOM_LIMIT_SECONDS - left) * 1000L + if (changed) 0L else 500L
+		val start = now - elapsed
+		// Phase timing started with the fight; it moves with it until the first phase begins.
+		if (fight.phaseSince == fight.since) fight.phaseSince = start
+		fight.since = start
+		if (changed) fight.timerPinned = true
+	}
+
+	/** What follows the boss's name and tier: "67 Hits", or health as "266k/750k" (or "45M❤"). */
+	private fun tail(seen: SlayerBosses.Seen): String {
+		val name = seen.type.names.sortedByDescending { it.length }.firstOrNull { it in seen.name } ?: return ""
+		return seen.name.substringAfter(name).trim().removePrefix(roman(seen.tier)).trim()
+	}
+
+	private fun read(fight: Fight, seen: SlayerBosses.Seen, now: Long) {
+		fight.lastSeen = now
+		if (seen.owner != null) fight.owner = seen.owner
+		syncStart(fight, seen, now)
+
+		val tail = tail(seen)
+		val voidgloom = fight.type == SlayerType.VOIDGLOOM
+		val ride = if (voidgloom) seen.boss.vehicle else null
+		fight.hits = if (voidgloom) hitsPattern.find(tail)?.groupValues?.get(1)?.toIntOrNull() else null
+		fight.laserLeft = ride?.let { (LASER_TICKS - it.tickCount).coerceAtLeast(0) * 50L }
+		if (fight.hits == null) {
+			healthPattern.find(tail)?.let { match ->
+				val current = match.groupValues[1]
+				val health = parseHealth(current) ?: return@let
+				fight.healthText = current
+				fight.health = health
+				val stated = match.groupValues[2].takeIf { it.isNotEmpty() }?.let(::parseHealth)
+				// Buffed bosses start above the usual figure; without a stated maximum, the first
+				// reading is their full health.
+				fight.maxHealth = stated ?: maxOf(fight.maxHealth, health)
+			}
+		}
+		if (!voidgloom) return
+		// The laser comes in a hits phase, so it's checked first.
+		fight.enter(
+			when {
+				ride != null -> Phase.LASER
+				fight.hits != null -> Phase.HITS
+				else -> Phase.DAMAGE
+			},
+			now,
+		)
+	}
+
+	/** "45M" as 45 million; Hypixel writes k, M and B. */
+	private fun parseHealth(text: String): Double? {
+		if (text.isEmpty()) return null
+		val number = text.trimEnd('k', 'M', 'B').replace(",", "").toDoubleOrNull() ?: return null
+		return number * when (text.last()) {
+			'k' -> 1e3
+			'M' -> 1e6
+			'B' -> 1e9
+			else -> 1.0
+		}
+	}
+
+	/** Green, then yellow, then red as [left] runs down from [full]. */
+	private fun shade(left: Double, full: Double): String {
+		val fraction = if (full > 0) left / full else 1.0
+		return when {
+			fraction > 2.0 / 3 -> "§a"
+			fraction > 1.0 / 3 -> "§e"
+			else -> "§c"
+		}
+	}
+
+	/**
+	 * A Voidgloom's stats as two lines: the phase (out of three, or six for a tier IV, split by
+	 * health as SkyHanni does) with the laser's time left, then hits or health shaded by what's left.
+	 * Any other boss's: its health, then how long the fight has taken.
+	 */
+	private fun statLines(fight: Fight, now: Long): List<String> {
+		if (fight.type != SlayerType.VOIDGLOOM) {
+			val health = fight.healthText?.let { "${shade(fight.health, fight.maxHealth)}$it" }
+			return listOfNotNull(health, "§7${seconds(now - fight.since)}")
+		}
+		val steps = if (fight.tier >= 4) 6 else 3
+		val step = fight.maxHealth / steps
+		val index = (steps - ceil(fight.health / step).toInt() + 1).coerceIn(1, steps)
+		// Lag can keep the boss on its stand past the 8.2 seconds.
+		val laser = fight.laserLeft?.let { if (it <= 0) " §fsoon" else " §f${seconds(it)}" } ?: ""
+		val second = fight.hits?.let { hits ->
+			val full = MAX_HITS.getOrElse(fight.tier - 1) { 100 }.toDouble()
+			"${shade(hits.toDouble(), full)}$hits Hits"
+		} ?: fight.healthText?.let {
+			val colour = if (healthColour.selectedIndex == BY_PHASE) {
+				shade(fight.health - step * (steps - index), step)
+			} else {
+				shade(fight.health, fight.maxHealth)
+			}
+			"$colour$it"
+		}
+		return listOfNotNull("§e$index/$steps$laser", second)
+	}
+
+	// ---- Alerts --------------------------------------------------------------------------------
+
+	private fun title(text: String, sound: Boolean = true) {
+		val client = Minecraft.getInstance()
+		client.gui.hud.setTimes(0, 20, 5)
+		client.gui.hud.setTitle(Component.literal(text))
+		if (sound) client.player?.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 1f, 2f)
+	}
+
+	/** The names of the stands near [boss], colour codes taken off. */
+	private fun standsNear(level: ClientLevel, boss: Entity, reach: Double): List<String> =
+		level.getEntitiesOfClass(ArmorStand::class.java, boss.boundingBox.inflate(reach)) { it.customName != null }
+			.mapNotNull { it.customName?.string?.replace(formattingPattern, "") }
+
+	/** Your boss's own attacks, each called once while it lasts. */
+	private fun tickAlerts(level: ClientLevel, mine: SlayerBosses.Seen?, at: Vec3, now: Long) {
+		val type = mine?.type
+		val near = if (mine != null && (boomAlert.value || pupsAlert.value || twinclawsAlert.value || maniaAlert.value)) {
+			standsNear(level, mine.boss, STAND_REACH)
+		} else {
+			emptyList()
+		}
+
+		fun once(enabled: Boolean, showing: Boolean, shown: Boolean, text: String): Boolean {
+			if (enabled && showing && !shown) title(text)
+			return enabled && showing
+		}
+
+		boomShown = once(boomAlert.value && type == SlayerType.REVENANT, near.any { "Boom!" in it }, boomShown, "§c§lBOOM!")
+		pupsShown = once(pupsAlert.value && type == SlayerType.SVEN, near.any { "Calling the pups!" in it }, pupsShown, "§fPups!")
+		twinclawsShown = once(twinclawsAlert.value && type == SlayerType.RIFTSTALKER, near.any { "TWINCLAWS" in it }, twinclawsShown, "§bTwinclaws! §fHoly Ice")
+		maniaShown = once(maniaAlert.value && type == SlayerType.RIFTSTALKER, near.any { "MANIA" in it }, maniaShown, "§cMania!")
+		val steak = steakAlert.value && mine != null && mine.type == SlayerType.RIFTSTALKER && STEAK_MARK in mine.name
+		if (steak) title("§cSteak!", sound = !steakShown)
+		steakShown = steak
+
+		if (pillarAlert.value && onIsland(INFERNO_ISLAND)) callPillars(level, mine?.boss?.position() ?: at)
+		else pillarsCalled.clear()
+	}
+
+	/** A pillar's last seconds as a title, each tick, with one sound for each pillar. */
+	private fun callPillars(level: ClientLevel, centre: Vec3) {
+		val live = HashSet<Int>()
+		for (entity in level.entitiesForRendering()) {
+			if (entity !is ArmorStand || entity.position().distanceTo(centre) > PILLAR_REACH) continue
+			val text = entity.customName?.string?.replace(formattingPattern, "")?.trim() ?: continue
+			val seconds = pillarPattern.matchEntire(text)?.groupValues?.get(1)?.toIntOrNull() ?: continue
+			if (seconds > PILLAR_SECONDS) continue
+			live += entity.id
+			title("§5§l$text", sound = pillarsCalled.add(entity.id))
+		}
+		pillarsCalled.retainAll(live)
+	}
+
+	private fun tickMinibosses(player: net.minecraft.client.player.LocalPlayer, glow: HashMap<Int, Int>) {
+		val minis = SlayerBosses.minibosses
+		if (highlightMinibosses.value) minis.forEach { glow[it.mob.id] = ARGB.opaque(minibossColor.rgb) }
+		if (minibossAlert.value) {
+			for (mini in minis) {
+				if (!minibossesSeen.add(mini.mob.id)) continue
+				if (mini.mob.tickCount <= MINIBOSS_NEW_TICKS && mini.mob.distanceTo(player) <= MINIBOSS_RANGE) {
+					title("§9${mini.name}")
+				}
+			}
+		}
+		minibossesSeen.retainAll(minis.mapTo(HashSet()) { it.mob.id })
+	}
+
+	/** The Demonlords and demons under an attunement stand, each with its attunement's colour. */
+	private fun attunedMobs(level: ClientLevel): List<Pair<LivingEntity, Int>> {
+		val found = ArrayList<Pair<LivingEntity, Int>>()
+		for (entity in level.entitiesForRendering()) {
+			if (entity !is ArmorStand) continue
+			val text = entity.customName?.string?.replace(formattingPattern, "") ?: continue
+			val colour = attunementPattern.find(text)?.groupValues?.get(1)?.let(ATTUNEMENT_COLOURS::get) ?: continue
+			val mob = level.getEntitiesOfClass(LivingEntity::class.java, entity.boundingBox.inflate(ATTUNEMENT_REACH)) {
+				it !is ArmorStand && it !is net.minecraft.world.entity.player.Player && it.isAlive
+			}.minByOrNull { it.distanceToSqr(entity) } ?: continue
+			found += mob to colour
+		}
+		return found
+	}
+
+	/** An egg sac is its timer's stand and the bare stands that make it up, under a "SHOOT ME!". */
+	private fun findEggSacs(level: ClientLevel, at: Vec3, glow: HashMap<Int, Int>) {
+		val stands = level.getEntitiesOfClass(ArmorStand::class.java, AABB.ofSize(at, 40.0, 40.0, 40.0)) { true }
+		val shootMe = stands.filter { it.customName?.string?.replace(formattingPattern, "")?.trim().equals("SHOOT ME!", ignoreCase = true) }
+		if (shootMe.isEmpty()) return
+		val colour = ARGB.opaque(eggSacColor.rgb)
+		for (timer in stands) {
+			val text = timer.customName?.string?.replace(formattingPattern, "")?.trim() ?: continue
+			if (!eggSacPattern.matches(text) || shootMe.none { it.distanceTo(timer) < 2.5 }) continue
+			glow[timer.id] = colour
+			for (part in stands) {
+				if (part.customName == null && part.distanceTo(timer) < 1.2) glow[part.id] = colour
+			}
+		}
+	}
+
+	// ---- Voidgloom -----------------------------------------------------------------------------
+
+	/**
+	 * Whether a laser guardian is your boss's or a client's: the Voidgloom nearest it, where it is
+	 * now. Asked as each beam is drawn, so a laser that has just started is never shown first.
+	 */
+	private fun isOurLaser(guardian: Guardian): Boolean {
+		var nearest: LaserBoss? = null
+		var best = Double.MAX_VALUE
+		for (entry in laserBosses) {
+			val distance = entry.boss.distanceToSqr(guardian)
+			if (distance < best) {
+				best = distance
+				nearest = entry
+			}
+		}
+		return nearest != null && nearest.ours && best <= LASER_REACH * LASER_REACH
+	}
+
+	/**
+	 * Whether a particle is a Voidgloom's own, or the Fire Veil's, to be dropped. Network thread:
+	 * reads only the volatile fields.
 	 */
 	@JvmStatic
 	fun hidesParticle(packet: ClientboundLevelParticlesPacket): Boolean {
@@ -543,7 +1189,7 @@ object SlayerFeatures {
 				return true
 			}
 			val zones = particleZones
-			zones.isNotEmpty() && type in BOSS_PARTICLES && zones.any { it.contains(packet.x, packet.y, packet.z) }
+			zones.isNotEmpty() && zones.any { type in it.types && it.box.contains(packet.x, packet.y, packet.z) }
 		} catch (_: RuntimeException) {
 			false
 		}
@@ -573,156 +1219,58 @@ object SlayerFeatures {
 		playerAt = player.position()
 	}
 
-	/** The skulls' outline colour. Asked per entity per frame, so the set lookup comes first. */
+	/** The glow colour for [entity]. Asked per entity per frame, so it's one map lookup. */
 	@JvmStatic
 	fun outlineColorFor(entity: Entity): Int {
-		if (entity.id !in skullIds || !highlightSkulls.value || !module.enabled) return EntityRenderState.NO_OUTLINE
-		return ARGB.opaque(skullColor.rgb)
-	}
-
-	private fun ours(name: String): Boolean =
-		name.equals(Minecraft.getInstance().player?.gameProfile?.name, ignoreCase = true) || VoidgloomBosses.carried(name)
-
-	/**
-	 * Yours or a carried player's boss first, then the one already followed, then the nearest that
-	 * isn't known to be somebody else's.
-	 */
-	private fun pickFocus(seen: List<VoidgloomBosses.Seen>, me: String, at: Vec3): VoidgloomBosses.Seen? {
-		fun ownedBy(entry: VoidgloomBosses.Seen) = VoidgloomBosses.ownerOf(entry.boss.id)
-
-		seen.filter { entry -> ownedBy(entry)?.let(::ours) == true }
-			.minByOrNull { it.boss.position().distanceToSqr(at) }
-			?.let { return it }
-
-		val free = seen.filter { entry -> ownedBy(entry)?.let(::ours) != false }
-		free.firstOrNull { it.boss.id == focusId && it.boss.position().distanceTo(at) <= FOCUS_DROP }?.let { return it }
-		return free.filter { it.boss.position().distanceTo(at) <= FOCUS_RANGE }.minByOrNull { it.boss.position().distanceToSqr(at) }
-	}
-
-	/** "03:56" over the boss: how long is left of the four minutes it has before it despawns. */
-	private val timerPattern = Regex("""^(\d{1,2}):(\d{2})$""")
-	private val colourCodes = Regex("§.")
-	private const val BOSS_LIMIT_SECONDS = 240
-
-	/** The despawn timer's stand, a little over the boss's name stand. */
-	private fun timerLeft(seen: VoidgloomBosses.Seen): Int? {
-		val stand = seen.nameStand
-		val level = stand.level()
-		return level.getEntitiesOfClass(ArmorStand::class.java, stand.boundingBox.inflate(0.6, 1.5, 0.6)) { other ->
-			other !== stand && other.y >= stand.y
-		}.firstNotNullOfOrNull { other ->
-			timerPattern.matchEntire(other.customName?.string?.replace(colourCodes, "")?.trim() ?: return@firstNotNullOfOrNull null)
-				?.let { it.groupValues[1].toInt() * 60 + it.groupValues[2].toInt() }
-		}
+		val map = glows
+		if (map.isEmpty() || !module.enabled) return EntityRenderState.NO_OUTLINE
+		return map[entity.id] ?: EntityRenderState.NO_OUTLINE
 	}
 
 	/**
-	 * Dates the fight from the despawn timer. The moment its seconds change is a whole second, so
-	 * the first change seen pins the start to the millisecond; until then, the middle of the second
-	 * shown is the best guess.
+	 * How see-through to draw [entity] while your boss is up, as an alpha, or -1 to draw it as
+	 * usual. Asked per living entity per frame.
 	 */
-	private fun syncStart(fight: Fight, seen: VoidgloomBosses.Seen, now: Long) {
-		if (fight.timerPinned) return
-		val left = timerLeft(seen) ?: return
-		val changed = fight.timerSeconds?.let { it != left } == true
-		fight.timerSeconds = left
-		val elapsed = (BOSS_LIMIT_SECONDS - left) * 1000L + if (changed) 0L else 500L
-		val start = now - elapsed
-		// Phase timing started with the fight; it moves with it until the first phase begins.
-		if (fight.phaseSince == fight.since) fight.phaseSince = start
-		fight.since = start
-		if (changed) fight.timerPinned = true
+	@JvmStatic
+	fun fadeAlpha(entity: Entity?): Int {
+		val keep = fadeKeep ?: return -1
+		if (entity !is LivingEntity || entity is ArmorStand || entity.id in keep || !module.enabled) return -1
+		if (entity is net.minecraft.world.entity.player.Player && (!fadePlayers.value || entity === Minecraft.getInstance().player)) return -1
+		return (fadeOpacity.value / 100.0 * 255).toInt().coerceIn(0, 255)
 	}
 
-	private fun read(fight: Fight, seen: VoidgloomBosses.Seen, now: Long) {
-		fight.lastSeen = now
-		syncStart(fight, seen, now)
-
-		val ride = seen.boss.vehicle
-		// What follows the tier: "67 Hits", or health as "266k/750k" (or "45M❤").
-		val tail = seen.name.substringAfter(BOSS_NAME).trim().substringAfter(' ').trim()
-		fight.hits = hitsPattern.find(tail)?.groupValues?.get(1)?.toIntOrNull()
-		fight.laserLeft = ride?.let { (LASER_TICKS - it.tickCount).coerceAtLeast(0) * 50L }
-		if (fight.hits == null) {
-			healthPattern.find(tail)?.let { match ->
-				val current = match.groupValues[1]
-				val health = parseHealth(current) ?: return@let
-				fight.healthText = current
-				fight.health = health
-				val stated = match.groupValues[2].takeIf { it.isNotEmpty() }?.let(::parseHealth)
-				// Buffed bosses start above the usual figure; without a stated maximum, the first
-				// reading is their full health.
-				fight.maxHealth = stated ?: maxOf(fight.maxHealth, health)
-			}
-		}
-		// The laser comes in a hits phase, so it's checked first.
-		fight.enter(
-			when {
-				ride != null -> Phase.LASER
-				fight.hits != null -> Phase.HITS
-				else -> Phase.DAMAGE
-			},
-			now,
-		)
+	/** Inferno bosses and demons go without their fire while their particles are hidden. */
+	@JvmStatic
+	fun hidesFire(entity: Entity): Boolean {
+		val ids = unlit
+		return ids.isNotEmpty() && entity.id in ids && module.enabled
 	}
 
-	/** "45M" as 45 million; Hypixel writes k, M and B. */
-	private fun parseHealth(text: String): Double? {
-		val number = text.trimEnd('k', 'M', 'B').replace(",", "").toDoubleOrNull() ?: return null
-		return number * when (text.last()) {
-			'k' -> 1e3
-			'M' -> 1e6
-			'B' -> 1e9
-			else -> 1.0
-		}
-	}
-
-	/** Green, then yellow, then red as [left] runs down from [full]. */
-	private fun shade(left: Double, full: Double): String {
-		val fraction = if (full > 0) left / full else 1.0
+	/** Wolves, spiders and blazes silenced on their slayer's island. */
+	@JvmStatic
+	fun mutes(instance: SoundInstance): Boolean {
+		if (!module.enabled || !SkyblockLocation.onSkyblock) return false
+		val path = instance.identifier.path
 		return when {
-			fraction > 2.0 / 3 -> "§a"
-			fraction > 1.0 / 3 -> "§e"
-			else -> "§c"
+			path.startsWith("entity.wolf.") -> muteWolves.value && SkyblockLocation.area in SVEN_ISLANDS
+			path.startsWith("entity.spider.") -> muteSpiders.value && SkyblockLocation.area == TARANTULA_ISLAND
+			path.startsWith("entity.blaze.") -> muteBlazes.value && SkyblockLocation.area == INFERNO_ISLAND
+			else -> false
 		}
 	}
 
-	/**
-	 * The stats as two lines: the phase (out of three, or six for a tier IV, split by health as
-	 * SkyHanni does) with the laser's time left, then hits or health shaded by what's left.
-	 */
-	private fun statLines(fight: Fight): List<String> {
-		val steps = if (fight.tier >= 4) 6 else 3
-		val step = fight.maxHealth / steps
-		val index = (steps - ceil(fight.health / step).toInt() + 1).coerceIn(1, steps)
-		// Lag can keep the boss on its stand past the 8.2 seconds.
-		val laser = fight.laserLeft?.let { if (it <= 0) " §fsoon" else " §f${seconds(it)}" } ?: ""
-		val second = fight.hits?.let { hits ->
-			val full = MAX_HITS.getOrElse(fight.tier - 1) { 100 }.toDouble()
-			"${shade(hits.toDouble(), full)}$hits Hits"
-		} ?: fight.healthText?.let {
-			val colour = if (healthColour.selectedIndex == BY_PHASE) {
-				shade(fight.health - step * (steps - index), step)
-			} else {
-				shade(fight.health, fight.maxHealth)
-			}
-			"$colour$it"
-		}
-		return listOfNotNull("§e$index/$steps$laser", second)
-	}
-
-	private fun trackBeacons(level: net.minecraft.client.multiplayer.ClientLevel, centre: Vec3, now: Long) {
-		if (!highlightBeacons.value && !beaconTracer.value && !beaconAlert.value) {
+	private fun trackBeacons(level: ClientLevel, voidglooms: List<SlayerBosses.Seen>, now: Long) {
+		if ((!highlightBeacons.value && !beaconTracer.value && !beaconAlert.value) || voidglooms.none { ours(it.owner) }) {
 			flying.clear()
 			placed.clear()
 			return
 		}
 
 		val inAir = level.entitiesForRendering().filterIsInstance<ArmorStand>().filter { stand ->
-			stand.getItemBySlot(EquipmentSlot.HEAD).`is`(Items.BEACON) && stand.position().distanceTo(centre) <= NEAR
+			stand.getItemBySlot(EquipmentSlot.HEAD).`is`(Items.BEACON) && belongsToOurs(stand.position(), voidglooms)
 		}
 		for (stand in inAir) {
-			if (stand.id !in flying) onThrown()
+			if (stand.id !in flying && beaconAlert.value) title("§cBeacon!")
 			flying[stand.id] = stand.position()
 		}
 		// Look where each one is, and where each that just vanished was, for the block it became.
@@ -735,19 +1283,11 @@ object SlayerFeatures {
 		}
 	}
 
-	private fun findLanded(level: net.minecraft.client.multiplayer.ClientLevel, where: Vec3, now: Long) {
+	private fun findLanded(level: ClientLevel, where: Vec3, now: Long) {
 		val middle = BlockPos.containing(where)
 		for (pos in BlockPos.betweenClosed(middle.offset(-2, -2, -2), middle.offset(2, 3, 2))) {
 			if (level.getBlockState(pos).`is`(Blocks.BEACON)) placed.putIfAbsent(pos.immutable(), now)
 		}
-	}
-
-	private fun onThrown() {
-		if (!beaconAlert.value) return
-		val client = Minecraft.getInstance()
-		client.gui.hud.setTimes(0, 20, 5)
-		client.gui.hud.setTitle(Component.literal("§cBeacon!"))
-		client.player?.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 1f, 2f)
 	}
 
 	private fun isNukekubi(stand: ArmorStand): Boolean {
@@ -759,11 +1299,11 @@ object SlayerFeatures {
 		}
 	}
 
+	// ---- Kills ---------------------------------------------------------------------------------
+
 	/**
-	 * A boss died. From the entity-event mixin, after the Carry Manager, which settles the owner of
-	 * a boss it was still watching. Every kill gets its time at its feet; only yours or a client's
-	 * goes in chat. Hypixel names nobody's boss, so one with no known owner waits for its "boss
-	 * slain" line, which only comes for your own.
+	 * A boss died, from the entity-event mixin. Every kill gets its time at its feet; only yours or
+	 * a client's goes in chat.
 	 */
 	@JvmStatic
 	fun onEntityDied(entityId: Int) {
@@ -773,40 +1313,20 @@ object SlayerFeatures {
 		fight.finish(now)
 		val where = Minecraft.getInstance().level?.getEntity(entityId)?.position() ?: return
 		if (bossLabel.value) killLabels += KillLabel("§aKilled in: §f${killSeconds(now - fight.since)}", where, now)
-
-		val owner = VoidgloomBosses.ownerOf(entityId)
-		when {
-			owner != null && ours(owner) -> announce(fight, owner, now)
-			now - slainSaidAt <= CLAIM_MILLIS -> {
-				slainSaidAt = 0L
-				announce(fight, null, now)
-			}
-			else -> unclaimed += Kill(fight, where, now)
-		}
+		if (ours(fight.owner)) announce(fight, now)
 	}
 
-	/** Hypixel's line for your own boss dying. Client thread, from the chat packet. */
+	/** Hypixel's line for cocooning your boss. Client thread, from the chat packet. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
-		if (overlay || !module.enabled) return
-		val text = message.string.replace(formattingPattern, "")
-		if ("SLAYER BOSS SLAIN!" !in text && "SLAYER QUEST COMPLETE!" !in text) return
-		val now = System.currentTimeMillis()
-		val player = Minecraft.getInstance().player
-		// Of several bosses dying at once, yours is the one beside you.
-		val kill = unclaimed.filter { now - it.at <= CLAIM_MILLIS }
-			.minByOrNull { player?.position()?.distanceToSqr(it.where) ?: 0.0 }
-		if (kill == null) {
-			slainSaidAt = now
-			return
-		}
-		unclaimed.clear()
-		announce(kill.fight, null, kill.at)
+		if (overlay || !module.enabled || !cocoonAlert.value) return
+		val text = message.string.replace(formattingPattern, "").trim()
+		if (text == "YOU COCOONED YOUR SLAYER BOSS") title("§6§lCocooned!")
 	}
 
-	private fun announce(fight: Fight, owner: String?, now: Long) {
+	private fun announce(fight: Fight, now: Long) {
 		if (!killTime.value) return
-		val whose = owner?.takeIf { VoidgloomBosses.carried(it) }?.let { " §8(§7$it§8)" } ?: ""
+		val whose = fight.owner?.takeIf { !SlayerBosses.isMe(it) }?.let { " §8(§7$it§8)" } ?: ""
 		val splits = if (phaseTimes.value && fight.spent.isNotEmpty()) {
 			"\n§8 ┗ " + Phase.entries.filter { it in fight.spent }
 				.joinToString(" §8· ") { "${it.label} §f${seconds(fight.spent.getValue(it))}" }
@@ -814,9 +1334,11 @@ object SlayerFeatures {
 			""
 		}
 		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
-			Component.literal("§8[Cryptic] §5Voidgloom Seraph ${roman(fight.tier)}$whose §7killed in: §f${killSeconds(now - fight.since)}$splits"),
+			Component.literal("§8[Cryptic] §5${fight.type.title} ${roman(fight.tier)}$whose §7killed in: §f${killSeconds(now - fight.since)}$splits"),
 		)
 	}
+
+	// ---- Rendering -----------------------------------------------------------------------------
 
 	/** Head-sized box around an armour stand's helmet. */
 	private fun headBox(stand: ArmorStand, partialTick: Float): DoubleArray {
@@ -828,10 +1350,15 @@ object SlayerFeatures {
 		return doubleArrayOf(x - half, y - half, z - half, x + half, y + half, z + half)
 	}
 
-	/** A laser-phase beam to replace: an invisible guardian's, on the boss's island. */
+	/**
+	 * A laser-phase beam not to draw: an invisible guardian's on the End's island, when the custom
+	 * laser replaces it or it isn't your boss's or a client's.
+	 */
 	@JvmStatic
-	fun hidesBeam(guardian: net.minecraft.world.entity.monster.Guardian): Boolean =
-		active && customLaser.value && guardian.isInvisible
+	fun hidesBeam(guardian: Guardian): Boolean =
+		inEnd && guardian.isInvisible && (customLaser.value || hidesOthers(guardian))
+
+	private fun hidesOthers(guardian: Guardian): Boolean = hideOtherLasers.value && !isOurLaser(guardian)
 
 	private const val LASER_WIDTH = 6f
 
@@ -846,8 +1373,8 @@ object SlayerFeatures {
 		if (!customLaser.value) return
 		val level = Minecraft.getInstance().level ?: return
 		val beams = level.entitiesForRendering().mapNotNull { entity ->
-			val guardian = entity as? net.minecraft.world.entity.monster.Guardian ?: return@mapNotNull null
-			if (!hidesBeam(guardian) || !guardian.hasActiveAttackTarget()) return@mapNotNull null
+			val guardian = entity as? Guardian ?: return@mapNotNull null
+			if (!hidesBeam(guardian) || hidesOthers(guardian) || !guardian.hasActiveAttackTarget()) return@mapNotNull null
 			val target = guardian.activeAttackTarget ?: return@mapNotNull null
 			Beam(guardian.getEyePosition(partialTick), target.getPosition(partialTick).add(0.0, target.bbHeight * 0.5, 0.0))
 		}
@@ -873,14 +1400,14 @@ object SlayerFeatures {
 
 	private fun render(context: LevelRenderContext) {
 		val client = Minecraft.getInstance()
-		// The veil works on every island; the rest is the End's.
-		renderVeil(context, client.deltaTracker.getGameTimeDeltaPartialTick(false), System.currentTimeMillis())
+		val partialTick = client.deltaTracker.getGameTimeDeltaPartialTick(false)
+		// The veil works on every island.
+		renderVeil(context, partialTick, System.currentTimeMillis())
 		if (!active) return
-		renderLasers(context, client.deltaTracker.getGameTimeDeltaPartialTick(false))
+		if (inEnd) renderLasers(context, partialTick)
 		val level = client.level ?: return
 		val poseStack = context.poseStack()
 		val collector = context.submitNodeCollector()
-		val partialTick = client.deltaTracker.getGameTimeDeltaPartialTick(false)
 		val now = System.currentTimeMillis()
 
 		fun box(b: DoubleArray, argb: Int) = WorldRender.drawBox(
@@ -902,6 +1429,14 @@ object SlayerFeatures {
 			scale = scale, seeThrough = seeThrough, centered = true,
 		)
 
+		if (lineToOwn.value) {
+			SlayerBosses.mine()?.boss?.let { boss ->
+				val x = Mth.lerp(partialTick.toDouble(), boss.xo, boss.x)
+				val y = Mth.lerp(partialTick.toDouble(), boss.yo, boss.y) + boss.bbHeight / 2
+				val z = Mth.lerp(partialTick.toDouble(), boss.zo, boss.z)
+				tracer(x, y, z, lineColor.argb)
+			}
+		}
 
 		for (id in flying.keys) {
 			val stand = level.getEntity(id) as? ArmorStand ?: continue
@@ -961,7 +1496,7 @@ object SlayerFeatures {
 			val toward = Vec3(camera.x - x, 0.0, camera.z - z).let {
 				if (phase || it.lengthSqr() <= 1e-4) Vec3.ZERO else it.normalize().scale(boss.bbWidth * 0.5 + 0.25)
 			}
-			lines(statLines(fight), Vec3(x + toward.x, y + height, z + toward.z), onFloor = atFeet)
+			lines(statLines(fight, now), Vec3(x + toward.x, y + height, z + toward.z), onFloor = atFeet)
 		}
 	}
 

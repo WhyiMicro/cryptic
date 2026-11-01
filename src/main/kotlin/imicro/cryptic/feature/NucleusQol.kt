@@ -1,5 +1,6 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.Cryptic
 import imicro.cryptic.experiment.EquippedPet
 import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
@@ -11,6 +12,7 @@ import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
+import imicro.cryptic.render.CrypticRenderLayers
 import imicro.cryptic.render.CrypticRenderPipelines
 import imicro.cryptic.render.WorldRender
 import imicro.cryptic.skyblock.SkyblockItem
@@ -20,7 +22,9 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
+import net.minecraft.client.renderer.entity.state.EntityRenderState
 import net.minecraft.core.BlockPos
 import net.minecraft.core.component.DataComponents
 import net.minecraft.core.particles.ParticleTypes
@@ -29,10 +33,14 @@ import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket
 import net.minecraft.client.resources.sounds.SoundInstance
 import net.minecraft.sounds.SoundEvent
 import net.minecraft.sounds.SoundEvents
+import net.minecraft.util.ARGB
 import net.minecraft.world.entity.Display
+import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.EquipmentSlot
+import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.entity.monster.cubemob.MagmaCube
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.ClipBlockStateContext
 import net.minecraft.world.level.block.Blocks
@@ -42,6 +50,7 @@ import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.HitResult
 import net.minecraft.world.phys.Vec3
+import java.nio.file.Files
 import kotlin.math.roundToInt
 
 /**
@@ -167,6 +176,14 @@ object NucleusQol {
 		description = "Boxes a crystal where it is picked up, in its colour, once the area's boss or puzzle has been done.",
 	)
 
+	@JvmField
+	val hideLootParticles = ToggleModuleSetting(
+		id = "hide_loot_particles",
+		label = "Hide loot particles",
+		defaultValue = true,
+		description = "Hides the sparkles on the loot laid out in the nucleus once a run is done.",
+	)
+
 	private val anyCrystals: () -> Boolean = { crystalSlots.value || crystalPickups.value }
 
 	/**
@@ -214,6 +231,16 @@ object NucleusQol {
 		supportsAlpha = true,
 		defaultAlpha = alpha,
 		visibleIf = anyCrystals,
+	)
+
+	private val balSection = SectionModuleSetting("bal_section", "Khazad-dûm")
+
+	@JvmField
+	val balStages = ToggleModuleSetting(
+		id = "bal_stages",
+		label = "Bal growth stage",
+		defaultValue = true,
+		description = "Shows how far Bal has grown above the boss, such as 8/25, until it starts to despawn.",
 	)
 
 	private val treasureSection = SectionModuleSetting("treasure_section", "Mines of Divan")
@@ -309,6 +336,14 @@ object NucleusQol {
 		label = "Full inventory alert",
 		defaultValue = true,
 		description = "A toast when your inventory is full while you hunt with the Metal Detector, since tools then go to your stash.",
+	)
+
+	@JvmField
+	val keeperOutlines = ToggleModuleSetting(
+		id = "keeper_outlines",
+		label = "Keeper outlines",
+		defaultValue = true,
+		description = "Until you have the Jade Crystal, outlines each Keeper: red while you lack their tool, yellow once you have it, green once they have it.",
 	)
 
 	private val chestsSection = SectionModuleSetting("chests_section", "Treasure chests")
@@ -495,15 +530,16 @@ object NucleusQol {
 			warpKey,
 			waypointsSection, autoWaypoints, calculate, clear, mode, fillColor, outlineColor, lineWidth, phase,
 			crystalsSection, crystalSlots, crystalPickups, crystalStyle,
-			amberColor, amethystColor, topazColor, jadeColor, sapphireColor,
+			amberColor, amethystColor, topazColor, jadeColor, sapphireColor, hideLootParticles,
 			placesSection, HollowsMap.labels.withMore(HollowsMap.poiPlaces), structureScanner.withMore(scanPlaces),
 		) + HollowsMap.settings + listOf(
 			WishingCompass.setting,
+			balSection, balStages,
 			treasureSection,
 			metalDetector.withMore(
 				detectorMode, detectorFill, detectorOutline, detectorPhase, detectorTracer, detectorTracerColor, detectorLabel,
 			),
-			moleReminder, allToolsAlert, fullInventoryAlert,
+			moleReminder, allToolsAlert, fullInventoryAlert, keeperOutlines,
 			chestsSection,
 			treasureChests.withMore(
 				chestMode, chestTimeColors, chestFill, chestOutline, chestTimeFillAlpha, chestPhase,
@@ -641,9 +677,17 @@ object NucleusQol {
 		fromAfar.clear()
 		announced.clear()
 		toolBucket.clear()
+		keeperBodies.clear()
+		keepersWithTool.clear()
 		saidInventoryFull = false
 		lastReading = -1.0
-		lastReadingPos = null
+		dugReading = -1.0
+		recentPositions.clear()
+		bal = null
+		balShrinking = false
+		cubeSizes.clear()
+		balSizes.clear()
+		nucleusParticles.clear()
 		chests.clear()
 		minedBlocks.clear()
 		sightings.clear()
@@ -671,9 +715,12 @@ object NucleusQol {
 		HollowsMap.tick(client)
 		CrystalStatus.tick(client)
 		scanChunks(client)
+		notePosition(client)
+		trackBal()
 
 		if (ticksUntilScan-- > 0) return
 		ticksUntilScan = 10
+		updateKeepers(client)
 		if (autoWaypoints.value && waypoints.isEmpty()) templeDoor(client)?.let { door ->
 			waypoints = OFFSETS.map { (x, y, z) -> door.offset(x, y, z) }
 			Toasts.show(SOURCE, "Set §f${waypoints.size} §7waypoints from the Jungle Temple's door", color = Toasts.Colors.MINING)
@@ -682,6 +729,7 @@ object NucleusQol {
 		updateInMines(client)
 		scanArea(client)
 		pickups = if (crystalPickups.value && !inNucleus) findPickups(client) else emptyList()
+		updateBal(client)
 	}
 
 	private fun calculate() {
@@ -717,13 +765,15 @@ object NucleusQol {
 	}
 
 	/**
-	 * The spot the waypoints are measured from: the right-hand guardian as you face the door. The
-	 * temple opens toward +z, so facing in, the right hand is the smaller x. Null until both are seen.
+	 * The spot the waypoints are measured from: of the two same-named guardians, the one further
+	 * along the axis they stand apart on (the larger x, as checked in game; the smaller was 7 blocks
+	 * off). The temple always faces the same way. Null until both are seen.
 	 */
 	private fun templeDoor(client: Minecraft): BlockPos? {
 		val guardians = doorGuardians(client)
 		if (guardians.size != 2) return null
-		return guardians.minBy { it.x }
+		val (a, b) = guardians
+		return if (Math.abs(a.x - b.x) >= Math.abs(a.z - b.z)) guardians.maxBy { it.x } else guardians.maxBy { it.z }
 	}
 
 	/** For `/cryptic debug temple`: the guardians found and which one the waypoints come from. */
@@ -877,7 +927,123 @@ object NucleusQol {
 				is ItemEntity -> lines += "item $pos ${describeItem(entity.item)}"
 			}
 		}
+		lines += "Particles seen in the nucleus: " +
+			(nucleusParticles.entries.sortedByDescending { it.value }.joinToString { "${it.key} x${it.value}" }.ifEmpty { "none" })
 		return lines + HollowsMap.describe() + "Wishing Compass: ${WishingCompass.describe()}"
+	}
+
+	// ---- Bal ---------------------------------------------------------------------------------
+	//
+	// Bal is a magma cube that grows a size a second to 25, where its nameplate appears and the
+	// fight starts. It can reach 28 in the fight, then shrinks a size at a time as it despawns. No
+	// nameplate shows while it grows, but the Yogs around it are always size 3, so any other size
+	// is Bal, whenever you arrive. At size 3 itself it's told apart by having grown while watched.
+
+	private const val BAL_GROWTH_STAGES = 25
+
+	private const val YOG_SIZE = 3
+
+	private fun balGrowthStage(size: Int): Int = size.coerceIn(1, BAL_GROWTH_STAGES)
+
+	/** Whether Bal's last change of size was down. */
+	private var balShrinking = false
+
+	private val BAL_NAME = Regex("""\bBal\b""")
+
+	private var bal: MagmaCube? = null
+
+	/** The size each cube was first seen at, by entity id. */
+	private val cubeSizes = HashMap<Int, Int>()
+
+	/** Bal's sizes in the order seen, for `/cryptic debug bal`. */
+	private val balSizes = ArrayList<Int>()
+
+	private const val MAX_BAL_SIZES = 80
+
+	private fun magmaCubes(client: Minecraft): List<MagmaCube> =
+		client.level?.entitiesForRendering()?.filterIsInstance<MagmaCube>().orEmpty()
+
+	/** The nameplate standing over [cube]: a big one's sits well above its feet. */
+	private fun nameplateOf(client: Minecraft, cube: MagmaCube): String? {
+		val level = client.level ?: return null
+		val reach = cube.bbWidth / 2.0 + 1.0
+		val top = cube.y + cube.bbHeight + 3.0
+		return level.entitiesForRendering().firstNotNullOfOrNull { entity ->
+			if (entity !is ArmorStand || !entity.hasCustomName()) return@firstNotNullOfOrNull null
+			if (Math.abs(entity.x - cube.x) > reach || Math.abs(entity.z - cube.z) > reach) return@firstNotNullOfOrNull null
+			if (entity.y < cube.y || entity.y > top) return@firstNotNullOfOrNull null
+			entity.customName?.string?.replace(FORMATTING, "")
+		}
+	}
+
+	private fun updateBal(client: Minecraft) {
+		if (!balStages.value) {
+			bal = null
+			balShrinking = false
+			return
+		}
+		val cubes = magmaCubes(client)
+		cubeSizes.keys.retainAll(cubes.mapTo(HashSet()) { it.id })
+		val sized = cubes.filter { cube -> cubeSizes.getOrPut(cube.id) { cube.size } != cube.size || cube.size != YOG_SIZE }
+		// A Yog under Bal's nameplate counts as named too, so it only wins if nothing else does.
+		val named = cubes.filter { cube -> nameplateOf(client, cube)?.let(BAL_NAME::containsMatchIn) == true }
+			.maxByOrNull { if (it.size == YOG_SIZE) 0 else it.size }
+		val found = named ?: sized.maxByOrNull { it.size }
+		// A new fight's sizes replace the last one's.
+		if (found != null && found.id != bal?.id) {
+			balSizes.clear()
+			balShrinking = false
+		}
+		bal = found
+	}
+
+	/** Every tick: Bal can change size faster than the search above runs. */
+	private fun trackBal() {
+		val size = bal?.size ?: return
+		val last = balSizes.lastOrNull()
+		if (size == last) return
+		if (last != null) balShrinking = size < last
+		// The newest stay, since the size above is read from the last of them.
+		if (balSizes.size >= MAX_BAL_SIZES) balSizes.removeAt(0)
+		balSizes += size
+	}
+
+	private fun renderBal(context: LevelRenderContext) {
+		if (balShrinking) return
+		val cube = bal?.takeIf { !it.isRemoved && it.size > 0 } ?: return
+		val client = Minecraft.getInstance()
+		val eye = client.player?.position() ?: return
+		val y = cube.y + cube.bbHeight + 1.5
+		val distance = Math.sqrt(eye.distanceToSqr(cube.x, y, cube.z))
+		WorldRender.drawText(
+			poseStack = context.poseStack(),
+			collector = context.submitNodeCollector(),
+			orientation = client.gameRenderer.mainCamera().rotation(),
+			text = Component.literal("§6${balGrowthStage(cube.size)}§7/§6$BAL_GROWTH_STAGES"),
+			x = cube.x,
+			y = y,
+			z = cube.z,
+			scale = (distance / 12.0).coerceIn(1.0, 4.0).toFloat(),
+			seeThrough = true,
+			centered = true,
+		)
+	}
+
+	/** For `/cryptic debug bal`: every magma cube in sight, to check sizes against the stage shown. */
+	fun describeBal(): List<String> {
+		val client = Minecraft.getInstance()
+		val player = client.player ?: return listOf("Not in a world")
+		val cubes = magmaCubes(client).sortedBy { it.distanceToSqr(player) }
+		val lines = mutableListOf(
+			"Bal: ${bal?.let { "id ${it.id}, size ${it.size}, ${if (balShrinking) "despawning" else "growing"}" } ?: "not found"}",
+			"Sizes seen: ${balSizes.joinToString().ifEmpty { "none" }}",
+			"${cubes.size} magma cubes:",
+		)
+		for (cube in cubes.take(15)) {
+			lines += "id ${cube.id} size ${cube.size} (first ${cubeSizes[cube.id] ?: "?"}), width %.2f, %.1f %.1f %.1f, \"${nameplateOf(client, cube) ?: "-"}\""
+				.format(cube.bbWidth, cube.x, cube.y, cube.z)
+		}
+		return lines
 	}
 
 	/**
@@ -1347,22 +1513,59 @@ object NucleusQol {
 	/** Where the treasure could be. One left is the answer, kept for the lobby until dug up. */
 	private var predicted: List<BlockPos> = emptyList()
 
-	/** The last reading and where you stood; a reading counts once it repeats while standing still. */
 	private var lastReading = -1.0
-	private var lastReadingPos: Vec3? = null
+
+	/** The reading when the treasure was dug up; the bar can repeat it before moving on. */
+	private var dugReading = -1.0
 
 	/** The detector rounds to a tenth; a little more for where on the block you stand. */
 	private const val READING_TOLERANCE = 0.15
 
-	private fun fits(chest: BlockPos, position: Vec3, distance: Double): Boolean {
+	/** For a tick's walk between the positions a reading is compared with. */
+	private const val MOVING_TOLERANCE = 0.6
+
+	private fun fits(chest: BlockPos, position: Vec3, distance: Double, tolerance: Double = READING_TOLERANCE): Boolean {
 		val measured = position.distanceTo(Vec3(chest.x.toDouble(), chest.y + 1.0, chest.z.toDouble()))
-		return Math.abs(measured - distance) < READING_TOLERANCE
+		return Math.abs(measured - distance) < tolerance
+	}
+
+	/** Where you've been, oldest first: the server measures from where it last had you. */
+	private val recentPositions = ArrayDeque<Pair<Long, Vec3>>()
+
+	private const val POSITION_MEMORY_MS = 1_000L
+
+	/** Longer than a reading takes to come back, so one arriving now was measured from here. */
+	private const val STILL_MS = 300L
+
+	private fun notePosition(client: Minecraft) {
+		val player = client.player
+		if (player == null || !metalDetector.value || !inMines) {
+			recentPositions.clear()
+			return
+		}
+		val now = System.currentTimeMillis()
+		recentPositions.addLast(now to player.position())
+		while (now - recentPositions.first().first > POSITION_MEMORY_MS) recentPositions.removeFirst()
+	}
+
+	private fun stoodStill(position: Vec3): Boolean {
+		val now = System.currentTimeMillis()
+		val oldest = recentPositions.firstOrNull()?.first ?: return false
+		if (now - oldest < STILL_MS) return false
+		return recentPositions.all { (at, where) -> now - at > STILL_MS || where.distanceToSqr(position) < 0.0025 }
+	}
+
+	/** Walking, a reading is from somewhere along the way, so a guess fitting none of it can go. */
+	private fun narrowWalking(distance: Double) {
+		if (predicted.size < 2) return
+		val left = predicted.filter { chest -> recentPositions.any { (_, where) -> fits(chest, where, distance, MOVING_TOLERANCE) } }
+		if (left.isNotEmpty()) predicted = left
 	}
 
 	/**
-	 * The action bar from either packet. A reading counts only after repeating while you stand
-	 * still, since the bar lags while walking. Each still reading narrows the guesses; an answer a
-	 * later reading contradicts is recalculated.
+	 * The action bar from either packet. The first reading after a moment standing still counts,
+	 * and each one narrows the guesses; an answer a later reading contradicts is recalculated.
+	 * Readings on the move only rule guesses out.
 	 */
 	@JvmStatic
 	fun onActionBar(text: Component) {
@@ -1381,11 +1584,15 @@ object NucleusQol {
 		checkTools(player)
 		if (!metalDetector.value) return
 
-		val position = player.position()
-		val still = distance == lastReading && lastReadingPos?.let { it.distanceToSqr(position) < 0.0025 } == true
 		lastReading = distance
-		lastReadingPos = position
-		if (!still) return
+		if (distance == dugReading) return
+		dugReading = -1.0
+
+		val position = player.position()
+		if (!stoodStill(position)) {
+			narrowWalking(distance)
+			return
+		}
 		lastStillReading = distance
 
 		// A base far from you can't be this mines' middle: a crystal measured wrong, or another lobby's.
@@ -1396,7 +1603,6 @@ object NucleusQol {
 		val base = minesBase ?: return
 
 		// Narrow what's left; start over if nothing is, or the answer no longer fits.
-		val before = predicted.size
 		val narrowed = predicted.filter { fits(it, position, distance) }
 		predicted = narrowed.ifEmpty { candidates(base, position, distance) }
 		if (predicted.isEmpty()) {
@@ -1411,9 +1617,6 @@ object NucleusQol {
 			return
 		}
 		readingsWithoutFit = 0
-		if (predicted.size > 1 && predicted.size != before) {
-			Toasts.show(SOURCE, "§f${predicted.size} §7possible locations, move a little to find the right one", color = Toasts.Colors.MINING)
-		}
 	}
 
 	private fun candidates(base: BlockPos, position: Vec3, distance: Double): List<BlockPos> =
@@ -1457,9 +1660,12 @@ object NucleusQol {
 		HollowsMap.onSystemChat(content, false)
 		WishingCompass.onSystemChat(content, false)
 		val text = content.string.replace(FORMATTING, "").trim()
+		CrystalStatus.onChat(text)
+		onKeeperChat(text)
 		TREASURE_FOUND.matchEntire(text)?.let { found ->
 			// The treasure dug up, so the next reading is new. Until then it stays marked.
 			predicted = emptyList()
+			dugReading = lastReading
 			// A tool goes in the bucket whether it went to the inventory or the stash.
 			TOOLS.entries.firstOrNull { found.value.contains(it.value) }?.let { addTool(it.key) }
 		}
@@ -1478,6 +1684,147 @@ object NucleusQol {
 	)
 
 	private const val METAL_DETECTOR = "DWARVEN_METAL_DETECTOR"
+
+	private val KEEPER_TOOLS = mapOf(
+		"Gold" to "DWARVEN_GOLD_HAMMER",
+		"Lapis" to "DWARVEN_LAPIS_SWORD",
+		"Emerald" to "DWARVEN_EMERALD_HAMMER",
+		"Diamond" to "DWARVEN_DIAMOND_AXE",
+	)
+
+	private val KEEPER_LINE = Regex("""^\[NPC] Keeper of (Gold|Lapis|Emerald|Diamond): (.+)$""")
+
+	/** Keepers said to hold their tool. Kept between lobbies and restarts, as Hypixel keeps it. */
+	private val keepersGiven = HashSet<String>()
+	private val keepersFile get() = FabricLoader.getInstance().configDir.resolve("cryptic").resolve("divan-keepers.txt")
+	private var keepersLoaded = false
+
+	/** Keepers whose tool you hold now, read off the inventory. */
+	private val keepersWithTool = HashSet<String>()
+
+	/** The Keepers' bodies by entity id, found by where they always stand. */
+	private val keeperBodies = HashMap<Int, String>()
+
+	private fun loadKeepers() {
+		if (keepersLoaded) return
+		keepersLoaded = true
+		runCatching {
+			if (Files.exists(keepersFile)) keepersGiven += Files.readAllLines(keepersFile).filter { it in KEEPER_TOOLS }
+		}.onFailure { Cryptic.LOGGER.warn("Could not read the Keepers' tools", it) }
+	}
+
+	private fun saveKeepers() {
+		runCatching {
+			Files.createDirectories(keepersFile.parent)
+			Files.write(keepersFile, keepersGiven)
+		}.onFailure { Cryptic.LOGGER.warn("Could not save the Keepers' tools", it) }
+	}
+
+	private fun setKeepersGiven(given: Collection<String>) {
+		loadKeepers()
+		if (keepersGiven.size == given.size && keepersGiven.containsAll(given)) return
+		keepersGiven.clear()
+		keepersGiven += given
+		saveKeepers()
+	}
+
+	/** What a Keeper says tells where it stands, so one given a tool long ago is learnt by talking to it. */
+	private fun onKeeperChat(text: String) {
+		// A nucleus run spends the crystal, and every Keeper wants its tool again.
+		if (text == "CRYSTAL NUCLEUS LOOT BUNDLE") return setKeepersGiven(emptySet())
+		val line = KEEPER_LINE.matchEntire(text) ?: return
+		val keeper = line.groupValues[1]
+		val said = line.groupValues[2]
+		loadKeepers()
+		when {
+			said.startsWith("Talk to me when you have found") -> setKeepersGiven(keepersGiven - keeper)
+			said.startsWith("Excellent! You have returned") || said.startsWith("You have already restored") ->
+				setKeepersGiven(keepersGiven + keeper)
+			// The last tool, or a Keeper with nothing left to ask for.
+			said.startsWith("You found all of the items") || said.startsWith("You haven't collected the Jade Crystal") ->
+				setKeepersGiven(KEEPER_TOOLS.keys)
+		}
+	}
+
+	/** No outlines once Jade is in hand. With no Crystals widget to ask, they stay on. */
+	private fun jadeMissing(): Boolean = CrystalStatus.stateOf(CrystalStatus.Crystal.JADE).let { it == null || it == CrystalStatus.State.NOT_FOUND }
+
+	private fun updateKeepers(client: Minecraft) {
+		val jadeState = CrystalStatus.stateOf(CrystalStatus.Crystal.JADE)
+		if (jadeState != null && jadeState != CrystalStatus.State.NOT_FOUND) setKeepersGiven(emptySet())
+		keeperBodies.clear()
+		keepersWithTool.clear()
+		val player = client.player ?: return
+		val level = client.level ?: return
+		if (!keeperOutlines.value || !jadeMissing()) return
+		val middle = minesMiddle() ?: return
+		loadKeepers()
+		val held = (0 until 36).mapTo(HashSet()) { SkyblockItem.id(player.inventory.getItem(it)) }
+		for ((keeper, tool) in KEEPER_TOOLS) if (tool in held || tool in toolBucket) keepersWithTool += keeper
+		for (npc in level.players()) {
+			if (npc === player || npc.uuid.version() == REAL_PLAYER_UUID) continue
+			keeperAt(npc, middle)?.let { keeperBodies[npc.id] = it }
+		}
+	}
+
+	/** Hypixel's NPCs are players with version 2 UUIDs; everyone real has version 4. */
+	private const val REAL_PLAYER_UUID = 4
+
+	/** The Jade space's middle is the Keepers' own, and they never move. */
+	private const val KEEPER_REACH = 1.0
+
+	/**
+	 * The mines' middle, x and z. A Keeper's nameplate gives it exactly, and the Jade space gives it
+	 * from further away, since the bodies load before their nameplates.
+	 */
+	private fun minesMiddle(): Vec3? {
+		val center = keeperCenter
+		if (center != null) return Vec3(center.x + 0.5, 0.0, center.z + 0.5)
+		return crystalSpaces[Crystal.JADE]?.center
+	}
+
+	private fun keeperAt(entity: Entity, middle: Vec3): String? = KEEPER_OFFSETS.entries.firstOrNull { (_, offset) ->
+		Math.abs(entity.x - (middle.x - offset.x)) < KEEPER_REACH && Math.abs(entity.z - (middle.z - offset.z)) < KEEPER_REACH
+	}?.key
+
+	/** Called from the entity renderer, for every entity in view. */
+	@JvmStatic
+	fun outlineColorFor(entity: Entity): Int {
+		if (keeperBodies.isEmpty()) return EntityRenderState.NO_OUTLINE
+		val keeper = keeperBodies[entity.id] ?: return EntityRenderState.NO_OUTLINE
+		return ARGB.opaque(
+			when (keeper) {
+				in keepersGiven -> KEEPER_GIVEN
+				in keepersWithTool -> KEEPER_HOLDING
+				else -> KEEPER_LACKING
+			},
+		)
+	}
+
+	private const val KEEPER_LACKING = 0xFF5555
+	private const val KEEPER_HOLDING = 0xFFFF55
+	private const val KEEPER_GIVEN = 0x55FF55
+
+	fun describeKeepers(): List<String> {
+		loadKeepers()
+		val level = Minecraft.getInstance().level ?: return listOf("Not in a world")
+		val jade = crystalSpaces[Crystal.JADE]?.center
+		val lines = arrayListOf(
+			"In the Mines of Divan: $inMines, Jade missing: ${jadeMissing()}, tools held: ${keepersWithTool.sorted()}, tools given: ${keepersGiven.sorted()}",
+			"Middle by nameplates: ${keeperCenter?.toShortString() ?: "not seen"}, by the Jade space: ${jade?.let { "%.1f %.1f".format(it.x, it.z) } ?: "not found"}",
+		)
+		val middle = minesMiddle() ?: return lines
+		for ((keeper, offset) in KEEPER_OFFSETS) {
+			val x = middle.x - offset.x
+			val z = middle.z - offset.z
+			val body = keeperBodies.entries.firstOrNull { it.value == keeper }?.key
+			lines += "Keeper of $keeper expected at %.1f %.1f: body ${body?.let { "#$it" } ?: "not found"}".format(x, z)
+			level.getEntitiesOfClass(LivingEntity::class.java, AABB(x - 6, -64.0, z - 6, x + 6, 320.0, z + 6)) { it !is ArmorStand }.forEach {
+				lines += "  ${it.type.toShortString()} '${it.name.string.replace(FORMATTING, "")}' uuid v${it.uuid.version()} at %.1f %.1f %.1f".format(it.x, it.y, it.z)
+			}
+		}
+		return lines
+	}
 
 	/**
 	 * The tools you hold this mines visit, one of each at most: what you carried in, plus every
@@ -1773,6 +2120,20 @@ object NucleusQol {
 		while (sparks.isNotEmpty() && now - sparks.first().second > SPARK_MEMORY_MS) sparks.removeFirst()
 	}
 
+	private val LOOT_PARTICLES = setOf<net.minecraft.core.particles.ParticleType<*>>(ParticleTypes.FIREWORK, ParticleTypes.END_ROD)
+
+	/** Particle kinds sent while in the nucleus. Filled from either thread. */
+	private val nucleusParticles = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+	/** The sparkles over a finished run's loot, the only ones of these the nucleus sends. */
+	@JvmStatic
+	fun hidesParticle(packet: ClientboundLevelParticlesPacket): Boolean {
+		if (!inNucleus || !module.enabled) return false
+		val type = packet.particle.type
+		nucleusParticles.merge(net.minecraft.core.registries.BuiltInRegistries.PARTICLE_TYPE.getKey(type).toString(), 1, Int::plus)
+		return hideLootParticles.value && type in LOOT_PARTICLES
+	}
+
 	private fun SoundEvent.isSound(other: SoundEvent) = location() == other.location()
 
 	/**
@@ -1886,9 +2247,10 @@ object NucleusQol {
 		if (!module.enabled) return
 		renderWaypoints(context)
 		if (!SkyblockLocation.inCrystalHollows) return
-		renderCrystals(context)
+		CrypticRenderLayers.overTerrain { renderCrystals(context) }
 		renderMetalDetector(context)
 		renderChests(context)
+		renderBal(context)
 	}
 
 	private fun renderWaypoints(context: LevelRenderContext) {

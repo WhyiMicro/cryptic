@@ -41,13 +41,15 @@ object CreditList {
 					"Skyblocker",
 					"Tic Tac Toe, Ice Path and the Water Board's previews, Lights On, Smooth teleport, the Booster Cookie reading, " +
 						"Nucleus Features's lock picks and Crystal Hollows map, the Pickobulus overlay, Item Protection's protected menus, " +
-						"Farming's visitor list and the pests' head textures, and the idea of the Party Finder.",
+						"Farming's visitor list and the pests' head textures, the slayer bosses' names, health and mini-bosses, the Demonlord's attunements and fire pillars, " +
+						"the Riftstalker's alerts, and the idea of the Party Finder.",
 					"LGPL-3.0", "https://github.com/SkyblockerMod/Skyblocker",
 				),
 				Credit(
 					"SkyHanni",
 					"Nucleus Features: the crystal slots, the Metal Detector solver and the treasure chest timers, the Croesus profit lists, " +
-						"the idea of the tooltip's estimated item value, the mousemat's angles, the hotspot radar guess, and how Hypixel shapes a vacuum's trail and sack changes.",
+						"the idea of the tooltip's estimated item value, the mousemat's angles, the hotspot radar guess, the Conjoined Brood's egg sacs and the Revenant and Sven alerts, " +
+						"how Hypixel shapes a vacuum's trail and sack changes, and the Rift's time, soul, effigy and Mirrorverse messages.",
 					"LGPL-2.1", "https://github.com/hannibal002/SkyHanni",
 				),
 				Credit("dtMap", "The dungeon map, its room database and the score.", "BSD 3-Clause", "https://github.com/ricedotwho/dtMap"),
@@ -118,6 +120,8 @@ object CreditList {
 				Credit("Enhanced Chat","Better Chat's tabs, search, right-click menu, merged repeats and longer history.", "GPL-3.0", "https://github.com/KdGaming0/Enhanced-Chat"),
 				Credit("NoFrills", "Better Chat's skipped command confirmations and kept history, Item Protection's rules and override key, the pickaxe ability timer, and Farming's vacuum solver.", "GPL-3.0", "https://github.com/WhatYouThing/NoFrills"),
 				Credit("BtrBz", "The Bazaar module: order tracking, undercut alerts and tooltip prices.", "LGPL-3.0", "https://github.com/LutzLuca/BtrBz"),
+				Credit("Skysoft", "The idea of a Bazaar price history chart.", "LGPL-3.0", "https://github.com/Akinsoft/Skysoft"),
+				Credit("Coflnet", "The price history data behind the Bazaar's chart.", url = "https://sky.coflnet.com"),
 				Credit("Feesh", "Fishing's hotspot found message and gone alert.", "Apache-2.0", "https://github.com/Sleepy-Panda/Feesh"),
 				Credit("Debugify", "Camera's riding input fix.", "LGPL-3.0", "https://github.com/isXander/Debugify"),
 				Credit("Zoomify", "What a zoom ought to offer.", "LGPL-3.0", "https://modrinth.com/mod/zoomify"),
@@ -144,7 +148,7 @@ object CreditList {
 				Credit("Devonian", "Every room's secret spots, for Dungeon Waypoints.", "GPL-3.0", "https://github.com/Synnerz/Devonian"),
 				Credit(
 					"SkyHanni Repository",
-					"The 39 places the Mines of Divan treasure turns up.",
+					"The 39 places the Mines of Divan treasure turns up, and the Rift's Enigma Souls, Blood Effigies, dance steps and Mirrorverse parkour paths.",
 					"MIT", "https://github.com/hannibal002/SkyHanni-REPO",
 				),
 				Credit(

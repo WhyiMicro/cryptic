@@ -9,6 +9,7 @@ import imicro.cryptic.dungeon.Floor7
 import imicro.cryptic.gui.KeybindModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.skyblock.KuudraLocation
 import imicro.cryptic.skyblock.SkyblockLocation
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
@@ -20,7 +21,7 @@ import java.util.IdentityHashMap
 /**
  * Keys that run a command or say something in chat, modelled on Athen's Keybinds: one or more keys
  * or mouse buttons held together, the line to send, and when it may fire (outside a menu, in a
- * chest, on certain islands, floors, classes or F7 phases). Lines starting with "/" go through the
+ * chest, on certain islands, floors, classes, F7 phases or Kuudra tiers). Lines starting with "/" go through the
  * client's commands first, so a binding can run `/cryptic` or an alias. Saved in
  * `config/cryptic/keybinds.json`, outside profiles.
  */
@@ -42,11 +43,13 @@ object KeybindManager {
 		var floors: MutableSet<String> = linkedSetOf(),
 		var classes: MutableSet<DungeonTeam.DungeonClass> = linkedSetOf(),
 		var phases: MutableSet<Int> = linkedSetOf(),
+		var kuudraTiers: MutableSet<Int> = linkedSetOf(),
 	) {
 		fun copy(): Binding = Binding(
 			keys.toMutableList(), command, enabled, category, workIn,
 			islands.toCollection(linkedSetOf()), floors.toCollection(linkedSetOf()),
 			classes.toCollection(linkedSetOf()), phases.toCollection(linkedSetOf()),
+			kuudraTiers.toCollection(linkedSetOf()),
 		)
 	}
 
@@ -99,7 +102,7 @@ object KeybindManager {
 	}
 
 	/** Whether anything needs the island, floor, class or phase. */
-	val needsSkyblock: Boolean get() = module.enabled && bindings.any { it.islands.isNotEmpty() }
+	val needsSkyblock: Boolean get() = module.enabled && bindings.any { it.islands.isNotEmpty() || it.kuudraTiers.isNotEmpty() }
 	val needsDungeon: Boolean get() = module.enabled && bindings.any { it.floors.isNotEmpty() || it.phases.isNotEmpty() || it.classes.isNotEmpty() }
 	val needsTeam: Boolean get() = module.enabled && bindings.any { it.classes.isNotEmpty() }
 	val needsPhase: Boolean get() = module.enabled && bindings.any { it.phases.isNotEmpty() }
@@ -168,6 +171,7 @@ object KeybindManager {
 
 		if (binding.islands.isNotEmpty() && SkyblockLocation.area !in binding.islands) return false
 		if (binding.floors.isNotEmpty() && floorName() !in binding.floors) return false
+		if (binding.kuudraTiers.isNotEmpty() && KuudraLocation.tier !in binding.kuudraTiers) return false
 		if (binding.classes.isNotEmpty()) {
 			val name = client.player?.name?.string ?: return false
 			if (DungeonTeam.classOf(name) !in binding.classes) return false
@@ -253,6 +257,7 @@ object KeybindManager {
 					floors = loaded.floors.orEmpty().toCollection(linkedSetOf()),
 					classes = loaded.classes.orEmpty().filterNotNull().toCollection(linkedSetOf()),
 					phases = loaded.phases.orEmpty().toCollection(linkedSetOf()),
+					kuudraTiers = loaded.kuudraTiers.orEmpty().toCollection(linkedSetOf()),
 				)
 			}
 			saved.categories.orEmpty().forEach { if (!it.name.isNullOrBlank()) categories += Category(it.name, it.enabled) }

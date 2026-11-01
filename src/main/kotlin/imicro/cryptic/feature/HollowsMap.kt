@@ -30,7 +30,9 @@ import kotlin.math.roundToInt
  * 2. **Said**: a line only said at that place, heard where you stand.
  * 3. **Walked**: the middle of everywhere you've stood in it, by the sidebar; it closes in as you
  * walk, and only overrides the two below after a few samples.
- * 4. **Skyblocker**: read from Skyblocker when installed.
+ * 4. **Skyblocker**: read from Skyblocker when installed. Its shared places only arrive once it
+ * asks for them, which it leaves to its own waypoints; with those off, this asks for it, so the
+ * places come without Skyblocker's waypoints or a second map.
  * 5. **Chat**: coordinates posted next to a place's name; the first post wins.
  *
  * The first two are exact (filled squares on the map); the rest are rings. The map itself is drawn:
@@ -219,6 +221,8 @@ object HollowsMap {
 	private fun resetLobby() {
 		marks.clear()
 		walks.clear()
+		skyblockerSubscribed = false
+		subscribeWait = SUBSCRIBE_WAIT
 	}
 
 	private var initialized = false
@@ -249,7 +253,10 @@ object HollowsMap {
 			val crystal = place.crystal ?: continue
 			NucleusQol.crystalSpaceCenter(crystal)?.let { offer(place, BlockPos.containing(it), Source.CRYSTAL) }
 		}
-		if (fromSkyblocker.value) importSkyblocker()
+		if (fromSkyblocker.value) {
+			subscribeSkyblocker(client)
+			importSkyblocker()
+		}
 		readNametags(client)
 	}
 
@@ -342,6 +349,57 @@ object HollowsMap {
 			Class.forName("de.hysky.skyblocker.skyblock.dwarven.CrystalsLocationsManager")
 				.getDeclaredField("activeWaypoints").apply { isAccessible = true }
 		}.onFailure { Cryptic.LOGGER.info("Skyblocker's Crystal Hollows waypoints could not be read: {}", it.toString()) }.getOrNull()
+	}
+
+	private var skyblockerSubscribed = false
+	private var subscribeWait = SUBSCRIBE_WAIT
+	private var subscribedLevel: Any? = null
+
+	/** Updates (two seconds each) to wait in a lobby, for Skyblocker to learn which server it is. */
+	private const val SUBSCRIBE_WAIT = 3
+
+	private fun skyblockerClass(name: String): Class<*> = Class.forName("de.hysky.skyblocker.$name")
+
+	/** Whether Skyblocker's own waypoints are on, in which case it subscribes by itself. */
+	private fun skyblockerWaypointsOn(): Boolean {
+		val config = skyblockerClass("config.SkyblockerConfigManager").getMethod("get").invoke(null)
+		val mining = config.javaClass.getField("mining").get(config)
+		val waypoints = mining.javaClass.getField("crystalsWaypoints").get(mining)
+		return waypoints.javaClass.getField("enabled").getBoolean(waypoints)
+	}
+
+	/** Asks Skyblocker's socket for the places its users share in this lobby, once a lobby. */
+	private fun subscribeSkyblocker(client: Minecraft) {
+		if (!skyblockerInstalled) return
+		val level = client.level ?: return
+		if (level !== subscribedLevel) {
+			subscribedLevel = level
+			skyblockerSubscribed = false
+			subscribeWait = SUBSCRIBE_WAIT
+		}
+		if (skyblockerSubscribed || subscribeWait-- > 0) return
+		runCatching {
+			val server = skyblockerClass("utils.Utils").getMethod("getServer").invoke(null) as? String
+			if (server.isNullOrEmpty()) return
+			skyblockerSubscribed = true
+			if (skyblockerWaypointsOn()) return
+			val service = skyblockerClass("utils.ws.Service").getField("CRYSTAL_WAYPOINTS").get(null)
+			val message = skyblockerClass("utils.ws.message.CrystalsWaypointSubscribeMessage").methods
+				.first { it.name == "create" }.invoke(null, level)
+			skyblockerClass("utils.ws.WsStateManager").methods.first { it.name == "subscribeServer" }
+				.invoke(null, service, java.util.Optional.of(message))
+		}.onFailure { Cryptic.LOGGER.info("Could not ask Skyblocker for shared Crystal Hollows places: {}", it.toString()) }
+	}
+
+	private val SKYBLOCKER_LINE = Regex("""^\[Skyblocker] Received a waypoint to (.+?) from the Skyblocker WebSocket\.""")
+
+	/** Skyblocker's line for each place it's sent, which a toast replaces. Asked of every chat line. */
+	@JvmStatic
+	fun eatsSkyblockerLine(contents: Component): Boolean {
+		if (!skyblockerInstalled || !NucleusQol.module.enabled || !fromSkyblocker.value) return false
+		val places = SKYBLOCKER_LINE.find(contents.string)?.groupValues?.get(1) ?: return false
+		Toasts.show("Nucleus Features", "Suggested waypoints from Skyblocker: §f$places", color = Toasts.Colors.MINING)
+		return true
 	}
 
 	private fun importSkyblocker() {
@@ -526,7 +584,7 @@ object HollowsMap {
 		"Places this lobby: " + marks.entries.joinToString {
 			"${it.key.title} ${it.value.pos.toShortString()} (${it.value.source.name.lowercase()})"
 		}.ifEmpty { "none" },
-		"Skyblocker installed: $skyblockerInstalled, readable: ${skyblockerWaypoints != null}",
+		"Skyblocker installed: $skyblockerInstalled, readable: ${skyblockerWaypoints != null}, subscribed: $skyblockerSubscribed",
 	)
 
 	private class MapElement : HudElement("hollows_map", "Crystal Hollows Map", 0.74, 0.04) {

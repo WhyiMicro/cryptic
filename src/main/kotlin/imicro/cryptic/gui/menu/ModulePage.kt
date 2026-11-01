@@ -12,6 +12,7 @@ import imicro.cryptic.gui.PanelModuleSetting
 import imicro.cryptic.gui.RangeModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.TabModuleSetting
 import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
@@ -44,6 +45,10 @@ class ModulePage(val module: Module) {
 
 	private var managerScroll = 0f
 	private var settingsScroll = 0f
+
+	/** The module's tabs, if it splits its settings into them, and the one shown. */
+	private val tabs = module.settings.filterIsInstance<TabModuleSetting>()
+	private var tabIndex = 0
 	private sealed class Hit(val box: Box) {
 		class Toggle(box: Box, val setting: ToggleModuleSetting) : Hit(box)
 		class Expand(box: Box, val setting: ModuleSetting) : Hit(box)
@@ -56,7 +61,7 @@ class ModulePage(val module: Module) {
 		class Text(box: Box, val target: Edit) : Hit(box)
 		class ModuleSwitch(box: Box) : Hit(box)
 		class Star(box: Box) : Hit(box)
-		class View(box: Box, val manager: Boolean) : Hit(box)
+		class View(box: Box, val manager: Boolean, val tab: Int) : Hit(box)
 
 		/** A whole row behind its controls: a click on the rest of it. */
 		class Row(box: Box, val setting: ModuleSetting) : Hit(box)
@@ -83,6 +88,7 @@ class ModulePage(val module: Module) {
 	/** Where this module's page was left, this session. */
 	private class Place(
 		val showingManager: Boolean,
+		val tabIndex: Int,
 		val settingsScroll: Float,
 		val managerScroll: Float,
 		val expanded: Set<ModuleSetting>,
@@ -91,6 +97,7 @@ class ModulePage(val module: Module) {
 	init {
 		remembered[module.id]?.let { place ->
 			if (manager != null) showingManager = place.showingManager
+			tabIndex = place.tabIndex.coerceIn(0, maxOf(0, tabs.size - 1))
 			settingsScroll = place.settingsScroll
 			managerScroll = place.managerScroll
 			scrollTarget = if (showingManager) managerScroll else settingsScroll
@@ -109,7 +116,7 @@ class ModulePage(val module: Module) {
 
 	private fun remember(keepExpanded: Boolean) {
 		if (showingManager) managerScroll = scrollTarget else settingsScroll = scrollTarget
-		remembered[module.id] = Place(showingManager, settingsScroll, managerScroll, if (keepExpanded) expanded.toSet() else emptySet())
+		remembered[module.id] = Place(showingManager, tabIndex, settingsScroll, managerScroll, if (keepExpanded) expanded.toSet() else emptySet())
 	}
 
 	private var editing: Edit? = null
@@ -164,7 +171,11 @@ class ModulePage(val module: Module) {
 		}
 		val section = manager
 		if (section != null && (module.supportsKeybind || module.settings.any { it.onCard && it.isVisible() && it !is SlotMapModuleSetting })) {
-			limit = drawViewSwitch(graphics, section.tabLabel, limit, box, mx, my, alpha) - 24f
+			val parts = listOf(Hit.View(Box.NONE, true, 0) to section.tabLabel, Hit.View(Box.NONE, false, 0) to "Settings")
+			limit = drawViewSwitch(graphics, parts, limit, box, mx, my, alpha) - 24f
+		} else if (tabs.size > 1) {
+			val parts = tabs.withIndex().filter { it.value.isVisible() }.map { Hit.View(Box.NONE, false, it.index) to it.value.label }
+			limit = drawViewSwitch(graphics, parts, limit, box, mx, my, alpha) - 24f
 		}
 
 		val nameSize = 19f
@@ -218,8 +229,14 @@ class ModulePage(val module: Module) {
 			first = false
 		}
 
+		val shownTab = tabs.getOrNull(tabIndex)
+		var inTab = shownTab == null
 		for (setting in module.settings) {
-			if (!setting.onCard || !setting.isVisible()) continue
+			if (setting is TabModuleSetting) {
+				inTab = setting === shownTab
+				continue
+			}
+			if (!inTab || !setting.onCard || !setting.isVisible()) continue
 			if (setting is SectionModuleSetting) {
 				y += drawHeading(graphics, setting.label, box.x, y, first, alpha)
 				first = false
@@ -242,22 +259,26 @@ class ModulePage(val module: Module) {
 		scrollbar.draw(graphics, box.right + Scrollbar.GAP, box.y, box.h, contentH, scroll, maxScroll, mx, my, dt, alpha)
 	}
 
-	/** "Aliases | Settings", right-aligned at [right]. Returns its left edge. */
-	private fun drawViewSwitch(graphics: GuiGraphicsExtractor, label: String, right: Float, row: Box, mx: Float, my: Float, alpha: Float): Float {
+	/**
+	 * "Aliases | Settings", or a module's tabs, right-aligned at [right]. Each part is what it
+	 * switches to, with its label. Returns its left edge.
+	 */
+	private fun drawViewSwitch(graphics: GuiGraphicsExtractor, parts: List<Pair<Hit.View, String>>, right: Float, row: Box, mx: Float, my: Float, alpha: Float): Float {
 		val size = 13f
-		val pad = 14f
+		// Many tabs sit closer, to leave the title room.
+		val pad = if (parts.size > 2) 9f else 14f
 		val h = 28f
 		val y = row.y + (row.h - h) / 2f
-		val settingsW = UiText.width("Settings", size, UiText.Face.MEDIUM) + pad * 2f
-		val managerW = UiText.width(label, size, UiText.Face.MEDIUM) + pad * 2f
-		val x = right - settingsW - managerW - 6f
+		val widths = parts.map { UiText.width(it.second, size, UiText.Face.MEDIUM) + pad * 2f }
+		val x = right - widths.sum() - 6f
 		RoundRect.fill(graphics, x, y, right, y + h, fade(MenuStyle.FIELD, alpha), 7f)
 		RoundRect.outline(graphics, x, y, right, y + h, fade(MenuStyle.FIELD_EDGE, alpha), 7f, 1f)
-		val parts = listOf(Triple(label, managerW, true), Triple("Settings", settingsW, false))
 		var cx = x + 3f
-		for ((text, w, isManager) in parts) {
+		for ((index, entry) in parts.withIndex()) {
+			val (target, text) = entry
+			val w = widths[index]
 			val part = Box(cx, y + 3f, w, h - 6f)
-			val chosen = showingManager == isManager
+			val chosen = showingManager == target.manager && (target.manager || target.tab == tabIndex)
 			if (chosen) RoundRect.fill(graphics, part.x, part.y, part.right, part.bottom, fade(MenuStyle.TAB_PILL, alpha), 5f)
 			val color = when {
 				chosen -> MenuStyle.TEXT
@@ -265,7 +286,7 @@ class ModulePage(val module: Module) {
 				else -> MenuStyle.MUTED
 			}
 			UiText.draw(graphics, text, part.x + (part.w - UiText.width(text, size, UiText.Face.MEDIUM)) / 2f, part.y + (part.h - size) / 2f, size, fade(color, alpha), UiText.Face.MEDIUM)
-			hits += Hit.View(part, isManager)
+			hits += Hit.View(part, target.manager, target.tab)
 			cx += w
 		}
 		return x
@@ -415,7 +436,7 @@ class ModulePage(val module: Module) {
 			is ColorModuleSetting -> 26f + 10f + UiText.width(setting.hex, 12f)
 			is TextModuleSetting -> 220f + if (setting.button != null) 88f else 0f
 			is PanelModuleSetting -> setting.note?.let { UiText.width(it, 13f) } ?: 26f
-			is SectionModuleSetting, is SlotMapModuleSetting -> 0f
+			is SectionModuleSetting, is TabModuleSetting, is SlotMapModuleSetting -> 0f
 		}
 		val chevron = if (setting !is PanelModuleSetting && setting.hasVisibleMore()) 36f else 0f
 		return control + chevron
@@ -542,7 +563,7 @@ class ModulePage(val module: Module) {
 				hits += Hit.Expand(row, setting)
 				chevron.x
 			}
-			is SectionModuleSetting, is SlotMapModuleSetting -> right
+			is SectionModuleSetting, is TabModuleSetting, is SlotMapModuleSetting -> right
 		}
 	}
 
@@ -908,6 +929,13 @@ class ModulePage(val module: Module) {
 				scroll = scrollTarget
 				openDropdown = null
 				manager?.ui?.blur()
+			} else if (!hit.manager && hit.tab != tabIndex) {
+				// Each tab is its own list, read from the top.
+				tabIndex = hit.tab
+				scrollTarget = 0f
+				scroll = 0f
+				openDropdown = null
+				openColor = null
 			}
 			is Hit.Expand -> if (!expanded.add(hit.setting)) expanded.remove(hit.setting)
 			// The rest of a toggle's row flips it.

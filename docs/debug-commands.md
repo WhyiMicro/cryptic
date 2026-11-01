@@ -88,15 +88,16 @@ from the thing following you, because plenty of people hide theirs. This says
 whether that row is being found and what it says.
 
 ```
-/cryptic debug carry
+/cryptic debug slayer
 ```
 
-Prints every named armour stand nearby and what the Carry Manager reads as a
-slayer boss — its owner and its tier.
+Prints every named armour stand nearby, each slayer boss Cryptic sees (its
+type, tier, owner and time left) and the slayer mini-bosses.
 
-A boss carries its owner and tier on invisible stands whose entity ids are the
-boss's plus one and plus three. Those offsets are the fragile part of carry
-tracking, and this is what says whether they still hold.
+A boss's name is on the stand whose entity id is the boss's plus one; its
+owner (`<player>'s SLAYER BOSS`) and despawn timer are on the stands just above
+it. Slayer Features and the Carry Manager both go by that owner, so this is what
+says whether it is still being read.
 
 ```
 /cryptic debug location
@@ -175,6 +176,28 @@ measured from, how far away that base is, the last readings, and how many
 spots fit the last still reading from where you stand.
 
 ```
+/cryptic debug bal
+```
+
+The magma cube taken for Bal and the sizes it has been seen at, then each magma
+cube in sight, nearest first: its id, its size now and when first seen, its
+width, where it is and the nameplate over it. Nucleus Features shows Bal's size
+as its growth out of 25, where the fight starts, and hides it once Bal shrinks to
+despawn. A magma cube counts as Bal when its size isn't 3, the size of every Yog.
+
+```
+/cryptic debug keepers
+```
+
+What Nucleus Features knows for its Keeper outlines: whether you're in the Mines
+of Divan, whether Jade is missing, whose tools you hold and whose you've given.
+Then the mines' middle by the Keepers' nameplates and by the Jade space, and where
+each Keeper should stand from it, with its body and every entity near that spot.
+Keepers are NPC players, always at the same place around the middle. A Keeper
+learns where it stands from what it says, so one given its tool before this
+feature is put right by talking to it.
+
+```
 /cryptic debug secret_sync
 ```
 
@@ -236,7 +259,8 @@ places the treasure could be and how many treasure chests it is following —
 then every armour stand, item display and dropped item within 32 blocks: its
 name, and for each item its name, SkyBlock id and model (Hypixel's crystals use
 the model `hypixel_skyblock:item/uncategorized/<crystal>_crystal`), plus the
-start of a head's skull texture.
+start of a head's skull texture. It ends with the kinds of particle sent while
+you've been in the nucleus, which **Hide loot particles** goes by.
 
 No mod Cryptic borrows from finds a crystal before it is picked up, so Nucleus
 QoL looks for one by name, by SkyBlock id and on stands' heads. Standing next to
@@ -382,8 +406,8 @@ between sessions, in `config/cryptic/timings.json`.
 | `py` | 52t | Storm's PY call until the purple pillar should be lowered |
 | `goldor_start` | 64t | Storm dying until terminals can be done |
 | `goldor_core` | 60t | Goldor's repeating cycle |
-| `fire_freeze` | 206t | The Professor's line until Fire Freeze, with its 100-tick cast |
-| `watcher_move` | 400t (20s) | The Watcher's greeting until he moves his first wave on (Blood Camp's kill title) |
+| `fire_freeze` | 160t | The Professor's line until Fire Freeze, with its 100-tick cast |
+| `watcher_move` | 410t (20.5s) | The Watcher's greeting until he moves his first wave on (Blood Camp's kill title) |
 | `livid` | 340t | Livid's greeting until he can be hurt (390 before 0.27.2) |
 
 `lightning` was measured with the log on 2026-10-06, over two runs, and `py`

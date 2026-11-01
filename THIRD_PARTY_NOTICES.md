@@ -30,7 +30,8 @@ Several features are ported from other mods, whose licences travel with them:
   Slot Binds, the Smart Tick Timer, SkyBlock and island detection, the
   starred-mob half of Highlight and part of Render Optimizer. Also the Puzzle
   Solver's eight puzzles and the answer files they read, the Invincibility
-  Timer and its HUD, the cooldown colouring in Gyro Helper, and the shape of
+  Timer and its HUD, the cooldown colouring in Gyro Helper and how it sees a cast from
+  Gravity Storm's particles, Party Kick's UUID mirror, and the shape of
   Mage Beam — the run of particles read as one line between its two ends. The Spirit
   Leap Overlay's menu and its sortings. The Performance HUD and its settings, the
   Terracotta Timer, the Blessing Display, the Spring Boots Helper's table of
@@ -138,11 +139,23 @@ left. What is still theirs is data and artwork, kept as it is:
   positions, and the Croesus Helper's list of drops whose names are not their
   ids (with Odin's); and, as facts only, the pests' head textures for Farming's
   pest tracers, the Wishing Compass solver's zones,
-  what each zone's compass leads to and the Jungle Temple door's offset. Licence in
+  what each zone's compass leads to, the Jungle Temple door's offset, and for
+  Slayer Features each boss's names and health by tier, the mini-bosses' names,
+  the Demonlord's attunement words and colours, the fire pillar's stand text,
+  and the Riftstalker's steak mark and Twinclaws and Mania stands. Licence in
   [`licenses/Skyblocker-LICENSE.txt`](licenses/Skyblocker-LICENSE.txt).
+- **[SkyHanni](https://github.com/hannibal002/SkyHanni)** (LGPL-2.1) — as facts
+  only, for Slayer Features: the Conjoined Brood's egg sac stands (`SHOOT ME!` and
+  its timer), the Atoned Horror's `Boom!` and the Sven's `Calling the pups!`, and
+  which particles a Voidgloom gives off; and for Rift: the Rift time on the action
+  bar, the Enigma Soul lines and Rift Guide menu, the Blood Effigies' sidebar line
+  and stands, the lava messages, the dance room's and the Tubulator's bounds and the
+  dance room's success and failure sounds. No code was taken.
 - **[SkyHanni repository](https://github.com/hannibal002/SkyHanni-REPO)** (MIT,
   Copyright (c) 2022 hannibal2) — the 39 places the Mines of Divan treasure
-  turns up, for Nucleus Features' Metal Detector solver. Licence in
+  turns up, for Nucleus Features' Metal Detector solver; and for Rift
+  (`assets/cryptic/rift/rift.json`), the Enigma Souls, the Blood Effigies, the dance
+  room's steps, and the lava maze's, upside-down parkour's and Tubulator's paths. Licence in
   [`licenses/SkyHanni-REPO-LICENSE.txt`](licenses/SkyHanni-REPO-LICENSE.txt).
 - **[SkyHelper Networth](https://github.com/Altpapier/SkyHelper-Networth)** (MIT,
   Copyright (c) 2022 Altpapier) — the share of its price each applied upgrade

@@ -55,6 +55,7 @@
 		"LevelChunkMixin",
 		"LightmapRenderStateExtractorMixin",
 		"LivingEntityMixin",
+		"LivingEntityRendererMixin",
 		"LocalPlayerAccessor",
 		"LocalPlayerMixin",
 		"MinecraftMixin",

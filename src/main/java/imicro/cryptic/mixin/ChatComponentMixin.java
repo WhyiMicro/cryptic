@@ -30,6 +30,12 @@ public abstract class ChatComponentMixin {
         return focused || imicro.cryptic.feature.BetterChat.peeking();
     }
 
+    /** Skyblocker adds this line itself, so it never passes through the packet hook. */
+    @Inject(method = "addMessage", at = @At("HEAD"), cancellable = true)
+    private void cryptic$eatLine(Component contents, net.minecraft.network.chat.MessageSignature signature, net.minecraft.client.multiplayer.chat.GuiMessageSource source, net.minecraft.client.multiplayer.chat.GuiMessageTag tag, CallbackInfo info) {
+        if (imicro.cryptic.feature.HollowsMap.eatsSkyblockerLine(contents)) info.cancel();
+    }
+
     /** A repeat of a recent line replaces it, with a count. */
     @ModifyVariable(method = "addMessage", at = @At("HEAD"), argsOnly = true, ordinal = 0)
     private Component cryptic$compact(Component contents) {

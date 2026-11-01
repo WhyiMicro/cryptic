@@ -3,7 +3,9 @@ package imicro.cryptic.puzzle
 import imicro.cryptic.feature.PuzzleSolver
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.minecraft.client.Minecraft
+import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.decoration.ArmorStand
+import net.minecraft.world.entity.monster.Blaze
 
 /**
  * Blaze: which blaze to shoot next, sorted by the health on their tags. Lower Blaze goes from
@@ -18,6 +20,16 @@ object BlazeSolver {
 	private val blazes = mutableListOf<ArmorStand>()
 
 	private var lastCount = 10
+
+	/** What Hide blazes leaves undrawn, by entity. Asked per entity per frame. */
+	@Volatile
+	private var hidden: Set<Int> = emptySet()
+
+	/** How far from its nametag a blaze can be. */
+	private const val TAG_REACH = 3.0
+
+	@JvmStatic
+	fun hides(entity: Entity): Boolean = hidden.isNotEmpty() && PuzzleSolver.module.enabled && entity.id in hidden
 
 	/**
 	 * Matches only the essentials (the word Blaze, a fraction, and the heart), since Hypixel
@@ -37,12 +49,16 @@ object BlazeSolver {
 	}
 
 	fun scan() {
-		if (!PuzzleRooms.clearing) return
+		if (!PuzzleRooms.clearing) {
+			hidden = emptySet()
+			return
+		}
 		// Rooms not identified yet are still scanned, so a room whose chunks arrived late isn't
 		// missed.
 		val room = PuzzleRooms.name()
 		if (room != null && room !in ROOMS) {
 			blazes.clear()
+			hidden = emptySet()
 			return
 		}
 		val level = Minecraft.getInstance().level ?: return
@@ -57,6 +73,21 @@ object BlazeSolver {
 		}
 
 		if (room == LOWER) blazes.sortByDescending { health[it] } else blazes.sortBy { health[it] }
+		hidden = if (PuzzleSolver.blazeHide.value) findHidden() else emptySet()
+	}
+
+	/** The tags after the first, and the blazes under them. */
+	private fun findHidden(): Set<Int> {
+		val next = blazes.firstOrNull() ?: return emptySet()
+		val level = Minecraft.getInstance().level ?: return emptySet()
+		val found = HashSet<Int>()
+		blazes.drop(1).forEach { found += it.id }
+		for (entity in level.entitiesForRendering()) {
+			if (entity !is Blaze) continue
+			val tag = blazes.minByOrNull { it.distanceToSqr(entity) } ?: continue
+			if (tag !== next && tag.distanceToSqr(entity) < TAG_REACH * TAG_REACH) found += entity.id
+		}
+		return found
 	}
 
 	fun render(context: LevelRenderContext) {
@@ -134,5 +165,6 @@ object BlazeSolver {
 	fun reset() {
 		blazes.clear()
 		lastCount = 10
+		hidden = emptySet()
 	}
 }

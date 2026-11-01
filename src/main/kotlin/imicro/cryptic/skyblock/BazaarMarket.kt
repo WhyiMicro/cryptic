@@ -221,7 +221,8 @@ object BazaarMarket {
 		upgrades = upgrade
 	}
 
-	private fun get(url: String) = http.sendAsync(
+	/** Fetches [url] off the client thread, as text. */
+	fun get(url: String) = http.sendAsync(
 		HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofSeconds(20))
 			.header("User-Agent", "Cryptic").header("Accept-Encoding", "gzip").GET().build(),
 		HttpResponse.BodyHandlers.ofByteArray(),

@@ -254,15 +254,17 @@ object DungeonStats {
 			return exploration + skill + 100 + bonusScore
 		}
 
-	/** How many more secrets until secrets stop holding the score back. */
-	val missingSecrets: Int
+	/** The secrets the whole run needs before they stop holding the score back. */
+	val neededSecrets: Int
 		get() {
 			val deathPenalty = (deaths * 2 - 1).coerceAtLeast(0)
-			val needed = ceil(
+			return ceil(
 				totalSecrets * DungeonLocation.secretFactor * (40 - bonusWithoutPaul + deathPenalty) / 40f,
 			).toInt()
-			return (needed - secretsFound).coerceAtLeast(0)
 		}
+
+	/** How many more secrets until secrets stop holding the score back. */
+	val missingSecrets: Int get() = (neededSecrets - secretsFound).coerceAtLeast(0)
 
 	private val formattingPattern = Regex("§.")
 	private val timePattern = Regex("""^ Time: ((?:\d+h ?)?(?:\d+m ?)?\d+s)$""")

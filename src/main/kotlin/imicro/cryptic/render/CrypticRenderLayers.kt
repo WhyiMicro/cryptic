@@ -106,7 +106,23 @@ object CrypticRenderLayers {
 	 */
 	@JvmStatic
 	fun drawsOverTerrain(type: RenderType): Boolean =
-		type === FILLED_THROUGH_WALLS || type === LINES_THROUGH_WALLS || type === FILLED_BEHIND || type === LINES_BEHIND
+		geometryOverTerrain || type === FILLED_THROUGH_WALLS || type === LINES_THROUGH_WALLS || type === FILLED_BEHIND || type === LINES_BEHIND
+
+	@JvmStatic
+	var geometryOverTerrain: Boolean = false
+
+	/**
+	 * Depth-tested geometry submitted in [draw] goes after translucent blocks, which would otherwise
+	 * paint over it from behind. Glass or water in front of it then hides it, as they write depth.
+	 */
+	inline fun overTerrain(draw: () -> Unit) {
+		geometryOverTerrain = true
+		try {
+			draw()
+		} finally {
+			geometryOverTerrain = false
+		}
+	}
 
 	/** Set around one text submit that should be read through what's in front of it. */
 	@JvmStatic

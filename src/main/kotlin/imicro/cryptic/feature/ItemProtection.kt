@@ -163,10 +163,10 @@ object ItemProtection {
 	)
 
 	@JvmField
-	val onHotbar = ToggleModuleSetting("on_hotbar", "On the hotbar", true, "Marks protected items on your hotbar too, not only in menus.")
+	val onHotbar = ToggleModuleSetting("on_hotbar", "On the hotbar", true, "Marks protected items on your hotbar too, not only in your inventory.")
 
 	@JvmField
-	val highlight = ToggleModuleSetting("highlight", "Mark protected items", true, "Shows which items are protected, in menus and on the hotbar.")
+	val highlight = ToggleModuleSetting("highlight", "Mark protected items", true, "Shows which of your own items are protected, in your inventory and on the hotbar.")
 		.withMore(style, manualColor, ruleColor, onHotbar)
 
 	@JvmField
@@ -471,6 +471,12 @@ object ItemProtection {
 			STYLE_NONE -> Unit
 			else -> if (over) drawLock(graphics, x - 1, y - 1, solid)
 		}
+	}
+
+	/** A slot of an open menu: your inventory's are marked, a chest's or a menu's own never are. */
+	@JvmStatic
+	fun drawMenuSlot(graphics: GuiGraphicsExtractor, slot: Slot, over: Boolean) {
+		if (slot.container is Inventory) drawSlot(graphics, slot.item, slot.x, slot.y, over, false)
 	}
 
 	private val LOCK = net.minecraft.resources.Identifier.fromNamespaceAndPath("cryptic", "textures/gui/protected_lock.png")

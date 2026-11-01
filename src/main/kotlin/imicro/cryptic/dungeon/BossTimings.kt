@@ -43,10 +43,11 @@ object BossTimings {
 
 		GOLDOR_CORE("goldor_core", 60, "Goldor's repeating cycle"),
 
-		FIRE_FREEZE("fire_freeze", 206, "The Professor's line until Fire Freeze is used, plus its 100-tick cast"),
+		/** Odin's 160 since the minister update. */
+		FIRE_FREEZE("fire_freeze", 160, "The Professor's line until Fire Freeze is used, plus its 100-tick cast"),
 
-		/** A fixed 20 s since the update. */
-		WATCHER_MOVE("watcher_move", 400, "The Watcher's greeting until he moves his first wave on"),
+		/** A fixed 20.5 s (Odin's). */
+		WATCHER_MOVE("watcher_move", 410,"The Watcher's greeting until he moves his first wave on"),
 
 		/** 390 before the update. */
 		LIVID("livid", 340, "Livid's greeting until he can be hurt"),

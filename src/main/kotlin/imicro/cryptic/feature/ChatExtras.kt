@@ -57,18 +57,32 @@ object ChatExtras {
 	var tab = Tab.ALL
 		private set
 
+	/** With the tabs off there's no way back to All, so a tab left open stops filtering. */
+	private val shownTab: Tab get() = if (BetterChat.tabs.value) tab else Tab.ALL
+
 	private var query = ""
 
 	/** All chat from players: optional level, icon and rank, then a name and a colon. */
 	private val PLAYER_LINE = Regex("""^(?:\[\d+]\s)?(?:\S\s)?(?:\[[^\]]+]\s)?\w{2,16}(?:\s\[[^\]]+])?: """)
 
-	private fun tabOf(text: String): Tab = when {
-		text.startsWith("Party > ") || text.startsWith("P > ") -> Tab.PARTY
-		text.startsWith("Guild > ") || text.startsWith("G > ") || text.startsWith("Officer > ") -> Tab.GUILD
-		text.startsWith("Co-op > ") -> Tab.COOP
-		text.startsWith("From ") || text.startsWith("To ") -> Tab.PM
-		PLAYER_LINE.containsMatchIn(text) -> Tab.USER
-		else -> Tab.ALL
+	/** NPCs, bosses and the trivia statues talk like players, under a tag no rank uses. */
+	private val NOT_A_PLAYER = Regex("""^\[(?:NPC|BOSS|STATUE|SkyHanni|Skyblocker|Cryptic)]""", RegexOption.IGNORE_CASE)
+
+	/** Hypixel's own party lines: joins, leaves, invites, promotions, transfers, the list. */
+	private val PARTY_WORD = Regex("""\bparty\b""", RegexOption.IGNORE_CASE)
+
+	private fun tabOf(full: String): Tab {
+		// Party and friend notices come between two rules of dashes; the first line under them counts.
+		val text = if (full.contains('\n')) full.lineSequence().dropWhile { it.isBlank() || isRule(it) }.joinToString("\n").trimStart() else full
+		return when {
+			text.startsWith("Party > ") || text.startsWith("P > ") -> Tab.PARTY
+			text.startsWith("Guild > ") || text.startsWith("G > ") || text.startsWith("Officer > ") -> Tab.GUILD
+			text.startsWith("Co-op > ") -> Tab.COOP
+			text.startsWith("From ") || text.startsWith("To ") -> Tab.PM
+			PLAYER_LINE.containsMatchIn(text) && !NOT_A_PLAYER.containsMatchIn(text) -> Tab.USER
+			PARTY_WORD.containsMatchIn(text) -> Tab.PARTY
+			else -> Tab.ALL
+		}
 	}
 
 	private fun isGuild(text: String) = text.startsWith("Guild > ") || text.startsWith("G > ")
@@ -78,9 +92,9 @@ object ChatExtras {
 	fun hides(message: GuiMessage): Boolean {
 		if (!BetterChat.module.enabled) return false
 		val text = plain(message.content())
-		if (BetterChat.hideGuild.value && isGuild(text) && tab != Tab.GUILD) return true
+		if (BetterChat.hideGuild.value && isGuild(text) && shownTab != Tab.GUILD) return true
 		// Hypixel's channels; elsewhere the tab is kept but doesn't filter.
-		if (tab != Tab.ALL && HypixelServer.connected && tabOf(text) != tab) return true
+		if (shownTab != Tab.ALL && HypixelServer.connected && tabOf(text) != shownTab) return true
 		if (query.isNotBlank()) {
 			val lower = text.lowercase()
 			if (query.lowercase().split(' ').filter { it.isNotEmpty() }.any { it !in lower }) return true
@@ -92,9 +106,11 @@ object ChatExtras {
 	private var applied: Triple<Boolean, Tab, String>? = null
 
 	private fun refreshIfChanged() {
-		val now = Triple(BetterChat.module.enabled && BetterChat.hideGuild.value, tab, query)
+		val now = Triple(BetterChat.module.enabled && BetterChat.hideGuild.value, shownTab, query)
 		if (now == applied) return
 		applied = now
+		// A tab's lines are already there; only lines that arrive slide in.
+		slideFrom = 0f
 		(client.gui.hud.chat as ChatComponentAccessor).`cryptic$refresh`()
 	}
 
@@ -212,16 +228,10 @@ object ChatExtras {
 			false
 		}
 		ScreenMouseEvents.allowMouseClick(screen).register { _, event -> mouseClicked(screen, event.x(), event.y(), event.button()) }
-		openedAt = System.nanoTime()
 		ScreenEvents.beforeExtract(screen).register { _, graphics, mouseX, mouseY, _ ->
-			screenSlide = inputSlide()
-			graphics.pose().pushMatrix()
-			graphics.pose().translate(0f, screenSlide)
 			drawBar(graphics, mouseX, mouseY)
 		}
 		ScreenEvents.afterExtract(screen).register { _, graphics, mouseX, mouseY, _ ->
-			graphics.pose().popMatrix()
-			screenSlide = 0f
 			drawSeparators(graphics, screen.height, mouseX, mouseY)
 			drawMenu(graphics, mouseX, mouseY)
 		}
@@ -260,24 +270,9 @@ object ChatExtras {
 
 	// ---- Animation ----------------------------------------------------------
 
-	private var openedAt = 0L
-
-	/** The rise applied to the whole chat screen this frame, which the messages take back off. */
-	private var screenSlide = 0f
-
-	/** How far the chat box and bar still have to rise after the chat opened. */
-	private fun inputSlide(): Float {
-		if (!BetterChat.animate.value) return 0f
-		val t = ((System.nanoTime() - openedAt) / 1_000_000f / BetterChat.animationTime.value.toFloat()).coerceIn(0f, 1f)
-		return INPUT_SLIDE * (1f - easeOut(t))
-	}
-
-	private const val INPUT_SLIDE = 14f
-
 	private fun easeOut(t: Float): Float = 1f - (1f - t) * (1f - t) * (1f - t)
 
 	/** The height still to rise for lines that just arrived, in chat lines. */
-	private var slideLines = 0f
 	private var slideFrom = 0f
 	private var slideStartedAt = 0L
 
@@ -314,12 +309,10 @@ object ChatExtras {
 	@JvmStatic
 	fun chatSlide(): Float {
 		if (!BetterChat.module.enabled || !BetterChat.animate.value) return 0f
-		// Opening the chat lifts only the box and tabs; the messages stay where they were.
-		val opening = -screenSlide
 		val chat = client.gui.hud.chat as ChatComponentAccessor
-		if (chat.`cryptic$scroll`() != 0) return opening
+		if (chat.`cryptic$scroll`() != 0) return 0f
 		val entryHeight = (9 * (client.options.chatLineSpacing().get() + 1.0)).toFloat()
-		return opening + currentSlide(System.nanoTime()) * entryHeight
+		return currentSlide(System.nanoTime()) * entryHeight
 	}
 
 	// ---- Separators ---------------------------------------------------------

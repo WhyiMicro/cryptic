@@ -41,6 +41,8 @@ object TpMazeSolver {
 
 	private var best: BlockPos? = null
 
+	private var turnPending = false
+
 	fun onRoomEnter(room: DungeonRoom) {
 		reset()
 		pads = emptyList()
@@ -82,6 +84,18 @@ object TpMazeSolver {
 
 		narrow(landing, packet.change.yRot, packet.change.xRot)
 		choose(landing, packet.change.yRot, to)
+		turnPending = best != null && PuzzleSolver.mazeAutoRotate.value
+	}
+
+	/** After the landing is applied, so the server's rotation doesn't land over the turn. */
+	fun afterTeleport() {
+		if (!turnPending) return
+		turnPending = false
+		val target = best ?: return
+		val player = Minecraft.getInstance().player ?: return
+		val yaw = Math.toDegrees(atan2(target.z + 0.5 - player.z, target.x + 0.5 - player.x)).toFloat() - 90f
+		player.yRot = yaw
+		player.yRotO = yaw
 	}
 
 	/**
@@ -139,7 +153,8 @@ object TpMazeSolver {
 	/**
 	 * Picks the pad to step onto from the four in the landing room. Never a used one (either
 	 * direction), unless all four are used. Prefers a remaining candidate, otherwise the one
-	 * nearest your facing. Landing on the entrance pair means you've left the maze.
+	 * nearest your facing among those in the chosen direction. Landing on the entrance pair means
+	 * you've left the maze.
 	 */
 	private fun choose(from: Vec3, yaw: Float, landedOn: BlockPos?) {
 		val index = pads.indexOf(landedOn ?: return)
@@ -159,8 +174,16 @@ object TpMazeSolver {
 			.ifEmpty { others.filter { it !in taken } }
 			.ifEmpty { others }
 
+		// Rotation keeps the grid square, so pads in line share an x or a z in world coordinates too.
+		val here = pads[index]
+		val ordered = when (PuzzleSolver.mazeOrder.selectedIndex) {
+			ORDER_STRAIGHT -> pool.filter { it.x == here.x || it.z == here.z }
+			ORDER_DIAGONAL -> pool.filter { it.x != here.x && it.z != here.z }
+			else -> pool
+		}.ifEmpty { pool }
+
 		best = pool.firstOrNull { it in candidates }
-			?: pool.minByOrNull { pad ->
+			?: ordered.minByOrNull { pad ->
 				val towards = Math.toDegrees(atan2(pad.z + 0.5 - from.z, pad.x + 0.5 - from.x)).toFloat() - 90f
 				abs(Mth.wrapDegrees(towards) - Mth.wrapDegrees(yaw)).toDouble()
 			}
@@ -213,10 +236,15 @@ object TpMazeSolver {
 		visited.clear()
 		taken.clear()
 		best = null
+		turnPending = false
 	}
 
 
 	private const val SIGHT = 32.0
+
+	private const val ORDER_STRAIGHT = 1
+
+	private const val ORDER_DIAGONAL = 2
 
 	private const val FLAT = 1e-8
 

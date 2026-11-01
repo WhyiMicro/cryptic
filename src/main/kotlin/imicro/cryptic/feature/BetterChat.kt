@@ -70,7 +70,7 @@ object BetterChat {
 		id = "animate",
 		label = "Animate",
 		defaultValue = true,
-		description = "New lines slide up into place, and the chat box eases in when you open chat.",
+		description = "New lines slide up into place.",
 	)
 
 	@JvmField
@@ -181,7 +181,7 @@ object BetterChat {
 		id = "abbreviate",
 		label = "Abbreviate channels",
 		defaultValue = false,
-		description = "Shows \"Party >\" as \"P >\" and \"Guild >\" as \"G >\".",
+		description = "Shows \"Party >\" as \"P >\" and \"Guild >\" as \"G >\", and the current chat display as \"P: \".",
 	)
 
 	@JvmField

@@ -126,8 +126,13 @@ object CurrentChat {
 	private fun prefix(screen: ChatScreen): String? {
 		if (!BetterChat.module.enabled || !enabled.value || !HypixelServer.connected) return null
 		val value = (screen as ChatScreenAccessor).`cryptic$input`().value
-		return if (value.startsWith("/")) null else "$channel: "
+		if (value.startsWith("/")) return null
+		val name = if (BetterChat.abbreviate.value) SHORT[channel] ?: channel else channel
+		return "$name: "
 	}
+
+	/** Hypixel's short names, as Abbreviate channels writes them in chat. */
+	private val SHORT = mapOf("All" to "A", "Party" to "P", "Guild" to "G", "Officer" to "O")
 
 	/** Moves the input along to make room for the prefix, and back when there's none. */
 	private fun place(screen: ChatScreen) {

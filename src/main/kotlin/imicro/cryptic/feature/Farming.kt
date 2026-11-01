@@ -1,11 +1,14 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.debug.DebugOverrides
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.Restriction
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
+import imicro.cryptic.hud.Hud
+import imicro.cryptic.hud.HudElement
 import imicro.cryptic.mixin.ContainerScreenAccessor
 import imicro.cryptic.render.WorldRender
 import imicro.cryptic.skyblock.ItemRarity
@@ -32,8 +35,8 @@ import java.util.Base64
 import java.util.Locale
 
 /**
- * The Garden: what your visitors want and what you're short of, the pest a vacuum points at, and
- * lines to the pests in sight.
+ * The Garden: what your visitors want and what you're short of, the pest a vacuum points at, lines
+ * to the pests in sight, when pests can spawn next, and keeping your spot while you hunt them.
  */
 object Farming {
 	private val visitorsSection = SectionModuleSetting("visitors_section", "Visitors")
@@ -80,13 +83,32 @@ object Farming {
 	)
 
 	@JvmField
+	val pestCooldownHud = ToggleModuleSetting(
+		"pest_cooldown_hud", "Cooldown HUD", false,
+		"A HUD element counting down to when pests can spawn again. Place it in the HUD editor.",
+	)
+
+	@JvmField
+	val pestCooldown = ToggleModuleSetting(
+		"pest_cooldown", "Pest cooldown", false,
+		"A toast when pests can spawn again. Read from the tab list, so Hypixel's Pests widget has to be on (/widget).",
+	).withMore(pestCooldownHud)
+
+	@JvmField
+	val autoSetspawn = ToggleModuleSetting(
+		"auto_setspawn", "Auto setspawn", false,
+		"A second after pests spawn, sets your spawn where you stand; when the last one dies, warps you back to it. Needs the Pests widget too.",
+		restriction = Restriction.SEMI_LEGIT,
+	)
+
+	@JvmField
 	val module = Module(
 		id = "farming",
 		name = "Farming",
 		description = "Visitors, vacuum and pests",
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
-		settings = listOf(visitorsSection, visitorList, visitorPresets, toolsSection, mousematPresets, pestsSection, vacuumSolver, pestTracers),
+		settings = listOf(visitorsSection, visitorList, visitorPresets, toolsSection, mousematPresets, pestsSection, vacuumSolver, pestTracers, pestCooldown, autoSetspawn),
 	)
 
 	private val client: Minecraft get() = Minecraft.getInstance()
@@ -100,6 +122,7 @@ object Farming {
 		if (initialized) return
 		initialized = true
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
+		Hud.register(PestCooldownElement())
 	}
 
 	private var level: ClientLevel? = null
@@ -123,6 +146,7 @@ object Farming {
 			pests = if (pestTracers.value && inGarden) findPests() else emptyList()
 		}
 		tickGuess()
+		tickPests()
 	}
 
 	// ---- Visitors -----------------------------------------------------------------------------
@@ -436,7 +460,15 @@ object Farming {
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay || !module.enabled) return
-		if (message.string.replace(FORMATTING, "").trim() == "There are not any Pests on your Garden right now! Keep farming!") clearGuess()
+		val text = message.string.replace(FORMATTING, "").trim()
+		if (text == "There are not any Pests on your Garden right now! Keep farming!") clearGuess()
+		// A pest spawning mid-hunt is the same hunt: your spot is already saved.
+		if (autoSetspawn.value && inGarden && huntingSince == 0L && PEST_SPAWNED.containsMatchIn(text)) {
+			val now = System.currentTimeMillis()
+			huntingSince = now
+			setspawnAt = now + SETSPAWN_DELAY_MILLIS
+			pestsSeen = false
+		}
 	}
 
 	// ---- Pests --------------------------------------------------------------------------------
@@ -482,6 +514,146 @@ object Farming {
 					?.let { TEXTURE_HASH.find(it)?.groupValues?.get(1) } in PEST_TEXTURES
 			}
 			if (pest) stand.eyePosition else null
+		}
+	}
+
+	// ---- Pest cooldown ------------------------------------------------------------------------
+
+	private enum class PestTimer { UNKNOWN, RUNNING, READY, MAX }
+
+	/** The tab list's Pests widget, as Hypixel writes it. */
+	private val COOLDOWN_ROW = Regex("""^Cooldown: (?:(READY)|(MAX PESTS)|(?:(\d+)m)? ?(?:(\d+)s)?)""")
+	private val ALIVE_ROW = Regex("""^Alive: (\d+)""")
+
+	/** "GROSS! A Pest has appeared in Plot - 9!", or "2 Pests have spawned in"; not the offline summary. */
+	private val PEST_SPAWNED = Regex("""\bPests? ha(?:s|ve) (?:appeared|spawned) in Plot""")
+
+	private const val WIDGET_TICKS = 10
+
+	/** The widget's seconds tick unevenly, so the count only follows it when it's this far out. */
+	private const val COOLDOWN_DRIFT_MILLIS = 2_000L
+
+	/** Only a cooldown longer than this is a new one, rather than the last's final seconds. */
+	private const val NEW_COOLDOWN_SECONDS = 5L
+	private const val SETSPAWN_DELAY_MILLIS = 1_000L
+
+	/** Given up after this, for when the widget is off and the last pest can't be told. */
+	private const val HUNT_MILLIS = 15 * 60 * 1000L
+
+	private var pestTimer = PestTimer.UNKNOWN
+	private var cooldownEnds = 0L
+	private var cooldownToasted = true
+	private var pestsAlive: Int? = null
+
+	private var setspawnAt = 0L
+	private var huntingSince = 0L
+	private var pestsSeen = false
+
+	private fun readPestWidget(now: Long) {
+		var cooldown: MatchResult? = null
+		var alive: Int? = null
+		for (info in client.connection?.onlinePlayers.orEmpty()) {
+			val row = info.tabListDisplayName?.string?.replace(FORMATTING, "")?.trim() ?: continue
+			COOLDOWN_ROW.find(row)?.let { cooldown = it }
+			ALIVE_ROW.find(row)?.let { alive = it.groupValues[1].toInt() }
+		}
+		pestsAlive = alive
+		val row = cooldown
+		if (row == null) {
+			pestTimer = PestTimer.UNKNOWN
+			return
+		}
+		val (ready, max, minutes, seconds) = row.destructured
+		when {
+			ready.isNotEmpty() -> pestTimer = PestTimer.READY
+			max.isNotEmpty() -> {
+				pestTimer = PestTimer.MAX
+				cooldownToasted = true
+			}
+			minutes.isNotEmpty() || seconds.isNotEmpty() -> {
+				val left = minutes.ifEmpty { "0" }.toLong() * 60 + seconds.ifEmpty { "0" }.toLong()
+				val ends = now + left * 1000
+				if (pestTimer != PestTimer.RUNNING || kotlin.math.abs(ends - cooldownEnds) > COOLDOWN_DRIFT_MILLIS) cooldownEnds = ends
+				pestTimer = PestTimer.RUNNING
+				if (left > NEW_COOLDOWN_SECONDS) cooldownToasted = false
+			}
+		}
+	}
+
+	private fun tickPests() {
+		if (!pestCooldown.value && !autoSetspawn.value) return
+		val now = System.currentTimeMillis()
+		if (inGarden) {
+			if (ticks % WIDGET_TICKS == 0) readPestWidget(now)
+		} else {
+			setspawnAt = 0L
+			huntingSince = 0L
+		}
+
+		val over = pestTimer == PestTimer.READY || (pestTimer == PestTimer.RUNNING && now >= cooldownEnds)
+		if (over && !cooldownToasted) {
+			cooldownToasted = true
+			if (pestCooldown.value) Toasts.show("Pests", "Pest cooldown is over")
+		}
+
+		if (!autoSetspawn.value) {
+			setspawnAt = 0L
+			huntingSince = 0L
+			return
+		}
+		if (setspawnAt != 0L && now >= setspawnAt) {
+			setspawnAt = 0L
+			command("setspawn")
+		}
+		if (huntingSince == 0L) return
+		val alive = pestsAlive
+		if (alive != null && alive > 0) pestsSeen = true
+		when {
+			now - huntingSince > HUNT_MILLIS -> huntingSince = 0L
+			pestsSeen && alive == 0 -> {
+				huntingSince = 0L
+				command("warp garden")
+			}
+		}
+	}
+
+	private fun command(line: String) {
+		if (DebugOverrides.previewPartyCommands) {
+			client.gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §7Would send: §f/$line"))
+			return
+		}
+		client.connection?.sendCommand(line)
+	}
+
+	private fun cooldownText(): String {
+		val left = (cooldownEnds - System.currentTimeMillis()) / 1000
+		return when {
+			pestTimer == PestTimer.UNKNOWN -> "§cNo Pests widget"
+			pestTimer == PestTimer.MAX -> "§cMax pests"
+			pestTimer == PestTimer.READY || left <= 0 -> "§aReady"
+			left >= 60 -> "§e${left / 60}m ${left % 60}s"
+			else -> "§e${left}s"
+		}
+	}
+
+	private const val COOLDOWN_LABEL = "§6Pest cooldown: "
+
+	private class PestCooldownElement : HudElement("pest_cooldown", "Pest Cooldown", 0.02, 0.42) {
+		private val font get() = Minecraft.getInstance().font
+
+		override val width: Int get() = font.width(COOLDOWN_LABEL + "§e2m 59s")
+		override val height: Int get() = font.lineHeight
+
+		override fun isVisible(): Boolean = showInEditor() && inGarden
+
+		override fun showInEditor(): Boolean = module.enabled && pestCooldown.value && pestCooldownHud.value
+
+		override fun render(context: GuiGraphicsExtractor) {
+			context.text(font, COOLDOWN_LABEL + cooldownText(), 0, 0, -1)
+		}
+
+		override fun renderExample(context: GuiGraphicsExtractor) {
+			context.text(font, COOLDOWN_LABEL + "§e2m 59s", 0, 0, -1)
 		}
 	}
 

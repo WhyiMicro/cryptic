@@ -44,7 +44,7 @@ public abstract class MultiPlayerGameModeMixin {
 
     @Inject(method = "useItemOn", at = @At("HEAD"))
     private void cryptic$noteSecretClick(LocalPlayer player, InteractionHand hand, BlockHitResult hit, CallbackInfoReturnable<?> info) {
-        if (hand == InteractionHand.MAIN_HAND) imicro.cryptic.feature.SlayerFeatures.onItemUsed(player.getMainHandItem());
+        if (hand == InteractionHand.MAIN_HAND) cryptic$noteUsed(player);
         Secrets.onBlockUsed(hit.getBlockPos());
         DungeonWaypoints.onBlockUsed(hit.getBlockPos());
         PuzzleSolver.onBlockUsed(hit.getBlockPos());
@@ -53,7 +53,12 @@ public abstract class MultiPlayerGameModeMixin {
     /** A right click in the air, for item abilities. */
     @Inject(method = "useItem", at = @At("HEAD"))
     private void cryptic$noteItemUse(Player player, InteractionHand hand, CallbackInfoReturnable<?> info) {
-        if (hand == InteractionHand.MAIN_HAND) imicro.cryptic.feature.SlayerFeatures.onItemUsed(player.getMainHandItem());
+        if (hand == InteractionHand.MAIN_HAND) cryptic$noteUsed(player);
+    }
+
+    private void cryptic$noteUsed(Player player) {
+        imicro.cryptic.feature.SlayerFeatures.onItemUsed(player.getMainHandItem());
+        imicro.cryptic.feature.SpiritLeapOverlay.onItemUsed(player.getMainHandItem());
     }
 
     /** A terminal's stand being clicked, which Terminal ESP flashes. */
@@ -75,6 +80,7 @@ public abstract class MultiPlayerGameModeMixin {
 
     @Inject(method = "attack", at = @At("HEAD"))
     private void cryptic$noteEntityAttack(Player player, Entity entity, CallbackInfo info) {
+        imicro.cryptic.feature.SlayerFeatures.beforeAttack(player, entity);
         TerminalEsp.onClicked(entity);
     }
 }

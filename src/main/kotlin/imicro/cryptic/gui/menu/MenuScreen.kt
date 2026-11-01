@@ -548,6 +548,13 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 
 	override fun init() {
 		super.init()
+		pendingSearch?.let { query ->
+			pendingSearch = null
+			page = null
+			showingSettings = false
+			search.set(query)
+			return
+		}
 		if (ClickGui.rememberSearch.value && search.isEmpty && ClickGui.rememberedSearch.isNotEmpty()) search.set(ClickGui.rememberedSearch)
 	}
 
@@ -603,6 +610,14 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		}
 
 		private var openOnSettings = false
+
+		/** A search to open on, from "/cryptic <words>"; it replaces whatever page was open. */
+		private var pendingSearch: String? = null
+
+		fun requestSearch(query: String) {
+			pendingSearch = query.trim()
+			requested = true
+		}
 
 		fun openIfRequested(client: net.minecraft.client.Minecraft) {
 			if (!requested) return

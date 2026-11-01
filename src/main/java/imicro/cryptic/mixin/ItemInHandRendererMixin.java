@@ -187,7 +187,11 @@ public abstract class ItemInHandRendererMixin {
     ) {
         boolean right = displayContext == net.minecraft.world.item.ItemDisplayContext.FIRST_PERSON_RIGHT_HAND;
         if (!right && displayContext != net.minecraft.world.item.ItemDisplayContext.FIRST_PERSON_LEFT_HAND) return;
-        if (livingEntity != Minecraft.getInstance().player || itemStack != livingEntity.getMainHandItem()) return;
+        if (livingEntity != Minecraft.getInstance().player) return;
+        // By side, not by stack: when Hypixel resends the held item (an ability's cooldown), the
+        // hand draws the old stack until the next tick, and the overlay would drop for it.
+        boolean mainRight = livingEntity.getMainArm() == net.minecraft.world.entity.HumanoidArm.RIGHT;
+        if (right != mainRight) return;
         imicro.cryptic.feature.ItemOutline.captureHandPose(poseStack.last().pose(), right, itemStack, displayContext);
     }
 

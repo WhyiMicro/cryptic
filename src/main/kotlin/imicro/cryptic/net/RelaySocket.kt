@@ -1,5 +1,6 @@
 package imicro.cryptic.net
 
+import imicro.cryptic.Cryptic
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.WebSocket
@@ -9,6 +10,7 @@ import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
 import java.util.concurrent.atomic.AtomicReference
+import net.fabricmc.loader.api.FabricLoader
 import org.slf4j.LoggerFactory
 
 /**
@@ -79,6 +81,8 @@ class RelaySocket(private val onMessage: (String) -> Unit) {
 
 		try {
 			client.newWebSocketBuilder()
+				// Odin's own client sends its version here, so the relay can tell clients apart.
+				.header("X-Mod-Version", version)
 				.buildAsync(URI.create(url), listener)
 				.exceptionally { error ->
 					logger.warn("Could not reach {}: {}", url, error.message)
@@ -106,6 +110,11 @@ class RelaySocket(private val onMessage: (String) -> Unit) {
 	fun shutdown() {
 		connecting = false
 		socket.getAndSet(null)?.sendClose(WebSocket.NORMAL_CLOSURE, "Client shutdown")
+	}
+
+	private val version: String by lazy {
+		FabricLoader.getInstance().getModContainer(Cryptic.MOD_ID)
+			.map { it.metadata.version.friendlyString }.orElse("0.0.0")
 	}
 
 	private fun deliver(message: String) {

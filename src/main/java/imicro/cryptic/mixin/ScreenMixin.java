@@ -53,6 +53,7 @@ public abstract class ScreenMixin {
         CroesusHelper.renderOverlay((Screen) (Object) this, graphics, mouseX, mouseY);
         imicro.cryptic.feature.Bazaar.renderOverlay((Screen) (Object) this, graphics);
         imicro.cryptic.feature.BazaarPresets.render((Screen) (Object) this, graphics, mouseX, mouseY);
+        imicro.cryptic.feature.BazaarHistory.render((Screen) (Object) this, graphics, mouseX, mouseY);
         imicro.cryptic.feature.Farming.renderList((Screen) (Object) this, graphics, mouseX, mouseY);
         imicro.cryptic.feature.Farming.renderMousemat((Screen) (Object) this, graphics, mouseX, mouseY);
     }

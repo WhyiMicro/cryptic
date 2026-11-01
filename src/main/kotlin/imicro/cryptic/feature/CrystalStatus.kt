@@ -13,7 +13,7 @@ import net.minecraft.network.chat.Component
 /**
  * Which of the five crystals are still to be placed in the Crystal Nucleus, from the tab list's
  * Crystals widget ("Jade: ✖ Not Found", "Topaz: ✔ Placed"). Shown on its own or under the Crystal
- * Hollows map. A crystal leaves once placed.
+ * Hollows map. A crystal leaves once placed. Chat's found and placed lines update it at once.
  */
 object CrystalStatus {
 	enum class State { NOT_FOUND, FOUND, PLACED }
@@ -64,7 +64,45 @@ object CrystalStatus {
 	private val ROW = Regex("""^(Jade|Amber|Amethyst|Sapphire|Topaz): (.+)$""")
 	private val FORMATTING = Regex("§.")
 
+	private val FOUND_NAME = Regex("""^(Jade|Amber|Amethyst|Sapphire|Topaz) Crystal$""")
+	private val PLACED_LINE = Regex("""^✦ You placed the (Jade|Amber|Amethyst|Sapphire|Topaz) Crystal!$""")
+
 	private var states: Map<Crystal, State> = emptyMap()
+
+	/** What chat said and when: the tab list can lag it by seconds, and isn't believed until it agrees. */
+	private val told = HashMap<Crystal, Pair<State, Long>>()
+
+	/** The line after "CRYSTAL FOUND" names the crystal, arriving in the same moment. */
+	private var foundLineAt = 0L
+
+	private const val FOUND_NAME_MS = 1_000L
+	private const val TOLD_MS = 30_000L
+
+	/** Chat lines, with formatting stripped and trimmed. */
+	fun onChat(text: String) {
+		val now = System.currentTimeMillis()
+		if (text.contains("CRYSTAL FOUND")) {
+			foundLineAt = now
+			return
+		}
+		// The run is over and every crystal is due back, so what chat said no longer holds.
+		if (text == "CRYSTAL NUCLEUS LOOT BUNDLE") {
+			told.clear()
+			return
+		}
+		PLACED_LINE.matchEntire(text)?.let {
+			tell(it.groupValues[1], State.PLACED, now)
+			return
+		}
+		if (now - foundLineAt > FOUND_NAME_MS) return
+		FOUND_NAME.matchEntire(text)?.let { tell(it.groupValues[1], State.FOUND, now) }
+	}
+
+	private fun tell(title: String, state: State, now: Long) {
+		val crystal = Crystal.entries.first { it.title == title }
+		told[crystal] = state to now
+		if (crystal in states) states = states + (crystal to state)
+	}
 
 	/** What the tab list says of [crystal], or null while the Crystals widget isn't shown. */
 	fun stateOf(crystal: Crystal): State? = states[crystal]
@@ -103,6 +141,9 @@ object CrystalStatus {
 			}
 		}
 		widgetShown = heading || read.isNotEmpty()
+		val now = System.currentTimeMillis()
+		told.entries.removeIf { (crystal, said) -> read[crystal] == said.first || now - said.second > TOLD_MS }
+		for ((crystal, said) in told) if (crystal in read) read[crystal] = said.first
 		states = read
 	}
 

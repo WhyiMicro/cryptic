@@ -9,10 +9,16 @@ import imicro.cryptic.dungeon.DungeonTeam
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+import net.minecraft.core.component.DataComponents
+import net.minecraft.nbt.NbtAccounter
+import net.minecraft.nbt.NbtIo
 import net.minecraft.network.chat.Component
+import java.io.ByteArrayInputStream
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
@@ -20,17 +26,22 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Party Finder's checks on who joins: Odin's auto kick (S+ time, secrets, magical power, API), the
- * [PartyBlacklist], and NoFrills' duplicate class alert before a run starts.
+ * Party Finder's checks on who joins: Odin's auto kick (S+ time, secrets, magical power, API), a
+ * check for armor that slows Master Mode 5's boss, the [PartyBlacklist], and NoFrills' duplicate
+ * class alert before a run starts.
  *
  * Profiles come from Odin's Hypixel API proxy, which needs no key; only the joiner's UUID is sent.
  */
 object PartyKick {
+	private const val PLAYER_TOKEN = "<player>"
+	private const val M5_MESSAGE = "$PLAYER_TOKEN please take off thorns and/or reflection from your armor as this slows down the boss"
+
 	private val kickSection = SectionModuleSetting("auto_kick_section", "Auto kick")
 
 	@JvmField
@@ -109,6 +120,28 @@ object PartyKick {
 		visibleIf = { autoKick.value },
 	)
 
+	private val m5Section = SectionModuleSetting("m5_kick_section", "Master Mode 5")
+
+	@JvmField
+	val m5Armor = ToggleModuleSetting(
+		id = "kick_m5_armor",
+		label = "Kick thorns and reflection",
+		defaultValue = false,
+		description = "While your party is listed for Master Mode 5, kicks a player from the party finder whose worn armor has Thorns or " +
+			"Reflection, saying why first. Read through the same API as Auto kick, so it can lag behind what they just changed.",
+	)
+
+	@JvmField
+	val m5Message = TextModuleSetting(
+		id = "kick_m5_message",
+		label = "Message",
+		defaultValue = M5_MESSAGE,
+		maxLength = 200,
+		hint = M5_MESSAGE,
+		description = "$PLAYER_TOKEN becomes who is being kicked.",
+		visibleIf = { m5Armor.value },
+	)
+
 	private val alertSection = SectionModuleSetting("party_alert_section", "Alerts")
 
 	@JvmField
@@ -121,6 +154,7 @@ object PartyKick {
 
 	val settings = listOf(
 		kickSection, autoKick.withMore(floor, master, slowestTime, minSecrets, minMagicalPower, apiOff, inform, remember),
+		m5Section, m5Armor.withMore(m5Message),
 		alertSection, dupeClass,
 	)
 
@@ -133,6 +167,15 @@ object PartyKick {
 	private val partyJoined = Regex("""^(?:\[[^\]]+] )?(\w{1,16}) joined the party\.$""")
 	private val FORMATTING = Regex("§.")
 
+	private const val QUEUED = "Party Finder > Your party has been queued in the dungeon finder!"
+	private val DELISTED = setOf("Party Finder > Your group has been de-listed!", "Party Finder > Your group has been removed from the party finder!")
+
+	/** Whether the Group Builder last showed Master Mode 5, and so whether your listing is for it. */
+	private var builderM5 = false
+	private var listedM5 = false
+
+	private val ARMOR_ENCHANTS = setOf("thorns", "reflection")
+
 	/** Names kicked this session, lower case. */
 	private val kicked = HashSet<String>()
 
@@ -143,6 +186,8 @@ object PartyKick {
 			for (raw in message.string.split('\n')) {
 				val line = raw.replace(FORMATTING, "").trim()
 				readClass(line)
+				if (line.startsWith(QUEUED)) listedM5 = builderM5
+				if (DELISTED.any { line.startsWith(it) }) listedM5 = false
 				finderJoined.find(line)?.let { onJoined(it.groupValues[1], fromFinder = true) }
 					?: partyJoined.find(line)?.let { onJoined(it.groupValues[1], fromFinder = false) }
 			}
@@ -157,22 +202,77 @@ object PartyKick {
 			PartyBlacklist.onJoined(name)
 			return
 		}
-		if (!enabled || !autoKick.value || !fromFinder || !PartyFeatures.mayLeadParty()) return
-		if (remember.value && name.lowercase(Locale.ROOT) in kicked) {
+		val general = autoKick.value
+		val armor = m5Armor.value && listedM5
+		if (!enabled || (!general && !armor) || !fromFinder || !PartyFeatures.mayLeadParty()) return
+		if (general && remember.value && name.lowercase(Locale.ROOT) in kicked) {
 			kick(name, listOf("kicked before"))
 			return
 		}
-		if (slowestTime.value <= 0 && minSecrets.value <= 0 && minMagicalPower.value <= 0 && !apiOff.value) return
-		Profiles.fetch(name, withSecrets = minSecrets.value > 0).whenComplete { profile, error ->
+		val requirements = general && (slowestTime.value > 0 || minSecrets.value > 0 || minMagicalPower.value > 0 || apiOff.value)
+		if (!requirements && !armor) return
+		Profiles.fetch(name, withSecrets = general && minSecrets.value > 0).whenComplete { profile, error ->
 			Minecraft.getInstance().execute {
 				if (error != null || profile == null) {
 					note("Couldn't check $name: ${(error?.cause ?: error)?.message ?: "no profile"}")
 					return@execute
 				}
-				val reasons = missed(profile)
+				if (armor && slowingArmor(name, profile)) {
+					if (PartyFeatures.mayLeadParty()) kickForArmor(name)
+					return@execute
+				}
+				val reasons = if (requirements) missed(profile) else emptyList()
 				if (reasons.isNotEmpty() && PartyFeatures.mayLeadParty()) kick(name, reasons)
 			}
 		}
+	}
+
+	/** The Group Builder's floor, read whenever it's open, since the queue line doesn't name one. */
+	private fun readBuilder() {
+		val chest = Minecraft.getInstance().gui.screen() as? AbstractContainerScreen<*> ?: return
+		if (chest.title.string != "Group Builder") return
+		val floor = selected(chest, "Select Floor") ?: return
+		val type = selected(chest, "Select Dungeon Type") ?: return
+		builderM5 = floor == "Floor V" && type.contains("Master")
+	}
+
+	/** What the item called [item] says is selected. */
+	private fun selected(chest: AbstractContainerScreen<*>, item: String): String? {
+		val stack = chest.menu.slots.firstOrNull { !it.item.isEmpty && it.item.hoverName.string.replace(FORMATTING, "").trim() == item }?.item ?: return null
+		val lines = stack.get(DataComponents.LORE)?.lines()?.map { it.string.replace(FORMATTING, "").trim() } ?: return null
+		val at = lines.indexOfFirst { it.startsWith(SELECTED) }
+		if (at < 0) return null
+		return lines[at].substringAfter(SELECTED).trim().ifEmpty { lines.getOrNull(at + 1).orEmpty() }
+	}
+
+	private const val SELECTED = "Currently Selected:"
+
+	/** Whether [profile]'s worn armor has Thorns or Reflection, from the API's saved inventory. */
+	private fun slowingArmor(name: String, profile: Profile): Boolean {
+		val data = profile.member.obj("inventory")?.obj("inv_armor")?.get("data")?.takeIf { it.isJsonPrimitive }?.asString
+		if (data == null) {
+			note("Couldn't read $name's armor: inventory API off")
+			return false
+		}
+		return runCatching {
+			val root = NbtIo.readCompressed(ByteArrayInputStream(Base64.getDecoder().decode(data)), NbtAccounter.unlimitedHeap())
+			root.getListOrEmpty("i").compoundStream().anyMatch { item ->
+				val enchants = item.getCompoundOrEmpty("tag").getCompoundOrEmpty("ExtraAttributes").getCompoundOrEmpty("enchantments")
+				enchants.keySet().any { it.lowercase(Locale.ROOT) in ARMOR_ENCHANTS }
+			}
+		}.getOrElse {
+			note("Couldn't read $name's armor: ${it.message}")
+			false
+		}
+	}
+
+	/** Not remembered, and their profile forgotten, so they can change and come back. */
+	private fun kickForArmor(name: String) {
+		note("Kicking $name: Thorns or Reflection on their armor")
+		Profiles.forget(name)
+		val message = m5Message.value.replace(PLAYER_TOKEN, name).trim()
+		if (message.isNotEmpty()) PartyFeatures.enqueue("pc $message".take(255))
+		PartyFeatures.enqueue("party kick $name")
 	}
 
 	/** Which requirements [profile] misses, worded for party chat. */
@@ -278,6 +378,7 @@ object PartyKick {
 	private var runBegan = false
 
 	fun tick() {
+		if (enabled && m5Armor.value) readBuilder()
 		if (!needsTeam || !DungeonTeam.inDungeons) {
 			toldDupes = ""
 			runBegan = false
@@ -321,11 +422,14 @@ object PartyKick {
 	/** A joiner's member data on their selected profile, and their secrets on every profile. */
 	private class Profile(val member: JsonObject, val secrets: Long?)
 
-	/** Name to UUID through Mojang, then the profile (and secrets) through Odin's proxy. */
+	/** Name to UUID through a Mojang mirror, then the profile (and secrets) through Odin's proxy. */
 	private object Profiles {
 		private const val PROFILE_URL = "https://hypixel.odtheking.com/get/"
 		private const val SECRETS_URL = "https://hypixel.odtheking.com/secrets/"
-		private const val UUID_URL = "https://api.minecraftservices.com/minecraft/profile/lookup/name/"
+
+		/** Odin's faster mirror first, then Mojang itself if it fails. Both answer with an "id". */
+		private const val UUID_URL = "https://mowojang.seraph.si/users/profiles/minecraft/"
+		private const val MOJANG_UUID_URL = "https://api.minecraftservices.com/minecraft/profile/lookup/name/"
 		private const val CACHE_MILLIS = 10 * 60 * 1000L
 
 		private val http: HttpClient by lazy {
@@ -336,11 +440,17 @@ object PartyKick {
 
 		private val cache = ConcurrentHashMap<String, Cached>()
 
+		fun forget(name: String) {
+			cache.remove(name.lowercase(Locale.ROOT))
+		}
+
 		fun fetch(name: String, withSecrets: Boolean): CompletableFuture<Profile> {
 			val key = name.lowercase(Locale.ROOT)
 			cache[key]?.takeIf { System.currentTimeMillis() - it.at < CACHE_MILLIS && (!withSecrets || it.profile.secrets != null) }
 				?.let { return CompletableFuture.completedFuture(it.profile) }
-			return get(UUID_URL + URLEncoder.encode(name, StandardCharsets.UTF_8))
+			val encoded = URLEncoder.encode(name, StandardCharsets.UTF_8)
+			return get(UUID_URL + encoded)
+				.exceptionallyCompose { get(MOJANG_UUID_URL + encoded) }
 				.thenCompose { body ->
 					val uuid = body.asJsonObject.get("id")?.asString ?: throw IllegalStateException("no such player")
 					val member = get(PROFILE_URL + uuid).thenApply { member(it, uuid) }

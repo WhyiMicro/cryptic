@@ -6,6 +6,7 @@ import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.Restriction
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
@@ -217,6 +218,24 @@ object PuzzleSolver {
 	)
 
 	@JvmField
+	val mazeOrder = DropdownModuleSetting(
+		id = "maze_order",
+		label = "Next pad",
+		options = listOf("Nearest your facing", "Straight across first", "Diagonal first"),
+		defaultIndex = 0,
+		visibleIf = { mazeEnabled.value },
+	)
+
+	@JvmField
+	val mazeAutoRotate = ToggleModuleSetting(
+		id = "maze_auto_rotate",
+		label = "Turn to the next pad",
+		description = "After each teleport, turns you to face the pad to take next.",
+		visibleIf = { mazeEnabled.value },
+		restriction = Restriction.CHEAT,
+	)
+
+	@JvmField
 	val mazeReset = ButtonModuleSetting(
 		"maze_reset",
 		"Reset Teleport Maze",
@@ -263,6 +282,15 @@ object PuzzleSolver {
 		label = "Blaze",
 		defaultValue = true,
 		description = "Boxes the blazes in the order they have to die.",
+	)
+
+	@JvmField
+	val blazeHide = ToggleModuleSetting(
+		id = "blaze_hide",
+		label = "Hide blazes",
+		defaultValue = false,
+		description = "Hides every blaze and its nametag but the one to shoot next. Their boxes stay.",
+		visibleIf = { blazeEnabled.value },
 	)
 
 	@JvmField
@@ -666,7 +694,7 @@ object PuzzleSolver {
 	private val configurable: List<imicro.cryptic.gui.ModuleSetting> = listOf(
 		puzzlesSection,
 		blazeEnabled.withMore(
-			blazeNextLine, blazeLineCount, blazeLineWidth, blazeStyle,
+			blazeHide, blazeNextLine, blazeLineCount, blazeLineWidth, blazeStyle,
 			blazeFirstColor, blazeSecondColor, blazeThirdColor, blazeOtherColor, blazeSendComplete,
 		),
 		boulderEnabled.withMore(boulderAll, boulderStyle, boulderPhase, boulderColor),
@@ -674,7 +702,7 @@ object PuzzleSolver {
 		iceFillEnabled.withMore(iceFillColor, iceFillOptimized, iceFillReset),
 		silverfishEnabled.withMore(silverfishColor, silverfishMovingColor),
 		quizEnabled.withMore(quizColor, quizStyle, quizPhase, quizTimer, quizParty),
-		mazeEnabled.withMore(mazeColorOne, mazeColorMultiple, mazeColorVisited, mazeStyle, mazeTracer, mazeTracerColor, mazeReset),
+		mazeEnabled.withMore(mazeColorOne, mazeColorMultiple, mazeColorVisited, mazeStyle, mazeTracer, mazeTracerColor, mazeOrder, mazeAutoRotate, mazeReset),
 		weirdosEnabled.withMore(
 			weirdosColor, weirdosWrongColor, weirdosStyle,
 			weirdosHideWrong, weirdosBlockWrong, weirdosInstant, weirdosPlaceholderColor,
@@ -883,6 +911,13 @@ object PuzzleSolver {
 		// position still the one they're about to leave.
 		if (!Minecraft.getInstance().isSameThread) return
 		TpMazeSolver.onTeleport(packet)
+	}
+
+	@JvmStatic
+	fun afterTeleport() {
+		if (!module.enabled || !mazeEnabled.value) return
+		if (!Minecraft.getInstance().isSameThread) return
+		TpMazeSolver.afterTeleport()
 	}
 
 	/** A block changing (for the beams, one broken). */

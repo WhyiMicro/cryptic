@@ -208,6 +208,10 @@ object Toasts {
 		add(Toast(source, text, false, life.toFloat(), id, keys, color, head, footer))
 	}
 
+	/** Whether question [id] is still waiting, so asking again can be skipped. */
+	fun asking(id: String): Boolean =
+		shown.any { it.id == id && !it.done } || (questions[id]?.until ?: 0L) > System.currentTimeMillis()
+
 	// ---- With notifications off ---------------------------------------------------------------
 	//
 	// Every notification still reaches you, as a chat line. A question's keys become clickable
@@ -302,6 +306,7 @@ object Toasts {
 		const val REWARD = 0xFFE0B551.toInt()
 		const val BAZAAR = 0xFFFFAA00.toInt()
 		const val AUCTION = 0xFFFFD866.toInt()
+		const val RIFT = 0xFFFF55FF.toInt()
 
 		/** Cryptic itself (settings and profiles), in your accent colour. */
 		val CRYPTIC: Int get() = imicro.cryptic.gui.menu.MenuStyle.accent()

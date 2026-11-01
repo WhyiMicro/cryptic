@@ -11,17 +11,22 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.skyblock.KuudraLocation
 import imicro.cryptic.skyblock.SkyblockItem
+import imicro.cryptic.slayer.SlayerBosses
+import imicro.cryptic.slayer.SlayerType
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
+import net.minecraft.world.entity.EquipmentSlot
 
 /**
  * Tops up dungeon consumables from your sacks with `/gfs`: on a timer, one item per check, or
  * everything at the end of a run. Only items you carry with at least four missing (an item you have
  * none of is one you didn't bring). An empty sack isn't asked again until the next server. Twilight
- * arrow poison is asked for at three moments of M7, for the classes that want it then. NoammAddons'
- * Auto GFS.
+ * arrow poison is asked for at three moments of M7, for the classes that want it then, and for each
+ * Voidgloom of yours or a carried player's. Toxic arrow poison comes when you put on Terror in the
+ * higher Kuudra tiers. NoammAddons' Auto GFS.
  */
 object AutoGfs {
 	private const val MIN_MISSING = 4
@@ -29,6 +34,20 @@ object AutoGfs {
 	private const val END_SPACING_TICKS = 25
 
 	private val FORMATTING = Regex("§.")
+
+	private const val TWILIGHT = "twilight_arrow_poison"
+	private const val VOIDGLOOM_TWILIGHT = 2
+
+	private const val TOXIC = "toxic_arrow_poison"
+	private const val TERROR_TOXIC = 32
+
+	/** Burning. */
+	private const val LOWEST_TOXIC_TIER = 3
+
+	/** Enough for a set with another helmet on top. */
+	private const val TERROR_PIECES = 3
+	private const val TERROR_SPACING_MS = 10_000L
+	private val ARMOR = listOf(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET)
 
 	private val sackEmpty = Regex("""^You have no (.+) in your Sacks!$""")
 	private val stormLightning = Regex("""^\[BOSS] Storm: (?:ENERGY HEED MY CALL|THUNDER LET ME BE YOUR CATALYST)!$""")
@@ -121,6 +140,26 @@ object AutoGfs {
 		visibleIf = { twilight.value },
 	)
 
+	private val slayerSection = SectionModuleSetting("slayer_section", "Slayer")
+
+	@JvmField
+	val voidgloomTwilight = ToggleModuleSetting(
+		id = "voidgloom_twilight",
+		label = "Twilight for Voidgloom",
+		defaultValue = false,
+		description = "Gets 2 twilight arrow poison when your boss, or a carried player's, spawns.",
+	)
+
+	private val kuudraSection = SectionModuleSetting("kuudra_section", "Kuudra")
+
+	@JvmField
+	val kuudraToxic = ToggleModuleSetting(
+		id = "kuudra_toxic",
+		label = "Toxic poison with Terror",
+		defaultValue = false,
+		description = "Gets 32 toxic arrow poison when you put on Terror armor in Burning, Fiery or Infernal Kuudra.",
+	)
+
 	@JvmField
 	val module = Module(
 		id = "auto_gfs",
@@ -132,8 +171,13 @@ object AutoGfs {
 			timingSection, atRunEnd, delay,
 			itemsSection, pearls, superbooms, jerries, leaps, twilight,
 			twilightSection, twilightLightning, twilightCore, twilightRelics, twilightAmount,
+			slayerSection, voidgloomTwilight,
+			kuudraSection, kuudraToxic,
 		),
 	)
+
+	val needsBosses: Boolean get() = module.enabled && voidgloomTwilight.value
+	val needsSkyblock: Boolean get() = module.enabled && (voidgloomTwilight.value || kuudraToxic.value)
 
 	private val refills = listOf(
 		Refill("ender_pearl", "ENDER_PEARL", 16, pearls),
@@ -175,6 +219,9 @@ object AutoGfs {
 		}
 		val player = client.player ?: return
 
+		tickVoidgloom(client)
+		tickTerror(client)
+
 		if (!DungeonRun.ended) runEndHandled = false
 
 		if (atRunEnd.value) {
@@ -203,6 +250,44 @@ object AutoGfs {
 		val waiting = pending(client)
 		if (waiting.isEmpty()) return
 		send(client, waiting[cursor++ % waiting.size])
+	}
+
+	/** Voidglooms already asked for, by entity. */
+	private val voidgloomsSeen = HashSet<Int>()
+
+	private fun tickVoidgloom(client: Minecraft) {
+		if (!voidgloomTwilight.value) {
+			voidgloomsSeen.clear()
+			return
+		}
+		val ours = SlayerBosses.bosses.filter { it.type == SlayerType.VOIDGLOOM && (SlayerBosses.isMe(it.owner) || it.owner?.let(CarryManager::isCarried) == true) }
+		voidgloomsSeen.retainAll(ours.mapTo(HashSet()) { it.boss.id })
+		for (boss in ours) {
+			if (voidgloomsSeen.add(boss.boss.id) && TWILIGHT !in emptySacks) send(client, "gfs $TWILIGHT $VOIDGLOOM_TWILIGHT")
+		}
+	}
+
+	private var wearingTerror = false
+	private var terrorAskedAt = 0L
+
+	/** Asked as you change into it, and on arriving dressed. */
+	private fun tickTerror(client: Minecraft) {
+		val tier = if (kuudraToxic.value) KuudraLocation.tier else null
+		val wearing = tier != null && tier >= LOWEST_TOXIC_TIER && terrorPieces(client) >= TERROR_PIECES
+		if (wearing && !wearingTerror && TOXIC !in emptySacks) {
+			val now = System.currentTimeMillis()
+			// Wardrobe swaps empty the armor slots for a moment.
+			if (now - terrorAskedAt > TERROR_SPACING_MS) {
+				terrorAskedAt = now
+				send(client, "gfs $TOXIC $TERROR_TOXIC")
+			}
+		}
+		wearingTerror = wearing
+	}
+
+	private fun terrorPieces(client: Minecraft): Int {
+		val player = client.player ?: return 0
+		return ARMOR.count { slot -> SkyblockItem.id(player.getItemBySlot(slot))?.contains("TERROR_") == true }
 	}
 
 	private fun pending(client: Minecraft): List<String> {

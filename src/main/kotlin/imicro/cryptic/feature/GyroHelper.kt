@@ -16,6 +16,8 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
+import net.minecraft.core.particles.ParticleOptions
+import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.ClientboundSoundPacket
 import net.minecraft.sounds.SoundEvents
@@ -205,6 +207,36 @@ object GyroHelper {
 		if (System.currentTimeMillis() - lastSwingAt > CLICK_WINDOW_MILLIS || !isAiming()) return
 		cast()
 	}
+
+	/** The still witch particles of one storm: when the burst began, at what height, how many. */
+	private var burstAt = 0L
+	private var burstY = 0.0
+	private var burstCount = 0
+
+	/**
+	 * Gravity Storm's burst of motionless witch particles at one height, Odin's way of seeing the
+	 * cast since the mana line left the action bar (BSD-3). From the level, so it's per particle.
+	 * Only after your own swing, so a teammate's storm doesn't start yours.
+	 */
+	@JvmStatic
+	fun onParticle(particle: ParticleOptions, y: Double, xd: Double, yd: Double, zd: Double) {
+		if (!module.enabled || particle.type != ParticleTypes.WITCH) return
+		if (xd != 0.0 || yd != 0.0 || zd != 0.0 || onCooldown()) return
+		val now = System.currentTimeMillis()
+		if (now - lastSwingAt > CLICK_WINDOW_MILLIS) return
+		if (now - burstAt > BURST_MILLIS || Math.abs(y - burstY) > BURST_Y_SLACK) {
+			burstAt = now
+			burstY = y
+			burstCount = 1
+		} else if (++burstCount >= BURST_PARTICLES) {
+			cast()
+			burstCount = 0
+		}
+	}
+
+	private const val BURST_MILLIS = 120L
+	private const val BURST_Y_SLACK = 0.02
+	private const val BURST_PARTICLES = 5
 
 	private var lastSwingAt = 0L
 	private var attackWasDown = false

@@ -117,7 +117,7 @@ import imicro.cryptic.feature.Zoom
 import imicro.cryptic.terminal.TerminalDebug
 import imicro.cryptic.skyblock.BoosterCookie
 import imicro.cryptic.skyblock.SkyblockLocation
-import imicro.cryptic.slayer.VoidgloomBosses
+import imicro.cryptic.slayer.SlayerBosses
 import imicro.cryptic.terminal.Terminals
 
 /** Client-only setup: key mappings, commands, screens and ticks. */
@@ -278,6 +278,7 @@ object CrypticClient : ClientModInitializer {
 		imicro.cryptic.feature.Fishing.initialize()
 		imicro.cryptic.feature.Bazaar.initialize()
 		imicro.cryptic.feature.Farming.initialize()
+		imicro.cryptic.feature.Rift.initialize()
 		imicro.cryptic.feature.TooltipFeatures.initialize()
 		SpiritBear.initialize()
 		LividSolver.initialize()
@@ -345,6 +346,13 @@ object CrypticClient : ClientModInitializer {
 						openGuiRequested = true
 						1
 					}
+					// Words that aren't a subcommand are a search; Brigadier tries literals first.
+					.then(
+						ClientCommands.argument("search", StringArgumentType.greedyString()).executes { context ->
+							imicro.cryptic.gui.menu.MenuScreen.requestSearch(StringArgumentType.getString(context, "search"))
+							1
+						},
+					)
 					.then(
 						ClientCommands.literal("config")
 							.then(ClientCommands.literal("import").executes { context ->
@@ -565,10 +573,10 @@ object CrypticClient : ClientModInitializer {
 								}
 								1
 							})
-							.then(ClientCommands.literal("carry").executes { context ->
-								// The stand offsets the carry tracker depends on can only be
-								// checked in a lobby with a boss.
-								VoidgloomBosses.describe(Minecraft.getInstance()).forEach {
+							.then(ClientCommands.literal("slayer").executes { context ->
+								// The stands over a boss, which owners are read from, can only be
+								// checked in a lobby with one.
+								SlayerBosses.describe(Minecraft.getInstance()).forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
@@ -709,6 +717,18 @@ object CrypticClient : ClientModInitializer {
 							})
 							.then(ClientCommands.literal("crystals").executes { context ->
 								NucleusQol.describeCrystals().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("bal").executes { context ->
+								NucleusQol.describeBal().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("keepers").executes { context ->
+								NucleusQol.describeKeepers().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
@@ -1196,8 +1216,8 @@ object CrypticClient : ClientModInitializer {
 				SlotBinds.module.enabled || NucleusQol.module.enabled || CarryManager.module.enabled || imicro.cryptic.feature.SlayerFeatures.needsSkyblock || imicro.cryptic.feature.ChocolateFactory.needsSkyblock ||
 					LoadoutManager.needsSkyblock || imicro.cryptic.feature.ItemProtection.module.enabled ||
 					imicro.cryptic.feature.Mining.needsSkyblock || RenderOptimizer.needsSkyblock || imicro.cryptic.feature.Fishing.needsSkyblock || imicro.cryptic.feature.Bazaar.needsSkyblock || imicro.cryptic.feature.TooltipFeatures.needsSkyblock ||
-					imicro.cryptic.feature.AuctionHouse.module.enabled || imicro.cryptic.feature.Farming.module.enabled ||
-					KeybindManager.needsSkyblock ||
+					imicro.cryptic.feature.AuctionHouse.module.enabled || imicro.cryptic.feature.Farming.module.enabled || imicro.cryptic.feature.Rift.needsSkyblock ||
+					KeybindManager.needsSkyblock || AutoGfs.needsSkyblock ||
 					SmoothTeleport.predictive ||
 					DungeonWarpCooldown.module.enabled,
 			)
@@ -1209,7 +1229,7 @@ object CrypticClient : ClientModInitializer {
 					TerminalOrder.needsTeamTracking || SpiritLeapOverlay.module.enabled ||
 					F7Qol.module.enabled || MelodyHud.wanted || GyroHelper.module.enabled ||
 					AutoGfs.module.enabled || AutoRequeue.module.enabled || KeybindManager.needsTeam ||
-					imicro.cryptic.feature.ClassAbilities.module.enabled || imicro.cryptic.feature.PartyKick.needsTeam,
+					imicro.cryptic.feature.ClassAbilities.module.enabled || imicro.cryptic.feature.PartyKick.needsTeam || PositionalMessages.needsTeam,
 			)
 			DungeonLocation.tick(
 				client,
@@ -1284,6 +1304,11 @@ object CrypticClient : ClientModInitializer {
 			TimeChanger.tick(client)
 			LavaToWater.tick(client)
 			DoorFix.tick(client)
+			SlayerBosses.tick(
+				client,
+				(SkyblockLocation.onSkyblock || imicro.cryptic.debug.DebugOverrides.slayerAnywhere) &&
+					(imicro.cryptic.feature.SlayerFeatures.module.enabled || AutoGfs.needsBosses || (CarryManager.module.enabled && CarryManager.carries.isNotEmpty())),
+			)
 			CarryManager.tick(client)
 			imicro.cryptic.feature.SlayerFeatures.tick(client)
 			imicro.cryptic.feature.ChocolateFactory.tick(client)
@@ -1304,6 +1329,7 @@ object CrypticClient : ClientModInitializer {
 			imicro.cryptic.feature.Bazaar.tick(client)
 			imicro.cryptic.feature.BazaarPresets.tick()
 			imicro.cryptic.feature.Farming.tick(client)
+			imicro.cryptic.feature.Rift.tick(client)
 			imicro.cryptic.debug.LaserDebug.tick()
 			imicro.cryptic.debug.FocusDebug.tick(client)
 			// For the rarity colours in the Auction House's notifications.

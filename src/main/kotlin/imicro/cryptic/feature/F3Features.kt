@@ -196,6 +196,6 @@ object F3Features {
 			"§bFire Freeze: $color" + String.format(Locale.ROOT, "%.2fs", ticks / 20f)
 	}
 
-	private const val SAMPLE_TICKS = 106
+	private const val SAMPLE_TICKS = 60
 	private const val WHITE = 0xFFFFFFFF.toInt()
 }

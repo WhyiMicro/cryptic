@@ -9,6 +9,7 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.render.CrypticRenderLayers
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
@@ -19,6 +20,8 @@ import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.texture.OverlayTexture
 import net.minecraft.util.Mth
 import net.minecraft.world.entity.monster.Creeper
+import net.minecraft.world.phys.Vec3
+import imicro.cryptic.skyblock.SkyblockItem
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -109,8 +112,11 @@ object WitherCloakEffect {
 	private var initialized = false
 	private var cloakActive = false
 	private var lastCloakCreeperSeenAt = 0L
+	private var hideUntil = 0L
 	private var ticksUntilScan = 0
 	private var renderSnapshot: RenderSnapshot? = null
+	private var holdingCloak = false
+	private var playerAt: Vec3 = Vec3.ZERO
 
 	fun initialize() {
 		if (initialized) return
@@ -134,6 +140,8 @@ object WitherCloakEffect {
 		}
 
 		val now = System.currentTimeMillis()
+		holdingCloak = SkyblockItem.id(player.mainHandItem) == CLOAK_ID
+		playerAt = player.position()
 
 		if (DebugOverrides.forceWitherCloak) {
 			cloakActive = true
@@ -155,11 +163,25 @@ object WitherCloakEffect {
 		}
 	}
 
-	/** Hides the charge layer of your veil's creeper only: invisible, charged, and at you. */
+	/**
+	 * Hides the charge layer of your veil's creeper only: invisible, charged, and at you. The creeper
+	 * spawns before Hypixel's line arrives, so while the cloak is in hand one right at you is hidden
+	 * already.
+	 */
 	@JvmStatic
 	fun shouldHideVanillaPower(state: CreeperRenderState): Boolean {
-		if (!active || !cloakActive || !state.isPowered) return false
-		val yours = (state.isInvisible || state.isInvisibleToPlayer) && state.distanceToCameraSq < CLOAK_CREEPER_FALLBACK_RANGE_SQUARED
+		if (!active || !state.isPowered || !(state.isInvisible || state.isInvisibleToPlayer)) return false
+		if (!cloakActive) {
+			// Hypixel's line beats the creeper's removal, so it lingers a moment after the shields go.
+			if (System.currentTimeMillis() < hideUntil) return state.distanceToCameraSq < CLOAK_CREEPER_FALLBACK_RANGE_SQUARED
+			if (!holdingCloak) return false
+			val at = playerAt
+			val dx = state.x - at.x
+			val dy = state.y - at.y
+			val dz = state.z - at.z
+			return dx * dx + dy * dy + dz * dz < HELD_RANGE_SQUARED
+		}
+		val yours = state.distanceToCameraSq < CLOAK_CREEPER_FALLBACK_RANGE_SQUARED
 		if (yours) lastCloakCreeperSeenAt = System.currentTimeMillis()
 		return yours
 	}
@@ -221,16 +243,18 @@ object WitherCloakEffect {
 		val poseStack = PoseStack()
 		poseStack.pushPose()
 		poseStack.translate(snapshot.x, snapshot.y, snapshot.z)
-		context.submitNodeCollector().submitCustomGeometry(
-			poseStack,
-			RenderTypes.entityTranslucentEmissive(TEXTURE),
-		) { pose, consumer ->
-			// Positive speeds turn clockwise seen from above.
-			val seconds = (System.currentTimeMillis() % SPIN_PERIOD_MS) / 1000.0
-			val baseAngle = -seconds * snapshot.speed * DEGREES_PER_SECOND_PER_SPEED * DEGREES_TO_RADIANS
-			val angleStep = (2.0 * PI) / snapshot.count
-			for (index in 0 until snapshot.count) {
-				drawShield(consumer, pose, baseAngle + angleStep * index, snapshot.distance, snapshot.size, snapshot.height)
+		CrypticRenderLayers.overTerrain {
+			context.submitNodeCollector().submitCustomGeometry(
+				poseStack,
+				RenderTypes.entityTranslucentEmissive(TEXTURE),
+			) { pose, consumer ->
+				// Positive speeds turn clockwise seen from above.
+				val seconds = (System.currentTimeMillis() % SPIN_PERIOD_MS) / 1000.0
+				val baseAngle = -seconds * snapshot.speed * DEGREES_PER_SECOND_PER_SPEED * DEGREES_TO_RADIANS
+				val angleStep = (2.0 * PI) / snapshot.count
+				for (index in 0 until snapshot.count) {
+					drawShield(consumer, pose, baseAngle + angleStep * index, snapshot.distance, snapshot.size, snapshot.height)
+				}
 			}
 		}
 		poseStack.popPose()
@@ -284,11 +308,14 @@ object WitherCloakEffect {
 	private fun deactivate(now: Long) {
 		cloakActive = false
 		renderSnapshot = null
+		hideUntil = now + LINGER_MS
 	}
 
 	private fun reset() {
 		cloakActive = false
+		holdingCloak = false
 		lastCloakCreeperSeenAt = 0L
+		hideUntil = 0L
 		ticksUntilScan = 0
 		renderSnapshot = null
 	}
@@ -307,8 +334,13 @@ object WitherCloakEffect {
 	private val TEXTURE = Cryptic.id("textures/effect/wither_cloak_shield.png")
 	private const val CLOAK_CREEPER_RANGE_SQUARED = 7.5 * 7.5
 	private const val CLOAK_CREEPER_FALLBACK_RANGE_SQUARED = 16.0 * 16.0
+	private const val CLOAK_ID = "WITHER_CLOAK"
+
+	/** A charged ghost this close while the cloak is in hand is taken for its creeper. */
+	private const val HELD_RANGE_SQUARED = 3.0 * 3.0
 	private const val SCAN_INTERVAL_TICKS = 4
 	private const val CREEPER_GRACE_PERIOD_MS = 2_000L
+	private const val LINGER_MS = 1_500L
 	private const val DEGREES_TO_RADIANS = PI / 180.0
 
 	private const val DEGREES_PER_SECOND_PER_SPEED = 50.0 / 3.0

@@ -162,10 +162,23 @@ object CookieReminder {
 		if (text == "Booster Cookie has expired!") {
 			countdownEnds = 0L
 			Toasts.dismiss(COUNTDOWN)
-			if (announceExpired.value) {
-				Toasts.show(SOURCE, "§cNo active booster cookie§7, be careful", life = seconds.value, color = Toasts.Colors.COOKIE)
-			}
+			sayNone()
 		}
+	}
+
+	/** When the no-cookie warning last went up. */
+	private var saidNoneAt = 0L
+
+	/** Longer than the tab list takes to catch up with chat, which both report the same cookie ending. */
+	private const val SAID_NONE_MEMORY_MS = 60_000L
+
+	/** Chat's line and the tab list both notice a cookie ending, so the second is dropped. */
+	private fun sayNone() {
+		if (!announceExpired.value) return
+		val now = System.currentTimeMillis()
+		if (now - saidNoneAt < SAID_NONE_MEMORY_MS) return
+		saidNoneAt = now
+		Toasts.show(SOURCE, "§cNo active booster cookie§7, be careful", life = seconds.value, color = Toasts.Colors.COOKIE)
 	}
 
 	fun tick(client: Minecraft) {
@@ -201,9 +214,7 @@ object CookieReminder {
 				saidNoneThisSession = true
 				// The countdown and the expired line have both been shown.
 				if (System.currentTimeMillis() < countdownEnds + 5_000) return
-				if (announceExpired.value) {
-					Toasts.show(SOURCE, "§cNo active booster cookie§7, be careful", life = seconds.value, color = Toasts.Colors.COOKIE)
-				}
+				sayNone()
 			}
 
 			is BoosterCookie.Reading.Active -> {

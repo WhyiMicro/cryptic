@@ -5,6 +5,7 @@ import imicro.cryptic.feature.KeybindManager
 import imicro.cryptic.feature.KeybindManager.Binding
 import imicro.cryptic.feature.KeybindManager.WorkIn
 import imicro.cryptic.gui.KeybindModuleSetting
+import imicro.cryptic.skyblock.KuudraLocation
 import imicro.cryptic.gui.menu.Box
 import imicro.cryptic.gui.menu.ManagerSection
 import imicro.cryptic.gui.menu.MenuStyle
@@ -161,6 +162,7 @@ class KeybindsSection : ManagerSection("Bindings") {
 		if (binding.floors.isNotEmpty()) parts += binding.floors.joinToString(", ")
 		if (binding.classes.isNotEmpty()) parts += binding.classes.joinToString(", ") { className(it) }
 		if (binding.phases.isNotEmpty()) parts += binding.phases.sorted().joinToString(", ") { "P$it" }
+		if (binding.kuudraTiers.isNotEmpty()) parts += binding.kuudraTiers.sorted().joinToString(", ") { KuudraLocation.TIERS[it - 1] }
 		return parts.joinToString("  |  ")
 	}
 
@@ -221,6 +223,9 @@ class KeybindsSection : ManagerSection("Bindings") {
 		}
 		cy += chipsRow(x, cy, width, "Floor 7 phases", "None picked means any phase.", (1..5).toList(), { "P$it" }, { it in binding.phases }) {
 			if (!binding.phases.remove(it)) binding.phases += it
+		}
+		cy += chipsRow(x, cy, width, "Kuudra tiers", "None picked means anywhere. Picked, it only fires in those tiers.", (1..KuudraLocation.TIERS.size).toList(), { KuudraLocation.TIERS[it - 1] }, { it in binding.kuudraTiers }) {
+			if (!binding.kuudraTiers.remove(it)) binding.kuudraTiers += it
 		}
 
 		// Cancel and Save, with what's still missing beside them.

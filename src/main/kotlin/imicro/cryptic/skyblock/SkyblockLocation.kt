@@ -81,6 +81,18 @@ object SkyblockLocation {
 		return zoneFrom(lines, area)
 	}
 
+	/** The first sidebar line [pattern] finds something in. */
+	fun sidebarMatch(pattern: Regex): MatchResult? {
+		val scoreboard = Minecraft.getInstance().level?.scoreboard ?: return null
+		val objective = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR) ?: return null
+		for (entry in scoreboard.listPlayerScores(objective)) {
+			val team = scoreboard.getPlayersTeam(entry.owner())
+			val line = PlayerTeam.formatNameForTeam(team, entry.ownerName()).string.replace(formattingPattern, "")
+			pattern.find(line)?.let { return it }
+		}
+		return null
+	}
+
 	private val pursePattern = Regex("""(?:Purse|Piggy): ([\d,.]+)""")
 
 	/** Your coins, from the sidebar's "Purse: 150,632,185 (+5)" line, or null when it isn't there. */

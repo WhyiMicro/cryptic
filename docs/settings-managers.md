@@ -33,8 +33,8 @@ Keys that run a command or say something in chat, modelled on Athen's Keybinds.
   - **Everywhere:** both.
 
   A binding never fires while you type in chat or on a sign.
-- **Islands**, **Dungeon floors**, **Dungeon classes** and **Floor 7 phases**
-  limit where it fires. Leave a group empty to allow anything.
+- **Islands**, **Dungeon floors**, **Dungeon classes**, **Floor 7 phases** and
+  **Kuudra tiers** limit where it fires. Leave a group empty to allow anything.
 
 A binding fires once each time its keys go down. If you hold Ctrl+K and also
 have a binding on K, only the Ctrl+K one fires.

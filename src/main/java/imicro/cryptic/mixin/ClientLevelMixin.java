@@ -29,6 +29,14 @@ public abstract class ClientLevelMixin {
         if (imicro.cryptic.feature.RenderOptimizer.hidesBreakParticles()) info.cancel();
     }
 
+    /** Each particle as it is added, after a packet's count and spread are worked out. */
+    @org.spongepowered.asm.mixin.injection.Inject(method = "doAddParticle", at = @At("HEAD"))
+    private void cryptic$onParticle(net.minecraft.core.particles.ParticleOptions particle, boolean overrideLimiter, boolean alwaysShowParticles,
+                                    double x, double y, double z, double xd, double yd, double zd,
+                                    org.spongepowered.asm.mixin.injection.callback.CallbackInfo info) {
+        imicro.cryptic.feature.GyroHelper.onParticle(particle, y, xd, yd, zd);
+    }
+
     /**
      * A block the server just set, from both single-block and section updates. Lets I love glass
      * swap Storm's sinking pillars as each layer arrives. Always the client thread.

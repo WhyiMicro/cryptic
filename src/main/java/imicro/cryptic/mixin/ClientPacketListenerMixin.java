@@ -116,6 +116,7 @@ public abstract class ClientPacketListenerMixin {
         SpringBootsHelper.onSound(packet);
         imicro.cryptic.feature.WitherDragons.onSound(packet);
         GyroHelper.onSound(packet);
+        imicro.cryptic.feature.Rift.onSound(packet);
         NucleusQol.onSound(packet.getSound().value(), packet.getPitch(), packet.getVolume());
         SoundLog.note(packet.getSound().value(), packet.getPitch(), packet.getVolume(), false);
         if (Etherwarp.replaceTeleportSound(packet)) {
@@ -159,6 +160,7 @@ public abstract class ClientPacketListenerMixin {
         DungeonWaypoints.onTeleport();
         // Last, so nothing above puts the old rotation back over it.
         SpiritLeapOverlay.afterServerTeleport(packet);
+        PuzzleSolver.afterTeleport();
     }
 
     /**
@@ -244,32 +246,6 @@ public abstract class ClientPacketListenerMixin {
         if (RenderOptimizer.blocksSpawn(packet.getType())) info.cancel();
     }
 
-    /** Who hit a slayer boss, for the Carry Manager's guess at its owner. TAIL, so only the client thread. */
-    @Inject(method = "handleDamageEvent", at = @At("TAIL"))
-    private void cryptic$noteBossHit(net.minecraft.network.protocol.game.ClientboundDamageEventPacket packet, CallbackInfo info) {
-        try {
-            imicro.cryptic.slayer.VoidgloomBosses.onDamaged(packet.entityId(), packet.sourceCauseId());
-        } catch (RuntimeException ignored) {
-        }
-    }
-
-    @Inject(method = "handleAnimate", at = @At("TAIL"))
-    private void cryptic$noteSwing(net.minecraft.network.protocol.game.ClientboundAnimatePacket packet, CallbackInfo info) {
-        int action = packet.getAction();
-        if (action == net.minecraft.network.protocol.game.ClientboundAnimatePacket.SWING_MAIN_HAND
-            || action == net.minecraft.network.protocol.game.ClientboundAnimatePacket.SWING_OFF_HAND) {
-            imicro.cryptic.slayer.VoidgloomBosses.onSwing(packet.getId());
-        }
-    }
-
-    @Inject(method = "handleHurtAnimation", at = @At("TAIL"))
-    private void cryptic$noteBossHurt(net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket packet, CallbackInfo info) {
-        try {
-            imicro.cryptic.slayer.VoidgloomBosses.onDamaged(packet.id(), -1);
-        } catch (RuntimeException ignored) {
-        }
-    }
-
     @Inject(method = "handleParticleEvent", at = @At("HEAD"), cancellable = true)
     private void cryptic$hideParticles(ClientboundLevelParticlesPacket packet, CallbackInfo info) {
         NucleusQol.onParticle(packet);
@@ -278,7 +254,7 @@ public abstract class ClientPacketListenerMixin {
         imicro.cryptic.debug.LaserDebug.onParticle(packet);
         imicro.cryptic.feature.WitherDragons.onParticle(packet);
         if (imicro.cryptic.feature.Fishing.onParticle(packet) || MageBeam.onParticle(packet) || RenderOptimizer.blocksParticle(packet)
-            || imicro.cryptic.feature.SlayerFeatures.hidesParticle(packet)) info.cancel();
+            || imicro.cryptic.feature.SlayerFeatures.hidesParticle(packet) || NucleusQol.hidesParticle(packet)) info.cancel();
     }
 
     /**
@@ -472,6 +448,8 @@ public abstract class ClientPacketListenerMixin {
         imicro.cryptic.feature.WitherCloakEffect.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.skyblock.SackContents.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.feature.Farming.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.Rift.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.skyblock.KuudraLocation.onSystemChat(packet.content(), packet.overlay());
         // Last: Better Chat hides a line from the chat window, never from the mod.
         if (BetterChat.hidesChat(packet.content(), packet.overlay())
                 || AutoRequeue.hidesChat(packet.content(), packet.overlay())

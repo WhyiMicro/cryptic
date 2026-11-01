@@ -36,7 +36,7 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
      */
     @Inject(method = "shouldRender", at = @At("HEAD"), cancellable = true)
     private void cryptic$skipHiddenEntities(T entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> info) {
-        if (RenderOptimizer.hidesEntity(entity) || Highlight.hidesNameTag(entity) || HidePlayers.hides(entity) || MageBeam.hidesSheep(entity) || LividSolver.hides(entity)) {
+        if (RenderOptimizer.hidesEntity(entity) || Highlight.hidesNameTag(entity) || HidePlayers.hides(entity) || MageBeam.hidesSheep(entity) || LividSolver.hides(entity) || imicro.cryptic.puzzle.BlazeSolver.hides(entity)) {
             info.setReturnValue(false);
         }
     }
@@ -105,7 +105,7 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
     /** Outlines the entities Cryptic wants outlined, replacing vanilla's team-colour glow. */
     @Inject(method = "extractRenderState", at = @At("TAIL"))
     private void cryptic$applyCustomOutline(T entity, S state, float partialTick, CallbackInfo info) {
-        if (RenderOptimizer.hidesEntityFire()) {
+        if (RenderOptimizer.hidesEntityFire() || imicro.cryptic.feature.SlayerFeatures.hidesFire(entity)) {
             state.displayFireAnimation = false;
         }
 
@@ -125,6 +125,9 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
         }
         if (outlineColor == EntityRenderState.NO_OUTLINE) {
             outlineColor = SpiritBear.outlineColorFor(entity);
+        }
+        if (outlineColor == EntityRenderState.NO_OUTLINE) {
+            outlineColor = imicro.cryptic.feature.NucleusQol.outlineColorFor(entity);
         }
         if (outlineColor == EntityRenderState.NO_OUTLINE) {
             outlineColor = imicro.cryptic.feature.ItemOutline.outlineColorFor(entity);

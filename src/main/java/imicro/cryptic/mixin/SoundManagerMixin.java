@@ -30,6 +30,11 @@ public abstract class SoundManagerMixin {
             cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
             return;
         }
+        if (imicro.cryptic.feature.SlayerFeatures.mutes(instance)) {
+            imicro.cryptic.debug.SoundLog.muted(instance, "Slayer Features");
+            cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
+            return;
+        }
         // For the Sound Manager's Recent list.
         SoundVolumes.onPlay(instance);
     }

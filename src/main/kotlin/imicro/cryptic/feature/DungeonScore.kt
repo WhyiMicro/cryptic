@@ -51,6 +51,13 @@ object DungeonScore {
 		description = "Paul's EZPZ perk is worth ten bonus score. Auto asks Hypixel who won.",
 	)
 
+	@JvmField
+	val secretsNumber = DropdownModuleSetting(
+		id = "secrets_number",
+		label = "Secrets number",
+		options = listOf("Still needed", "Needed in total"),
+		description = "The middle number: how many more secrets to find, or how many the whole run needs.",
+	)
 
 	private val bossSection = SectionModuleSetting("boss_section", "In boss")
 
@@ -155,6 +162,7 @@ object DungeonScore {
 		SectionModuleSetting("score_section", "Score"),
 		placement,
 		paulMode,
+		secretsNumber,
 		bossSection,
 		showInBoss.withMore(minimalInBoss),
 		showAtEnd,
@@ -349,7 +357,8 @@ object DungeonScore {
 	private fun secretsLine(): String {
 		val score = DungeonStats.score
 		val color = if (score < 270) "c" else if (score < 300) "e" else "a"
-		return "§b${DungeonStats.secretsFound}§7-§e${DungeonStats.missingSecrets}§7-" +
+		val middle = if (secretsNumber.selectedIndex == 0) DungeonStats.missingSecrets else DungeonStats.neededSecrets
+		return "§b${DungeonStats.secretsFound}§7-§e$middle§7-" +
 			"§c${DungeonStats.totalSecrets}   §$color$score"
 	}
 

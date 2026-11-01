@@ -1094,6 +1094,8 @@
         "maze_style": "Filled",
         "maze_tracer": true,
         "maze_tracer_color": "#FFFFFF",
+        "maze_order": "Nearest your facing",
+        "maze_auto_rotate": false,
         "weirdos": true,
         "weirdos_color": "#B255FF55",
         "weirdos_wrong_color": "#B2FF5555",

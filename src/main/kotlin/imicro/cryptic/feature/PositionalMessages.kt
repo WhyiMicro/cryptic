@@ -14,6 +14,7 @@ import imicro.cryptic.Cryptic
 import imicro.cryptic.debug.DebugOverrides
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.dungeon.DungeonRun
+import imicro.cryptic.dungeon.DungeonTeam
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SliderModuleSetting
@@ -38,8 +39,8 @@ import kotlin.math.floor
  * between two corners, each with a delay, colour and message. From Odin's Positional Messages.
  * Suggested coordinates round x and z to the nearest half block of where you stand (Odin used the
  * block corner), so circles centre on you. A message can also count, while you're in its spot, how
- * many of the party have leaped to you (Blade Addons' leap count, credited to valley). Saved in `config/cryptic/positional-messages.json`,
- * outside profiles.
+ * many of the party have leaped to you (Blade Addons' leap count, credited to valley), shown to every
+ * class, one class, or nobody. Saved in `config/cryptic/positional-messages.json`, outside profiles.
  */
 object PositionalMessages {
 	@JvmField
@@ -102,7 +103,8 @@ object PositionalMessages {
 	/**
 	 * One message. "At" has a [distance] and no second corner; "in" has the corner and no distance.
 	 * [send] false only draws it, to mark a spot. [leapCount] is how many teammates to count in, or
-	 * null for no count.
+	 * null for no count. [leapHud] is who sees the count: a class's name, [HUD_NONE], or null for
+	 * every class.
 	 */
 	data class PosMessage(
 		val x: Double,
@@ -117,6 +119,7 @@ object PositionalMessages {
 		val message: String,
 		val send: Boolean = true,
 		val leapCount: Int? = null,
+		val leapHud: String? = null,
 	) {
 		val box: AABB? get() = if (x2 != null && y2 != null && z2 != null) AABB(x, y, z, x2, y2, z2) else null
 
@@ -125,6 +128,12 @@ object PositionalMessages {
 		val center: Vec3 get() = box?.center ?: Vec3(x, y, z)
 		val argb: Int get() = 0xFF000000.toInt() or (COLORS[color.lowercase(Locale.ROOT)] ?: 0xFFFFFF)
 	}
+
+	private const val HUD_ALL = "all"
+	private const val HUD_NONE = "none"
+
+	private val HUD_CLASSES = DungeonTeam.DungeonClass.entries.filter { it != DungeonTeam.DungeonClass.UNKNOWN }.map { it.name.lowercase(Locale.ROOT) }
+	private val HUD_CHOICES = listOf(HUD_ALL, HUD_NONE) + HUD_CLASSES
 
 	/** Minecraft's sixteen colours, by Odin's names. */
 	private val COLORS = linkedMapOf(
@@ -182,6 +191,9 @@ object PositionalMessages {
 
 	val needsDungeon: Boolean get() = module.enabled && onlyBoss.value
 
+	/** A leap count shown to one class has to know yours. */
+	val needsTeam: Boolean get() = module.enabled && messages.any { it.leapHud in HUD_CLASSES }
+
 	private fun active(): Boolean =
 		module.enabled && (!onlyBoss.value || (DungeonLocation.inDungeon && DungeonRun.inBoss))
 
@@ -218,6 +230,14 @@ object PositionalMessages {
 		leaped = if (message == null) 0 else level.players().count { it !== player && isRealPlayer(it) && message.contains(it.position()) }
 	}
 
+	private fun showsHud(message: PosMessage): Boolean {
+		val hud = message.leapHud ?: return true
+		if (hud == HUD_NONE) return false
+		val client = Minecraft.getInstance()
+		val clazz = DebugOverrides.dungeonClass ?: client.player?.name?.string?.let(DungeonTeam::classOf)
+		return clazz?.name.equals(hud, ignoreCase = true)
+	}
+
 	/**
 	 * Whether a player is a real one: Hypixel's NPCs have no proper tab entry, while real players'
 	 * names have no spaces. Blade's test.
@@ -239,9 +259,9 @@ object PositionalMessages {
 		override val width: Int = 110
 		override val height: Int = 10
 
-		override fun isVisible(): Boolean = active() && counting != null
+		override fun isVisible(): Boolean = active() && counting?.let(::showsHud) == true
 
-		override fun showInEditor(): Boolean = module.enabled && messages.any { it.leapCount != null }
+		override fun showInEditor(): Boolean = module.enabled && messages.any { it.leapCount != null && it.leapHud != HUD_NONE }
 
 		override fun render(context: net.minecraft.client.gui.GuiGraphicsExtractor) = draw(context, leapCountText(leaped, counting?.leapCount ?: 0))
 
@@ -386,7 +406,7 @@ object PositionalMessages {
 	fun command(): LiteralArgumentBuilder<FabricClientCommandSource> =
 		ClientCommands.literal("posmsg")
 			.executes { context ->
-				feedback(context, "/cryptic posmsg add at|in|here ..., leapcount <off|1-4> <message>, remove <message>, list, clear")
+				feedback(context, "/cryptic posmsg add at|in|here ..., leapcount <off|1-4> <all|none|class> <message>, remove <message>, list, clear")
 				1
 			}
 			.then(
@@ -438,7 +458,7 @@ object PositionalMessages {
 					),
 			)
 			.then(
-				// How many teammates to count in a message's spot, after it's made.
+				// How many teammates to count in a message's spot, and who sees it, after it's made.
 				ClientCommands.literal("leapcount").then(
 					ClientCommands.argument("count", StringArgumentType.word())
 						.suggests { _, builder ->
@@ -446,30 +466,42 @@ object PositionalMessages {
 							builder.buildFuture()
 						}
 						.then(
-							ClientCommands.argument("message", StringArgumentType.greedyString())
+							ClientCommands.argument("hud", StringArgumentType.word())
 								.suggests { _, builder ->
-									messages.map { it.message }.filter { it.lowercase().startsWith(builder.remainingLowerCase) }
-										.forEach(builder::suggest)
+									HUD_CHOICES.filter { it.startsWith(builder.remainingLowerCase) }.forEach(builder::suggest)
 									builder.buildFuture()
 								}
-								.executes { context ->
-									val raw = StringArgumentType.getString(context, "count").lowercase(Locale.ROOT)
-									val count = if (raw == "off") null else raw.toIntOrNull()?.takeIf { it in 1..4 }
-									if (raw != "off" && count == null) {
-										feedback(context, "§cThe count is off or 1 to 4: how many teammates should reach you.")
-										return@executes 0
-									}
-									val wanted = text(context).trim()
-									val index = messages.indexOfFirst { it.message.equals(wanted, ignoreCase = true) }
-									if (index < 0) {
-										feedback(context, "§cNo message \"$wanted\".")
-										return@executes 0
-									}
-									messages[index] = messages[index].copy(leapCount = count)
-									save()
-									feedback(context, if (count == null) "No leap count on \"$wanted\"." else "\"$wanted\" now counts leaps, out of $count.")
-									1
-								},
+								.then(
+									ClientCommands.argument("message", StringArgumentType.greedyString())
+										.suggests { _, builder ->
+											messages.map { it.message }.filter { it.lowercase().startsWith(builder.remainingLowerCase) }
+												.forEach(builder::suggest)
+											builder.buildFuture()
+										}
+										.executes { context ->
+											val raw = StringArgumentType.getString(context, "count").lowercase(Locale.ROOT)
+											val count = if (raw == "off") null else raw.toIntOrNull()?.takeIf { it in 1..4 }
+											if (raw != "off" && count == null) {
+												feedback(context, "§cThe count is off or 1 to 4: how many teammates should reach you.")
+												return@executes 0
+											}
+											val hud = StringArgumentType.getString(context, "hud").lowercase(Locale.ROOT)
+											if (hud !in HUD_CHOICES) {
+												feedback(context, "§cThe HUD is ${HUD_CHOICES.joinToString(", ")}.")
+												return@executes 0
+											}
+											val wanted = text(context).trim()
+											val index = messages.indexOfFirst { it.message.equals(wanted, ignoreCase = true) }
+											if (index < 0) {
+												feedback(context, "§cNo message \"$wanted\".")
+												return@executes 0
+											}
+											messages[index] = messages[index].copy(leapCount = count, leapHud = hud.takeIf { count != null && it != HUD_ALL })
+											save()
+											feedback(context, if (count == null) "No leap count on \"$wanted\"." else "\"$wanted\" now counts leaps, out of $count, HUD: $hud.")
+											1
+										},
+								),
 						),
 				),
 			)
@@ -510,7 +542,7 @@ object PositionalMessages {
 							} else {
 								"at ${trim(it.x)}, ${trim(it.y)}, ${trim(it.z)} r${trim(it.distance ?: 0.0)}"
 							}
-							val leaps = it.leapCount?.let { count -> ", leap count of $count" } ?: ""
+							val leaps = it.leapCount?.let { count -> ", leap count of $count, HUD: ${it.leapHud ?: HUD_ALL}" } ?: ""
 							feedback(context, "${index + 1}. §f\"${it.message}\" §7$where, ${it.delay}t, ${it.color}${if (it.send) "" else ", drawn only"}$leaps")
 						}
 					}

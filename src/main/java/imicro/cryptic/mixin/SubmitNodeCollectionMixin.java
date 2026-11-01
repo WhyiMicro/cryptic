@@ -17,8 +17,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Draws Cryptic's through-walls geometry after translucent terrain. Blended custom geometry is
- * normally drawn before translucent blocks, so ice or glass in front washed it out. Only the
- * through-walls pipelines move; depth-tested geometry keeps vanilla's order.
+ * normally drawn before translucent blocks, so ice or glass in front washed it out. Besides the
+ * through-walls pipelines, only what asks to with {@code CrypticRenderLayers.overTerrain} moves.
  */
 @Mixin(SubmitNodeCollection.class)
 public abstract class SubmitNodeCollectionMixin {

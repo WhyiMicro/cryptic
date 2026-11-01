@@ -38,7 +38,7 @@ public abstract class AbstractContainerScreenMixin {
             return;
         }
         CroesusHelper.drawSlotHighlight(graphics, slot);
-        ItemProtection.drawSlot(graphics, slot.getItem(), slot.x, slot.y, false, false);
+        ItemProtection.drawMenuSlot(graphics, slot, false);
         imicro.cryptic.feature.Bazaar.drawSlot(graphics, slot);
         if (InvincibilityTimer.drawSlotCooldown(graphics, slot)) info.cancel();
     }
@@ -46,7 +46,7 @@ public abstract class AbstractContainerScreenMixin {
     /** Marks drawn over the item. */
     @Inject(method = "extractSlot", at = @At("RETURN"))
     private void cryptic$drawOverSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY, CallbackInfo info) {
-        ItemProtection.drawSlot(graphics, slot.getItem(), slot.x, slot.y, true, false);
+        ItemProtection.drawMenuSlot(graphics, slot, true);
     }
 
     /** No tooltips for items the solver has hidden. */
@@ -89,6 +89,11 @@ public abstract class AbstractContainerScreenMixin {
         }
 
         if (click.button() == 0 && imicro.cryptic.feature.BazaarPresets.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y())) {
+            info.setReturnValue(true);
+            return;
+        }
+
+        if (click.button() == 0 && imicro.cryptic.feature.BazaarHistory.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y())) {
             info.setReturnValue(true);
             return;
         }

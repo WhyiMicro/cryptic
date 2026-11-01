@@ -3,6 +3,7 @@ package imicro.cryptic.feature
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import imicro.cryptic.Cryptic
+import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
@@ -29,6 +30,7 @@ import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.inventory.Slot
 import net.minecraft.world.item.ItemStack
+import org.lwjgl.glfw.GLFW
 import java.nio.file.Files
 import java.util.Locale
 
@@ -177,13 +179,34 @@ object Bazaar {
 	)
 
 	@JvmField
+	val historyRange = DropdownModuleSetting(
+		id = "history_range",
+		label = "Range",
+		options = BazaarHistory.Range.entries.map { it.title },
+		defaultIndex = BazaarHistory.Range.DAY.ordinal,
+		description = "The time span the chart opens on. Its own buttons change this too.",
+	)
+
+	@JvmField
+	val priceHistory = ToggleModuleSetting(
+		"price_history", "Price history", true,
+		"A chart beside a product's page of what it has cost lately, from Coflnet's public price history. Only the product's id is sent to it.",
+	).withMore(historyRange)
+
+	@JvmField
+	val suggestBuy = ToggleModuleSetting(
+		"suggest_buy", "Suggest Bazaar buy", true,
+		"When an NPC turns you away for lacking an item (King Yolkar, the Kalhuiki Door Guardian, Professor Robot), a notification offers to open that item in the Bazaar.",
+	)
+
+	@JvmField
 	val module = Module(
 		id = "bazaar",
 		name = "Bazaar",
 		description = "Bazaar orders and prices",
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
-		settings = listOf(ordersSection, menuStatus, breakdown, ordersHud, undercutAlert, filledAlert, coopAlerts, sounds, quietInDungeons, reopen, presets, marketSection, dailyLimit, escrowFix, hideProgress),
+		settings = listOf(ordersSection, menuStatus, breakdown, ordersHud, undercutAlert, filledAlert, coopAlerts, sounds, quietInDungeons, reopen, presets, marketSection, priceHistory, dailyLimit, suggestBuy, escrowFix, hideProgress),
 	)
 
 	private val client: Minecraft get() = Minecraft.getInstance()
@@ -234,8 +257,12 @@ object Bazaar {
 		val busy = trading || orders.any { !it.expired && it.filled < it.amount }
 		BazaarMarket.refresh(if (trading) 5_000L else if (busy) 20_000L else 120_000L)
 		if (inOrdersMenu(screen)) readMenu(screen as AbstractContainerScreen<*>)
-		(screen as? AbstractContainerScreen<*>)?.let(::readProductPage)
+		if (screen is AbstractContainerScreen<*>) readProductPage(screen) else openProduct = null
 	}
+
+	/** The id of the product whose page is open. */
+	var openProduct: String? = null
+		private set
 
 	/** "- 9,798,500.1 coins each | 41x in 9 orders" or "- 1 coin each | 1x from 1 offer". */
 	private val bookLine = Regex("""^- ([\d,.]+) coins? each \| ([\d,]+)x (?:in|from) ([\d,]+) (?:orders?|offers?)""")
@@ -247,14 +274,19 @@ object Bazaar {
 	 */
 	private fun readProductPage(screen: AbstractContainerScreen<*>) {
 		val slots = screen.menu.slots.filter { it.container !is Inventory && !it.item.isEmpty }
-		val buy = slots.firstOrNull { it.item.hoverName.string.replace(FORMATTING, "").trim() == "Create Buy Order" } ?: return
+		val buy = slots.firstOrNull { it.item.hoverName.string.replace(FORMATTING, "").trim() == "Create Buy Order" }
+		if (buy == null) {
+			openProduct = null
+			return
+		}
 		val sell = slots.firstOrNull { it.item.hoverName.string.replace(FORMATTING, "").trim() == "Create Sell Offer" }
+		val name = screen.title.string.replace(FORMATTING, "").substringAfterLast("➜").trim()
+		openProduct = BazaarMarket.idForName(name)
 		val stamp = slots.sumOf { (it.item.hoverName.string.hashCode() * 31 + (it.item.get(DataComponents.LORE)?.lines()?.hashCode() ?: 0)) * (it.index + 1) }
 		if (stamp == pageStamp) return
 		pageStamp = stamp
-		val name = screen.title.string.replace(FORMATTING, "").substringAfterLast("➜").trim()
 		lastProduct = name
-		val id = BazaarMarket.idForName(name) ?: return
+		val id = openProduct ?: return
 		fun levels(stack: ItemStack?) = stack?.get(DataComponents.LORE)?.lines()?.mapNotNull { line ->
 			bookLine.find(line.string.replace(FORMATTING, "").trim())?.let { match ->
 				BazaarMarket.Level(
@@ -335,6 +367,7 @@ object Bazaar {
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay || !module.enabled) return
 		val line = message.string.replace(FORMATTING, "").trim()
+		if (suggestBuy.value && SkyblockLocation.onSkyblock) suggest(line)
 		if (escrowFix.value && ESCROW.matches(line) && SkyblockLocation.onSkyblock) {
 			val now = System.currentTimeMillis()
 			// One reopen for a burst of refunds.
@@ -380,6 +413,36 @@ object Bazaar {
 				}
 			}
 		}
+	}
+
+	/** An item an NPC is asking for, by how it starts turning you away; [search] goes after /bz. */
+	private class Wanted(val id: String, val item: String, val search: String)
+
+	private val GOBLIN_EGG = Wanted("suggest_goblin_egg", "Goblin Egg", "goblin egg")
+
+	private val WANTED = mapOf(
+		"[NPC] King Yolkar: That is certainly not the meal I am looking for!" to GOBLIN_EGG,
+		"[NPC] King Yolkar: Bring me any type of Goblin Egg" to GOBLIN_EGG,
+		"[NPC] King Yolkar: Dark, right?!" to GOBLIN_EGG,
+		"[NPC] King Yolkar: Where is my Goblin Egg?" to GOBLIN_EGG,
+		"[NPC] Kalhuiki Door Guardian: This temple is locked" to Wanted("suggest_jungle_key", "Jungle Key", "jungle key"),
+		"[NPC] Professor Robot: That's not one of the components I need!" to Wanted("suggest_apparatus", "Precursor Apparatus", "Precursor Apparatus"),
+	)
+
+	private const val SUGGESTION_SECONDS = 10.0
+
+	/** One question per item, however often the NPC is clicked. */
+	private fun suggest(line: String) {
+		val wanted = WANTED.entries.firstOrNull { line.startsWith(it.key) }?.value ?: return
+		if (Toasts.asking(wanted.id)) return
+		Toasts.ask(
+			"Bazaar", wanted.id, life = SUGGESTION_SECONDS,
+			keys = mapOf(
+				GLFW.GLFW_KEY_Y to { client.connection?.sendCommand("bz ${wanted.search}") ?: Unit },
+				GLFW.GLFW_KEY_N to {},
+			),
+			color = Toasts.Colors.BAZAAR, footer = "§a[Y] §fOpen   §c[N] §fNo",
+		) { "Missing §f${wanted.item}§7. Open it in the Bazaar?" }
 	}
 
 	/** Hypixel's progress lines, kept out of chat. */
