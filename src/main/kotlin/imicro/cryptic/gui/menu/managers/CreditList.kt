@@ -49,7 +49,9 @@ object CreditList {
 					"SkyHanni",
 					"Nucleus Features: the crystal slots, the Metal Detector solver and the treasure chest timers, the Croesus profit lists, " +
 						"the idea of the tooltip's estimated item value, the mousemat's angles, the hotspot radar guess, the Conjoined Brood's egg sacs and the Revenant and Sven alerts, " +
-						"how Hypixel shapes a vacuum's trail and sack changes, and the Rift's time, soul, effigy and Mirrorverse messages.",
+						"how Hypixel shapes a vacuum's trail and sack changes, the Rift's time, soul, effigy and Mirrorverse messages, " +
+						"Superpairs' boards for each stake and the names of its face-down cards, and the ideas of the experiment helpers " +
+						"(next click, misclick guard, max clicks and Ultra-Rare alerts, pair highlights, the experience overlay and the Superpairs panel).",
 					"LGPL-2.1", "https://github.com/hannibal002/SkyHanni",
 				),
 				Credit("dtMap", "The dungeon map, its room database and the score.", "BSD 3-Clause", "https://github.com/ricedotwho/dtMap"),
@@ -120,7 +122,11 @@ object CreditList {
 				Credit("Enhanced Chat","Better Chat's tabs, search, right-click menu, merged repeats and longer history.", "GPL-3.0", "https://github.com/KdGaming0/Enhanced-Chat"),
 				Credit("NoFrills", "Better Chat's skipped command confirmations and kept history, Item Protection's rules and override key, the pickaxe ability timer, and Farming's vacuum solver.", "GPL-3.0", "https://github.com/WhatYouThing/NoFrills"),
 				Credit("BtrBz", "The Bazaar module: order tracking, undercut alerts and tooltip prices.", "LGPL-3.0", "https://github.com/LutzLuca/BtrBz"),
-				Credit("Skysoft", "The idea of a Bazaar price history chart.", "LGPL-3.0", "https://github.com/Akinsoft/Skysoft"),
+				Credit(
+					"Skysoft",
+					"The ideas of a Bazaar price history chart, the player head skin fix, hiding the recipe book and centring the crosshair.",
+					"LGPL-3.0", "https://github.com/Akinsoft/Skysoft",
+				),
 				Credit("Coflnet", "The price history data behind the Bazaar's chart.", url = "https://sky.coflnet.com"),
 				Credit("Feesh", "Fishing's hotspot found message and gone alert.", "Apache-2.0", "https://github.com/Sleepy-Panda/Feesh"),
 				Credit("Debugify", "Camera's riding input fix.", "LGPL-3.0", "https://github.com/isXander/Debugify"),

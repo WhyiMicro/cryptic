@@ -20,8 +20,8 @@ import net.minecraft.client.gui.GuiGraphicsExtractor
 
 /**
  * One of every control the menu can draw, wired to nothing (the idea of NoammAddons' Comp Test).
- * Where menu changes get checked: dependent settings, a folded group, a key bind, and a HUD element
- * reading the card back. Saved with profiles like any card.
+ * Not in the menu: kept as the reference for each setting type, and to list in
+ * [imicro.cryptic.gui.ModuleRegistry] again when menu changes need checking.
  */
 object ExampleModule {
 	private const val SOURCE = "Example Module"

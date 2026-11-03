@@ -150,7 +150,12 @@ left. What is still theirs is data and artwork, kept as it is:
   which particles a Voidgloom gives off; and for Rift: the Rift time on the action
   bar, the Enigma Soul lines and Rift Guide menu, the Blood Effigies' sidebar line
   and stands, the lava messages, the dance room's and the Tubulator's bounds and the
-  dance room's success and failure sounds. No code was taken.
+  dance room's success and failure sounds; and for Experiment Solver: the
+  Superpairs board for each stake, the names a face-down card takes, the
+  "Remaining Clicks" line, powerups' lore and where a book card names its
+  enchantment, and the ideas of its experiment helpers (next click, misclick
+  guard, max clicks and Ultra-Rare alerts, pair highlights, the experience
+  overlay and the Superpairs panel). No code was taken.
 - **[SkyHanni repository](https://github.com/hannibal002/SkyHanni-REPO)** (MIT,
   Copyright (c) 2022 hannibal2) — the 39 places the Mines of Divan treasure
   turns up, for Nucleus Features' Metal Detector solver; and for Rift

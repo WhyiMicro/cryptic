@@ -35,16 +35,14 @@
     "experiment_solver": {
       "enabled": false,
       "settings": {
-        "next_color": "#9955FF55",
-        "later_color": "#555555FF",
-        "show_order": true,
+        "mode": "Auto",
         "auto_click": true,
         "click_delay": {
           "lower": 300.0,
           "upper": 500.0
         },
         "run_table": true,
-        "focus": "Rare items",
+        "focus": "Focus valuables",
         "renews": 0.0,
         "serums": 0.0,
         "buy_experience": true,
@@ -1199,30 +1197,6 @@
         "scale": 0.8
       }
     },
-    "example_module": {
-      "enabled": false,
-      "settings": {
-        "toggle": true,
-        "dependent": false,
-        "more_toggle": true,
-        "more_slider": 75.0,
-        "more_choice": "Soft",
-        "more_color": "#FFAA55",
-        "whole_slider": 50.0,
-        "decimal_slider": 1.5,
-        "range": {
-          "lower": 25.0,
-          "upper": 75.0
-        },
-        "dropdown": "First",
-        "dropdown_extra": 3.0,
-        "multi_select": "Apples|Cherries",
-        "text": "Hello",
-        "keybind": -1,
-        "color": "#FFFFFF",
-        "alpha_color": "#8055FFFF"
-      }
-    },
     "click_gui": {
       "settings": {
         "accent_color": "#36865B",
@@ -1340,11 +1314,6 @@
     "spring_boots": {
       "x": 0.475588491717524,
       "y": 0.5493055555555556,
-      "scale": 1.0
-    },
-    "example_module": {
-      "x": 0.7,
-      "y": 0.3,
       "scale": 1.0
     },
     "puzzle_hud": {

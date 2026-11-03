@@ -44,8 +44,31 @@ public abstract class GuiGraphicsExtractorMixin {
         int color,
         CallbackInfo info
     ) {
-        if (CrosshairEditor.hidesSprite(location)) info.cancel();
+        if (CrosshairEditor.hidesSprite(location)) {
+            info.cancel();
+            return;
+        }
+        if (cryptic$centring || !CrosshairEditor.centresSprite(location)) return;
+        // Drawn again under a moved pose; the GUI keeps each element's pose as it's added.
+        var window = net.minecraft.client.Minecraft.getInstance().getWindow();
+        float dx = CrosshairEditor.centreOffset(x, width, window.getWidth());
+        float dy = CrosshairEditor.centreOffset(y, height, window.getHeight());
+        if (dx == 0f && dy == 0f) return;
+        GuiGraphicsExtractor self = (GuiGraphicsExtractor) (Object) this;
+        self.pose().pushMatrix();
+        self.pose().translate(dx, dy);
+        cryptic$centring = true;
+        try {
+            self.blitSprite(pipeline, location, x, y, width, height, color);
+        } finally {
+            cryptic$centring = false;
+            self.pose().popMatrix();
+        }
+        info.cancel();
     }
+
+    /** Set while the centred crosshair is drawn, so that draw isn't centred again. */
+    private static boolean cryptic$centring;
 
     /** The crosshair drawn from the atlas sprite directly, as some mods do. */
     @Inject(

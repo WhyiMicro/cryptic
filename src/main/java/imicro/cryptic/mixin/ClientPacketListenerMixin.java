@@ -449,6 +449,7 @@ public abstract class ClientPacketListenerMixin {
         imicro.cryptic.skyblock.SackContents.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.feature.Farming.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.feature.Rift.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.ExperimentSolver.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.skyblock.KuudraLocation.onSystemChat(packet.content(), packet.overlay());
         // Last: Better Chat hides a line from the chat window, never from the mod.
         if (BetterChat.hidesChat(packet.content(), packet.overlay())

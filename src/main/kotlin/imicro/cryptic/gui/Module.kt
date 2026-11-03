@@ -711,10 +711,10 @@ object ModuleRegistry {
 		imicro.cryptic.feature.HideArmor.module,
 		imicro.cryptic.feature.ClientRestrictions.module,
 		imicro.cryptic.feature.Toasts.module,
-		imicro.cryptic.feature.ExampleModule.module,
 		imicro.cryptic.feature.ClickGui.module,
 		imicro.cryptic.hud.HudSettings.module,
 		imicro.cryptic.gui.menu.managers.ProfilesSection.module,
+		imicro.cryptic.gui.menu.managers.ChangelogSection.module,
 		imicro.cryptic.gui.menu.managers.CreditsSection.module,
 	)
 

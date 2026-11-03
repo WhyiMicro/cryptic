@@ -3,6 +3,7 @@ package imicro.cryptic.experiment
 import imicro.cryptic.feature.ExperimentSolver
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+import net.minecraft.core.component.DataComponents
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.world.scores.DisplaySlot
 import net.minecraft.world.scores.PlayerTeam
@@ -98,8 +99,9 @@ object ExperimentTracker {
 			current = when (game) {
 				ExperimentRules.Game.CHRONOMATRON -> ChronomatronHandler()
 				ExperimentRules.Game.ULTRASEQUENCER -> UltrasequencerHandler()
-				ExperimentRules.Game.SUPERPAIRS -> SuperpairsHandler()
+				ExperimentRules.Game.SUPERPAIRS -> SuperpairsHandler(ExperimentRules.superpairsBoard(title))
 			}
+			cardStacks.clear()
 		}
 		ExperimentRunner.onMenuOpened(title)
 		status = "${current?.name} open"
@@ -127,8 +129,22 @@ object ExperimentTracker {
 		ExperimentDebug.dumpMenu(menuTitle)
 
 		val handler = current ?: return
-		cells = menuItems.mapIndexed(::cellOf)
-		handler.update(cells, PlayOptions(rareItemsOnly = ExperimentSolver.huntingItems))
+		val superpairs = handler as? SuperpairsHandler
+		cells = menuItems.mapIndexed { slot, stack -> cellOf(slot, stack, withLore = superpairs != null && slot < 54) }
+		if (superpairs != null) {
+			for (slot in superpairs.board) {
+				val cell = cells.getOrNull(slot) ?: continue
+				if (ExperimentRules.isSuperpairsCard(cell)) cardStacks[slot] = menuItems[slot].copy()
+			}
+		}
+		handler.update(
+			cells,
+			PlayOptions(
+				rareItemsOnly = ExperimentSolver.huntingItems,
+				valueOf = ExperimentSolver::cardValue,
+				rareFrom = ExperimentSolver.rareFrom.value * 1_000_000,
+			),
+		)
 		status = "${handler.name}: round ${handler.roundsDone()}, " +
 			"${handler.clickOrder().size} to click, control ${ExperimentRules.controlOf(cells) ?: "?"}"
 		ExperimentDebug.note(status)
@@ -137,6 +153,7 @@ object ExperimentTracker {
 	fun closed() {
 		current = null
 		currentGame = null
+		cardStacks.clear()
 		menuTitle = ""
 		menuItems = emptyList()
 		cells = emptyList()
@@ -153,7 +170,10 @@ object ExperimentTracker {
 		refresh()
 	}
 
-	private fun cellOf(slot: Int, stack: ItemStack): ExperimentCell {
+	/** Superpairs cards as last seen face up, by slot, to draw over the ones turned back over. */
+	val cardStacks = HashMap<Int, ItemStack>()
+
+	private fun cellOf(slot: Int, stack: ItemStack, withLore: Boolean): ExperimentCell {
 		if (stack.isEmpty) return ExperimentCell(slot, "", 0, false, "", true)
 		return ExperimentCell(
 			slot = slot,
@@ -162,6 +182,11 @@ object ExperimentTracker {
 			foil = stack.hasFoil(),
 			name = ExperimentRules.stripFormatting(stack.hoverName.string),
 			empty = false,
+			lore = if (withLore) {
+				stack.get(DataComponents.LORE)?.lines()?.map { ExperimentRules.stripFormatting(it.string).trim() }.orEmpty()
+			} else {
+				emptyList()
+			},
 		)
 	}
 

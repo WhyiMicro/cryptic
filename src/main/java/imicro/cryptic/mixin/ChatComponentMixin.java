@@ -12,8 +12,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Constant;
-import org.spongepowered.asm.mixin.injection.ModifyConstant;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
 import java.util.function.Predicate;
@@ -71,8 +69,12 @@ public abstract class ChatComponentMixin {
         return shown && !ChatExtras.hides(message);
     }
 
-    @ModifyConstant(method = {"addMessageToDisplayQueue", "addMessageToQueue"}, constant = @Constant(intValue = 100))
-    private int cryptic$historyLength(int vanilla) {
-        return ChatExtras.historyLength();
+    /**
+     * Not {@code @ModifyConstant}: only one mod can hold that on a constant, and a mod that requires
+     * its own crashes the game (Skysoft). This reads whatever they made of it.
+     */
+    @ModifyExpressionValue(method = {"addMessageToDisplayQueue", "addMessageToQueue"}, at = @At(value = "CONSTANT", args = "intValue=100"))
+    private int cryptic$historyLength(int limit) {
+        return Math.max(limit, ChatExtras.historyLength());
     }
 }

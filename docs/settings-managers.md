@@ -12,6 +12,7 @@ is on; the switch in the page's title row turns the module on.
 | `/cryptic aliases` | Alias Manager |
 | `/cryptic sounds` | Sound Manager |
 | `/cryptic update` | Checks for an update now |
+| `/cryptic changelog` | Changelog |
 | `/cryptic blacklist` | Party Blacklist |
 
 ## Keybinds Manager
@@ -111,6 +112,18 @@ it. A failed one says why and leaves the release page in chat.
 when you're already up to date. `/cryptic debug update` shows the whole thing
 with a made-up next version, and `/cryptic debug update fail` makes its pretend
 download fail; neither downloads anything.
+
+## Changelog
+
+The Changelog card in Settings, or `/cryptic changelog`, shows the release
+notes for the version you have, read from its GitHub release. A build newer
+than the last release, such as one you built yourself, shows that release's
+notes and says so. **All releases** opens the GitHub releases page with every
+older changelog.
+
+After Cryptic updates, the first time you join a world or server a
+notification says so; press **Y** to open the Changelog. Turn it off with
+**Show what's new after an update** in Update Checker.
 
 ## Party Blacklist
 

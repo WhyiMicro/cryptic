@@ -167,8 +167,10 @@ object AutoUpdater {
 	 */
 	private fun install() {
 		val (jar, version) = pending ?: return
-		if (!UpdateChecker.module.enabled || !UpdateChecker.autoUpdate.value) return
-		val running = runningJar() ?: return
+		// Not gated on "Install updates automatically": with it off, a download only exists because
+		// the player said yes to it.
+		if (!UpdateChecker.module.enabled) return Cryptic.LOGGER.info("Update Checker is off, so Cryptic {} was not installed", version)
+		val running = runningJar() ?: return Cryptic.LOGGER.warn("Cryptic {} was not installed: Cryptic isn't running from a jar", version)
 		runCatching {
 			val classFile = helperDirectory.resolve(HELPER_CLASS.replace('.', '/') + ".class")
 			Files.createDirectories(classFile.parent)

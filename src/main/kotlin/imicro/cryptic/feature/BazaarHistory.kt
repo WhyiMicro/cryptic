@@ -1,10 +1,13 @@
 package imicro.cryptic.feature
 
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.mojang.blaze3d.platform.NativeImage
 import imicro.cryptic.Cryptic
 import imicro.cryptic.mixin.ContainerScreenAccessor
 import imicro.cryptic.skyblock.BazaarMarket
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.Screen
@@ -16,6 +19,7 @@ import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
 import net.minecraft.sounds.SoundEvents
 import java.net.URLEncoder
+import java.nio.file.Files
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -31,10 +35,11 @@ import kotlin.math.abs
  * order, so these two lines also show where the orders stand. Skysoft's idea, Cryptic's own code.
  */
 object BazaarHistory {
-	enum class Range(val title: String, val label: String, val path: String, val axis: String) {
-		HOUR("1 hour", "1h", "hour", "HH:mm"),
-		DAY("1 day", "1d", "day", "d MMM HH:mm"),
-		WEEK("1 week", "1w", "week", "d MMM"),
+	/** [maxAge]: how long a fetched chart is shown before it's asked for again; a week's barely moves in an hour. */
+	enum class Range(val title: String, val label: String, val path: String, val axis: String, val maxAge: Long) {
+		HOUR("1 hour", "1h", "hour", "HH:mm", 60_000L),
+		DAY("1 day", "1d", "day", "d MMM HH:mm", 5 * 60_000L),
+		WEEK("1 week", "1w", "week", "d MMM", 30 * 60_000L),
 	}
 
 	class Point(val at: Long, val buy: Double, val sell: Double)
@@ -43,7 +48,6 @@ object BazaarHistory {
 	private class Entry(val points: List<Point>?, val at: Long)
 
 	private const val HISTORY_URL = "https://sky.coflnet.com/api/bazaar/%s/history/%s"
-	private const val MAX_AGE_MS = 60_000L
 	private const val RETRY_MS = 30_000L
 	private const val MAX_ENTRIES = 64
 
@@ -70,10 +74,13 @@ object BazaarHistory {
 	private val entries = ConcurrentHashMap<String, Entry>()
 	private val fetching = ConcurrentHashMap.newKeySet<String>()
 
+	/** Asked only while the chart is drawn, so nothing is fetched (or read from disk) with it off. */
 	private fun entry(id: String, range: Range): Entry? {
+		loadCache()
 		val key = "$id|${range.path}"
 		val known = entries[key]
-		val maxAge = if (known?.points == null) RETRY_MS else MAX_AGE_MS
+		val maxAge = if (known?.points == null) RETRY_MS else range.maxAge
+		// A stale chart stays up while the new one loads.
 		if ((known == null || System.currentTimeMillis() - known.at > maxAge) && fetching.add(key)) fetch(key, id, range)
 		return known
 	}
@@ -81,8 +88,12 @@ object BazaarHistory {
 	private fun fetch(key: String, id: String, range: Range) {
 		BazaarMarket.get(HISTORY_URL.format(URLEncoder.encode(id, Charsets.UTF_8), range.path))
 			.thenAccept { body ->
-				if (entries.size >= MAX_ENTRIES) entries.clear()
-				entries[key] = Entry(parse(body), System.currentTimeMillis())
+				val points = parse(body)
+				if (entries.size >= MAX_ENTRIES && !entries.containsKey(key)) {
+					entries.entries.minByOrNull { it.value.at }?.let { entries.remove(it.key) }
+				}
+				entries[key] = Entry(points, System.currentTimeMillis())
+				saveCache()
 			}
 			.exceptionally { error ->
 				entries[key] = Entry(entries[key]?.points, System.currentTimeMillis())
@@ -90,6 +101,51 @@ object BazaarHistory {
 				null
 			}
 			.whenComplete { _, _ -> fetching.remove(key) }
+	}
+
+	// ---- The cache on disk --------------------------------------------------------------------
+
+	/** Charts kept between sessions, so a page opened again draws at once and isn't fetched early. */
+	private val cacheFile get() = FabricLoader.getInstance().configDir.resolve("cryptic").resolve("cache").resolve("bazaar-history.json")
+
+	@Volatile
+	private var cacheLoaded = false
+
+	private fun loadCache() {
+		if (cacheLoaded) return
+		cacheLoaded = true
+		runCatching {
+			val file = cacheFile
+			if (!Files.exists(file)) return
+			val root = JsonParser.parseString(Files.readString(file)).asJsonObject
+			for ((key, value) in root.entrySet()) {
+				val saved = value.asJsonObject
+				val points = saved.getAsJsonArray("points").map { point ->
+					val row = point.asJsonArray
+					Point(row[0].asLong, row[1].asDouble, row[2].asDouble)
+				}
+				entries.putIfAbsent(key, Entry(points, saved.get("at").asLong))
+			}
+		}.onFailure { Cryptic.LOGGER.warn("Could not read the Bazaar history cache: {}", it.message) }
+	}
+
+	/** Written off the render thread; failed fetches aren't kept. */
+	private fun saveCache() {
+		val snapshot = entries.filterValues { it.points != null }
+		java.util.concurrent.CompletableFuture.runAsync {
+			runCatching {
+				val root = JsonObject()
+				for ((key, entry) in snapshot) {
+					val points = JsonArray()
+					for (point in entry.points.orEmpty()) {
+						points.add(JsonArray().apply { add(point.at); add(point.buy); add(point.sell) })
+					}
+					root.add(key, JsonObject().apply { addProperty("at", entry.at); add("points", points) })
+				}
+				Files.createDirectories(cacheFile.parent)
+				synchronized(this) { Files.writeString(cacheFile, root.toString()) }
+			}.onFailure { Cryptic.LOGGER.warn("Could not save the Bazaar history cache: {}", it.message) }
+		}
 	}
 
 	/** Oldest first. Its times are UTC, written without saying so. */
@@ -197,6 +253,15 @@ object BazaarHistory {
 		graphics.text(font, value, box.x + box.width - PADDING - font.width(value), y, -1)
 	}
 
+	/** The panel look shared by the side panels beside menus: dark fill, thin light edge. */
+	fun panelBox(graphics: GuiGraphicsExtractor, x: Int, y: Int, width: Int, height: Int) {
+		graphics.fill(x, y, x + width, y + height, PANEL_FILL)
+		graphics.fill(x, y, x + width, y + 1, PANEL_EDGE)
+		graphics.fill(x, y + height - 1, x + width, y + height, PANEL_EDGE)
+		graphics.fill(x, y + 1, x + 1, y + height - 1, PANEL_EDGE)
+		graphics.fill(x + width - 1, y + 1, x + width, y + height - 1, PANEL_EDGE)
+	}
+
 	@JvmStatic
 	fun render(screen: Screen, graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
 		panel = null
@@ -214,11 +279,7 @@ object BazaarHistory {
 		val entry = entry(id, range)
 		val points = entry?.points
 
-		graphics.fill(box.x, box.y, box.x + box.width, box.y + box.height, PANEL_FILL)
-		graphics.fill(box.x, box.y, box.x + box.width, box.y + 1, PANEL_EDGE)
-		graphics.fill(box.x, box.y + box.height - 1, box.x + box.width, box.y + box.height, PANEL_EDGE)
-		graphics.fill(box.x, box.y + 1, box.x + 1, box.y + box.height - 1, PANEL_EDGE)
-		graphics.fill(box.x + box.width - 1, box.y + 1, box.x + box.width, box.y + box.height - 1, PANEL_EDGE)
+		panelBox(graphics, box.x, box.y, box.width, box.height)
 
 		val font = client.font
 		graphics.text(font, "§6Price history", box.x + PADDING, box.y + PADDING, -1)

@@ -18,6 +18,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.file.Files
 import java.time.Duration
 
 /**
@@ -28,7 +29,7 @@ import java.time.Duration
  */
 object UpdateChecker {
 	/** Recent releases rather than just the latest, which may be for another Minecraft version. */
-	private const val API = "https://api.github.com/repos/WhyiMicro/cryptic/releases?per_page=30"
+	const val API ="https://api.github.com/repos/WhyiMicro/cryptic/releases?per_page=30"
 	private const val SOURCE = "Update"
 	private const val TOAST_SECONDS = 30.0
 
@@ -38,6 +39,14 @@ object UpdateChecker {
 		label = "Install updates automatically",
 		defaultValue = false,
 		description = "Downloads a new release, then installs it when you close the game. Off, you're asked first.",
+	)
+
+	@JvmField
+	val whatsNew = ToggleModuleSetting(
+		id = "whats_new",
+		label = "Show what's new after an update",
+		defaultValue = true,
+		description = "The first time you join after Cryptic updates, a notification offers its changelog.",
 	)
 
 	private val checkNow = ButtonModuleSetting("check_now", "Check now", action = { check(manual = true) })
@@ -50,7 +59,7 @@ object UpdateChecker {
 		category = ModuleCategory.MISC,
 		enabled = true,
 		supportsKeybind = false,
-		settings = listOf(autoUpdate, checkNow),
+		settings = listOf(autoUpdate, whatsNew, checkNow),
 	)
 
 	private val http: HttpClient by lazy {
@@ -68,13 +77,53 @@ object UpdateChecker {
 		if (initialized) return
 		initialized = true
 		AutoUpdater.initialize()
+		updated = wasUpdated()
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ ->
+			announceUpdate()
 			if (module.enabled && !checkedThisSession) {
 				checkedThisSession = true
 				check(manual = false)
 			}
 		}
 	}
+
+	/** Where the version last run is kept, to tell when Cryptic has been updated. */
+	private val lastVersionFile = FabricLoader.getInstance().configDir.resolve("cryptic").resolve("last_version.txt")
+
+	/** Whether this version is newer than the one run before it. */
+	private var updated = false
+
+	/** Whether this session's version is recorded, so later joins skip it. */
+	private var recorded = false
+
+	/** Without a record, an existing config means Cryptic was there before the record was kept. */
+	private fun wasUpdated(): Boolean = runCatching {
+		if (Files.exists(lastVersionFile)) isNewer(installed, Files.readString(lastVersionFile).trim())
+		else Files.exists(lastVersionFile.resolveSibling("config.json"))
+	}.onFailure { Cryptic.LOGGER.warn("Could not read {}", lastVersionFile, it) }.getOrDefault(false)
+
+	/** Offers the changelog on the first join after an update, and records this version as seen. */
+	private fun announceUpdate() {
+		if (recorded) return
+		recorded = true
+		runCatching {
+			Files.createDirectories(lastVersionFile.parent)
+			Files.writeString(lastVersionFile, installed)
+		}.onFailure { Cryptic.LOGGER.warn("Could not save {}", lastVersionFile, it) }
+		if (!updated || !module.enabled || !whatsNew.value) return
+		Toasts.ask(
+			source = SOURCE,
+			id = WHATS_NEW_ID,
+			life = TOAST_SECONDS,
+			color = Toasts.Colors.GOOD,
+			footer = "§a[Y] §fSee what's new",
+			keys = mapOf(
+				org.lwjgl.glfw.GLFW.GLFW_KEY_Y to { imicro.cryptic.gui.menu.MenuScreen.request(imicro.cryptic.gui.menu.managers.ChangelogSection.module) },
+			),
+		) { "§aCryptic updated to §f${short(installed)}§a! §7Want to see what's new?" }
+	}
+
+	private const val WHATS_NEW_ID = "whats_new"
 
 	val installed: String
 		get() = FabricLoader.getInstance().getModContainer(Cryptic.MOD_ID)
@@ -151,7 +200,7 @@ object UpdateChecker {
 		}
 	}
 
-	private const val RELEASES_PAGE = "https://github.com/WhyiMicro/cryptic/releases"
+	const val RELEASES_PAGE ="https://github.com/WhyiMicro/cryptic/releases"
 
 	private fun compare(a: String, b: String): Int {
 		val x = numbers(a) ?: return -1

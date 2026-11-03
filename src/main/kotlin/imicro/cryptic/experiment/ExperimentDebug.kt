@@ -58,18 +58,20 @@ object ExperimentDebug {
 		val title = pendingTitle ?: return
 		if (System.currentTimeMillis() - pendingAt < SETTLE_MILLIS) return
 
-		val items = ExperimentTracker.menuItems
+		// The chest's own slots; the player's inventory below it says nothing about the table.
+		val items = ExperimentTracker.menuItems.dropLast(PLAYER_SLOTS)
 		pendingTitle = null
 
-		// Keyed on the slot contents, so a changed board is a new entry and a resent one isn't.
+		// Keyed on the slot contents, so a changed board is a new entry and a resent one isn't. The
+		// timer counts down every second and isn't a change worth a dump.
 		val key = items.joinToString("|") {
-			if (it.isEmpty) "" else "${it.item}${it.count}${it.hoverName.string}"
+			if (it.isEmpty || it.hoverName.string.contains("Timer:")) "" else "${it.item}${it.count}${it.hoverName.string}"
 		}
 		if (!dumped.add("$title#${key.hashCode()}")) return
 
 		Cryptic.LOGGER.info("[experiments] ---- menu \"$title\" (${items.size} slots) ----")
 		items.forEachIndexed { slot, stack ->
-			if (stack.isEmpty) return@forEachIndexed
+			if (stack.isEmpty || isFiller(stack)) return@forEachIndexed
 			val id = BuiltInRegistries.ITEM.getKey(stack.item)
 			val name = ExperimentRules.stripFormatting(stack.hoverName.string)
 			val lore = loreLines(stack).joinToString(" | ")
@@ -79,6 +81,13 @@ object ExperimentDebug {
 	}
 
 	private const val SETTLE_MILLIS = 300L
+
+	/** The inventory and hotbar under a chest. */
+	private const val PLAYER_SLOTS = 36
+
+	/** Nameless glass panes, which pad every Hypixel menu. */
+	private fun isFiller(stack: ItemStack): Boolean =
+		BuiltInRegistries.ITEM.getKey(stack.item).path.endsWith("stained_glass_pane") && stack.hoverName.string.isBlank()
 
 	private fun loreLines(stack: ItemStack): List<String> {
 		val player = Minecraft.getInstance().player

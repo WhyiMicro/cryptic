@@ -110,8 +110,14 @@ object Bazaar {
 	@JvmField
 	val reopen = ToggleModuleSetting(
 		"reopen", "Reopen cancelled orders", true,
-		"After you cancel an order, Bazaar Orders shows it as an item: click it to open that product's page and relist. " +
+		"After you cancel an order, Bazaar Orders shows it as an item left of Go Back: click it to open that product's page and relist. " +
 			"Hold Ctrl while cancelling to copy the amount that hadn't filled.",
+	)
+
+	@JvmField
+	val claimMine = ToggleModuleSetting(
+		"claim_mine", "Claim only your orders", true,
+		"Two buttons beside Hypixel's in Bazaar Orders: one claims your sell offers, the other your buy orders, one at a time at a person's pace, leaving your co-op members' for them.",
 	)
 
 	@JvmField
@@ -206,7 +212,7 @@ object Bazaar {
 		description = "Bazaar orders and prices",
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
-		settings = listOf(ordersSection, menuStatus, breakdown, ordersHud, undercutAlert, filledAlert, coopAlerts, sounds, quietInDungeons, reopen, presets, marketSection, priceHistory, dailyLimit, suggestBuy, escrowFix, hideProgress),
+		settings = listOf(ordersSection, menuStatus, breakdown, ordersHud, undercutAlert, filledAlert, coopAlerts, sounds, quietInDungeons, reopen, claimMine, presets, marketSection, priceHistory, dailyLimit, suggestBuy, escrowFix, hideProgress),
 	)
 
 	private val client: Minecraft get() = Minecraft.getInstance()
@@ -253,6 +259,7 @@ object Bazaar {
 		// Fresh while trading or with orders out; otherwise only now and then, for tooltips.
 		playDueSounds()
 		forgetReopenOnLeave(screen)
+		tickClaiming(screen)
 		val trading = inBazaar(screen)
 		val busy = trading || orders.any { !it.expired && it.filled < it.amount }
 		BazaarMarket.refresh(if (trading) 5_000L else if (busy) 20_000L else 120_000L)
@@ -535,10 +542,173 @@ object Bazaar {
 	/** Whether Bazaar Orders has shown the reopen item since the cancel; leaving it then clears it. */
 	private var reopenShown = false
 
+	/**
+	 * Bottom-row slots, counted from the end. Hypixel's are Go Back, Close and the hopper; the two
+	 * claim buttons sit right of them, and reopen left of Go Back.
+	 */
+	private const val REOPEN_FROM_END = 7
+	private const val CLAIM_SELL_FROM_END = 3
+	private const val CLAIM_BUY_FROM_END = 2
+
+	/**
+	 * A free slot of the orders menu's own bottom row, [fromEnd] from its last. Hypixel fills free
+	 * slots with nameless glass panes, which some mods hide, so those count as free.
+	 */
+	private fun isOwnButtonSlot(screen: AbstractContainerScreen<*>, slot: Slot, fromEnd: Int): Boolean {
+		if (slot.container is Inventory || !inOrdersMenu(screen)) return false
+		if (slot.containerSlot != slot.container.containerSize - fromEnd) return false
+		val item = slot.item
+		if (item.isEmpty) return true
+		val id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.item).path
+		return id.endsWith("stained_glass_pane") && item.hoverName.string.isBlank()
+	}
+
 	private fun isReopenSlot(screen: AbstractContainerScreen<*>, slot: Slot?): Boolean {
-		if (slot == null || !reopen.value || !module.enabled || cancelled == null || !inOrdersMenu(screen)) return false
-		if (slot.container is Inventory) return false
-		return slot.containerSlot == slot.container.containerSize - 6
+		if (slot == null || !reopen.value || !module.enabled || cancelled == null) return false
+		return isOwnButtonSlot(screen, slot, REOPEN_FROM_END)
+	}
+
+	// ---- Claiming only your own orders -----------------------------------------------------
+
+	/** Which claim button [slot] is: true for sell orders, false for buy orders, null for neither. */
+	private fun claimButton(screen: AbstractContainerScreen<*>, slot: Slot?): Boolean? {
+		if (slot == null || !claimMine.value || !module.enabled) return null
+		return when {
+			isOwnButtonSlot(screen, slot, CLAIM_SELL_FROM_END) -> true
+			isOwnButtonSlot(screen, slot, CLAIM_BUY_FROM_END) -> false
+			else -> null
+		}
+	}
+
+	/** "You have 1.2M coins to claim!", "Click to claim!", or filled all the way. */
+	private fun claimable(stack: ItemStack, order: Order): Boolean =
+		order.filled >= order.amount ||
+			stack.get(DataComponents.LORE)?.lines()?.any { it.string.contains("to claim", ignoreCase = true) } == true
+
+	/** Placed by you: "By:" names you, or says nothing. */
+	private fun isMine(order: Order): Boolean = !order.coopMember
+
+	/** Your own [sell] or buy orders with something to claim, in menu order. */
+	private fun claimableMine(screen: AbstractContainerScreen<*>, sell: Boolean): List<Slot> = screen.menu.slots.filter { slot ->
+		if (slot.container is Inventory || slot.item.isEmpty) return@filter false
+		val order = parsed.getOrPut(slot.item) { parseOrder(slot.item) ?: NOT_AN_ORDER }.takeIf { it !== NOT_AN_ORDER }
+		order != null && order.sell == sell && isMine(order) && claimable(slot.item, order)
+	}
+
+	/** Each order's lore, once per press, so a button that finds nothing can be put right from the log. */
+	private fun logOrders(screen: AbstractContainerScreen<*>) {
+		for (slot in screen.menu.slots) {
+			if (slot.container is Inventory) continue
+			val order = parseOrder(slot.item) ?: continue
+			val lore = slot.item.get(DataComponents.LORE)?.lines()?.joinToString(" | ") { it.string.replace(FORMATTING, "") }
+			Cryptic.LOGGER.info("[bazaar claim] slot {} {} {} by '{}', mine {}: {}", slot.index, order.kind, order.name, order.owner, isMine(order), lore)
+		}
+	}
+
+	/** What's being claimed: true for sell orders, false for buy orders, null when nothing is. */
+	private var claiming: Boolean? = null
+	private var claimNextAt = 0L
+	private var claimed = 0
+
+	/** Each order clicked this run, by slot and look, so one Hypixel won't claim isn't clicked forever. */
+	private val claimTried = HashSet<Int>()
+
+	/** A random pause between claims, in milliseconds, so they come at a person's pace. */
+	private val CLAIM_GAP_MILLIS = 200L..500L
+	private const val CLAIM_MAX = 40
+
+	private fun claimKey(slot: Slot): Int =
+		(slot.index * 31 + slot.item.hoverName.string.hashCode()) * 31 + (slot.item.get(DataComponents.LORE)?.lines()?.hashCode() ?: 0)
+
+	private fun kindName(sell: Boolean) = if (sell) "sell orders" else "buy orders"
+
+	/** One claim at a time, a random 200 to 500 ms apart. */
+	private fun tickClaiming(screen: Any?) {
+		val sell = claiming ?: return
+		val menu = screen as? AbstractContainerScreen<*>
+		if (menu == null || !inOrdersMenu(menu)) {
+			claiming = null
+			return
+		}
+		val now = System.currentTimeMillis()
+		if (now < claimNextAt) return
+		val next = claimableMine(menu, sell).firstOrNull { claimKey(it) !in claimTried }
+		if (next == null || claimTried.size >= CLAIM_MAX) {
+			claiming = null
+			notify(if (claimed == 0) "§7None of your ${kindName(sell)} had anything to claim." else "§7Claimed §f$claimed §7of your ${kindName(sell)}.")
+			return
+		}
+		claimTried += claimKey(next)
+		claimed++
+		val player = client.player ?: return
+		client.gameMode?.handleContainerInput(menu.menu.containerId, next.index, 0, net.minecraft.world.inventory.ContainerInput.PICKUP, player)
+		claimNextAt = now + CLAIM_GAP_MILLIS.random()
+	}
+
+	private fun claimStack(sell: Boolean): ItemStack = if (sell) claimSellStack else claimBuyStack
+
+	private val claimSellStack: ItemStack by lazy {
+		ItemStack(net.minecraft.world.item.Items.GOLD_INGOT).apply {
+			set(DataComponents.CUSTOM_NAME, Component.literal("§6Claim your sell orders").withStyle { it.withItalic(false) })
+		}
+	}
+
+	private val claimBuyStack: ItemStack by lazy {
+		ItemStack(net.minecraft.world.item.Items.CHEST).apply {
+			set(DataComponents.CUSTOM_NAME, Component.literal("§aClaim your buy orders").withStyle { it.withItalic(false) })
+		}
+	}
+
+	private fun claimTooltip(screen: AbstractContainerScreen<*>, sell: Boolean): List<Component> {
+		val count = claimableMine(screen, sell).size
+		fun line(text: String) = Component.literal(text).withStyle { it.withItalic(false) }
+		return listOf(
+			claimStack(sell).hoverName,
+			line(if (sell) "§7Collects the coins from the sell offers" else "§7Collects the items from the buy orders"),
+			line("§7you placed, one at a time, leaving your"),
+			line("§7co-op members' for them."),
+			Component.empty(),
+			line(if (claiming == sell) "§eClaiming..." else if (count == 0) "§7Nothing of yours to claim." else "§eClick to claim §f$count§e!"),
+		)
+	}
+
+	private fun startClaiming(screen: AbstractContainerScreen<*>, sell: Boolean) {
+		if (claiming != null) return
+		logOrders(screen)
+		claiming = sell
+		claimed = 0
+		claimTried.clear()
+		claimNextAt = 0L
+		client.soundManager.play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1f))
+	}
+
+	private fun reopenCancelled() {
+		val order = cancelled ?: return
+		cancelled = null
+		BazaarPresets.relisting(order.name, order.sell, order.left)
+		// The click never reaches Hypixel, so its click sound is played here.
+		client.soundManager.play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1f))
+		client.player?.connection?.sendCommand("bz ${order.name}")
+	}
+
+	/**
+	 * A mouse press in the orders menu. Cryptic's buttons sit on Hypixel's filler panes, and other
+	 * mods drop clicks on those before they become slot clicks, so the press is taken here. True
+	 * takes it.
+	 */
+	@JvmStatic
+	fun handleMouseClick(screen: AbstractContainerScreen<*>, button: Int): Boolean {
+		if (!module.enabled || button != GLFW.GLFW_MOUSE_BUTTON_LEFT || !inOrdersMenu(screen)) return false
+		val slot = (screen as ContainerScreenAccessor).`cryptic$hoveredSlot`() ?: return false
+		claimButton(screen, slot)?.let { sell ->
+			startClaiming(screen, sell)
+			return true
+		}
+		if (isReopenSlot(screen, slot)) {
+			reopenCancelled()
+			return true
+		}
+		return false
 	}
 
 	private fun reopenStack(): ItemStack? {
@@ -560,6 +730,10 @@ object Bazaar {
 	@JvmStatic
 	fun drawReopen(graphics: GuiGraphicsExtractor, slot: Slot): Boolean {
 		val screen = client.gui.screen() as? AbstractContainerScreen<*> ?: return false
+		claimButton(screen, slot)?.let { sell ->
+			graphics.item(claimStack(sell), slot.x, slot.y)
+			return true
+		}
 		if (!isReopenSlot(screen, slot)) return false
 		val stack = reopenStack() ?: return false
 		reopenShown = true
@@ -572,6 +746,10 @@ object Bazaar {
 	@JvmStatic
 	fun drawReopenTooltip(screen: AbstractContainerScreen<*>, graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int): Boolean {
 		val slot = (screen as ContainerScreenAccessor).`cryptic$hoveredSlot`() ?: return false
+		claimButton(screen, slot)?.let { sell ->
+			graphics.setComponentTooltipForNextFrame(client.font, claimTooltip(screen, sell), mouseX, mouseY)
+			return true
+		}
 		if (!isReopenSlot(screen, slot)) return false
 		val stack = reopenStack() ?: return false
 		graphics.setComponentTooltipForNextFrame(client.font, listOf(stack.hoverName) + (stack.get(DataComponents.LORE)?.lines() ?: emptyList()), mouseX, mouseY)
@@ -581,17 +759,10 @@ object Bazaar {
 	/** A click of yours in a Bazaar menu. True takes it. */
 	@JvmStatic
 	fun onSlotClicked(screen: AbstractContainerScreen<*>, slot: Slot?): Boolean {
-		if (!module.enabled || !reopen.value || slot == null) return false
-		if (isReopenSlot(screen, slot)) {
-			val order = cancelled ?: return true
-			val name = order.name
-			cancelled = null
-			BazaarPresets.relisting(name, order.sell, order.left)
-			// The click never reaches Hypixel, so its click sound is played here.
-			client.soundManager.play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1f))
-			client.player?.connection?.sendCommand("bz $name")
-			return true
-		}
+		if (!module.enabled || slot == null) return false
+		// The buttons act on the mouse press (handleMouseClick); a slot click reaching them, from a
+		// key or a mod that let it through, is only kept from Hypixel.
+		if (claimButton(screen, slot) != null || isReopenSlot(screen, slot)) return true
 		if (inOrdersMenu(screen) && slot.container !is Inventory) {
 			parseOrder(slot.item)?.let { order -> picked = Picked(order.name, slot.item.copy(), order.amount - order.filled, order.sell) }
 			return false

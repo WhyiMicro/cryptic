@@ -83,8 +83,8 @@ object Rift {
 	val ubikOutside = ToggleModuleSetting(
 		id = "ubik_outside",
 		label = "Outside the Rift",
-		defaultValue = false,
-		description = "Also says when Ubik's game is ready again while you're elsewhere on SkyBlock, two hours after you last played it.",
+		defaultValue = true,
+		description = "Also says when Ubik's game is ready again while you're elsewhere on SkyBlock, two hours after you last played it, even if the game was closed in between.",
 	)
 
 	@JvmField
@@ -92,7 +92,7 @@ object Rift {
 		id = "ubik_reminder",
 		label = "Ubik's Cube reminder",
 		defaultValue = true,
-		description = "Reminds you to play Ubik's game when you enter the Rift, until you've played it that visit. A notification, or a chat line with notifications off.",
+		description = "Reminds you to play Ubik's game when you enter the Rift and it's off cooldown, until you've played it that visit. A notification, or a chat line with notifications off.",
 	).withMore(ubikRepeat, ubikOutside)
 
 	@JvmField
@@ -591,6 +591,8 @@ object Rift {
 			return
 		}
 		if (played || !ubikReminder.value) return
+		// Still waiting out the last game (saved, so it holds across restarts); reminds once it's over.
+		if (ubikReadyAt > now) return
 		val repeat = ubikRepeat.value.toLong() * 60_000L
 		val due = remindedAt == 0L || (repeat > 0 && now - remindedAt >= repeat)
 		if (!due) return

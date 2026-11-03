@@ -56,7 +56,8 @@ object HollowsMap {
 
 	/**
 	 * The places that move between lobbies. [zone] is its sidebar zone if it has one; [saidThere]
-	 * the start of a line only said there; [words] what players call it in chat.
+	 * the start of a line only said there; [words] what players call it in chat; [span] about how
+	 * wide it is in blocks, for markers drawn to size (judged from maps of the Hollows, not measured).
 	 */
 	enum class Place(
 		val title: String,
@@ -67,34 +68,35 @@ object HollowsMap {
 		val small: Boolean = false,
 		val crystal: String? = null,
 		private val crystalColor: (() -> ColorModuleSetting)? = null,
+		val span: Int = 0,
 	) {
 		JUNGLE_TEMPLE(
 			"Jungle Temple", 0xAA00AA, listOf("jungle temple", "temple", "jungle"), zone = "Jungle Temple",
-			saidThere = "[NPC] Kalhuiki Door Guardian:", crystal = "Amethyst", crystalColor = { NucleusQol.amethystColor },
+			saidThere = "[NPC] Kalhuiki Door Guardian:", crystal = "Amethyst", crystalColor = { NucleusQol.amethystColor }, span = 90,
 		),
 		MINES_OF_DIVAN(
 			"Mines of Divan", 0x55FF55, listOf("mines of divan", "divan", "mines"), zone = "Mines of Divan",
-			saidThere = "Jade Crystal", crystal = "Jade", crystalColor = { NucleusQol.jadeColor },
+			saidThere = "Jade Crystal", crystal = "Jade", crystalColor = { NucleusQol.jadeColor }, span = 110,
 		),
 		GOBLIN_QUEENS_DEN(
 			"Goblin Queen's Den", 0xFFAA00, listOf("goblin queen", "queens den", "queen", "den"), zone = "Goblin Queen's Den",
-			saidThere = "Amber Crystal", crystal = "Amber", crystalColor = { NucleusQol.amberColor },
+			saidThere = "Amber Crystal", crystal = "Amber", crystalColor = { NucleusQol.amberColor }, span = 100,
 		),
 		LOST_PRECURSOR_CITY(
 			"Lost Precursor City", 0x55FFFF, listOf("precursor city", "precursor", "city", "lpc"), zone = "Lost Precursor City",
-			saidThere = "Sapphire Crystal", crystal = "Sapphire", crystalColor = { NucleusQol.sapphireColor },
+			saidThere = "Sapphire Crystal", crystal = "Sapphire", crystalColor = { NucleusQol.sapphireColor }, span = 110,
 		),
 		KHAZAD_DUM(
 			"Khazad-dûm", 0xFFFF55, listOf("khazad-dum", "khazad dum", "khazad"), zone = "Khazad-dûm",
-			saidThere = "Topaz Crystal", crystal = "Topaz", crystalColor = { NucleusQol.topazColor },
+			saidThere = "Topaz Crystal", crystal = "Topaz", crystalColor = { NucleusQol.topazColor }, span = 100,
 		),
-		FAIRY_GROTTO("Fairy Grotto", 0xFF55FF, listOf("fairy grotto", "grotto", "fairy"), zone = "Fairy Grotto", small = true),
-		DRAGONS_LAIR("Dragon's Lair", 0xFFD24A, listOf("dragons lair", "dragon", "lair"), zone = "Dragon's Lair", saidThere = "[NPC] Golden Dragon:"),
-		CORLEONE("Corleone", 0xFFFFFF, listOf("corleone"), small = true),
-		KING_YOLKAR("King Yolkar", 0xFF5555, listOf("king yolkar", "yolkar", "king"), saidThere = "[NPC] King Yolkar:", small = true),
-		ODAWA("Odawa", 0x00AA00, listOf("odawa"), saidThere = "[NPC] Odawa:", small = true),
-		KEY_GUARDIAN("Key Guardian", 0xAAAAAA, listOf("key guardian", "guardian"), small = true),
-		XALX("Xalx", 0x5555FF, listOf("xalx"), saidThere = "[NPC] Xalx:", small = true),
+		FAIRY_GROTTO("Fairy Grotto", 0xFF55FF, listOf("fairy grotto", "grotto", "fairy"), zone = "Fairy Grotto", small = true, span = 30),
+		DRAGONS_LAIR("Dragon's Lair", 0xFFD24A, listOf("dragons lair", "dragon", "lair"), zone = "Dragon's Lair", saidThere = "[NPC] Golden Dragon:", span = 50),
+		CORLEONE("Corleone", 0xFFFFFF, listOf("corleone"), small = true, span = 30),
+		KING_YOLKAR("King Yolkar", 0xFF5555, listOf("king yolkar", "yolkar", "king"), saidThere = "[NPC] King Yolkar:", small = true, span = 25),
+		ODAWA("Odawa", 0x00AA00, listOf("odawa"), saidThere = "[NPC] Odawa:", small = true, span = 25),
+		KEY_GUARDIAN("Key Guardian", 0xAAAAAA, listOf("key guardian", "guardian"), small = true, span = 20),
+		XALX("Xalx", 0x5555FF, listOf("xalx"), saidThere = "[NPC] Xalx:", small = true, span = 20),
 		/** Where a wishing compass pointed when it couldn't be told what's there. */
 		COMPASS_TARGET("Compass target", 0xFFFFFF, listOf("compass target"), small = true),
 		;
@@ -140,6 +142,22 @@ object HollowsMap {
 	@JvmField val outlineColour = mapColour("hollows_outline_colour", "Outline", 0xFF000000.toInt())
 
 	@JvmField
+	val structureSize = ToggleModuleSetting(
+		id = "hollows_structure_size",
+		label = "Use structure size for scale",
+		description = "Each place's square is drawn about as big as the place itself, instead of one small marker size for all.",
+		visibleIf = { showMap.value },
+	)
+
+	@JvmField
+	val minimalText = ToggleModuleSetting(
+		id = "hollows_minimal_text",
+		label = "Minimal text",
+		description = "The quadrant names small, in the top corners of their quadrants, and no Nucleus name.",
+		visibleIf = { showMap.value },
+	)
+
+	@JvmField
 	val labels = ToggleModuleSetting(
 		id = "hollows_labels",
 		label = "POI Waypoints",
@@ -176,7 +194,10 @@ object HollowsMap {
 	val settings by lazy {
 		listOf(
 			mapSection,
-			showMap.withMore(jungleColour, mithrilColour, goblinColour, precursorColour, nucleusColour, outlineColour),
+			showMap.withMore(
+				jungleColour, mithrilColour, goblinColour, precursorColour, nucleusColour, outlineColour,
+				structureSize, minimalText,
+			),
 			chatCoords, fromSkyblocker, CrystalStatus.setting,
 		)
 	}
@@ -509,16 +530,25 @@ object HollowsMap {
 		val coreBottom = onMap(CORE_MAX_Z + 1).roundToInt()
 		context.fill(coreLeft, coreTop, coreRight, coreBottom, nucleusColour.argb)
 
-		for ((place, mark) in if (example) EXAMPLE_MARKS else marks) {
+		val shown = (if (example) EXAMPLE_MARKS else marks).entries
+		// Biggest first when drawn to size, so a small place inside a big one stays in sight.
+		for ((place, mark) in if (structureSize.value) shown.sortedByDescending { it.key.span } else shown) {
 			drawMarker(context, place, mark, onMap(mark.pos.x.toDouble()), onMap(mark.pos.z.toDouble()))
 		}
 
-		// The names over the places, each centred in its own area.
-		label(context, "Jungle", 0, 0, middle, middle)
-		label(context, "Mithril", middle, 0, size, middle)
-		label(context, "Goblin", 0, middle, middle, size)
-		label(context, "Precursor", middle, middle, size, size)
-		label(context, "Nucleus", coreLeft, coreTop, coreRight, coreBottom, margin = 1)
+		if (minimalText.value) {
+			cornerLabel(context, "Jungle", 0, 0, middle, alignRight = false)
+			cornerLabel(context, "Mithril", middle, 0, size, alignRight = true)
+			cornerLabel(context, "Goblin", 0, middle, middle, alignRight = false)
+			cornerLabel(context, "Precursor", middle, middle, size, alignRight = true)
+		} else {
+			// The names over the places, each centred in its own area.
+			label(context, "Jungle", 0, 0, middle, middle)
+			label(context, "Mithril", middle, 0, size, middle)
+			label(context, "Goblin", 0, middle, middle, size)
+			label(context, "Precursor", middle, middle, size, size)
+			label(context, "Nucleus", coreLeft, coreTop, coreRight, coreBottom, margin = 1)
+		}
 
 		// The outline, inside the edge so the element's size doesn't change, drawn unscaled so every
 		// side is one whole pixel.
@@ -559,8 +589,58 @@ object HollowsMap {
 		pose.popMatrix()
 	}
 
+	/** Minimal text's size, against the font's. */
+	private const val CORNER_TEXT_SCALE = 0.75f
+
+	/** Minimal text's gap from its quadrant's edges, clear of the outline. */
+	private const val CORNER_MARGIN = 2
+
+	/** [text] small in the top-left or top-right corner of the area from [left] to [right]. */
+	private fun cornerLabel(context: GuiGraphicsExtractor, text: String, left: Int, top: Int, right: Int, alignRight: Boolean) {
+		val font = Minecraft.getInstance().font
+		val width = font.width(text) * CORNER_TEXT_SCALE
+		val pose = context.pose()
+		pose.pushMatrix()
+		pose.translate(if (alignRight) right - CORNER_MARGIN - width else (left + CORNER_MARGIN).toFloat(), (top + CORNER_MARGIN).toFloat())
+		pose.scale(CORNER_TEXT_SCALE, CORNER_TEXT_SCALE)
+		context.text(font, text, 0, 0, -1)
+		pose.popMatrix()
+	}
+
+	/** A one-pixel frame just inside the box. */
+	private fun frame(context: GuiGraphicsExtractor, left: Int, top: Int, right: Int, bottom: Int, color: Int) {
+		context.fill(left, top, right, top + 1, color)
+		context.fill(left, bottom - 1, right, bottom, color)
+		context.fill(left, top + 1, left + 1, bottom - 1, color)
+		context.fill(right - 1, top + 1, right, bottom - 1, color)
+	}
+
+	/**
+	 * A place at its own size, kept inside the map: filled where it's exact, and where it's
+	 * approximate a ring like the small marker's round a faint fill, so the map shows through.
+	 */
+	private fun drawSizedMarker(context: GuiGraphicsExtractor, place: Place, mark: Mark, cx: Float, cy: Float) {
+		val half = (place.span / HOLLOWS_SIZE * MAP_SIZE / 2).toFloat()
+		val left = (cx - half).roundToInt().coerceIn(0, MAP_SIZE)
+		val top = (cy - half).roundToInt().coerceIn(0, MAP_SIZE)
+		val right = (cx + half).roundToInt().coerceIn(0, MAP_SIZE)
+		val bottom = (cy + half).roundToInt().coerceIn(0, MAP_SIZE)
+		val color = 0xFF000000.toInt() or place.color
+		val black = 0xFF000000.toInt()
+		if (mark.source.exact) {
+			context.fill(left, top, right, bottom, black)
+			context.fill(left + 1, top + 1, right - 1, bottom - 1, color)
+		} else {
+			frame(context, left, top, right, bottom, black)
+			frame(context, left + 1, top + 1, right - 1, bottom - 1, color)
+			frame(context, left + 2, top + 2, right - 2, bottom - 2, black)
+			context.fill(left + 3, top + 3, right - 3, bottom - 3, 0x50000000 or place.color)
+		}
+	}
+
 	/** A filled square where a place is exact; a ring where it's approximate. */
 	private fun drawMarker(context: GuiGraphicsExtractor, place: Place, mark: Mark, cx: Float, cy: Float) {
+		if (structureSize.value && place.span > 0) return drawSizedMarker(context, place, mark, cx, cy)
 		val half = if (place.small) 2 else 3
 		val left = cx.roundToInt() - half
 		val top = cy.roundToInt() - half

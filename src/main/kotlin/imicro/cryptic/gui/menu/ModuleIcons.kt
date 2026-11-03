@@ -111,7 +111,7 @@ object ModuleIcons {
 		// Settings
 		"click_gui" to "\uf1de", // sliders
 		"credits" to "\uf004", // heart
-		"example_module" to "\uf61f", // shapes
+		"changelog" to "\uf70e", // scroll
 		"profiles" to "\uf5fd", // layer-group
 		"toasts" to "\uf0f3", // bell
 		"item_protection" to "\uf132", // shield

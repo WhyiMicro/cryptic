@@ -284,7 +284,7 @@ first.
 ```
 
 Prints every tab row in display order, every line of the footer under it, and
-what the Booster Cookie Reminder reads from each.
+what the Cookie Reminder reads from each.
 
 The cookie's remaining time is written as a `Cookie Buff` row with the value on
 the row below, and nowhere else a client can reach. This says whether the heading

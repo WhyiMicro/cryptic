@@ -167,8 +167,16 @@ object CrosshairEditor {
 		description = "Hides Minecraft's crosshair, or the one your resource pack gives it, so only yours is drawn.",
 	)
 
+	@JvmField
+	val centreFix = ToggleModuleSetting(
+		id = "centre_fix",
+		label = "Centre the crosshair",
+		defaultValue = true,
+		description = "Puts the crosshair on the screen's true centre. Vanilla rounds it to a GUI pixel, which leaves it half a pixel off at some window sizes and GUI scales.",
+	)
+
 	private val configurable = listOf(
-		gridSize, blendMode, scale, opacity, outline, outlineColor, targetTint, targetColor, thirdPerson, hideDefault,
+		gridSize, blendMode, scale, opacity, outline, outlineColor, targetTint, targetColor, thirdPerson, hideDefault, centreFix,
 	)
 
 	/** The card's bind button, pointed at the real key mapping. */
@@ -197,7 +205,7 @@ object CrosshairEditor {
 		keybind = openKeybind,
 		settings = listOf(gridSize, pixels) + palette +
 			listOf(lookSection, blendMode, scale, opacity, outline, outlineColor, targetTint, targetColor) +
-			listOf(whenSection, hideDefault, thirdPerson),
+			listOf(whenSection, hideDefault, thirdPerson, centreFix),
 	)
 
 	val usesVanillaBlending: Boolean get() = blendMode.selectedIndex == BLEND_VANILLA
@@ -306,6 +314,22 @@ object CrosshairEditor {
 	fun hidesSprite(sprite: net.minecraft.client.renderer.texture.TextureAtlasSprite): Boolean =
 		module.enabled && hideDefault.value && sprite.contents().name() == VANILLA_CROSSHAIR
 
+	@JvmStatic
+	fun centresSprite(location: Identifier): Boolean = module.enabled && centreFix.value && location == VANILLA_CROSSHAIR
+
+	/**
+	 * How far to move vanilla's crosshair, drawn at [pos] and [size] GUI pixels, onto the window's
+	 * middle along one axis of [windowPixels]. Whole screen pixels, so the sprite isn't resampled;
+	 * zero when [pos] isn't the HUD's spot (a mod drawing the sprite elsewhere).
+	 */
+	@JvmStatic
+	fun centreOffset(pos: Int, size: Int, windowPixels: Int): Float {
+		val guiScale = Minecraft.getInstance().window.guiScale.coerceAtLeast(1)
+		val exact = (windowPixels.toFloat() / guiScale - size) / 2f
+		if (kotlin.math.abs(exact - pos) >= 1f) return 0f
+		return ((exact - pos) * guiScale).roundToInt().toFloat() / guiScale
+	}
+
 	/** Screen pixels per cell: Scale times the GUI scale, rounded so every cell is equal. */
 	fun cellPixels(guiScale: Int): Int = (guiScale * scale.value).roundToInt().coerceAtLeast(1)
 
@@ -327,9 +351,11 @@ object CrosshairEditor {
 		val anchorY = (graphics.guiHeight() - VANILLA_WIDTH) / 2 + VANILLA_CENTRE
 		val c = grid.centre
 		val cell = cellPixels(guiScale)
-		// The centre cell centred on vanilla's middle pixel.
-		val left = ((anchorX + 0.5f) * guiScale - cell / 2f).roundToInt() - c * cell
-		val top = ((anchorY + 0.5f) * guiScale - cell / 2f).roundToInt() - c * cell
+		// The centre cell centred on vanilla's middle pixel, or on the window's own middle.
+		val middleX = if (centreFix.value) client.window.width / 2f else (anchorX + 0.5f) * guiScale
+		val middleY = if (centreFix.value) client.window.height / 2f else (anchorY + 0.5f) * guiScale
+		val left = (middleX - cell / 2f).roundToInt() - c * cell
+		val top = (middleY - cell / 2f).roundToInt() - c * cell
 
 		val pose = graphics.pose()
 		pose.pushMatrix()

@@ -22,7 +22,6 @@ import imicro.cryptic.debug.DebugOverrides
 import imicro.cryptic.debug.InventoryWatch
 import imicro.cryptic.feature.BlessingDisplay
 import imicro.cryptic.feature.DungeonWarpCooldown
-import imicro.cryptic.feature.ExampleModule
 import imicro.cryptic.feature.ILoveGlass
 import imicro.cryptic.feature.PuzzleHud
 import imicro.cryptic.feature.MelodyHud
@@ -279,6 +278,7 @@ object CrypticClient : ClientModInitializer {
 		imicro.cryptic.feature.Bazaar.initialize()
 		imicro.cryptic.feature.Farming.initialize()
 		imicro.cryptic.feature.Rift.initialize()
+		imicro.cryptic.feature.ExperimentSolver.initialize()
 		imicro.cryptic.feature.TooltipFeatures.initialize()
 		SpiritBear.initialize()
 		LividSolver.initialize()
@@ -318,7 +318,6 @@ object CrypticClient : ClientModInitializer {
 		PerformanceHud.initialize()
 		SpringBootsHelper.initialize()
 		PartyFeatures.initialize()
-		ExampleModule.initialize()
 		PuzzleHud.initialize()
 		DungeonWarpCooldown.initialize()
 		ILoveGlass.initialize()
@@ -1064,6 +1063,10 @@ object CrypticClient : ClientModInitializer {
 					})
 					.then(ClientCommands.literal("update").executes {
 						UpdateChecker.check(manual = true)
+						1
+					})
+					.then(ClientCommands.literal("changelog").executes {
+						imicro.cryptic.gui.menu.MenuScreen.request(imicro.cryptic.gui.menu.managers.ChangelogSection.module)
 						1
 					})
 					.then(

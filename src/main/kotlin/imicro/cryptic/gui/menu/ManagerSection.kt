@@ -53,6 +53,7 @@ abstract class ManagerSection(
 			CrosshairEditor.module -> CrosshairSection()
 			imicro.cryptic.gui.menu.managers.ProfilesSection.module -> imicro.cryptic.gui.menu.managers.ProfilesSection()
 			imicro.cryptic.gui.menu.managers.CreditsSection.module -> imicro.cryptic.gui.menu.managers.CreditsSection()
+			imicro.cryptic.gui.menu.managers.ChangelogSection.module -> imicro.cryptic.gui.menu.managers.ChangelogSection()
 			else -> null
 		}
 	}

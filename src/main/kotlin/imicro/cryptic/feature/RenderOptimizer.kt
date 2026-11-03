@@ -234,6 +234,22 @@ object RenderOptimizer {
 	)
 
 	@JvmField
+	val headSkinFix = ToggleModuleSetting(
+		id = "head_skin_fix",
+		label = "Player head skin fix",
+		defaultValue = true,
+		description = "Keeps a head's skin while Hypixel sends it again, instead of flashing Steve or Alex until it loads. In menus, on mobs and on placed heads.",
+	)
+
+	@JvmField
+	val hideRecipeBook = ToggleModuleSetting(
+		id = "hide_recipe_book",
+		label = "Hide recipe book",
+		defaultValue = true,
+		description = "Removes vanilla's green recipe book button (and the book) from your inventory on SkyBlock, where it has nothing to show.",
+	)
+
+	@JvmField
 	val module = Module(
 		id = "render_optimizer",
 		name = "Render Optimizer",
@@ -265,13 +281,60 @@ object RenderOptimizer {
 			hideBreakParticles,
 			hideTreeBits,
 			hideCheapCoins,
+			headSkinFix,
 			screenSection,
 			hideVignette,
 			hideEffectIcons,
 			hideEmptyTooltips,
 			hideBossBar,
+			hideRecipeBook,
 		),
 	)
+
+	@JvmStatic
+	fun fixesHeadSkins(): Boolean = module.enabled && headSkinFix.value
+
+	@JvmStatic
+	fun hidesRecipeBook(): Boolean = module.enabled && hideRecipeBook.value && SkyblockLocation.onSkyblock
+
+	/** Skin texture urls by the base64 `textures` value, so each value is decoded once. */
+	private val skinUrls = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+	/** The last skin that finished loading for each texture url. */
+	private val loadedSkins = java.util.concurrent.ConcurrentHashMap<String, net.minecraft.client.renderer.PlayerSkinRenderCache.RenderInfo>()
+
+	private val SKIN_URL = Regex(""""url"\s*:\s*"([^"]+)"""")
+
+	/**
+	 * What to draw for a head whose skin [lookup] hasn't finished, or null for vanilla's answer.
+	 * Hypixel re-signs the same skin with a new timestamp each time it sends an item, so the game
+	 * sees a new profile and loads it again; the skin already loaded for the same url stands in.
+	 */
+	@JvmStatic
+	fun headSkin(
+		profile: net.minecraft.world.item.component.ResolvableProfile,
+		lookup: java.util.Optional<net.minecraft.client.renderer.PlayerSkinRenderCache.RenderInfo>?,
+	): net.minecraft.client.renderer.PlayerSkinRenderCache.RenderInfo? {
+		val key = skinKey(profile) ?: return null
+		if (lookup != null) {
+			lookup.ifPresent { loadedSkins[key] = it }
+			return null
+		}
+		return loadedSkins[key]
+	}
+
+	private fun skinKey(profile: net.minecraft.world.item.component.ResolvableProfile): String? {
+		val partial = profile.partialProfile()
+		val value = partial.properties().get("textures").firstOrNull()?.value
+		if (value == null) return partial.name().takeIf { it.isNotEmpty() }?.let { "name:" + it.lowercase() }
+		skinUrls[value]?.let { return it }
+		val decoded = runCatching { String(java.util.Base64.getDecoder().decode(value)) }.getOrNull() ?: return null
+		val url = SKIN_URL.find(decoded)?.groupValues?.get(1) ?: return null
+		// A menu full of re-signed heads makes a new value every time; the map is only a cache.
+		if (skinUrls.size > 4096) skinUrls.clear()
+		skinUrls[value] = url
+		return url
+	}
 
 	@JvmStatic
 	fun blocksSpawn(type: EntityType<*>): Boolean {

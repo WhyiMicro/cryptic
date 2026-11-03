@@ -52,6 +52,10 @@ object ExperimentRunner {
 	private const val LORE_PURCHASE = "click to purchase"
 	private const val LORE_CANNOT_AFFORD = "cannot afford this!"
 	private const val LORE_PLAY = "Click to play!"
+
+	/** An add-on's button once it's been played this charge (case matters: Superpairs says "Experiments on cooldown!"). */
+	private const val LORE_ADDON_DONE = "On cooldown!"
+	private val CHARGES = Regex("""Charges:\s*(\d+)\s*/\s*\d+""")
 	private const val LORE_NOT_ENOUGH_XP = "Not enough experience!"
 
 	private val STAKE_COST = Regex("""Starting\s+cost:\s*(\d+)\s*XP\s*Levels?""", RegexOption.IGNORE_CASE)
@@ -91,8 +95,92 @@ object ExperimentRunner {
 		finished = false
 		reopenStage = ReopenStage.NONE
 		closingSelf = false
+		played.clear()
+		lastStarted = null
+		refusedSuperpairs = 0
+		addonsDoubted = false
 		forgetLastClick()
 		status = "idle"
+	}
+
+	/**
+	 * Games done this run, from Hypixel's own lines. The table's status lore can lag a reopen, and
+	 * clicking a game that's done only gets "This experiment is on cooldown!" back.
+	 */
+	private val played = HashSet<ExperimentRules.Game>()
+
+	/** The game the runner last clicked to start, for the lines that don't say which. */
+	private var lastStarted: ExperimentRules.Game? = null
+
+	/** How often Hypixel has sent Superpairs back for unplayed add-ons, which the table showed as done. */
+	private var refusedSuperpairs = 0
+
+	/** Set once Hypixel has said so: the add-ons' "completed" lore isn't trusted for the rest of the run. */
+	private var addonsDoubted = false
+
+	/** An add-on is done once played this round, or when its own button says so ("On cooldown!" or "Click to play!"). */
+	private fun done(game: ExperimentRules.Game, status: ItemStack?, button: ItemStack?): Boolean {
+		if (game in played) return true
+		val lore = loreOf(button)
+		if (lore.contains(LORE_ADDON_DONE)) return true
+		if (lore.contains(LORE_PLAY)) return false
+		return !addonsDoubted && completed(status)
+	}
+
+	/** Superpairs' charges left, from "Charges: 1/3" on its button. */
+	private fun charges(items: List<ItemStack>): Int? =
+		CHARGES.find(loreOf(items.getOrNull(SLOT_SUPERPAIRS)))?.groupValues?.get(1)?.toIntOrNull()
+
+	/** A charge left after a Superpairs: the add-ons open again and the whole round is played once more. */
+	private fun newRound(charges: Int) {
+		played.clear()
+		lastStarted = null
+		refusedSuperpairs = 0
+		addonsDoubted = false
+		forgetLastClick()
+		status = "Superpairs has $charges charge${if (charges == 1) "" else "s"} left, another round"
+	}
+
+	private val CLAIMED = Regex("""^You claimed the (\w+) rewards!$""")
+	private val ON_COOLDOWN = setOf("This experiment is on cooldown!", "You may only play practice mode!")
+	private const val ADDONS_FIRST = "Play the add-on experiments before playing Superpairs!"
+
+	/** A fallback: the menus are what the runner goes by, but these lines say when it got one wrong. */
+	fun onChat(line: String) {
+		if (!ExperimentSolver.runsTable || finished) return
+		CLAIMED.matchEntire(line)?.let { match ->
+			ExperimentRules.Game.entries.firstOrNull { it.name.equals(match.groupValues[1], ignoreCase = true) }?.let { played += it }
+			return
+		}
+		if (line in ON_COOLDOWN) {
+			val game = lastStarted ?: return
+			ExperimentDebug.note("runner: Hypixel says ${game.name.lowercase()} is on cooldown")
+			if (game == ExperimentRules.Game.SUPERPAIRS) {
+				stop("experiments on cooldown")
+				return
+			}
+			played += game
+			lastStarted = null
+			forgetLastClick()
+			nextActionAt = System.currentTimeMillis() + delay()
+			return
+		}
+		if (line == ADDONS_FIRST) {
+			// After a Superpairs it means the round is over: the add-ons come back only with a renew.
+			if (ExperimentRules.Game.SUPERPAIRS in played) {
+				stop("all three games played")
+				return
+			}
+			if (++refusedSuperpairs >= 2) {
+				stop("Hypixel wants the add-on games played first, but the table shows them done")
+				return
+			}
+			played.remove(ExperimentRules.Game.CHRONOMATRON)
+			played.remove(ExperimentRules.Game.ULTRASEQUENCER)
+			addonsDoubted = true
+			forgetLastClick()
+			status = "Hypixel wants the add-ons first, looking again"
+		}
 	}
 
 	/**
@@ -154,7 +242,7 @@ object ExperimentRunner {
 			return
 		}
 		if (finished || reopenStage != ReopenStage.NONE) return
-		if (!ExperimentSolver.module.enabled || !ExperimentSolver.runTable.value) return
+		if (!ExperimentSolver.runsTable) return
 		stop("you closed the table")
 	}
 
@@ -168,10 +256,10 @@ object ExperimentRunner {
 
 	/** While it runs the table, the game mustn't pause itself for being tabbed out. */
 	@JvmStatic
-	fun keepsGameRunning(): Boolean = ExperimentSolver.module.enabled && ExperimentSolver.runTable.value && !finished
+	fun keepsGameRunning(): Boolean = ExperimentSolver.runsTable && !finished
 
 	fun tick(client: Minecraft) {
-		val running = ExperimentSolver.module.enabled && ExperimentSolver.runTable.value
+		val running = ExperimentSolver.runsTable
 
 		// Switching it back on restarts a run that stopped itself.
 		if (running && !wasRunning) reset()
@@ -186,7 +274,7 @@ object ExperimentRunner {
 			}
 		}
 
-		if (!running || finished) return
+		if (!running || finished || ExperimentSolver.paused) return
 
 		val now = System.currentTimeMillis()
 		if (now < nextActionAt) return
@@ -269,19 +357,35 @@ object ExperimentRunner {
 			return
 		}
 
-		if (!completed(items.getOrNull(SLOT_CHRONOMATRON_STATUS))) {
-			status = "starting Chronomatron"
-			click(client, SLOT_CHRONOMATRON)
-			return
-		}
-		if (!completed(items.getOrNull(SLOT_ULTRASEQUENCER_STATUS))) {
-			status = "starting Ultrasequencer"
-			click(client, SLOT_ULTRASEQUENCER)
+		// The table's slots arrive a few at a time; an empty status slot would read as done.
+		if (listOf(SLOT_CHRONOMATRON, SLOT_ULTRASEQUENCER, SLOT_SUPERPAIRS).any { items.getOrNull(it)?.isEmpty != false }) {
+			ExperimentDebug.note("runner: table still loading")
 			return
 		}
 
-		status = "starting Superpairs"
-		click(client, SLOT_SUPERPAIRS)
+		if (ExperimentRules.Game.SUPERPAIRS in played) {
+			val charges = charges(items)
+			if (charges == null || charges <= 0) {
+				stop("all three games played")
+				return
+			}
+			newRound(charges)
+		}
+		if (!done(ExperimentRules.Game.CHRONOMATRON, items.getOrNull(SLOT_CHRONOMATRON_STATUS), items.getOrNull(SLOT_CHRONOMATRON))) {
+			start(client, ExperimentRules.Game.CHRONOMATRON, SLOT_CHRONOMATRON)
+			return
+		}
+		if (!done(ExperimentRules.Game.ULTRASEQUENCER, items.getOrNull(SLOT_ULTRASEQUENCER_STATUS), items.getOrNull(SLOT_ULTRASEQUENCER))) {
+			start(client, ExperimentRules.Game.ULTRASEQUENCER, SLOT_ULTRASEQUENCER)
+			return
+		}
+		start(client, ExperimentRules.Game.SUPERPAIRS, SLOT_SUPERPAIRS)
+	}
+
+	private fun start(client: Minecraft, game: ExperimentRules.Game, slot: Int) {
+		status = "starting ${game.name.lowercase().replaceFirstChar { it.uppercase() }}"
+		lastStarted = game
+		click(client, slot)
 	}
 
 	/**
@@ -367,6 +471,8 @@ object ExperimentRunner {
 		when {
 			lore.contains(LORE_PURCHASE) -> {
 				renewsUsed++
+				// A renew opens every game again.
+				played.clear()
 				status = "renewing ($renewsUsed of ${ExperimentSolver.renews.value.toInt()})"
 				click(client, slot)
 			}
@@ -433,13 +539,21 @@ object ExperimentRunner {
 	/** Leaves once the target round has been played; every round past it risks the reward. */
 	private fun leaveWhenDone(client: Minecraft) {
 		val handler = ExperimentTracker.current ?: return
+		// Superpairs pays out on leaving, so it's left as soon as its clicks can't earn more.
+		if (handler is SuperpairsHandler) {
+			if (!handler.finished) return
+			status = "Superpairs is done (${handler.clicksLeft.coerceAtLeast(0)} clicks left), taking the reward"
+			startReopen()
+			return
+		}
 		// Rounds done is the length of the sequence learned so far.
 		val round = handler.roundsDone()
 		val target = targetRounds(handler)
 
-		// Leave as soon as the target round is played out, not when the next one starts.
+		// Leave as soon as the target round is played back, not when the next one starts. Played back,
+		// not just shown: Ultrasequencer counts a round from the moment its numbers appear.
 		if (round < target) return
-		if (round == target && !handler.waiting) return
+		if (round == target && !handler.roundComplete) return
 
 		status = "${handler.name} reached round $round of $target, taking the reward"
 		startReopen()
@@ -464,6 +578,14 @@ object ExperimentRunner {
 				nextActionAt = System.currentTimeMillis() + delay()
 			}
 			ReopenStage.OPENING -> {
+				// Hypixel opens some menus itself (Superpairs Rewards). A use click sent over one waits
+				// in Minecraft until that menu closes, then reopens the table behind your back.
+				if (client.gui.screen() is AbstractContainerScreen<*>) {
+					status = "a menu opened by itself, carrying on there"
+					reopenStage = ReopenStage.NONE
+					nextActionAt = System.currentTimeMillis() + delay()
+					return
+				}
 				// A pause menu from before the run (or another mod) would take the click instead.
 				if (client.gui.screen() is net.minecraft.client.gui.screens.PauseScreen) client.gui.setScreen(null)
 				val use = client.options.keyUse

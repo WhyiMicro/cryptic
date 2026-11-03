@@ -10,6 +10,7 @@ import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.mixin.ContainerScreenAccessor
+import imicro.cryptic.mixin.PlayerTabOverlayAccessor
 import imicro.cryptic.render.WorldRender
 import imicro.cryptic.skyblock.ItemRarity
 import imicro.cryptic.skyblock.ParticleTrail
@@ -45,7 +46,7 @@ object Farming {
 	val visitorList = ToggleModuleSetting(
 		"visitor_list", "Visitor list", true,
 		"Beside menus in the Garden and the Bazaar: everything your visitors want, together, and how many you're short counting " +
-			"your inventory and sacks. Click an item to open it on the Bazaar. A visitor is read when you open their menu, and leaves the list once you give to them or refuse them.",
+			"your inventory and sacks. Click an item to open it on the Bazaar. A visitor is read when you open their menu, and leaves the list once you give to them or refuse them, or once the Garden's tab list no longer names them (served by your co-op, say).",
 	)
 
 	@JvmField
@@ -143,6 +144,7 @@ object Farming {
 		if (inGarden && held != null && SkyblockItem.id(held) in VACUUMS) vacuumHeldAt = System.currentTimeMillis()
 		if (++ticks % 5 == 0) {
 			if (visitors.isNotEmpty()) SackContents.ensureFromApi()
+			if (inGarden && visitors.isNotEmpty()) pruneVisitors(client)
 			pests = if (pestTracers.value && inGarden) findPests() else emptyList()
 		}
 		tickGuess()
@@ -178,6 +180,26 @@ object Farming {
 			wants.merge(match.groupValues[1].trim(), amount, Int::plus)
 		}
 		if (wants.isNotEmpty()) visitors[name] = Visitor(name, wants)
+	}
+
+	/** "Visitors: (2)" in the Garden's tab list, with one visitor's name on each row below it. */
+	private val visitorsHeading = Regex("""^Visitors: \((\d+)\)$""")
+
+	/**
+	 * Drops visitors the Garden's tab list no longer names, so ones served by a co-op member (or
+	 * gone while you were away) leave the list. Only acts on a whole, readable list.
+	 */
+	private fun pruneVisitors(client: Minecraft) {
+		val connection = client.connection ?: return
+		val rows = connection.listedOnlinePlayers
+			.sortedWith(PlayerTabOverlayAccessor.`cryptic$ordering`())
+			.map { it.tabListDisplayName?.string?.replace(FORMATTING, "")?.trim().orEmpty() }
+		val at = rows.indexOfFirst { visitorsHeading.matches(it) }
+		if (at < 0) return
+		val count = visitorsHeading.find(rows[at])?.groupValues?.get(1)?.toIntOrNull() ?: return
+		val names = rows.drop(at + 1).take(count)
+		if (names.size < count || names.any { it.isEmpty() || it.endsWith(":") }) return
+		visitors.keys.removeAll { visitor -> names.none { it.equals(visitor, ignoreCase = true) || it.contains(visitor, ignoreCase = true) } }
 	}
 
 	/** A click in a visitor's menu: giving or refusing sends them away. */

@@ -65,8 +65,8 @@ public abstract class AbstractContainerScreenMixin {
             info.cancel();
             return;
         }
-        // While an experiment plays itself, your own clicks stay out.
-        if (ExperimentSolver.blocksManualClicks()) {
+        // While an experiment plays itself, your own clicks stay out (Superpairs takes them).
+        if (ExperimentSolver.onManualClick(slotId)) {
             info.cancel();
             return;
         }
@@ -78,6 +78,12 @@ public abstract class AbstractContainerScreenMixin {
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void cryptic$clickTerminal(MouseButtonEvent click, boolean doubleClick, CallbackInfoReturnable<Boolean> info) {
+        // Cryptic's buttons in Bazaar Orders sit on filler panes, whose slot clicks other mods drop.
+        if (imicro.cryptic.feature.Bazaar.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.button())) {
+            info.setReturnValue(true);
+            return;
+        }
+
         if (SpiritLeapOverlay.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y())) {
             info.setReturnValue(true);
             return;
@@ -128,6 +134,12 @@ public abstract class AbstractContainerScreenMixin {
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void cryptic$keyTerminal(KeyEvent event, CallbackInfoReturnable<Boolean> info) {
+        // Escape pauses the experiment Auto instead of closing the menu.
+        if (event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE && ExperimentSolver.handleEscape()) {
+            info.setReturnValue(true);
+            return;
+        }
+
         if (SpiritLeapOverlay.handleKeyPress((AbstractContainerScreen<?>) (Object) this, event.key())) {
             info.setReturnValue(true);
             return;

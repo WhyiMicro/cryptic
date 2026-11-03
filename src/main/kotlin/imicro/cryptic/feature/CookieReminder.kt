@@ -99,7 +99,7 @@ object CookieReminder {
 	@JvmField
 	val module = Module(
 		id = "cookie_reminder",
-		name = "Booster Cookie Reminder",
+		name = "Cookie Reminder",
 		description = "Warns before a cookie ends",
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
