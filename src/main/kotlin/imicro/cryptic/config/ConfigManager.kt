@@ -270,6 +270,7 @@ object ConfigManager {
         for (index in hudElements.indices) {
             val element = hudElements[index]
             hash = hash.mix(element.x.toRawBits()).mix(element.y.toRawBits()).mix(element.scale.toRawBits())
+                .mix(element.anchorX.toRawBits()).mix(element.anchorY.toRawBits())
         }
         val modules = ModuleRegistry.modules
         for (index in modules.indices) {
@@ -355,6 +356,8 @@ object ConfigManager {
                 hud.add(element.id, JsonObject().apply {
                     addProperty("x", element.x)
                     addProperty("y", element.y)
+                    addProperty("anchor_x", element.anchorX)
+                    addProperty("anchor_y", element.anchorY)
                     addProperty("scale", element.scale)
                 })
             }
@@ -394,6 +397,9 @@ object ConfigManager {
                 val placement = hud.objectOrNull(element.id) ?: return@forEach
                 placement.double("x")?.let { element.x = it.coerceIn(0.0, 1.0) }
                 placement.double("y")?.let { element.y = it.coerceIn(0.0, 1.0) }
+                // Saved before anchors: the place was the top left.
+                element.anchorX = placement.double("anchor_x")?.coerceIn(0.0, 1.0) ?: 0.0
+                element.anchorY = placement.double("anchor_y")?.coerceIn(0.0, 1.0) ?: 0.0
                 placement.double("scale")?.let { element.scale = it.coerceIn(0.1, 5.0) }
             }
         }

@@ -31,6 +31,8 @@ public abstract class HumanoidModelMixin<T extends HumanoidRenderState> {
     )
     private void cryptic$scaleHead(T state, CallbackInfo ci) {
         if (!(state instanceof AvatarRenderState avatarState)) return;
+        // Armour models are left alone: the armour layer scales the helmet's pose instead.
+        if (!CustomScale.isBodyModel(this)) return;
 
         Float scale = CustomScale.headScale();
         if (scale == null) return;

@@ -35,7 +35,7 @@ public abstract class GuiMixin {
      */
     @org.spongepowered.asm.mixin.injection.ModifyVariable(method = "setScreen", at = @At("HEAD"), argsOnly = true)
     private Screen cryptic$replaceScreen(Screen screen) {
-        Screen replaced = imicro.cryptic.feature.PartyFinderPages.holdInstead(imicro.cryptic.feature.PartyFinder.replaceScreen(screen));
+        Screen replaced = imicro.cryptic.feature.StorageOverlay.holdInstead(imicro.cryptic.feature.PartyFinderPages.holdInstead(imicro.cryptic.feature.PartyFinder.replaceScreen(screen)));
         imicro.cryptic.debug.GuiLog.onScreen(replaced);
         return replaced;
     }

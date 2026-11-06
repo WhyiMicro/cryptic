@@ -15,13 +15,30 @@ import imicro.cryptic.gui.ModuleCategory
  * with nothing to show draw [HudElement.renderExample] instead. Layers along the top show one tab's
  * elements at a time, or only those on screen where you are, so a full HUD doesn't pile up.
  */
-class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.literal("Cryptic HUD")) {
+/**
+ * [only], when given, limits the editor to those elements (the status bars' own editor) and drops the
+ * layer tabs.
+ */
+class HudEditorScreen(
+	private val parent: Screen? = null,
+	private val only: ((HudElement) -> Boolean)? = null,
+) : Screen(Component.literal("Cryptic HUD")) {
 	private var dragged: HudElement? = null
 
 	/** The element the arrow keys move. Stays selected after the drag, so it can be nudged. */
 	private var selected: HudElement? = null
 	private var grabX = 0.0
 	private var grabY = 0.0
+
+	// Every element starts on screen, so none sits where it can't be grabbed, anchored to whatever
+	// edge or centre line it's on (layouts saved before anchors pick theirs up here).
+	override fun init() {
+		super.init()
+		Hud.elements.forEach {
+			it.clampTo(width, height)
+			it.reanchor(width, height)
+		}
+	}
 
 	private var lastMouseX = 0.0
 	private var lastMouseY = 0.0
@@ -78,7 +95,7 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		// The tabs and tips get out of the way while an element is being moved.
 		val chrome = 1f - dim
 		if (chrome > 0.01f) {
-			drawLayers(context, mouseX, mouseY, chrome)
+			if (only == null) drawLayers(context, mouseX, mouseY, chrome)
 			if (HudSettings.showTips.value) context.centeredText(font, HINT, width / 2, height - font.lineHeight - 6, scaleAlpha(LABEL, chrome))
 		}
 		if (shown().isEmpty()) context.centeredText(font, EMPTY_LAYER, width / 2, height / 2 - 4, LABEL_MUTED)
@@ -91,6 +108,8 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 
 	/** The elements in the current layer that the editor offers. */
 	private fun shown(): List<HudElement> = Hud.elements.filter { element ->
+		val filter = only
+		if (filter != null) return@filter element.showInEditor() && filter(element)
 		element.showInEditor() && when (layer) {
 			Layer.ALL -> true
 			Layer.NOW -> element.isVisible()
@@ -120,7 +139,7 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 	}
 
 	override fun mouseClicked(event: MouseButtonEvent, doubled: Boolean): Boolean {
-		layerBoxes().firstOrNull { it.second.contains(event.x(), event.y()) }?.let { (each, _) ->
+		if (only == null) layerBoxes().firstOrNull { it.second.contains(event.x(), event.y()) }?.let { (each, _) ->
 			layer = each
 			selected = null
 			return true
@@ -130,8 +149,8 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 			if (hit != null) {
 				dragged = hit
 				selected = hit
-				grabX = event.x() - hit.x * width
-				grabY = event.y() - hit.y * height
+				grabX = event.x() - hit.left(width)
+				grabY = event.y() - hit.top(height)
 				return true
 			}
 			selected = null
@@ -153,10 +172,10 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 
 	override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
 		val element = dragged ?: return super.mouseDragged(event, dragX, dragY)
-		element.x = (event.x() - grabX) / width
-		element.y = (event.y() - grabY) / height
+		element.moveTo(event.x() - grabX, event.y() - grabY, width, height)
 		snapToCentre(element)
 		element.clampTo(width, height)
+		element.reanchor(width, height)
 		return true
 	}
 
@@ -169,17 +188,20 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		val elementWidth = element.width * element.scale
 		val elementHeight = element.height * element.scale
 
-		val centredX = (width - elementWidth) / 2.0 / width
-		val centredY = (height - elementHeight) / 2.0 / height
+		val centredLeft = (width - elementWidth) / 2.0
+		val centredTop = (height - elementHeight) / 2.0
+		var left = element.left(width)
+		var top = element.top(height)
 
-		if (kotlin.math.abs(element.x - centredX) * width <= SNAP_DISTANCE) {
-			element.x = centredX
+		if (kotlin.math.abs(left - centredLeft) <= SNAP_DISTANCE) {
+			left = centredLeft
 			snappedX = true
 		}
-		if (kotlin.math.abs(element.y - centredY) * height <= SNAP_DISTANCE) {
-			element.y = centredY
+		if (kotlin.math.abs(top - centredTop) <= SNAP_DISTANCE) {
+			top = centredTop
 			snappedY = true
 		}
+		element.moveTo(left, top, width, height)
 	}
 
 	private fun drawCentreCross(context: GuiGraphicsExtractor) {
@@ -241,9 +263,9 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		// The element under the cursor first, so a nudge doesn't need a click.
 		val element = topmostAt(lastMouseX, lastMouseY) ?: selected ?: return true
 		selected = element
-		element.x += nudge.first.toDouble() / width
-		element.y += nudge.second.toDouble() / height
+		element.moveTo(element.left(width) + nudge.first, element.top(height) + nudge.second, width, height)
 		element.clampTo(width, height)
+		element.reanchor(width, height)
 		return true
 	}
 
@@ -269,8 +291,8 @@ class HudEditorScreen(private val parent: Screen? = null) : Screen(Component.lit
 		shown().lastOrNull { boundsOf(it).contains(mouseX, mouseY) }
 
 	private fun boundsOf(element: HudElement): Bounds {
-		val left = Math.round(element.x * width).toInt()
-		val top = Math.round(element.y * height).toInt()
+		val left = Math.round(element.left(width)).toInt()
+		val top = Math.round(element.top(height)).toInt()
 		return Bounds(
 			left,
 			top,

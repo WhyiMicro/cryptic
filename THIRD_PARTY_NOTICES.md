@@ -81,7 +81,9 @@ Several features are ported from other mods, whose licences travel with them:
   tracer, health, hiding of the wrong Livids and Ice Spray alert. The Croesus
   Helper's profit beside a chest's title and its list of chests.
   The Alias Manager, from its Command Shortcuts, and the Sound Manager: a
-  volume per sound, its categories and its list of recent sounds.
+  volume per sound, its categories and its list of recent sounds. The Storage
+  Overlay: its grid of every page with your inventory under it, the page numbering,
+  where the Storage menu shows each page and which items mark a page as locked.
 - **[Athen](https://github.com/skies-starred/Athen)** (BSD 3-Clause,
   Copyright (c) 2025-2026 Starred) — the Lag Detector's format, Bow Tweaks' arrow hitboxes,
   Custom Scale including its chibi styles, and the Carry Manager: the shape of a
@@ -177,6 +179,13 @@ community's, as published in Stella's terminal data. They are facts about the
 boss room and a party's convention about who goes where, not code or artwork,
 and nothing else of Stella's is in Cryptic.
 
+Pack Tweaks reads resource packs made for
+**[Firmament](https://github.com/FirmamentMC/Firmament)** (GPL-3.0-or-later).
+It follows that pack format as facts only, from Firmament's documentation: the
+`firmskyblock` namespace, the file paths, and the rule that turns a SkyBlock ID
+into a resource path. The loader is Cryptic's own; no code of Firmament's is in
+Cryptic.
+
 Seven more mods were read rather than ported — no code of theirs is in Cryptic:
 **[RewardClaim](https://github.com/meowdding/RewardClaim)** (all rights
 reserved, ThatGravyBoat), for how the daily reward picker should behave —
@@ -196,5 +205,16 @@ buttons instead of a bind of its own; and
 **[RBDT V5](https://github.com/V5-Client/V5)** (ChatTriggers, 1.8.9), for how
 the Experiment Solver works the table between games — the stakes, the renew and
 the bottle shop.
+
+Five more gave only the idea of a feature. Their code was not read, and Cryptic's
+versions are its own: **[VanillaHUD](https://github.com/Polyfrost/VanillaHUD)**
+(GPL-3.0), for the Hotbar module's animations;
+**[SlayerXPOverlay](https://github.com/oblongboot/SlayerXPOverlayFabric)**
+(AGPL-3.0), for Slayer Features' XP overlay;
+**[CustomScoreboard](https://github.com/meowdding/CustomScoreboard)**
+(LGPL-2.1), for the Custom Scoreboard;
+**[Enhanced Storage](https://github.com/KdGaming0/Enhanced-Storage)** (GPL-3.0),
+for the idea of a storage overview; and **[Skyblocker](https://github.com/SkyblockerMod/Skyblocker)**
+(LGPL-3.0), for Better Chat's key for chat prompts and for the Status Bars.
 
 Bundled fonts: Poppins (SIL OFL; licence in [`licenses/Poppins-OFL.txt`](licenses/Poppins-OFL.txt)), and Font Awesome Free Solid and Regular (CC BY 4.0; licence in `META-INF/licenses/font-awesome-free.txt`).

@@ -515,7 +515,12 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		return super.keyPressed(event)
 	}
 
+	/** Whether a notification's Y/N may be answered: not while a field, the search or a keybind takes keys. */
+	val takesNotificationKeys: Boolean
+		get() = page?.let { !it.capturingKeys } ?: !searchFocused
+
 	override fun charTyped(event: CharacterEvent): Boolean {
+		if (imicro.cryptic.feature.Toasts.takeAnsweredChar()) return true
 		val codePoint = event.codepoint()
 		page?.let { return it.charTyped(codePoint) }
 		if (codePoint < ' '.code) return false

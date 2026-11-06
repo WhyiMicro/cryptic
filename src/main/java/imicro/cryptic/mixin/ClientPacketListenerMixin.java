@@ -253,7 +253,7 @@ public abstract class ClientPacketListenerMixin {
         imicro.cryptic.feature.Farming.onParticle(packet);
         imicro.cryptic.debug.LaserDebug.onParticle(packet);
         imicro.cryptic.feature.WitherDragons.onParticle(packet);
-        if (imicro.cryptic.feature.Fishing.onParticle(packet) || MageBeam.onParticle(packet) || RenderOptimizer.blocksParticle(packet)
+        if (imicro.cryptic.feature.Mining.onParticle(packet) || imicro.cryptic.feature.Fishing.onParticle(packet) || MageBeam.onParticle(packet) || RenderOptimizer.blocksParticle(packet)
             || imicro.cryptic.feature.SlayerFeatures.hidesParticle(packet) || NucleusQol.hidesParticle(packet)) info.cancel();
     }
 
@@ -416,6 +416,7 @@ public abstract class ClientPacketListenerMixin {
     private void cryptic$readSystemChat(ClientboundSystemChatPacket packet, CallbackInfo info) {
         DungeonRun.onSystemChat(packet.content(), packet.overlay());
         if (packet.overlay()) imicro.cryptic.dungeon.RoomSecrets.onActionBar(packet.content());
+        if (packet.overlay()) imicro.cryptic.feature.StatusBars.read(packet.content());
         BossTimings.onSystemChat(packet.content(), packet.overlay());
         SmartTickTimer.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.feature.F3Features.onSystemChat(packet.content(), packet.overlay());
@@ -451,6 +452,8 @@ public abstract class ClientPacketListenerMixin {
         imicro.cryptic.feature.Rift.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.feature.ExperimentSolver.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.skyblock.KuudraLocation.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.ChatPrompts.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.StorageOverlay.onSystemChat(packet.content(), packet.overlay());
         // Last: Better Chat hides a line from the chat window, never from the mod.
         if (BetterChat.hidesChat(packet.content(), packet.overlay())
                 || AutoRequeue.hidesChat(packet.content(), packet.overlay())
@@ -488,6 +491,7 @@ public abstract class ClientPacketListenerMixin {
         GyroHelper.onActionBarPacket(packet.text());
         imicro.cryptic.dungeon.RoomSecrets.onActionBar(packet.text());
         NucleusQol.onActionBar(packet.text());
+        imicro.cryptic.feature.StatusBars.read(packet.text());
     }
 
     /**

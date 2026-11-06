@@ -36,7 +36,7 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
      */
     @Inject(method = "shouldRender", at = @At("HEAD"), cancellable = true)
     private void cryptic$skipHiddenEntities(T entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> info) {
-        if (RenderOptimizer.hidesEntity(entity) || Highlight.hidesNameTag(entity) || HidePlayers.hides(entity) || MageBeam.hidesSheep(entity) || LividSolver.hides(entity) || imicro.cryptic.puzzle.BlazeSolver.hides(entity)) {
+        if (RenderOptimizer.hidesEntity(entity) || Highlight.hidesNameTag(entity) || HidePlayers.hides(entity) || MageBeam.hidesSheep(entity) || LividSolver.hides(entity) || imicro.cryptic.puzzle.BlazeSolver.hides(entity) || imicro.cryptic.feature.NucleusQol.hidesMob(entity)) {
             info.setReturnValue(false);
         }
     }

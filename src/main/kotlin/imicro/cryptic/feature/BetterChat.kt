@@ -181,7 +181,7 @@ object BetterChat {
 		id = "abbreviate",
 		label = "Abbreviate channels",
 		defaultValue = false,
-		description = "Shows \"Party >\" as \"P >\" and \"Guild >\" as \"G >\", and the current chat display as \"P: \".",
+		description = "Shows \"Party >\" as \"P >\", \"Guild >\" as \"G >\" and \"Friend >\" as \"F >\", and the current chat display as \"P: \".",
 	)
 
 	@JvmField
@@ -207,7 +207,7 @@ object BetterChat {
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
 		settings = listOf(
-			hideGuild, abbreviate, noConfirm, CurrentChat.enabled,
+			hideGuild, ChatFilter.enabled, abbreviate, noConfirm, ChatPrompts.enabled, CurrentChat.enabled,
 			historySection, keepHistory, longHistory.withMore(historyLength),
 			compact.withMore(compactMode, compactWindow, compactSkipClickable),
 			toolsSection, animate.withMore(animationTime), tabs.withMore(shortTabs), search.withMore(searchAlways), contextMenu.withMore(rightClickCopy), peekKey,
@@ -221,10 +221,10 @@ object BetterChat {
 		return false
 	}
 
-	private val CHANNELS = listOf("Party" to "P", "Guild" to "G")
+	private val CHANNELS = listOf("Party" to "P", "Guild" to "G", "Friend" to "F")
 
 	/**
-	 * A chat line with "Party >" or "Guild >" shortened when Abbreviate is on. Only the word in the
+	 * A chat line with "Party >", "Guild >" or "Friend >" shortened when Abbreviate is on. Only the word in the
 	 * first piece holding it changes, so colours, clicks and hovers are kept.
 	 */
 	@JvmStatic

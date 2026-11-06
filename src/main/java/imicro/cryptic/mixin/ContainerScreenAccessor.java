@@ -20,6 +20,13 @@ public interface ContainerScreenAccessor {
     @Accessor("imageHeight")
     int cryptic$imageHeight();
 
+    /** Storage Overlay makes the whole screen the menu. */
+    @Accessor("leftPos")
+    void cryptic$setLeftPos(int x);
+
+    @Accessor("topPos")
+    void cryptic$setTopPos(int y);
+
     /** The slot under the cursor, which the screen keeps to itself. */
     @Accessor("hoveredSlot")
     Slot cryptic$hoveredSlot();

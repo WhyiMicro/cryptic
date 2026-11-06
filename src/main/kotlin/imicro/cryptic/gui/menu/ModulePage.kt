@@ -170,7 +170,12 @@ class ModulePage(val module: Module) {
 			limit = box.right - 34f - 12f - UiText.width("Disabled", 13f) - 24f
 		}
 		val section = manager
-		if (section != null && (module.supportsKeybind || module.settings.any { it.onCard && it.isVisible() && it !is SlotMapModuleSetting })) {
+		if (section != null && tabs.size > 1) {
+			// A manager beside a module's own tabs: one part for it, then each tab.
+			val parts = listOf(Hit.View(Box.NONE, true, 0) to section.tabLabel) +
+				tabs.withIndex().filter { it.value.isVisible() }.map { Hit.View(Box.NONE, false, it.index) to it.value.label }
+			limit = drawViewSwitch(graphics, parts, limit, box, mx, my, alpha) - 24f
+		} else if (section != null && (module.supportsKeybind || module.settings.any { it.onCard && it.isVisible() && it !is SlotMapModuleSetting })) {
 			val parts = listOf(Hit.View(Box.NONE, true, 0) to section.tabLabel, Hit.View(Box.NONE, false, 0) to "Settings")
 			limit = drawViewSwitch(graphics, parts, limit, box, mx, my, alpha) - 24f
 		} else if (tabs.size > 1) {
@@ -925,6 +930,7 @@ class ModulePage(val module: Module) {
 			is Hit.View -> if (showingManager != hit.manager) {
 				if (showingManager) managerScroll = scrollTarget else settingsScroll = scrollTarget
 				showingManager = hit.manager
+				if (!hit.manager) tabIndex = hit.tab
 				scrollTarget = if (showingManager) managerScroll else settingsScroll
 				scroll = scrollTarget
 				openDropdown = null

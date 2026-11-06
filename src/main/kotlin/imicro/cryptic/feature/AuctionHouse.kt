@@ -40,13 +40,19 @@ object AuctionHouse {
 	val quietInDungeons = ToggleModuleSetting("quiet_in_dungeons", "Not in dungeons", false, "No Auction House notifications while you're in a dungeon.")
 
 	@JvmField
+	val escrowReopen = ToggleModuleSetting(
+		"escrow_reopen", "Reopen after a failed buy", true,
+		"When someone else buys an item first and Hypixel closes the menu and refunds the escrow, it opens /ah and the Auctions Browser again.",
+	)
+
+	@JvmField
 	val module = Module(
 		id = "auction_house",
 		name = "Auction House",
 		description = "Sales and outbid alerts",
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
-		settings = listOf(soldAlert, outbidAlert, ownActions, coopAlerts, sounds, quietInDungeons),
+		settings = listOf(soldAlert, outbidAlert, ownActions, coopAlerts, sounds, quietInDungeons, escrowReopen),
 	)
 
 	private const val SOURCE = "Auction House"
@@ -67,6 +73,10 @@ object AuctionHouse {
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		if (overlay || !module.enabled) return
 		val line = message.string.replace(FORMATTING, "").trim()
+		if (escrowReopen.value && (ESCROW.matches(line) || line.startsWith(AH_ERROR)) && imicro.cryptic.skyblock.SkyblockLocation.onSkyblock) {
+			startReopen()
+			return
+		}
 		sold.find(line)?.let { match ->
 			if (!soldAlert.value) return
 			val item = match.groupValues[2].removeSuffix(" CLICK").trim()
@@ -97,6 +107,45 @@ object AuctionHouse {
 		purchased.find(line)?.let { return notify("You bought ${named(it.groupValues[1])} §7for §6${it.groupValues[2]} coins§7.") }
 		started.find(line)?.let { return notify("${if (it.groupValues[1].isNotEmpty()) "BIN auction" else "Auction"} started for ${named(it.groupValues[2])}§7.") }
 		collected.find(line)?.let { return notify("Collected §6${it.groupValues[1]} coins §7for ${named(it.groupValues[2])} §7from §f${it.groupValues[3]}§7.") }
+	}
+
+	// ---- Reopening after a failed buy -------------------------------------------------------
+
+	// Hypixel's lines (facts): the refund, and the error that can come before it.
+	private val ESCROW = Regex("""^Escrow refunded [\d,]+ coins for (?:BIN )?Auction Buy!$""")
+	private const val AH_ERROR = "There was an error with the auction house!"
+
+	/** The Auction House's main menu, and its Auctions Browser button. */
+	private const val MAIN_MENU = "Auction House"
+
+	/** Until when /ah has been sent and the Auctions Browser still wants pressing. */
+	private var browseUntil = 0L
+	private var reopenedAt = 0L
+
+	private fun startReopen() {
+		val now = System.currentTimeMillis()
+		// The error and the refund come together: one reopen for both.
+		if (now - reopenedAt < 2_000L) return
+		reopenedAt = now
+		browseUntil = now + 5_000L
+		val client = net.minecraft.client.Minecraft.getInstance()
+		client.execute { client.connection?.sendCommand("ah") }
+	}
+
+	/** Presses the Auctions Browser (the gold block) once /ah has opened and filled. */
+	fun tick(client: net.minecraft.client.Minecraft) {
+		if (browseUntil == 0L) return
+		if (System.currentTimeMillis() > browseUntil) {
+			browseUntil = 0L
+			return
+		}
+		val screen = client.gui.screen() as? net.minecraft.client.gui.screens.inventory.ContainerScreen ?: return
+		if (screen.title.string.replace(FORMATTING, "").trim() != MAIN_MENU) return
+		val menu = screen.menu
+		val slot = (0 until menu.rowCount * 9).firstOrNull { menu.slots[it].item.`is`(net.minecraft.world.item.Items.GOLD_BLOCK) } ?: return
+		val player = client.player ?: return
+		browseUntil = 0L
+		client.gameMode?.handleContainerInput(menu.containerId, slot, 0, net.minecraft.world.inventory.ContainerInput.PICKUP, player)
 	}
 
 	/** [name] in its rarity's colour; Hypixel writes these lines in white. */

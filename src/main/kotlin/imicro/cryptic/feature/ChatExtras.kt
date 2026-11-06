@@ -93,6 +93,7 @@ object ChatExtras {
 		if (!BetterChat.module.enabled) return false
 		val text = plain(message.content())
 		if (BetterChat.hideGuild.value && isGuild(text) && shownTab != Tab.GUILD) return true
+		if (ChatFilter.hides(text)) return true
 		// Hypixel's channels; elsewhere the tab is kept but doesn't filter.
 		if (shownTab != Tab.ALL && HypixelServer.connected && tabOf(text) != shownTab) return true
 		if (query.isNotBlank()) {
@@ -103,10 +104,11 @@ object ChatExtras {
 	}
 
 	/** What the filters were when the window was last rebuilt. */
-	private var applied: Triple<Boolean, Tab, String>? = null
+	private var applied: List<Any>? = null
 
 	private fun refreshIfChanged() {
-		val now = Triple(BetterChat.module.enabled && BetterChat.hideGuild.value, shownTab, query)
+		val enabled = BetterChat.module.enabled
+		val now = listOf(enabled && BetterChat.hideGuild.value, shownTab, query, if (enabled) ChatFilter.state() else false)
 		if (now == applied) return
 		applied = now
 		// A tab's lines are already there; only lines that arrive slide in.
@@ -156,7 +158,9 @@ object ChatExtras {
 		val count = (repeats[old.content()]?.count ?: 1) + 1
 		val shown = contents.copy().append(Component.literal(" §7($count)"))
 		repeats[shown] = Repeat(key, contents, count)
-		chat.`cryptic$refresh`()
+		// Only the old line's rows go: rebuilding the window re-wraps all history, a lag spike in
+		// bursts of repeats (a crystal pickup, a treasure chest).
+		(chat as ChatComponentAccessor).`cryptic$trimmedMessages`().removeIf { it.parent() === old }
 		return shown
 	}
 

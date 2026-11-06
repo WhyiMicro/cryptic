@@ -51,6 +51,7 @@ abstract class ManagerSection(
 			CarryManager.module -> CarrySection()
 			imicro.cryptic.feature.PartyBlacklist.module -> imicro.cryptic.gui.menu.managers.BlacklistSection()
 			CrosshairEditor.module -> CrosshairSection()
+			imicro.cryptic.feature.CustomScoreboard.module -> imicro.cryptic.gui.menu.managers.ScoreboardSection()
 			imicro.cryptic.gui.menu.managers.ProfilesSection.module -> imicro.cryptic.gui.menu.managers.ProfilesSection()
 			imicro.cryptic.gui.menu.managers.CreditsSection.module -> imicro.cryptic.gui.menu.managers.CreditsSection()
 			imicro.cryptic.gui.menu.managers.ChangelogSection.module -> imicro.cryptic.gui.menu.managers.ChangelogSection()

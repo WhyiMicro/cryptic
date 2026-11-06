@@ -39,6 +39,21 @@ public abstract class ScreenMixin {
         }
     }
 
+    /** Quick Navigation's unselected tabs, behind the menu's own background. */
+    @Inject(method = "extractBackground", at = @At("TAIL"))
+    private void cryptic$drawTabsBehind(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo info) {
+        imicro.cryptic.feature.QuickNav.renderBack((Screen) (Object) this, graphics);
+    }
+
+    /** Quick Navigation's raised tab and icons, over the background but under the slots. */
+    @Inject(
+        method = "extractRenderStateWithTooltipAndSubtitles",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screens/Screen;extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V")
+    )
+    private void cryptic$drawTabsInFront(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo info) {
+        imicro.cryptic.feature.QuickNav.renderFront((Screen) (Object) this, graphics, mouseX, mouseY);
+    }
+
     /**
      * The experiment solver paints over the chest rather than replacing it, since the board is
      * what's being memorised. Drawn before the tooltips, so a tooltip stays on top of these.
@@ -56,5 +71,6 @@ public abstract class ScreenMixin {
         imicro.cryptic.feature.BazaarHistory.render((Screen) (Object) this, graphics, mouseX, mouseY);
         imicro.cryptic.feature.Farming.renderList((Screen) (Object) this, graphics, mouseX, mouseY);
         imicro.cryptic.feature.Farming.renderMousemat((Screen) (Object) this, graphics, mouseX, mouseY);
+        imicro.cryptic.feature.MediaController.renderPauseMenu(graphics, mouseX, mouseY);
     }
 }

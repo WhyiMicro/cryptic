@@ -396,6 +396,16 @@ object SlayerFeatures {
 		description = "Hides the flame particles the wand puts around you.",
 	)
 
+	private val progressSection = SectionModuleSetting("progress_section", "Progress")
+
+	@JvmField
+	val xpOverlay = ToggleModuleSetting(
+		id = "xp_overlay",
+		label = "Slayer XP overlay",
+		defaultValue = false,
+		description = "Your slayer level, XP to the next one, bosses to go and XP an hour, on the HUD. Filled in from the first quest you finish; place it with /cryptic hud.",
+	)
+
 	// ---- Revenant ------------------------------------------------------------------------------
 
 	private val revenantTab = TabModuleSetting("revenant_tab", "Revenant")
@@ -672,6 +682,8 @@ object SlayerFeatures {
 			veilSection,
 			fireVeil.withMore(veilStyle, veilColor, veilWidth, veilThroughWalls),
 			hideVeilFlames,
+			progressSection,
+			xpOverlay,
 			revenantTab,
 			boomAlert,
 			tarantulaTab,
@@ -822,6 +834,7 @@ object SlayerFeatures {
 		if (initialized) return
 		initialized = true
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
+		imicro.cryptic.hud.Hud.register(imicro.cryptic.slayer.SlayerXp.Element())
 	}
 
 	private val active: Boolean
@@ -1319,6 +1332,7 @@ object SlayerFeatures {
 	/** Hypixel's line for cocooning your boss. Client thread, from the chat packet. */
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
+		imicro.cryptic.slayer.SlayerXp.onSystemChat(message, overlay)
 		if (overlay || !module.enabled || !cocoonAlert.value) return
 		val text = message.string.replace(formattingPattern, "").trim()
 		if (text == "YOU COCOONED YOUR SLAYER BOSS") title("§6§lCocooned!")

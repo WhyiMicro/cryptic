@@ -144,6 +144,7 @@ object CrypticClient : ClientModInitializer {
 
 	private var openGuiRequested = false
 	private var hudEditorRequested = false
+	private var barsEditorRequested = false
 	private var termSimRequested = false
 
 	/** Right shift by default. Once rebound, Minecraft's options file keeps the key. */
@@ -273,6 +274,7 @@ object CrypticClient : ClientModInitializer {
 		AutoRequeue.initialize()
 		imicro.cryptic.feature.ClassAbilities.initialize()
 		imicro.cryptic.feature.ItemProtection.initialize()
+		imicro.cryptic.feature.PackTweaks.initialize()
 		imicro.cryptic.feature.Mining.initialize()
 		imicro.cryptic.feature.Fishing.initialize()
 		imicro.cryptic.feature.Bazaar.initialize()
@@ -321,6 +323,11 @@ object CrypticClient : ClientModInitializer {
 		PuzzleHud.initialize()
 		DungeonWarpCooldown.initialize()
 		ILoveGlass.initialize()
+		imicro.cryptic.feature.TwitchChat.initialize()
+		imicro.cryptic.feature.CustomScoreboard.initialize()
+		imicro.cryptic.feature.StorageOverlay.initialize()
+		imicro.cryptic.feature.MediaController.initialize()
+		imicro.cryptic.feature.StatusBars.initialize()
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> ServerStats.forget() }
 
 		// Last, so every element and setting exists to be filled in.
@@ -580,6 +587,13 @@ object CrypticClient : ClientModInitializer {
 								}
 								1
 							})
+							.then(ClientCommands.literal("sidebar").executes { context ->
+								imicro.cryptic.feature.CustomScoreboard.dumpSidebar().forEach {
+									context.source.sendFeedback(Component.literal(it))
+									imicro.cryptic.Cryptic.LOGGER.info("[sidebar] {}", it)
+								}
+								1
+							})
 							.then(ClientCommands.literal("location").executes { context ->
 								SkyblockLocation.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
@@ -720,6 +734,39 @@ object CrypticClient : ClientModInitializer {
 								}
 								1
 							})
+							.then(
+								ClientCommands.literal("structure")
+									.executes { context ->
+										imicro.cryptic.debug.StructureMeasure.toggle().forEach { context.source.sendFeedback(Component.literal(it)) }
+										1
+									}
+									.then(ClientCommands.literal("undo").executes { context ->
+										imicro.cryptic.debug.StructureMeasure.undo().forEach { context.source.sendFeedback(Component.literal(it)) }
+										1
+									})
+									.then(
+										ClientCommands.literal("done")
+											.executes { context ->
+												imicro.cryptic.debug.StructureMeasure.done("").forEach { context.source.sendFeedback(Component.literal(it)) }
+												1
+											}
+											.then(
+												ClientCommands.argument("name", StringArgumentType.greedyString())
+													.suggests { _, builder ->
+														SharedSuggestionProvider.suggest(imicro.cryptic.feature.HollowsMap.Place.entries.map { it.title }, builder)
+													}
+													.executes { context ->
+														imicro.cryptic.debug.StructureMeasure.done(StringArgumentType.getString(context, "name"))
+															.forEach { context.source.sendFeedback(Component.literal(it)) }
+														1
+													},
+											),
+									)
+									.then(ClientCommands.literal("clear").executes { context ->
+										imicro.cryptic.debug.StructureMeasure.clear().forEach { context.source.sendFeedback(Component.literal(it)) }
+										1
+									}),
+							)
 							.then(ClientCommands.literal("bal").executes { context ->
 								NucleusQol.describeBal().forEach {
 									context.source.sendFeedback(Component.literal(it))
@@ -784,6 +831,12 @@ object CrypticClient : ClientModInitializer {
 							})
 							.then(ClientCommands.literal("lava").executes { context ->
 								LavaToWater.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("pack").executes { context ->
+								imicro.cryptic.feature.PackTweaks.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
@@ -1043,6 +1096,13 @@ object CrypticClient : ClientModInitializer {
 							1
 						},
 					)
+					.then(
+						ClientCommands.literal("hotbar").executes {
+							// Status Bars' own editor, with only its bars in it.
+							barsEditorRequested = true
+							1
+						},
+					)
 					// The Settings tab's managers, which open whether or not their module is on.
 					.then(ClientCommands.literal("keybinds").executes {
 						imicro.cryptic.gui.menu.MenuScreen.request(KeybindManager.module)
@@ -1222,7 +1282,7 @@ object CrypticClient : ClientModInitializer {
 					imicro.cryptic.feature.AuctionHouse.module.enabled || imicro.cryptic.feature.Farming.module.enabled || imicro.cryptic.feature.Rift.needsSkyblock ||
 					KeybindManager.needsSkyblock || AutoGfs.needsSkyblock ||
 					SmoothTeleport.predictive ||
-					DungeonWarpCooldown.module.enabled,
+					DungeonWarpCooldown.module.enabled || imicro.cryptic.feature.QuickNav.module.enabled || imicro.cryptic.feature.CustomScoreboard.needsSkyblock || imicro.cryptic.feature.StorageOverlay.needsSkyblock || imicro.cryptic.feature.StatusBars.module.enabled,
 			)
 			Zoom.tick(client)
 			// One tab-list scan feeds every module that needs the party.
@@ -1306,6 +1366,7 @@ object CrypticClient : ClientModInitializer {
 			CookieReminder.tick(client)
 			TimeChanger.tick(client)
 			LavaToWater.tick(client)
+			imicro.cryptic.feature.PackTweaks.tick(client)
 			DoorFix.tick(client)
 			SlayerBosses.tick(
 				client,
@@ -1323,6 +1384,10 @@ object CrypticClient : ClientModInitializer {
 			PartyFeatures.tick(client)
 			TerracottaTimer.tick()
 			ILoveGlass.tick(client)
+			imicro.cryptic.feature.TwitchChat.tick()
+			imicro.cryptic.feature.CustomScoreboard.tick(client)
+			imicro.cryptic.feature.StorageOverlay.tick(client)
+			imicro.cryptic.feature.MediaController.tick(client)
 			AutoGfs.tick(client)
 			AutoRequeue.tick(client)
 			imicro.cryptic.feature.ClassAbilities.tick(client)
@@ -1330,6 +1395,7 @@ object CrypticClient : ClientModInitializer {
 			imicro.cryptic.feature.Mining.tick(client)
 			imicro.cryptic.feature.Fishing.tick(client)
 			imicro.cryptic.feature.Bazaar.tick(client)
+			imicro.cryptic.feature.AuctionHouse.tick(client)
 			imicro.cryptic.feature.BazaarPresets.tick()
 			imicro.cryptic.feature.Farming.tick(client)
 			imicro.cryptic.feature.Rift.tick(client)
@@ -1378,6 +1444,11 @@ object CrypticClient : ClientModInitializer {
 			if (hudEditorRequested) {
 				hudEditorRequested = false
 				Hud.openEditor()
+			}
+
+			if (barsEditorRequested) {
+				barsEditorRequested = false
+				imicro.cryptic.feature.StatusBars.openEditor(null)
 			}
 		}
 	}

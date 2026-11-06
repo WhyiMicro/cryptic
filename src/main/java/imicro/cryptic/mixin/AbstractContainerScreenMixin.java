@@ -43,6 +43,19 @@ public abstract class AbstractContainerScreenMixin {
         if (InvincibilityTimer.drawSlotCooldown(graphics, slot)) info.cancel();
     }
 
+    /** Storage Overlay names its own pages, so the chest's title and "Inventory" go. */
+    @Inject(method = "extractLabels", at = @At("HEAD"), cancellable = true)
+    private void cryptic$hideStorageLabels(GuiGraphicsExtractor graphics, int xm, int ym, CallbackInfo info) {
+        if (imicro.cryptic.feature.StorageOverlay.hidesLabels((AbstractContainerScreen<?>) (Object) this)) info.cancel();
+    }
+
+    /** Storage Overlay's panels are the menu; only clicks off both of them drop a held item. */
+    @Inject(method = "hasClickedOutside", at = @At("HEAD"), cancellable = true)
+    private void cryptic$storageOutside(double mx, double my, int xo, int yo, CallbackInfoReturnable<Boolean> info) {
+        Boolean outside = imicro.cryptic.feature.StorageOverlay.clickedOutside((AbstractContainerScreen<?>) (Object) this, mx, my);
+        if (outside != null) info.setReturnValue(outside);
+    }
+
     /** Marks drawn over the item. */
     @Inject(method = "extractSlot", at = @At("RETURN"))
     private void cryptic$drawOverSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY, CallbackInfo info) {
@@ -78,6 +91,11 @@ public abstract class AbstractContainerScreenMixin {
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void cryptic$clickTerminal(MouseButtonEvent click, boolean doubleClick, CallbackInfoReturnable<Boolean> info) {
+        if (imicro.cryptic.feature.StorageOverlay.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y(), click.button())) {
+            info.setReturnValue(true);
+            return;
+        }
+
         // Cryptic's buttons in Bazaar Orders sit on filler panes, whose slot clicks other mods drop.
         if (imicro.cryptic.feature.Bazaar.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.button())) {
             info.setReturnValue(true);
@@ -85,6 +103,11 @@ public abstract class AbstractContainerScreenMixin {
         }
 
         if (SpiritLeapOverlay.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y())) {
+            info.setReturnValue(true);
+            return;
+        }
+
+        if (imicro.cryptic.feature.QuickNav.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y(), click.button())) {
             info.setReturnValue(true);
             return;
         }
@@ -125,6 +148,13 @@ public abstract class AbstractContainerScreenMixin {
         }
     }
 
+    @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
+    private void cryptic$scrollStorage(double x, double y, double scrollX, double scrollY, CallbackInfoReturnable<Boolean> info) {
+        if (imicro.cryptic.feature.StorageOverlay.handleScroll((AbstractContainerScreen<?>) (Object) this, x, y, scrollY)) {
+            info.setReturnValue(true);
+        }
+    }
+
     @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
     private void cryptic$releaseLeap(MouseButtonEvent click, CallbackInfoReturnable<Boolean> info) {
         if (SpiritLeapOverlay.handleMouseRelease((AbstractContainerScreen<?>) (Object) this, click.x(), click.y())) {
@@ -134,6 +164,12 @@ public abstract class AbstractContainerScreenMixin {
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void cryptic$keyTerminal(KeyEvent event, CallbackInfoReturnable<Boolean> info) {
+        // The storage search keeps every key while it has focus, so E and 1 to 9 type nothing else.
+        if (imicro.cryptic.feature.StorageOverlay.handleKey((AbstractContainerScreen<?>) (Object) this, event.key())) {
+            info.setReturnValue(true);
+            return;
+        }
+
         // Escape pauses the experiment Auto instead of closing the menu.
         if (event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE && ExperimentSolver.handleEscape()) {
             info.setReturnValue(true);

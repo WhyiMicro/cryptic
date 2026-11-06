@@ -18,6 +18,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(AvatarRenderer.class)
 public abstract class AvatarRendererMixin {
+    @Inject(method = "<init>", at = @At("TAIL"))
+    private void cryptic$noteBodyModel(CallbackInfo info) {
+        CustomScale.addBodyModel(((net.minecraft.client.renderer.entity.LivingEntityRenderer<?, ?, ?>) (Object) this).getModel());
+    }
+
     /** Capes from the cape mods, and your own. */
     @Inject(
         method = "extractRenderState(Lnet/minecraft/world/entity/Avatar;Lnet/minecraft/client/renderer/entity/state/AvatarRenderState;F)V",
@@ -46,6 +51,8 @@ public abstract class AvatarRendererMixin {
         if (!CustomScale.appliesTo(CustomScale.entityOf(state))) return;
 
         float scale = CustomScale.modelScale();
-        poseStack.scale(scale, scale, scale);
+        // The pose is already turned to the body, so x and z are its width and depth.
+        float wide = scale * CustomScale.widthFactor();
+        poseStack.scale(wide, scale, wide);
     }
 }

@@ -597,6 +597,7 @@
         "apply_to_others": false,
         "apply_to_npcs": false,
         "scale": 1.0,
+        "width": 1.0,
         "scale_nametags": false,
         "scale_shadow": false,
         "chibi_style": "None",

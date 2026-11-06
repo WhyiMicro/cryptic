@@ -36,9 +36,9 @@ object Hud {
 	}
 
 	/** Opens the placement editor; escape returns to [parent], or closes when there is none. */
-	fun openEditor(parent: net.minecraft.client.gui.screens.Screen? = null) {
+	fun openEditor(parent: net.minecraft.client.gui.screens.Screen? = null, only: ((HudElement) -> Boolean)? = null) {
 		val client = Minecraft.getInstance()
-		client.gui.setScreen(HudEditorScreen(parent))
+		client.gui.setScreen(HudEditorScreen(parent, only))
 	}
 
 	private fun renderAll(context: GuiGraphicsExtractor) {
@@ -56,8 +56,8 @@ object Hud {
 		pose.pushMatrix()
 		// On whole pixels, so one-pixel lines and text edges come out even.
 		pose.translate(
-			Math.round(element.x * context.guiWidth()).toFloat(),
-			Math.round(element.y * context.guiHeight()).toFloat(),
+			Math.round(element.left(context.guiWidth())).toFloat(),
+			Math.round(element.top(context.guiHeight())).toFloat(),
 		)
 		pose.scale(element.scale.toFloat(), element.scale.toFloat())
 		body()

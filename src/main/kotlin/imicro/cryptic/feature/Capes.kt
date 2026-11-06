@@ -244,16 +244,23 @@ object Capes {
 
 	/**
 	 * Any cape image laid out as Minecraft's 64×32 cape sheet, scaled: LabyMod sends only the cape's
-	 * 22×17 corner, OptiFine 46×22 (cape and elytra).
+	 * 22×17 corner, OptiFine 46×22 (cape and elytra). LabyMod's are often a few pixels over a whole
+	 * multiple (355×275 for 16×), so its shape is matched loosely and the scale rounded down.
 	 */
 	private fun toCapeLayout(image: NativeImage): NativeImage {
 		val w = image.width
 		val h = image.height
+		val ratio = w.toDouble() / h
 		val scale = when {
 			w == h * 2 -> return image
-			w * 17 == h * 22 -> w / 22
+			kotlin.math.abs(ratio - 22.0 / 17.0) < 0.03 -> w / 22
 			w * 22 == h * 46 -> w / 46
-			else -> maxOf(1, w / 64)
+			// Otherwise the smallest doubling of 64×32 that holds the whole image.
+			else -> {
+				var fit = 1
+				while (64 * fit < w || 32 * fit < h) fit *= 2
+				fit
+			}
 		}.coerceAtLeast(1)
 		val sheet = NativeImage(64 * scale, 32 * scale, true)
 		for (y in 0 until minOf(h, sheet.height)) for (x in 0 until minOf(w, sheet.width)) sheet.setPixel(x, y, image.getPixel(x, y))

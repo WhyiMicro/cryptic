@@ -27,6 +27,16 @@ public abstract class MouseHandlerMixin {
         return !imicro.cryptic.feature.Freecam.turn(dx, dy) && !imicro.cryptic.feature.Freelook.turn(dx, dy);
     }
 
+    /** Hotbar's "Stop at the ends": the wheel stops at slots 1 and 9 instead of wrapping round. */
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(
+        method = "onScroll",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/ScrollWheelHandler;getNextScrollWheelSelection(DII)I")
+    )
+    private int cryptic$hotbarEnds(double wheel, int current, int limit, com.llamalad7.mixinextras.injector.wrapoperation.Operation<Integer> original) {
+        if (imicro.cryptic.feature.Hotbar.stopsAtEnds()) return Math.max(0, Math.min(limit - 1, current - (int) Math.signum(wheel)));
+        return original.call(wheel, current, limit);
+    }
+
     @Inject(method = "onScroll", at = @At("HEAD"), cancellable = true)
     private void cryptic$zoomScroll(long handle, double xoffset, double yoffset, CallbackInfo ci) {
         // Shift and the wheel picks what to place in the waypoint editors.
@@ -64,7 +74,7 @@ public abstract class MouseHandlerMixin {
             return;
         }
 
-        if (button.button() == 0 && (Toasts.onMousePressed() || imicro.cryptic.feature.Farming.onMousePressed())) {
+        if (button.button() == 0 && (Toasts.onMousePressed() || imicro.cryptic.feature.Farming.onMousePressed() || imicro.cryptic.feature.MediaController.onMousePressed())) {
             cryptic$swallowedButton = 0;
             ci.cancel();
             return;

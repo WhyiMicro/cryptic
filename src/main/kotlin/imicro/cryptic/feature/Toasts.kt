@@ -178,17 +178,17 @@ object Toasts {
 
 	/**
 	 * Raises a notification. [source] is the speaking module's name, [message] what it says. [life]
-	 * overrides the configured time.
+	 * overrides the configured time; [id] lets its module take it down with [dismiss].
 	 */
 	fun show(
 		source: String, message: String, error: Boolean = false, life: Double = seconds.value,
-		color: Int? = null, head: String? = null,
+		color: Int? = null, head: String? = null, id: String? = null,
 	) {
 		if (!module.enabled) {
 			toChat(source, message, error)
 			return
 		}
-		add(Toast(source, { message }, error, life.toFloat(), color = color, head = head))
+		add(Toast(source, { message }, error, life.toFloat(), id = id, color = color, head = head))
 	}
 
 	/**
@@ -336,15 +336,31 @@ object Toasts {
 	}
 
 	/**
-	 * A keyboard key, answered only where it can't be typing: in the world or in a chest. A Y in
-	 * chat must never accept an invite.
+	 * A keyboard key, answered only where it can't be typing: in the world, in a chest, or in
+	 * Cryptic's menu with no field taking text. A Y in chat must never accept an invite.
 	 */
 	@JvmStatic
 	fun onKeyPressed(key: Int): Boolean {
+		swallowChar = false
 		if (shown.none { it.keys.isNotEmpty() && !it.done }) return false
 		val screen = Minecraft.getInstance().gui.screen()
-		if (screen != null && screen !is ContainerScreen) return false
-		return handleKey(key)
+		val menu = screen as? imicro.cryptic.gui.menu.MenuScreen
+		// Cryptic's menu too, while nothing in it is taking text or a keybind.
+		if (screen != null && screen !is ContainerScreen && menu?.takesNotificationKeys != true) return false
+		val taken = handleKey(key)
+		// The menu sends typing to its search; the answer's letter mustn't land there.
+		if (taken && menu != null) swallowChar = true
+		return taken
+	}
+
+	private var swallowChar = false
+
+	/** True once for the character of a key a notification just took, so the screen drops it. */
+	@JvmStatic
+	fun takeAnsweredChar(): Boolean {
+		val swallow = swallowChar
+		swallowChar = false
+		return swallow
 	}
 
 	/** The left button going down. A press on a notification is kept from what's under it. */

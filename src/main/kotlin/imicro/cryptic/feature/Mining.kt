@@ -45,10 +45,22 @@ object Mining {
 	val showOutside = ToggleModuleSetting("show_outside", "Show outside mining islands", false, "Also shows the timer away from the mines while you hold a mining tool.")
 
 	@JvmField
+	val abilityNameColor = ColorModuleSetting("ability_name_color", "Name", defaultRgb = 0xFFAA00)
+
+	@JvmField
+	val abilityCooldownColor = ColorModuleSetting("ability_cooldown_color", "Cooling down", defaultRgb = 0xFF5555)
+
+	@JvmField
+	val abilityReadyColor = ColorModuleSetting("ability_ready_color", "Ready", defaultRgb = 0x55FF55)
+
+	@JvmField
+	val abilityShadow = ToggleModuleSetting("ability_shadow", "Text shadow", true)
+
+	@JvmField
 	val abilityTimer = ToggleModuleSetting(
 		"ability_timer", "Cooldown timer", true,
 		"A HUD timer for your pickaxe ability on mining islands, from the tab list when it shows one, otherwise from when you used it.",
-	).withMore(showOutside)
+	).withMore(showOutside, abilityNameColor, abilityCooldownColor, abilityReadyColor, abilityShadow)
 
 	@JvmField
 	val alertTitle = TextModuleSetting(
@@ -122,12 +134,34 @@ object Mining {
 	val doneColor = ColorModuleSetting("done_color", "Safe to move on", defaultRgb = 0x55FF55)
 
 	@JvmField
+	val offsetStyle = DropdownModuleSetting(
+		id = "offset_style",
+		label = "Style",
+		options = listOf("Outline", "Fill", "Both"),
+		defaultIndex = 2,
+	)
+
+	@JvmField
+	val offsetFillOpacity = SliderModuleSetting(
+		id = "offset_fill_opacity", label = "Fill opacity", defaultValue = 0.2, min = 0.05, max = 1.0, step = 0.05,
+		visibleIf = { offsetStyle.selectedIndex != 0 },
+	)
+
+	@JvmField
 	val offsetSound = DropdownModuleSetting(
 		id = "offset_sound",
 		label = "Sound",
-		options = listOf("None") + SoundChoices.labels.dropLast(1),
+		options = listOf("None") + SoundChoices.labels,
 		defaultIndex = 0,
 		description = "Played when the block counts as broken.",
+	)
+
+	private val offsetCustomSound = SoundChoices.customField("offset_custom_sound", offsetSound)
+
+	@JvmField
+	val offsetVolume = SliderModuleSetting(
+		id = "offset_volume", label = "Volume", defaultValue = 1.0, min = 0.0, max = 1.0, step = 0.1,
+		visibleIf = { offsetSound.selectedIndex > 0 },
 	)
 
 	@JvmField
@@ -135,7 +169,7 @@ object Mining {
 		"ping_offset", "Ping offset", false,
 		"Outlines the block you're mining, red until the server will count it broken (allowing for your ping), then green: " +
 			"start the next block then. Uses the Mining Speed in your tab list.",
-	).withMore(manualSpeed, margin, miningColor, doneColor, offsetSound)
+	).withMore(manualSpeed, margin, offsetStyle, offsetFillOpacity, miningColor, doneColor, offsetSound, offsetCustomSound, offsetVolume)
 
 	@JvmField
 	val hideAnimation = ToggleModuleSetting(
@@ -173,6 +207,109 @@ object Mining {
 	@JvmField
 	val tickCounter = ToggleModuleSetting("tick_counter", "Tick counter", false, "A HUD counter of ticks mined against ticks needed.")
 
+	private val helpersSection = SectionModuleSetting("helpers_section", "Helpers")
+
+	@JvmField
+	val precisionColor = ColorModuleSetting("precision_color", "Not aimed at", defaultRgb = 0xFF5555)
+
+	@JvmField
+	val precisionHoverColor = ColorModuleSetting("precision_hover_color", "Aimed at", defaultRgb = 0x55FF55)
+
+	@JvmField
+	val precisionTracer = ToggleModuleSetting("precision_tracer", "Tracer", false, "A line from your crosshair to the target.")
+
+	@JvmField
+	val precisionTracerColor = ColorModuleSetting(
+		"precision_tracer_color", "Tracer colour", defaultRgb = 0xFFFFFF, supportsAlpha = true,
+		visibleIf = { precisionTracer.value },
+	)
+
+	@JvmField
+	val precisionInstant = ToggleModuleSetting(
+		"precision_instant", "Instant colour", true,
+		"Turns green the moment your crosshair is on the target. Off waits for Hypixel's sparks to change, which lags by your ping.",
+	)
+
+	@JvmField
+	val precisionParticles = ToggleModuleSetting(
+		"precision_particles", "Show particles", false,
+		"Keeps Hypixel's sparks on the target as well as the box.",
+	)
+
+	@JvmField
+	val precisionMining = ToggleModuleSetting(
+		"precision_mining", "Precision mining highlight", false,
+		"Boxes the Precision Mining target on the block you're mining: red until you aim at it, then green.",
+	).withMore(precisionColor, precisionHoverColor, precisionInstant, precisionTracer, precisionTracerColor, precisionParticles)
+
+	@JvmField
+	val drillFuelBar = ToggleModuleSetting(
+		"drill_fuel_bar", "Drill fuel bar", false,
+		"Shows a drill's remaining fuel as a durability bar on the item.",
+	)
+
+	@JvmField
+	val heatmapRadius = SliderModuleSetting("heatmap_radius", "Radius", defaultValue = 8.0, min = 3.0, max = 16.0, step = 1.0)
+
+	@JvmField
+	val heatmapStyle = DropdownModuleSetting("heatmap_style", "Style", options = listOf("Outline", "Fill", "Both"), defaultIndex = 0)
+
+	@JvmField
+	val heatmapOpacity = SliderModuleSetting("heatmap_opacity", "Opacity", defaultValue = 1.0, min = 0.1, max = 1.0, step = 0.1)
+
+	@JvmField
+	val heatmapHotColor = ColorModuleSetting(
+		"heatmap_hot_color", "Clay, red sandstone", defaultRgb = 0x00AA00,
+		description = "Tungsten's clay and Umber's smooth red sandstone.",
+	)
+
+	@JvmField
+	val heatmapWarmColor = ColorModuleSetting(
+		"heatmap_warm_color", "Brown terracotta", defaultRgb = 0x55FF55,
+		description = "Umber's brown terracotta.",
+	)
+
+	@JvmField
+	val heatmap = ToggleModuleSetting(
+		"heatmap", "Heat map", false,
+		"In the Glacite Tunnels and Mineshafts, outlines the exposed Tungsten and Umber blocks around you, darker for the better ones. " +
+			"Coleweight's idea.",
+	).withMore(heatmapRadius, heatmapStyle, heatmapOpacity, heatmapHotColor, heatmapWarmColor)
+
+	@JvmField
+	val paneHitbox = ToggleModuleSetting(
+		"pane_hitbox", "Full glass pane hitbox", false,
+		"Gives glass panes (gemstone panes) a full block hitbox on mining islands, so they're as easy to aim at as blocks.",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
+	)
+
+	/** Whether a glass pane's aiming shape becomes a full block. Called for every pane shape lookup. */
+	@JvmStatic
+	fun growsPane(state: BlockState): Boolean {
+		if (!module.enabled || !paneHitbox.value) return false
+		val block = state.block
+		if (block !is net.minecraft.world.level.block.StainedGlassPaneBlock && block !== net.minecraft.world.level.block.Blocks.GLASS_PANE) return false
+		return onMiningIsland()
+	}
+
+	private val soundSection = SectionModuleSetting("sound_section", "Sounds")
+
+	@JvmField
+	val muteXp = ToggleModuleSetting(
+		"mute_xp",
+		"Mute experience sound",
+		true,
+		"Silences the experience orb chime from mining, on mining islands or while you hold a mining tool.",
+	)
+
+	/** The experience orb pickup, which plays for nearly every block mined. */
+	@JvmStatic
+	fun mutes(instance: net.minecraft.client.resources.sounds.SoundInstance): Boolean {
+		if (!module.enabled || !muteXp.value || !SkyblockLocation.onSkyblock) return false
+		if (instance.identifier != net.minecraft.sounds.SoundEvents.EXPERIENCE_ORB_PICKUP.location()) return false
+		return onMiningIsland() || heldTool() != null
+	}
+
 	@JvmField
 	val module = Module(
 		id = "mining",
@@ -184,6 +321,8 @@ object Mining {
 			abilitySection, abilityTimer, readyAlert,
 			pickobulusSection, pickobulus,
 			offsetSection, pingOffset, hideAnimation, hideOutline, tickCounter, breakResetFix,
+			helpersSection, precisionMining, heatmap, drillFuelBar, paneHitbox,
+			soundSection, muteXp,
 		),
 	)
 
@@ -337,6 +476,8 @@ object Mining {
 		}
 		updatePickobulus()
 		updateBreak(client)
+		updateHeatmap(client)
+		if (precisionSeen > 0) precisionSeen--
 		warnIfNoSpeed(client)
 	}
 
@@ -408,6 +549,17 @@ object Mining {
 	private fun blockId(state: BlockState): String = BuiltInRegistries.BLOCK.getKey(state.block).path
 
 	private var breakPos: BlockPos? = null
+	/**
+	 * Something ping offset can time: a pickaxe, or SkyBlock's drills, pickaxes and gauntlets (by
+	 * their rarity line, or the Breaking Power every mining tool lists). Not a hoe or an axe.
+	 */
+	private fun isMiningTool(stack: ItemStack): Boolean {
+		if (stack.isEmpty) return false
+		if (stack.`is`(net.minecraft.tags.ItemTags.PICKAXES)) return true
+		if (readTool(stack) != null) return true
+		return lore(stack).any { it.startsWith("Breaking Power") }
+	}
+
 	private var breakStartTick = 0
 	private var breakNeeded = 0
 	private var breakElapsed = 0
@@ -447,7 +599,7 @@ object Mining {
 		val player = client.player ?: return
 		val gameMode = client.gameMode
 		val hardness = HARDNESS[blockId(level.getBlockState(pos))]
-		if (gameMode == null || !gameMode.isDestroying || hardness == null || !onMiningIsland()) {
+		if (gameMode == null || !gameMode.isDestroying || hardness == null || !onMiningIsland() || !isMiningTool(player.mainHandItem)) {
 			breakPos = null
 			return
 		}
@@ -455,7 +607,9 @@ object Mining {
 		breakElapsed = player.tickCount - breakStartTick
 		if (breakNeeded > 0 && breakElapsed >= breakNeeded && !breakAnnounced) {
 			breakAnnounced = true
-			if (pingOffset.value && offsetSound.selectedIndex > 0) SoundChoices.play(offsetSound.selectedIndex - 1, 1f, 1f)
+			if (pingOffset.value && offsetSound.selectedIndex > 0) {
+				SoundChoices.play(offsetSound.selectedIndex - 1, offsetVolume.value.toFloat(), 1f, offsetCustomSound.value)
+			}
 		}
 	}
 
@@ -534,6 +688,8 @@ object Mining {
 
 	private fun render(context: LevelRenderContext) {
 		if (!module.enabled) return
+		renderPrecision(context)
+		renderHeatmap(context)
 		val colour = pickobulusColor.argb or (0xFF shl 24)
 		for (pos in pickobulusBlocks) {
 			WorldRender.drawBox(
@@ -556,18 +712,208 @@ object Mining {
 		val box = if (shape.isEmpty) AABB(pos) else shape.bounds().move(pos)
 		val done = breakElapsed >= breakNeeded
 		val rgb = (if (done) doneColor.argb else miningColor.argb) and 0xFFFFFF
+		val fillAlpha = (offsetFillOpacity.value * 255).toInt().coerceIn(0, 255)
 		WorldRender.drawBox(
 			poseStack = context.poseStack(),
 			collector = context.submitNodeCollector(),
 			minX = box.minX, minY = box.minY, minZ = box.minZ,
 			maxX = box.maxX, maxY = box.maxY, maxZ = box.maxZ,
 			outlineArgb = (0xFF shl 24) or rgb,
-			fillArgb = (0x30 shl 24) or rgb,
-			outline = true,
-			fill = true,
+			fillArgb = (fillAlpha shl 24) or rgb,
+			outline = offsetStyle.selectedIndex != 1,
+			fill = offsetStyle.selectedIndex != 0,
 			phase = false,
 			lineWidth = 2f,
 		)
+	}
+
+	private fun renderPrecision(context: LevelRenderContext) {
+		if (!precisionMining.value || precisionSeen <= 0) return
+		val half = PRECISION_HALF
+		val rgb = (if (aimingAtPrecision(half)) precisionHoverColor.argb else precisionColor.argb) and 0xFFFFFF
+		WorldRender.drawBox(
+			poseStack = context.poseStack(),
+			collector = context.submitNodeCollector(),
+			minX = precisionX - half, minY = precisionY - half, minZ = precisionZ - half,
+			maxX = precisionX + half, maxY = precisionY + half, maxZ = precisionZ + half,
+			outlineArgb = (0xFF shl 24) or rgb,
+			fillArgb = (0x80 shl 24) or rgb,
+			outline = true,
+			fill = true,
+			phase = true,
+			lineWidth = 2f,
+		)
+		if (precisionTracer.value) {
+			WorldRender.drawTracer(
+				poseStack = context.poseStack(),
+				collector = context.submitNodeCollector(),
+				x = precisionX, y = precisionY, z = precisionZ,
+				argb = precisionTracerColor.argb,
+				lineWidth = 2f,
+				phase = true,
+			)
+		}
+	}
+
+	/**
+	 * Whether the crosshair is on the target this frame. Hypixel's green sparks say the same, but a
+	 * round trip and a few ticks late; they're used when Instant colour is off.
+	 */
+	private fun aimingAtPrecision(half: Double): Boolean {
+		if (!precisionInstant.value) return precisionAimed
+		val player = client.player ?: return precisionAimed
+		val partial = client.deltaTracker.getGameTimeDeltaPartialTick(false)
+		val eye = player.getEyePosition(partial)
+		val end = eye.add(player.getViewVector(partial).scale(player.blockInteractionRange()))
+		val box = AABB(precisionX - half, precisionY - half, precisionZ - half, precisionX + half, precisionY + half, precisionZ + half)
+		return box.contains(eye) || box.clip(eye, end).isPresent
+	}
+
+	private fun renderHeatmap(context: LevelRenderContext) {
+		if (!heatmap.value || heatBlocks.isEmpty()) return
+		val alpha = (heatmapOpacity.value * 255).toInt().coerceIn(0, 255)
+		val outline = heatmapStyle.selectedIndex != 1
+		val fill = heatmapStyle.selectedIndex != 0
+		// A fill under an outline is kept fainter so the outline still reads.
+		val fillAlpha = if (outline) alpha / 3 else alpha / 2
+		for (index in heatBlocks.indices) {
+			val pos = heatBlocks[index]
+			val rgb = (if (heatHot[index]) heatmapHotColor.argb else heatmapWarmColor.argb) and 0xFFFFFF
+			WorldRender.drawBox(
+				poseStack = context.poseStack(),
+				collector = context.submitNodeCollector(),
+				minX = pos.x.toDouble(), minY = pos.y.toDouble(), minZ = pos.z.toDouble(),
+				maxX = pos.x + 1.0, maxY = pos.y + 1.0, maxZ = pos.z + 1.0,
+				outlineArgb = (alpha shl 24) or rgb,
+				fillArgb = (fillAlpha shl 24) or rgb,
+				outline = outline,
+				fill = fill,
+				phase = false,
+				lineWidth = 2f,
+			)
+		}
+	}
+
+	// ---- Precision mining ---------------------------------------------------------------
+
+	private const val PRECISION_HALF = 0.12
+	private const val PRECISION_TICKS = 5
+
+	private var precisionX = 0.0
+	private var precisionY = 0.0
+	private var precisionZ = 0.0
+	private var precisionAimed = false
+
+	/** Ticks the last target stays drawn, since Hypixel resends it every few ticks. */
+	private var precisionSeen = 0
+
+	/**
+	 * Hypixel marks the Precision Mining target with crit particles, turned to happy villager ones
+	 * while you aim at it; only those on the block being mined count. Returns whether the particle
+	 * should be hidden. Client thread only: cancelling the network thread's pass would keep the
+	 * packet from ever reaching it.
+	 */
+	@JvmStatic
+	fun onParticle(packet: net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket): Boolean {
+		if (!client.isSameThread || !module.enabled || !precisionMining.value) return false
+		val type = packet.particle.type
+		val aimed = type == net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER
+		if (!aimed && type != net.minecraft.core.particles.ParticleTypes.CRIT) return false
+		if (!client.options.keyAttack.isDown || !onMiningIsland()) return false
+		val hit = client.hitResult as? BlockHitResult ?: return false
+		if (hit.type != HitResult.Type.BLOCK) return false
+		val pos = hit.blockPos
+		val h = PRECISION_HALF
+		if (packet.x + h < pos.x || packet.x - h > pos.x + 1 || packet.y + h < pos.y || packet.y - h > pos.y + 1 ||
+			packet.z + h < pos.z || packet.z - h > pos.z + 1) return false
+		precisionX = packet.x
+		precisionY = packet.y
+		precisionZ = packet.z
+		precisionAimed = aimed
+		precisionSeen = PRECISION_TICKS
+		return !precisionParticles.value
+	}
+
+	// ---- Heat map ----------------------------------------------------------------------
+
+	private val heatBlocks = ArrayList<BlockPos>()
+	private val heatHot = ArrayList<Boolean>()
+	private var heatTicks = 0
+
+	private val HEAT_HOT = setOf("clay", "smooth_red_sandstone")
+	private const val HEAT_WARM = "brown_terracotta"
+	private val HEAT_OPEN = setOf("air", "cave_air", "snow", "light_gray_carpet")
+
+	private fun inGlaciteTunnels(): Boolean {
+		if (DebugOverrides.sampleHudValues) return true
+		if (!SkyblockLocation.onSkyblock) return false
+		if (SkyblockLocation.area == "Mineshaft" || SkyblockLocation.area == "Glacite Mineshafts") return true
+		val zone = SkyblockLocation.zone()
+		return zone == "Glacite Tunnels" || zone == "Great Glacite Lake"
+	}
+
+	/** Every few ticks, the exposed Tungsten and Umber blocks in a box around the player. */
+	private fun updateHeatmap(client: Minecraft) {
+		if (!heatmap.value || !inGlaciteTunnels()) {
+			heatBlocks.clear()
+			heatHot.clear()
+			return
+		}
+		if (--heatTicks > 0) return
+		heatTicks = 4
+		val level = client.level ?: return
+		val player = client.player ?: return
+		heatBlocks.clear()
+		heatHot.clear()
+		val radius = heatmapRadius.value.toInt()
+		val centre = player.blockPosition()
+		val cursor = BlockPos.MutableBlockPos()
+		val side = BlockPos.MutableBlockPos()
+		for (dx in -radius..radius) for (dy in -2..radius) for (dz in -radius..radius) {
+			cursor.set(centre.x + dx, centre.y + dy, centre.z + dz)
+			val id = blockId(level.getBlockState(cursor))
+			val hot = id in HEAT_HOT
+			if (!hot && id != HEAT_WARM) continue
+			var exposed = false
+			for (direction in net.minecraft.core.Direction.entries) {
+				side.setWithOffset(cursor, direction)
+				if (blockId(level.getBlockState(side)) in HEAT_OPEN) { exposed = true; break }
+			}
+			if (!exposed) continue
+			heatBlocks += cursor.immutable()
+			heatHot += hot
+		}
+	}
+
+	// ---- Drill fuel -------------------------------------------------------------------
+
+	private val fuelPattern = Regex("""^Fuel: ([\d,.]+k?)/([\d,.]+k?)""")
+
+	/** Fuel left from 0 to 1 by stack, or -1 for no fuel line; read once per stack. */
+	private val fuelCache = java.util.WeakHashMap<ItemStack, Float>()
+
+	private fun amount(text: String): Float? {
+		val k = text.endsWith("k")
+		val number = text.removeSuffix("k").replace(",", "").toFloatOrNull() ?: return null
+		return if (k) number * 1000f else number
+	}
+
+	private fun fuelOf(stack: ItemStack): Float = fuelCache.getOrPut(stack) {
+		val line = stack.get(DataComponents.LORE)?.lines()?.firstNotNullOfOrNull {
+			fuelPattern.find(it.string.replace(FORMATTING, "").trim())
+		}
+		val left = line?.let { amount(it.groupValues[1]) }
+		val max = line?.let { amount(it.groupValues[2]) }
+		if (left == null || max == null || max <= 0f) -1f else (left / max).coerceIn(0f, 1f)
+	}
+
+	/** The fuel left as a bar fraction, or null to leave the bar to vanilla. */
+	@JvmStatic
+	fun fuelFraction(stack: ItemStack): Float? {
+		if (!module.enabled || !drillFuelBar.value || stack.isEmpty || !SkyblockLocation.onSkyblock) return null
+		if (!stack.has(DataComponents.LORE)) return null
+		val fraction = fuelOf(stack)
+		return if (fraction < 0f) null else fraction
 	}
 
 	private class AbilityElement : HudElement("pickaxe_ability", "Pickaxe Ability", 0.02, 0.45) {
@@ -587,9 +933,11 @@ object Mining {
 
 		private fun draw(context: GuiGraphicsExtractor, name: String, seconds: Long) {
 			val label = "$name: "
-			context.text(font, label, 0, 0, 0xFFFFAA00.toInt())
+			val shadow = abilityShadow.value
+			context.text(font, label, 0, 0, abilityNameColor.argb or (0xFF shl 24), shadow)
 			val value = if (seconds <= 0L) "Ready" else "${seconds}s"
-			context.text(font, value, font.width(label), 0, if (seconds <= 0L) 0xFF55FF55.toInt() else 0xFFFF5555.toInt())
+			val colour = if (seconds <= 0L) abilityReadyColor.argb else abilityCooldownColor.argb
+			context.text(font, value, font.width(label), 0, colour or (0xFF shl 24), shadow)
 		}
 	}
 

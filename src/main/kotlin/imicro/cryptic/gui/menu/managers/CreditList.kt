@@ -34,7 +34,7 @@ object CreditList {
 				Credit(
 					"NoammAddons",
 					"Blood Camp, door keys and room alerts, Breaker Helper, Wither Dragons, Relics, Render Optimizer, the Arrow Align and " +
-						"Sharp Shooter devices, Secrets, Gyro Helper, Auto GFS, Class Abilities, Item Protection, the Alias and Sound managers, and many smaller modules.",
+						"Sharp Shooter devices, Secrets, Gyro Helper, Auto GFS, Class Abilities, Item Protection, the Alias and Sound managers, the Storage Overlay, and many smaller modules.",
 					"CC0", "https://github.com/Noamm9/NoammAddons",
 				),
 				Credit(
@@ -42,7 +42,7 @@ object CreditList {
 					"Tic Tac Toe, Ice Path and the Water Board's previews, Lights On, Smooth teleport, the Booster Cookie reading, " +
 						"Nucleus Features's lock picks and Crystal Hollows map, the Pickobulus overlay, Item Protection's protected menus, " +
 						"Farming's visitor list and the pests' head textures, the slayer bosses' names, health and mini-bosses, the Demonlord's attunements and fire pillars, " +
-						"the Riftstalker's alerts, and the idea of the Party Finder.",
+						"the Riftstalker's alerts, and the ideas of the Party Finder, Quick Navigation and the drill fuel bar.",
 					"LGPL-3.0", "https://github.com/SkyblockerMod/Skyblocker",
 				),
 				Credit(
@@ -51,7 +51,8 @@ object CreditList {
 						"the idea of the tooltip's estimated item value, the mousemat's angles, the hotspot radar guess, the Conjoined Brood's egg sacs and the Revenant and Sven alerts, " +
 						"how Hypixel shapes a vacuum's trail and sack changes, the Rift's time, soul, effigy and Mirrorverse messages, " +
 						"Superpairs' boards for each stake and the names of its face-down cards, and the ideas of the experiment helpers " +
-						"(next click, misclick guard, max clicks and Ultra-Rare alerts, pair highlights, the experience overlay and the Superpairs panel).",
+						"(next click, misclick guard, max clicks and Ultra-Rare alerts, pair highlights, the experience overlay and the Superpairs panel), " +
+						"the particles that mark the Precision Mining target, and the idea of Better Chat's chat filter.",
 					"LGPL-2.1", "https://github.com/hannibal002/SkyHanni",
 				),
 				Credit("dtMap", "The dungeon map, its room database and the score.", "BSD 3-Clause", "https://github.com/ricedotwho/dtMap"),
@@ -118,6 +119,7 @@ object CreditList {
 				Credit("Essential", "The look and feel of the notifications.", url = "https://essential.gg"),
 				Credit("RewardClaim", "How the daily reward picker should behave.", url = "https://github.com/meowdding/RewardClaim"),
 				Credit("ADM", "Spirit Leap's teammate views.", url = "https://github.com/undonecoffee/adm"),
+				Credit("Firmament", "The resource pack format Pack Tweaks reads (as facts only).", "GPL-3.0", "https://github.com/FirmamentMC/Firmament"),
 				Credit("quoi", "The blocks that give each Crystal Hollows place away to the structure scanner (after GumTuneClient), the Bazaar's escrow fix, the autoclicker blacklist, and the Chocolate Factory's Time Tower and Coach upgrades.", "GPL-3.0", "https://github.com/jcnlk/quoi"),
 				Credit("Enhanced Chat","Better Chat's tabs, search, right-click menu, merged repeats and longer history.", "GPL-3.0", "https://github.com/KdGaming0/Enhanced-Chat"),
 				Credit("NoFrills", "Better Chat's skipped command confirmations and kept history, Item Protection's rules and override key, the pickaxe ability timer, and Farming's vacuum solver.", "GPL-3.0", "https://github.com/WhatYouThing/NoFrills"),
@@ -134,6 +136,15 @@ object CreditList {
 				Credit("RavenB++", "How the Auto Clicker holds and paces its clicks.", url = "https://github.com/OlziYT/RavenBS-Plus-Plus"),
 				Credit("RBDT V5", "How the Experiment Solver works the table between games.", url = "https://github.com/V5-Client/V5"),
 				Credit("NoJumpDelay", "Which cooldown to clear."),
+				Credit("VanillaHUD", "The Hotbar module's animations.", "GPL-3.0", "https://github.com/Polyfrost/VanillaHUD"),
+				Credit("SlayerXPOverlay", "Slayer Features' XP overlay.", "AGPL-3.0", "https://github.com/oblongboot/SlayerXPOverlayFabric"),
+				Credit("CustomScoreboard", "The Custom Scoreboard.", "LGPL-2.1", "https://github.com/meowdding/CustomScoreboard"),
+				Credit("Enhanced Storage", "The idea of a storage overview.", "GPL-3.0", "https://github.com/KdGaming0/Enhanced-Storage"),
+				Credit("Skyblocker", "Better Chat's key for chat prompts, and the Status Bars.", "LGPL-3.0", "https://github.com/SkyblockerMod/Skyblocker"),
+				Credit(
+					"SkyblockCollectionTracker", "Mining's heat map: which Glacite blocks it marks and when one counts as exposed (Coleweight's idea).",
+					"LGPL-2.1", "https://github.com/ChindeaOne/SkyblockCollectionTracker-fabric",
+				),
 				Credit("M7 Guides", "Terminal Order's numbering and class assignments, as published in Stella's terminal data."),
 			),
 		),

@@ -31,7 +31,8 @@ One mod. One menu. One config.
   Detector and Wishing Compass solvers, and lock-pick helpers.
 - **Everyday:** Bazaar orders, Auction House alerts, tooltip prices (lowest
   BIN, 3-day average, estimated value), Item Protection, Slayer and carry
-  tools, fishing and mining helpers, Better Chat, Item Outline, capes, Smooth
+  tools, fishing and mining helpers, Better Chat, a Storage Overlay, a Custom
+  Scoreboard, Twitch Chat, hotbar animations, Item Outline, capes, Smooth
   teleport, and a HUD editor for all of it.
 - **Client Restrictions** (Settings tab) switches between Legit, Semi-legit and
   Cheats. Anything above the mode you pick is hidden and off, and comes back with

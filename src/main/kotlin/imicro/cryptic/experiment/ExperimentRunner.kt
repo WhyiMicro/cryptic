@@ -69,6 +69,9 @@ object ExperimentRunner {
 	private var maxEnchanting = false
 
 	/** The level a stake wanted and couldn't afford, or zero. */
+	/** Set when the Superpairs rewards are claimed: Hypixel closes the menu, and the table is next. */
+	private var afterClaim = false
+
 	private var buyingLevel = 0
 	private var boughtBottle = false
 
@@ -88,6 +91,7 @@ object ExperimentRunner {
 		}
 
 	fun reset() {
+		afterClaim = false
 		renewsUsed = 0
 		maxEnchanting = false
 		buyingLevel = 0
@@ -243,6 +247,8 @@ object ExperimentRunner {
 		}
 		if (finished || reopenStage != ReopenStage.NONE) return
 		if (!ExperimentSolver.runsTable) return
+		// Hypixel closes the rewards menu itself once they're claimed.
+		if (afterClaim) return
 		stop("you closed the table")
 	}
 
@@ -284,6 +290,15 @@ object ExperimentRunner {
 			return
 		}
 
+		// Claiming closes the rewards menu; back to the table to see what charges are left.
+		if (afterClaim && client.gui.screen() !is AbstractContainerScreen<*>) {
+			afterClaim = false
+			status = "rewards claimed, back to the table"
+			reopenStage = ReopenStage.OPENING
+			nextActionAt = now + delay()
+			return
+		}
+
 		val title = ExperimentRules.stripFormatting(ExperimentTracker.menuTitle)
 		if (title.isEmpty()) return
 		val items = ExperimentTracker.menuItems
@@ -308,8 +323,10 @@ object ExperimentRunner {
 	private fun decide(client: Minecraft, title: String, items: List<ItemStack>) {
 		if (remindAboutGuardian(client)) return
 
+		// Free charges are played before anything is paid for; the renew button can show beside them.
+		val freeCharges = ExperimentSolver.allCharges.value && (charges(items) ?: 0) > 0
 		val renewAt = renewSlot(items)
-		if (renewAt != null) {
+		if (renewAt != null && !freeCharges) {
 			val asked = ExperimentSolver.renews.value.toInt()
 			// The button's own count ("You've renewed 1/3 charges today!") survives relogging; obey
 			// whichever allows fewer.
@@ -338,7 +355,7 @@ object ExperimentRunner {
 			return
 		}
 
-		if (loreOf(items.getOrNull(SLOT_SUPERPAIRS)).contains(LORE_COOLDOWN)) {
+		if (!freeCharges && loreOf(items.getOrNull(SLOT_SUPERPAIRS)).contains(LORE_COOLDOWN)) {
 			stop("experiments on cooldown")
 			return
 		}
@@ -365,7 +382,7 @@ object ExperimentRunner {
 
 		if (ExperimentRules.Game.SUPERPAIRS in played) {
 			val charges = charges(items)
-			if (charges == null || charges <= 0) {
+			if (charges == null || charges <= 0 || !ExperimentSolver.allCharges.value) {
 				stop("all three games played")
 				return
 			}
@@ -530,6 +547,7 @@ object ExperimentRunner {
 	private fun claimReward(client: Minecraft, items: List<ItemStack>) {
 		if (loreOf(items.getOrNull(SLOT_REWARD)).contains("Click to claim rewards")) {
 			status = "claiming Superpairs rewards"
+			afterClaim = true
 			click(client, SLOT_REWARD, GLFW.GLFW_MOUSE_BUTTON_LEFT)
 			return
 		}

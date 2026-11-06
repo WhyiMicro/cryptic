@@ -56,6 +56,17 @@ object CustomScale {
 	)
 
 	@JvmField
+	val width = SliderModuleSetting(
+		id = "width",
+		label = "Body width",
+		defaultValue = 1.0,
+		min = 0.1,
+		max = 5.0,
+		step = 0.05,
+		description = "Stretches the model sideways, on top of the scale.",
+	)
+
+	@JvmField
 	val scaleNametags = ToggleModuleSetting(
 		id = "scale_nametags",
 		label = "Scale nametags",
@@ -101,7 +112,7 @@ object CustomScale {
 		supportsKeybind = false,
 		settings = listOf(
 			applyToSelf, applyToOthers, applyToNpcs,
-			scale, scaleNametags, scaleShadow,
+			scale, width, scaleNametags, scaleShadow,
 			chibiSection, chibiStyle, chibiFactor,
 		),
 	)
@@ -121,6 +132,17 @@ object CustomScale {
 		}
 	}
 
+	/** The players' own body models, told apart from their armour models (also player models). */
+	private val bodyModels = java.util.Collections.newSetFromMap(java.util.WeakHashMap<Any, Boolean>())
+
+	@JvmStatic
+	fun addBodyModel(model: Any) {
+		bodyModels += model
+	}
+
+	@JvmStatic
+	fun isBodyModel(model: Any): Boolean = model in bodyModels
+
 	@JvmStatic
 	fun entityOf(state: EntityRenderState): Entity? = (state as EntityRenderStateHolder).`cryptic$entity`()
 
@@ -131,7 +153,10 @@ object CustomScale {
 	fun modelScale(): Float = factor() * VANILLA_PLAYER_SCALE
 
 	@JvmStatic
-	fun scalesModel(): Boolean = module.enabled && scale.value != 1.0
+	fun widthFactor(): Float = width.value.toFloat()
+
+	@JvmStatic
+	fun scalesModel(): Boolean = module.enabled && (scale.value != 1.0 || width.value != 1.0)
 
 	@JvmStatic
 	fun scalesNametags(): Boolean = module.enabled && scaleNametags.value && scale.value != 1.0

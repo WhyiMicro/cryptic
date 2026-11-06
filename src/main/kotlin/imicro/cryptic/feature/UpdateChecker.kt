@@ -191,8 +191,8 @@ object UpdateChecker {
 			elsewhere != null -> {
 				val version = tag(elsewhere).removePrefix("v")
 				val minecraft = version.substringAfter('-', "a newer Minecraft")
-				Toasts.show(SOURCE, "§fCryptic $version §7is out for Minecraft §f$minecraft§7, not your $minecraftTag", life = TOAST_SECONDS, color = Toasts.Colors.GOOD)
-				Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
+				tell(
+					"§fCryptic $version §7is out for Minecraft §f$minecraft§7, not your $minecraftTag",
 					Component.literal("§8[Cryptic] §7Cryptic §f$version§7 is out for Minecraft §f$minecraft§7. Nothing newer for $minecraftTag, so nothing was downloaded."),
 				)
 			}
@@ -210,15 +210,17 @@ object UpdateChecker {
 	}
 
 	private fun announce(latest: String, page: String) {
-		Toasts.show(SOURCE, "§fCryptic $latest §7is out §8(you have $installed)", life = TOAST_SECONDS, color = Toasts.Colors.GOOD)
 		val link = Component.literal("Open the release page")
 			.withStyle(ChatFormatting.AQUA, ChatFormatting.UNDERLINE)
 			.withStyle { it.withClickEvent(ClickEvent.OpenUrl(URI.create(page))).withHoverEvent(HoverEvent.ShowText(Component.literal(page))) }
-		val line = Component.literal("§8[Cryptic] §7Cryptic §f$latest§7 is out, you have §f$installed§7. ").append(link)
-		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(line)
+		tell(
+			"§fCryptic $latest §7is out §8(you have $installed)",
+			Component.literal("§8[Cryptic] §7Cryptic §f$latest§7 is out, you have §f$installed§7. ").append(link),
+		)
 	}
 
 	private const val PROMPT_ID = "update_prompt"
+	private const val DOWNLOAD_ID = "update_download"
 	private const val PROMPT_SECONDS = 60.0
 
 	/**
@@ -233,7 +235,11 @@ object UpdateChecker {
 			color = Toasts.Colors.GOOD,
 			footer = "§a[Y] §fInstall   §c[N] §fNot now",
 			keys = mapOf(
-				org.lwjgl.glfw.GLFW.GLFW_KEY_Y to onYes,
+				// The question slides away at once, so it doesn't sit above the download's notice.
+				org.lwjgl.glfw.GLFW.GLFW_KEY_Y to {
+					Toasts.dismiss(PROMPT_ID, slideAway = true)
+					onYes()
+				},
 				org.lwjgl.glfw.GLFW.GLFW_KEY_N to { later(latest, page) },
 			),
 		) { "A new update for Cryptic is available! §8(${short(current)} -> ${short(latest)}) §7Would you like to install it now?" }
@@ -261,14 +267,17 @@ object UpdateChecker {
 	 * closes, so it asks for a restart; a failure leaves the release page.
 	 */
 	private fun install(latest: String, page: String = RELEASES_PAGE, download: ((Result<String>) -> Unit) -> Unit) {
-		Toasts.show(SOURCE, "Downloading §fCryptic ${short(latest)}§7...", color = Toasts.Colors.GOOD)
+		Toasts.show(SOURCE, "Downloading §fCryptic ${short(latest)}§7...", color = Toasts.Colors.GOOD, id = DOWNLOAD_ID)
 		download { result ->
 			Minecraft.getInstance().execute {
+				// One notice at a time: the download's gives way to how it went.
+				Toasts.dismiss(DOWNLOAD_ID, slideAway = true)
 				result.onSuccess { downloaded(latest) }.onFailure { error ->
 					Cryptic.LOGGER.warn("Update download failed", error)
-					Toasts.show(SOURCE, "§cThe update failed: §7${error.message}", life = TOAST_SECONDS, error = true)
-					Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
-						linkLine("You can still get Cryptic §f${short(latest)} §7from the ", page),
+					tell(
+						"§cThe update failed: §7${error.message}",
+						linkLine("The update failed (${error.message}). You can still get Cryptic §f${short(latest)} §7from the ", page),
+						error = true,
 					)
 				}
 			}
@@ -299,9 +308,15 @@ object UpdateChecker {
 		}
 	}
 
+	/** A notification, or with notifications off a chat line instead. */
 	private fun tell(message: String) {
 		Toasts.show(SOURCE, message, color = Toasts.Colors.GOOD)
-		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(Component.literal("§8[Cryptic] §7$message"))
+	}
+
+	/** [toast] as a notification, or with notifications off [chat], which can carry a link. */
+	private fun tell(toast: String, chat: Component, error: Boolean = false) {
+		if (Toasts.module.enabled) Toasts.show(SOURCE, toast, error = error, life = TOAST_SECONDS, color = if (error) null else Toasts.Colors.GOOD)
+		else Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(chat)
 	}
 
 	/**

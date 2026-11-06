@@ -438,9 +438,18 @@ object Bazaar {
 
 	private const val SUGGESTION_SECONDS = 10.0
 
+	/** NPCs say several turning-away lines at once (King Yolkar two), so a burst asks only once. */
+	private const val SUGGESTION_COOLDOWN_MS = 5_000L
+
+	/** When each item's NPC last turned you away. */
+	private val lastWanted = HashMap<String, Long>()
+
 	/** One question per item, however often the NPC is clicked. */
 	private fun suggest(line: String) {
 		val wanted = WANTED.entries.firstOrNull { line.startsWith(it.key) }?.value ?: return
+		val now = System.currentTimeMillis()
+		val last = lastWanted.put(wanted.id, now) ?: 0L
+		if (now - last < SUGGESTION_COOLDOWN_MS) return
 		if (Toasts.asking(wanted.id)) return
 		Toasts.ask(
 			"Bazaar", wanted.id, life = SUGGESTION_SECONDS,
@@ -682,13 +691,30 @@ object Bazaar {
 		client.soundManager.play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1f))
 	}
 
-	private fun reopenCancelled() {
+	private fun reopenCancelled(screen: AbstractContainerScreen<*>) {
 		val order = cancelled ?: return
 		cancelled = null
 		BazaarPresets.relisting(order.name, order.sell, order.left)
 		// The click never reaches Hypixel, so its click sound is played here.
 		client.soundManager.play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1f))
-		client.player?.connection?.sendCommand("bz ${order.name}")
+		// A cancelled sell offer's items come back to you, and clicking them in a Bazaar menu opens
+		// their product page directly. Searching the Bazaar is the fallback.
+		val player = client.player ?: return
+		val own = screen.menu.slots.firstOrNull { it.container is net.minecraft.world.entity.player.Inventory && sameProduct(it.item, order) }
+		if (own != null) {
+			client.gameMode?.handleContainerInput(screen.menu.containerId, own.index, 0, net.minecraft.world.inventory.ContainerInput.PICKUP, player)
+			return
+		}
+		player.connection.sendCommand("bz ${order.name}")
+	}
+
+	/** Whether an inventory item is the order's product: by SkyBlock ID when both have one, else by name. */
+	private fun sameProduct(stack: ItemStack, order: Picked): Boolean {
+		if (stack.isEmpty) return false
+		val id = SkyblockItem.id(stack)
+		val orderId = SkyblockItem.id(order.icon)
+		if (id.isNotEmpty() && orderId.isNotEmpty()) return id == orderId
+		return stack.hoverName.string.replace(FORMATTING, "").trim().equals(order.name, ignoreCase = true)
 	}
 
 	/**
@@ -705,7 +731,7 @@ object Bazaar {
 			return true
 		}
 		if (isReopenSlot(screen, slot)) {
-			reopenCancelled()
+			reopenCancelled(screen)
 			return true
 		}
 		return false

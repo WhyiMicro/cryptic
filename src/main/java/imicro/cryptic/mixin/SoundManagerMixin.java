@@ -25,6 +25,11 @@ public abstract class SoundManagerMixin {
             cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
             return;
         }
+        if (imicro.cryptic.feature.Mining.mutes(instance)) {
+            imicro.cryptic.debug.SoundLog.muted(instance, "Mining");
+            cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
+            return;
+        }
         if (imicro.cryptic.feature.ChocolateFactory.mutes(instance)) {
             imicro.cryptic.debug.SoundLog.muted(instance, "Chocolate Factory");
             cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);

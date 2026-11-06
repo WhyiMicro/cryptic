@@ -243,6 +243,14 @@ object NucleusQol {
 		description = "Shows how far Bal has grown above the boss, such as 8/25, until it starts to despawn.",
 	)
 
+	@JvmField
+	val hideKhazadMobs = ToggleModuleSetting(
+		id = "hide_khazad_mobs",
+		label = "Hide Fire Bats and Bald Blazes",
+		defaultValue = true,
+		description = "In Khazad-dûm, leaves the Fire Bats and Bald Blazes and their nameplates undrawn.",
+	)
+
 	private val treasureSection = SectionModuleSetting("treasure_section", "Mines of Divan")
 
 	@JvmField
@@ -323,12 +331,22 @@ object NucleusQol {
 	)
 
 	@JvmField
+	val allToolsSound = DropdownModuleSetting(
+		id = "all_tools_sound",
+		label = "Sound",
+		options = listOf("None") + SoundChoices.labels,
+		defaultIndex = 1 + SoundChoices.indexOf("Level Up"),
+	)
+
+	private val allToolsCustomSound = SoundChoices.customField("all_tools_custom_sound", allToolsSound)
+
+	@JvmField
 	val allToolsAlert = ToggleModuleSetting(
 		id = "all_tools_alert",
 		label = "All tools alert",
 		defaultValue = true,
 		description = "A toast once you have all four Keepers' tools, counting the ones that went to your stash.",
-	)
+	).withMore(allToolsSound, allToolsCustomSound)
 
 	@JvmField
 	val fullInventoryAlert = ToggleModuleSetting(
@@ -534,18 +552,18 @@ object NucleusQol {
 			placesSection, HollowsMap.labels.withMore(HollowsMap.poiPlaces), structureScanner.withMore(scanPlaces),
 		) + HollowsMap.settings + listOf(
 			WishingCompass.setting,
-			balSection, balStages,
+			balSection, balStages, hideKhazadMobs,
 			treasureSection,
 			metalDetector.withMore(
 				detectorMode, detectorFill, detectorOutline, detectorPhase, detectorTracer, detectorTracerColor, detectorLabel,
 			),
-			moleReminder, allToolsAlert, fullInventoryAlert, keeperOutlines,
+			muteMetalDetector, moleReminder, allToolsAlert, fullInventoryAlert, keeperOutlines,
 			chestsSection,
 			treasureChests.withMore(
 				chestMode, chestTimeColors, chestFill, chestOutline, chestTimeFillAlpha, chestPhase,
 				chestTimer, chestLines, chestLineCount, chestLineRange,
 			),
-			lockHelper, muteChestFound, muteChestOpen, muteMetalDetector,
+			lockHelper, muteChestFound, muteChestOpen,
 			hudSection, angles,
 		),
 	)
@@ -704,13 +722,19 @@ object NucleusQol {
 	fun tick(client: Minecraft) {
 		if (!module.enabled) {
 			warpKeyDown = false
+			hiddenMobs.clear()
 			return
 		}
 		val down = client.gui.screen() == null && warpKey.isDown(client.window)
 		if (down && !warpKeyDown && SkyblockLocation.inCrystalHollows) client.connection?.sendCommand("warp nucleus")
 		warpKeyDown = down
+		updateHiddenMobs(client)
 
 		if (!SkyblockLocation.inCrystalHollows) return
+		// Every tick, so the grace after switching away counts from the switch, not the last note.
+		if (SkyblockItem.id(client.player?.mainHandItem ?: net.minecraft.world.item.ItemStack.EMPTY) == METAL_DETECTOR) {
+			detectorHeldAt = System.currentTimeMillis()
+		}
 		tickChests(client)
 		HollowsMap.tick(client)
 		CrystalStatus.tick(client)
@@ -726,6 +750,7 @@ object NucleusQol {
 			Toasts.show(SOURCE, "Set §f${waypoints.size} §7waypoints from the Jungle Temple's door", color = Toasts.Colors.MINING)
 		}
 		inNucleus = isInNucleus(client)
+		inKhazad = SkyblockLocation.zone() == KHAZAD_DUM
 		updateInMines(client)
 		scanArea(client)
 		pickups = if (crystalPickups.value && !inNucleus) findPickups(client) else emptyList()
@@ -747,6 +772,35 @@ object NucleusQol {
 	}
 
 	private val FORMATTING = Regex("§.")
+
+	// --- Khazad-dûm's mobs ----------------------------------------------------
+
+	private const val KHAZAD_DUM = "Khazad-dûm"
+	private val KHAZAD_MOBS = listOf("Fire Bat", "Bald Blaze")
+
+	/** From the sidebar, read with the other slow checks. */
+	private var inKhazad = false
+
+	/** Mobs and nameplate stands left undrawn, by entity id; asked per entity per frame. */
+	private val hiddenMobs = HashSet<Int>()
+
+	private fun updateHiddenMobs(client: Minecraft) {
+		hiddenMobs.clear()
+		if (!hideKhazadMobs.value || !inKhazad || !SkyblockLocation.inCrystalHollows) return
+		val level = client.level ?: return
+		for (entity in level.entitiesForRendering()) {
+			val hide = when (entity) {
+				// Khazad-dûm has no other bats or blazes.
+				is net.minecraft.world.entity.ambient.Bat, is net.minecraft.world.entity.monster.Blaze -> true
+				is ArmorStand -> entity.customName?.string?.replace(FORMATTING, "")?.let { name -> KHAZAD_MOBS.any { it in name } } == true
+				else -> false
+			}
+			if (hide) hiddenMobs += entity.id
+		}
+	}
+
+	@JvmStatic
+	fun hidesMob(entity: Entity): Boolean = hiddenMobs.isNotEmpty() && entity.id in hiddenMobs
 
 	private const val DOOR_GUARDIAN = "Kalhuiki Door Guardian"
 
@@ -1672,7 +1726,8 @@ object NucleusQol {
 		if (tracksChests && !inMines) {
 			if (text == "You uncovered a treasure chest!") chestConfirmed()
 			// Hypixel leaves a picked chest standing, so it's released here.
-			if (text == "CHEST LOCKPICKED" || text == "This chest has already been looted.") chestLooted()
+			if (text == "CHEST LOCKPICKED") chestLooted(nearestIfUnaimed = true)
+			if (text == "This chest has already been looted.") chestLooted(nearestIfUnaimed = false)
 		}
 	}
 
@@ -1850,7 +1905,10 @@ object NucleusQol {
 	private fun addTool(id: String) {
 		if (!inMines || !toolBucket.add(id)) return
 		if (toolBucket.size < TOOLS.size) return
-		if (allToolsAlert.value) Toasts.show(SOURCE, "§fAll tools found", color = Toasts.Colors.MINING)
+		if (allToolsAlert.value) {
+			Toasts.show(SOURCE, "§fAll tools found", color = Toasts.Colors.MINING)
+			if (allToolsSound.selectedIndex > 0) SoundChoices.play(allToolsSound.selectedIndex - 1, 1f, 1f, allToolsCustomSound.value)
+		}
 		// A full set is done; the bucket restarts, for gathering sets ahead of nucleus runs.
 		toolBucket.clear()
 	}
@@ -2053,17 +2111,30 @@ object NucleusQol {
 		} == true
 
 	/**
-	 * "CHEST LOCKPICKED": the aimed-at chest, or the nearest in reach, is done; Hypixel leaves it
-	 * standing a while.
+	 * "CHEST LOCKPICKED" or "already looted": the aimed-at chest is done; Hypixel leaves it standing
+	 * a while. A chest aimed at but not tracked (a looted one, or someone else's) leaves the others
+	 * alone; only with no chest aimed at does the nearest in reach go, and only if [nearestIfUnaimed].
 	 */
-	private fun chestLooted() {
+	private fun chestLooted(nearestIfUnaimed: Boolean) {
 		val client = Minecraft.getInstance()
 		val player = client.player ?: return
-		val looted = (client.hitResult as? BlockHitResult)?.blockPos?.takeIf { it in chests }
-			?: chests.keys.filter { it.distToCenterSqr(player.position()) <= 36.0 }
+		val aimed = anyAimedChest(client)
+		val looted = when {
+			aimed != null -> aimed.takeIf { it in chests }
+			nearestIfUnaimed -> chests.keys.filter { it.distToCenterSqr(player.position()) <= 36.0 }
 				.minByOrNull { it.distToCenterSqr(player.position()) }
-			?: return
+			else -> null
+		} ?: return
 		forgetChest(looted)
+	}
+
+	/** Any chest under the crosshair, tracked or not, looking through other blocks. */
+	private fun anyAimedChest(client: Minecraft): BlockPos? {
+		val player = client.player ?: return null
+		val eye = player.getEyePosition(0f)
+		val end = eye.add(player.getViewVector(0f).scale(player.blockInteractionRange()))
+		val hit = player.level().isBlockInLine(ClipBlockStateContext(eye, end) { it.`is`(Blocks.CHEST) })
+		return hit.blockPos.immutable().takeIf { hit.type != HitResult.Type.MISS }
 	}
 
 	private fun forgetChest(pos: BlockPos) {
@@ -2189,16 +2260,10 @@ object NucleusQol {
 		return now - detectorHeldAt <= DETECTOR_GRACE_MS
 	}
 
-	private const val DETECTOR_GRACE_MS = 1000L
+	private const val DETECTOR_GRACE_MS = 1500L
 
 	/** The treasure chest under the crosshair, looking through non-chests. */
-	private fun aimedChest(client: Minecraft): BlockPos? {
-		val player = client.player ?: return null
-		val eye = player.getEyePosition(0f)
-		val end = eye.add(player.getViewVector(0f).scale(player.blockInteractionRange()))
-		val hit = player.level().isBlockInLine(ClipBlockStateContext(eye, end) { it.`is`(Blocks.CHEST) })
-		return hit.blockPos.takeIf { hit.type != HitResult.Type.MISS && it in chests }
-	}
+	private fun aimedChest(client: Minecraft): BlockPos? = anyAimedChest(client)?.takeIf { it in chests }
 
 	private fun onLockSound(client: Minecraft, sound: SoundEvent, pitch: Float) {
 		if (!lockHelper.value || chests.isEmpty()) return
@@ -2413,7 +2478,7 @@ object NucleusQol {
 					y = y,
 					z = chest.z + 0.5,
 					scale = 1f,
-					seeThrough = true,
+					seeThrough = chestPhase.value,
 					argb = timeColor(left),
 					centered = true,
 				)

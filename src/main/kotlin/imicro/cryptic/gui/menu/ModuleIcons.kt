@@ -24,6 +24,8 @@ object ModuleIcons {
 		"freelook" to "\uf1e5", // binoculars
 		"freecam" to "\uf03d", // video
 		"hide_armor" to "\uf070", // eye-slash
+		"storage_overlay" to "\uf468", // boxes-stacked
+		"media_controller" to "\uf001", // music
 		"client_restrictions" to "\uf023", // lock
 		"wither_dragons" to "\uf6d5", // dragon
 		"relics" to "\uf521", // crown
@@ -94,7 +96,12 @@ object ModuleIcons {
 		"hide_players" to "\uf506", // user-slash
 		"lava_to_water" to "\uf773", // water
 		"no_debuff" to "\uf484", // pills
+		"pack_tweaks" to "\uf5aa", // paint-roller
 		"performance_hud" to "\uf625", // gauge-high
+		"twitch_chat" to "\uf4ad", // comment-dots
+		"hotbar" to "\uf0db", // table-columns
+		"custom_scoreboard" to "\uf46d", // clipboard-list
+		"status_bars" to "\uF21E", // heart-pulse
 		"render_optimizer" to "\uf135", // rocket
 		"time_changer" to "\uf185", // sun
 		"wither_cloak_effect" to "\uf505", // user-shield
@@ -120,6 +127,7 @@ object ModuleIcons {
 		"farming" to "\uf4d8", // seedling
 		"rift" to "\uf252", // hourglass-half
 		"mining" to "\uf85e", // person-digging
+		"quick_nav" to "\uf14e", // compass
 		"fishing" to "\uf578", // fish
 		"hud_editor" to "\uf26c", // display
 		"update_checker" to "\uf0ed", // cloud-arrow-down

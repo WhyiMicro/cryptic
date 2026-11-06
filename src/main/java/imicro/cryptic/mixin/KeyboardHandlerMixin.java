@@ -35,4 +35,10 @@ public abstract class KeyboardHandlerMixin {
         }
         KeybindManager.onKey(event.key(), true);
     }
+
+    /** Typing in Storage Overlay's search box. Already on the client thread here. */
+    @Inject(method = "charTyped", at = @At("HEAD"), cancellable = true)
+    private void cryptic$typeStorageSearch(long handle, net.minecraft.client.input.CharacterEvent event, CallbackInfo info) {
+        if (imicro.cryptic.feature.StorageOverlay.charTyped(event.codepoint())) info.cancel();
+    }
 }

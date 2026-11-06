@@ -56,8 +56,11 @@ object HollowsMap {
 
 	/**
 	 * The places that move between lobbies. [zone] is its sidebar zone if it has one; [saidThere]
-	 * the start of a line only said there; [words] what players call it in chat; [span] about how
-	 * wide it is in blocks, for markers drawn to size (judged from maps of the Hollows, not measured).
+	 * the start of a line only said there; [words] what players call it in chat; [span] and [spanZ]
+	 * how wide it is east to west and north to south, for markers drawn to size. The crystal places
+	 * and King Yolkar are measured (`/cryptic debug structure`), the rest judged from maps of the
+	 * Hollows. [centreOffsetX] and [centreOffsetZ] are where its middle sits, in blocks east and
+	 * south, from the spot that finds it exactly: its crystal, or with none its NPC's nametag.
 	 */
 	enum class Place(
 		val title: String,
@@ -69,31 +72,41 @@ object HollowsMap {
 		val crystal: String? = null,
 		private val crystalColor: (() -> ColorModuleSetting)? = null,
 		val span: Int = 0,
+		val spanZ: Int = span,
+		val centreOffsetX: Double = 0.0,
+		val centreOffsetZ: Double = 0.0,
 	) {
 		JUNGLE_TEMPLE(
 			"Jungle Temple", 0xAA00AA, listOf("jungle temple", "temple", "jungle"), zone = "Jungle Temple",
-			saidThere = "[NPC] Kalhuiki Door Guardian:", crystal = "Amethyst", crystalColor = { NucleusQol.amethystColor }, span = 90,
+			saidThere = "[NPC] Kalhuiki Door Guardian:", crystal = "Amethyst", crystalColor = { NucleusQol.amethystColor },
+			span = 99, spanZ = 101, centreOffsetX = -1.0, centreOffsetZ = -30.0,
 		),
 		MINES_OF_DIVAN(
 			"Mines of Divan", 0x55FF55, listOf("mines of divan", "divan", "mines"), zone = "Mines of Divan",
-			saidThere = "Jade Crystal", crystal = "Jade", crystalColor = { NucleusQol.jadeColor }, span = 110,
+			saidThere = "Jade Crystal", crystal = "Jade", crystalColor = { NucleusQol.jadeColor }, span = 106,
 		),
 		GOBLIN_QUEENS_DEN(
 			"Goblin Queen's Den", 0xFFAA00, listOf("goblin queen", "queens den", "queen", "den"), zone = "Goblin Queen's Den",
-			saidThere = "Amber Crystal", crystal = "Amber", crystalColor = { NucleusQol.amberColor }, span = 100,
+			saidThere = "Amber Crystal", crystal = "Amber", crystalColor = { NucleusQol.amberColor },
+			span = 105, centreOffsetX = 2.0,
 		),
 		LOST_PRECURSOR_CITY(
 			"Lost Precursor City", 0x55FFFF, listOf("precursor city", "precursor", "city", "lpc"), zone = "Lost Precursor City",
-			saidThere = "Sapphire Crystal", crystal = "Sapphire", crystalColor = { NucleusQol.sapphireColor }, span = 110,
+			saidThere = "Sapphire Crystal", crystal = "Sapphire", crystalColor = { NucleusQol.sapphireColor },
+			span = 101, spanZ = 104, centreOffsetX = 33.0, centreOffsetZ = -33.5,
 		),
 		KHAZAD_DUM(
 			"Khazad-dûm", 0xFFFF55, listOf("khazad-dum", "khazad dum", "khazad"), zone = "Khazad-dûm",
-			saidThere = "Topaz Crystal", crystal = "Topaz", crystalColor = { NucleusQol.topazColor }, span = 100,
+			saidThere = "Topaz Crystal", crystal = "Topaz", crystalColor = { NucleusQol.topazColor },
+			span = 97, spanZ = 99, centreOffsetX = -3.0, centreOffsetZ = 12.0,
 		),
 		FAIRY_GROTTO("Fairy Grotto", 0xFF55FF, listOf("fairy grotto", "grotto", "fairy"), zone = "Fairy Grotto", small = true, span = 30),
 		DRAGONS_LAIR("Dragon's Lair", 0xFFD24A, listOf("dragons lair", "dragon", "lair"), zone = "Dragon's Lair", saidThere = "[NPC] Golden Dragon:", span = 50),
 		CORLEONE("Corleone", 0xFFFFFF, listOf("corleone"), small = true, span = 30),
-		KING_YOLKAR("King Yolkar", 0xFF5555, listOf("king yolkar", "yolkar", "king"), saidThere = "[NPC] King Yolkar:", small = true, span = 25),
+		KING_YOLKAR(
+			"King Yolkar", 0xFF5555, listOf("king yolkar", "yolkar", "king"), saidThere = "[NPC] King Yolkar:", small = true,
+			span = 53, centreOffsetX = 3.0, centreOffsetZ = 14.0,
+		),
 		ODAWA("Odawa", 0x00AA00, listOf("odawa"), saidThere = "[NPC] Odawa:", small = true, span = 25),
 		KEY_GUARDIAN("Key Guardian", 0xAAAAAA, listOf("key guardian", "guardian"), small = true, span = 20),
 		XALX("Xalx", 0x5555FF, listOf("xalx"), saidThere = "[NPC] Xalx:", small = true, span = 20),
@@ -532,8 +545,8 @@ object HollowsMap {
 
 		val shown = (if (example) EXAMPLE_MARKS else marks).entries
 		// Biggest first when drawn to size, so a small place inside a big one stays in sight.
-		for ((place, mark) in if (structureSize.value) shown.sortedByDescending { it.key.span } else shown) {
-			drawMarker(context, place, mark, onMap(mark.pos.x.toDouble()), onMap(mark.pos.z.toDouble()))
+		for ((place, mark) in if (structureSize.value) shown.sortedByDescending { it.key.span * it.key.spanZ } else shown) {
+			drawMarker(context, place, mark, onMap(mark.pos.x + 0.5), onMap(mark.pos.z + 0.5))
 		}
 
 		if (minimalText.value) {
@@ -619,12 +632,17 @@ object HollowsMap {
 	 * A place at its own size, kept inside the map: filled where it's exact, and where it's
 	 * approximate a ring like the small marker's round a faint fill, so the map shows through.
 	 */
-	private fun drawSizedMarker(context: GuiGraphicsExtractor, place: Place, mark: Mark, cx: Float, cy: Float) {
-		val half = (place.span / HOLLOWS_SIZE * MAP_SIZE / 2).toFloat()
-		val left = (cx - half).roundToInt().coerceIn(0, MAP_SIZE)
-		val top = (cy - half).roundToInt().coerceIn(0, MAP_SIZE)
-		val right = (cx + half).roundToInt().coerceIn(0, MAP_SIZE)
-		val bottom = (cy + half).roundToInt().coerceIn(0, MAP_SIZE)
+	private fun drawSizedMarker(context: GuiGraphicsExtractor, place: Place, mark: Mark, markX: Float, markY: Float) {
+		val halfX = (place.span / HOLLOWS_SIZE * MAP_SIZE / 2).toFloat()
+		val halfY = (place.spanZ / HOLLOWS_SIZE * MAP_SIZE / 2).toFloat()
+		// Found by its crystal (or with none, its NPC), the square moves to the structure's own middle.
+		val anchored = mark.source == if (place.crystal != null) Source.CRYSTAL else Source.NPC
+		val cx = markX + if (anchored) (place.centreOffsetX / HOLLOWS_SIZE * MAP_SIZE).toFloat() else 0f
+		val cy = markY + if (anchored) (place.centreOffsetZ / HOLLOWS_SIZE * MAP_SIZE).toFloat() else 0f
+		val left = (cx - halfX).roundToInt().coerceIn(0, MAP_SIZE)
+		val top = (cy - halfY).roundToInt().coerceIn(0, MAP_SIZE)
+		val right = (cx + halfX).roundToInt().coerceIn(0, MAP_SIZE)
+		val bottom = (cy + halfY).roundToInt().coerceIn(0, MAP_SIZE)
 		val color = 0xFF000000.toInt() or place.color
 		val black = 0xFF000000.toInt()
 		if (mark.source.exact) {

@@ -229,6 +229,14 @@ object ExperimentSolver {
 	)
 
 	@JvmField
+	val allCharges = ToggleModuleSetting(
+		id = "all_charges",
+		label = "Play every free charge",
+		defaultValue = true,
+		description = "Keeps playing rounds while the table has free charges (one a day, up to three saved), before any renew. Off plays one round. Renews still follow the slider.",
+	)
+
+	@JvmField
 	val renews = SliderModuleSetting(
 		id = "renews",
 		label = "Renews",
@@ -284,7 +292,7 @@ object ExperimentSolver {
 			listOf(superpairsSection, highlightPairs, rememberCards, xpOverlay, cardInfo, helperPanel, ultraRareAlert) +
 			listOf(addonsSection, nextClick, preventMisclicks, maxClicksAlert) +
 			listOf(autoSection, autoClick, clickDelay) +
-			listOf(runSection, runTable.withMore(renews, serums, buyExperience, guardianReminder), superpairsByHand),
+			listOf(runSection, runTable.withMore(allCharges, renews, serums, buyExperience, guardianReminder), superpairsByHand),
 	)
 
 	/** True while playing for books rather than levels. */

@@ -100,6 +100,15 @@ it. Slayer Features and the Carry Manager both go by that owner, so this is what
 says whether it is still being read.
 
 ```
+/cryptic debug sidebar
+```
+
+Prints every sidebar line twice, in chat and in the game log: first as it
+arrives, piece by piece with each piece's colour (`[gold|187,814]`), the score
+holder's name and any character outside plain ASCII written as `\uXXXX`; then as
+Custom Scoreboard shows it. For when a line is read or formatted wrongly.
+
+```
 /cryptic debug location
 ```
 
@@ -114,7 +123,8 @@ where you stand rather than the zone: the crystal slots show inside the square
 from 462 to 564 on x and z, and you count as in the Mines of Divan within 60
 blocks of its middle, found from the Keepers' nametags or the Jade pedestal (or
 when the sidebar says so). The Metal Detector solver and the Mole pet reminder
-only work there.
+only work there. Hiding the Fire Bats and Bald Blazes is the exception: it goes
+by the sidebar's zone, Khazad-dûm.
 
 ```
 /cryptic debug hollows <zone>
@@ -265,6 +275,25 @@ you've been in the nucleus, which **Hide loot particles** goes by.
 No mod Cryptic borrows from finds a crystal before it is picked up, so Nucleus
 QoL looks for one by name, by SkyBlock id and on stands' heads. Standing next to
 a crystal that is not boxed, this says what it actually is.
+
+```
+/cryptic debug structure
+/cryptic debug structure done <name>
+/cryptic debug structure undo|clear
+```
+
+Measures a Crystal Hollows structure for the Nucleus map's **Use structure size
+for scale**. The first command switches measuring on (and off). While it's on,
+right-click a block of each of the structure's four outer walls with a wooden
+axe; the click is kept from the server. The roof and floor don't matter, as the
+map draws a square. Picked blocks are outlined in yellow and the square between
+them in cyan, through walls. `done <name>` reports the square's size, its x and
+z range and centre, the closest crystal Nucleus Features has found (its spot
+among the barriers, which the map centres the square on) with where it sits
+against the square, and the structure's centre measured from that crystal; then
+it clears the blocks for the next structure. `undo` takes the last block back,
+`clear` starts over. Every report also goes to the game log as `[structure]`
+lines, with the name.
 
 ```
 /cryptic debug timers
@@ -566,6 +595,17 @@ the chunks — along with how many times Cryptic has swapped it since the chunks
 were last rebuilt. A model that reads right here with lava that still looks
 wrong means the chunks were never rebuilt; a model that reads wrong means
 something after Cryptic changed it.
+
+```
+/cryptic debug pack
+```
+
+Prints what Pack Tweaks read on the last resource reload (item models, global
+overrides, head models, armour, placed skulls, screen layouts, text replacements
+and block overrides, with the island's mode), and for the item in your main
+hand, each ID it looks the model up by (`WOLF;4` before `PET` for a pet), the
+resource path that becomes, whether the packs have it, and the model it is drawn
+with.
 
 ```
 /cryptic debug f7
