@@ -8,15 +8,18 @@ import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.PackSkin
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.menu.UiText
 import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
+import imicro.cryptic.mixin.PauseScreenAccessor
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.gui.components.AbstractWidget
 import net.minecraft.client.gui.screens.PauseScreen
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.renderer.texture.DynamicTexture
@@ -50,7 +53,7 @@ object MediaController {
 	private const val CORNER_TOP_LEFT = 0
 	private const val CORNER_BOTTOM_LEFT = 1
 	private const val CORNER_TOP_RIGHT = 2
-	private const val CORNER_BOTTOM_CENTRE = 4
+	private const val CORNER_UNDER_DISCONNECT = 4
 
 	@JvmField
 	val hud = ToggleModuleSetting(
@@ -115,9 +118,10 @@ object MediaController {
 	val pauseCorner = DropdownModuleSetting(
 		id = "pause_corner",
 		label = "Place",
-		options = listOf("Top left", "Bottom left", "Top right", "Bottom right", "Bottom centre"),
-		defaultIndex = CORNER_BOTTOM_CENTRE,
+		options = listOf("Top left", "Bottom left", "Top right", "Bottom right", "Under Disconnect"),
+		defaultIndex = CORNER_UNDER_DISCONNECT,
 		visibleIf = { pauseMenu.value },
+		renamed = mapOf("Bottom centre" to "Under Disconnect"),
 	)
 
 	@JvmField
@@ -430,14 +434,11 @@ object MediaController {
 	private const val CORNER_HEIGHT = 64
 	private const val CORNER_COVER = 52
 
-	private const val CENTRE_WIDTH = 240
+	private const val CENTRE_WIDTH = 204
 	private const val CENTRE_HEIGHT = 58
 	private const val CENTRE_COVER = 46
 
 	private const val BUTTON = 16
-
-	/** The hotbar, the experience bar, and a row of hearts or hunger over it, plus a gap. */
-	private const val ABOVE_HOTBAR = 44
 
 	/** The panel's controls as last drawn, for clicks. */
 	private class Hit(val x0: Int, val y0: Int, val x1: Int, val y1: Int, val action: (Double) -> Unit) {
@@ -449,38 +450,37 @@ object MediaController {
 	private fun panelShown(): Boolean =
 		module.enabled && pauseMenu.value && WINDOWS && Minecraft.getInstance().gui.screen() is PauseScreen
 
-	/** The lowest edge of the pause screen's own buttons, so the centred panel sits under them. */
-	private fun buttonsBottom(): Int {
-		val screen = Minecraft.getInstance().gui.screen() ?: return 0
-		var bottom = 0
-		for (child in screen.children()) {
-			if (child is net.minecraft.client.gui.components.AbstractWidget && child.visible) bottom = maxOf(bottom, child.y + child.height)
-		}
-		return bottom
+	/** The pause screen's Disconnect button, or its lowest widget if another mod moved it. */
+	private fun disconnectButton(): AbstractWidget? {
+		val screen = Minecraft.getInstance().gui.screen() as? PauseScreen ?: return null
+		(screen as PauseScreenAccessor).`cryptic$disconnectButton`()?.takeIf { it.visible }?.let { return it }
+		return screen.children().filterIsInstance<AbstractWidget>().filter { it.visible }.maxByOrNull { it.y + it.height }
 	}
 
 	/** Drawn over the pause screen, under its tooltips; from `ScreenMixin`. */
 	@JvmStatic
 	fun renderPauseMenu(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-		if (!panelShown()) {
+		val shown = media
+		if (!panelShown() || shown == null) {
 			hits = emptyList()
 			return
 		}
 		val corner = pauseCorner.selectedIndex
-		val centred = corner == CORNER_BOTTOM_CENTRE
-		val width = if (centred) CENTRE_WIDTH else CORNER_WIDTH
+		val centred = corner == CORNER_UNDER_DISCONNECT
+		val below = if (centred) disconnectButton() else null
+		val width = below?.width ?: if (centred) CENTRE_WIDTH else CORNER_WIDTH
 		val height = if (centred) CENTRE_HEIGHT else CORNER_HEIGHT
 		val margin = 6
-		val x = when (corner) {
-			CORNER_TOP_LEFT, CORNER_BOTTOM_LEFT -> margin
-			CORNER_BOTTOM_CENTRE -> (graphics.guiWidth() - width) / 2
+		val x = when {
+			below != null -> below.x
+			corner == CORNER_TOP_LEFT || corner == CORNER_BOTTOM_LEFT -> margin
+			centred -> (graphics.guiWidth() - width) / 2
 			else -> graphics.guiWidth() - width - margin
 		}
-		val y = when (corner) {
-			CORNER_TOP_LEFT, CORNER_TOP_RIGHT -> margin
-			// Just above the hotbar, its hearts and hunger; lower only to stay off the menu's buttons.
-			CORNER_BOTTOM_CENTRE -> maxOf(graphics.guiHeight() - height - ABOVE_HOTBAR, buttonsBottom() + 4)
-				.coerceAtMost(graphics.guiHeight() - height - 2)
+		val y = when {
+			// The pause menu's own gap between rows.
+			centred -> ((below?.let { it.y + it.height } ?: 0) + 4).coerceAtMost(graphics.guiHeight() - height - 2)
+			corner == CORNER_TOP_LEFT || corner == CORNER_TOP_RIGHT -> margin
 			else -> graphics.guiHeight() - height - margin
 		}
 		val cover = when {
@@ -489,8 +489,8 @@ object MediaController {
 			else -> CORNER_COVER
 		}
 
-		graphics.fill(x, y, x + width, y + height, 0xD0101010.toInt())
-		graphics.outline(x, y, width, height, 0xFF303030.toInt())
+		// The pack's button texture, so the panel matches the menu's buttons.
+		PackSkin.button(graphics, x, y, width, height)
 		if (cover > 0) drawCover(graphics, x + 6, y + (height - cover) / 2, cover)
 		val left = if (cover > 0) x + 6 + cover + 8 else x + 10
 		val right = x + width - (if (centred) 10 else 6)
@@ -500,20 +500,12 @@ object MediaController {
 		fun line(text: String, lineY: Int, color: Int) {
 			val shown = fit(text, textWidth)
 			val lineX = if (centred) left + (textWidth - font.width(shown)) / 2 else left
-			graphics.text(font, shown, lineX, lineY, color, false)
-		}
-
-		val shown = media
-		if (shown == null) {
-			hits = emptyList()
-			line("Nothing playing", y + 10, 0xFFFFFFFF.toInt())
-			line("Play something in Spotify or a browser", y + 22, 0xFF808080.toInt())
-			return
+			graphics.text(font, shown, lineX, lineY, color, true)
 		}
 
 		val now = System.currentTimeMillis()
 		line(shown.title, y + 6, 0xFFFFFFFF.toInt())
-		line(listOf(shown.artist, shown.app).filter { it.isNotEmpty() }.joinToString(" · "), y + 16, 0xFFAAAAAA.toInt())
+		line(listOf(shown.artist, shown.app).filter { it.isNotEmpty() }.joinToString(" · "), y + 16, 0xFFD0D0D0.toInt())
 
 		// The bar: under the text in a corner, between the two times when centred.
 		val list = ArrayList<Hit>(4)
@@ -527,16 +519,16 @@ object MediaController {
 			barLeft = left + font.width(elapsed) + 5
 			barRight = right - font.width(total) - 5
 			if (shown.end > 0) {
-				graphics.text(font, elapsed, left, barY - 3, 0xFF808080.toInt(), false)
-				graphics.text(font, total, right - font.width(total), barY - 3, 0xFF808080.toInt(), false)
+				graphics.text(font, elapsed, left, barY - 3, 0xFFE0E0E0.toInt(), true)
+				graphics.text(font, total, right - font.width(total), barY - 3, 0xFFE0E0E0.toInt(), true)
 			}
 		} else {
 			barY = y + 30
 			barLeft = left
 			barRight = right
 			if (shown.end > 0) {
-				graphics.text(font, elapsed, left, barY + 5, 0xFF808080.toInt(), false)
-				graphics.text(font, total, right - font.width(total), barY + 5, 0xFF808080.toInt(), false)
+				graphics.text(font, elapsed, left, barY + 5, 0xFFE0E0E0.toInt(), true)
+				graphics.text(font, total, right - font.width(total), barY + 5, 0xFFE0E0E0.toInt(), true)
 			}
 		}
 		val barWidth = barRight - barLeft
@@ -565,12 +557,9 @@ object MediaController {
 		buttons.forEachIndexed { index, (glyph, enabled, action) ->
 			val bx = centre - BUTTON / 2 + (index - 1) * (BUTTON + 6)
 			val hovered = enabled && mouseX >= bx && mouseX < bx + BUTTON && mouseY >= buttonsY && mouseY < buttonsY + BUTTON
-			if (hovered) graphics.fill(bx, buttonsY, bx + BUTTON, buttonsY + BUTTON, 0x40FFFFFF)
-			val color = when {
-				!enabled -> 0xFF505050.toInt()
-				index == 1 -> 0xFFFFFFFF.toInt()
-				else -> 0xFFCCCCCC.toInt()
-			}
+			PackSkin.button(graphics, bx, buttonsY, BUTTON, BUTTON, enabled, hovered)
+			// Vanilla's button text colours.
+			val color = if (enabled) 0xFFFFFFFF.toInt() else 0xFFA0A0A0.toInt()
 			icon(graphics, glyph, bx.toFloat(), buttonsY.toFloat(), BUTTON.toFloat(), if (index == 1) 10f else 8f, color)
 			if (enabled) list += Hit(bx, buttonsY, bx + BUTTON, buttonsY + BUTTON) { action() }
 		}

@@ -107,6 +107,50 @@ object WorldRender {
 		poseStack.popPose()
 	}
 
+	/**
+	 * Whole blocks given as packed [BlockPos] longs, each in its own colour: one submit for all the
+	 * fills and one for all the outlines, since thousands of single boxes would each be a submit.
+	 * The fill takes [fillAlpha] over each colour.
+	 */
+	fun drawBlocks(
+		poseStack: PoseStack,
+		collector: SubmitNodeCollector,
+		blocks: LongArray,
+		colors: IntArray,
+		fillAlpha: Int,
+		phase: Boolean,
+		lineWidth: Float,
+		outline: Boolean = true,
+	) {
+		if (blocks.isEmpty()) return
+		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
+		poseStack.pushPose()
+		poseStack.translate(-camera.x, -camera.y, -camera.z)
+		if (fillAlpha > 0) {
+			val layer = if (phase) CrypticRenderLayers.FILLED_THROUGH_WALLS else CrypticRenderLayers.FILLED
+			collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
+				for (i in blocks.indices) {
+					val x = BlockPos.getX(blocks[i]).toDouble()
+					val y = BlockPos.getY(blocks[i]).toDouble()
+					val z = BlockPos.getZ(blocks[i]).toDouble()
+					consumer.addFilledBox(pose, x, y, z, x + 1, y + 1, z + 1, (fillAlpha shl 24) or (colors[i] and 0xFFFFFF))
+				}
+			}
+		}
+		if (outline) {
+			val layer = if (phase) CrypticRenderLayers.LINES_THROUGH_WALLS else CrypticRenderLayers.LINES
+			collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
+				for (i in blocks.indices) {
+					val x = BlockPos.getX(blocks[i]).toDouble()
+					val y = BlockPos.getY(blocks[i]).toDouble()
+					val z = BlockPos.getZ(blocks[i]).toDouble()
+					consumer.addBoxOutline(pose, x, y, z, x + 1, y + 1, z + 1, colors[i] or (0xFF shl 24), lineWidth)
+				}
+			}
+		}
+		poseStack.popPose()
+	}
+
 	/** A filled four-cornered panel, seen from both sides, corners in order around its edge. */
 	fun drawPanel(
 		poseStack: PoseStack,

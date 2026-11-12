@@ -1,10 +1,13 @@
 package imicro.cryptic.feature
 
 import imicro.cryptic.debug.DebugOverrides
+import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
+import imicro.cryptic.gui.MultiSelectModuleSetting
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.Restriction
 import imicro.cryptic.gui.SectionModuleSetting
+import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
@@ -12,6 +15,7 @@ import imicro.cryptic.hud.HudElement
 import imicro.cryptic.mixin.ContainerScreenAccessor
 import imicro.cryptic.mixin.PlayerTabOverlayAccessor
 import imicro.cryptic.render.WorldRender
+import imicro.cryptic.skyblock.BazaarMarket
 import imicro.cryptic.skyblock.ItemRarity
 import imicro.cryptic.skyblock.ParticleTrail
 import imicro.cryptic.skyblock.SackContents
@@ -19,6 +23,7 @@ import imicro.cryptic.skyblock.SkyblockItem
 import imicro.cryptic.skyblock.SkyblockLocation
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
+import net.minecraft.ChatFormatting
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.Screen
@@ -26,14 +31,21 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.core.component.DataComponents
 import net.minecraft.core.particles.ParticleTypes
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
+import net.minecraft.network.chat.Style
+import net.minecraft.network.chat.TextColor
 import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket
 import net.minecraft.world.entity.EquipmentSlot
 import net.minecraft.world.entity.decoration.ArmorStand
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
+import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.Items
 import net.minecraft.world.phys.Vec3
 import java.util.Base64
 import java.util.Locale
+import java.util.Optional
 
 /**
  * The Garden: what your visitors want and what you're short of, the pest a vacuum points at, lines
@@ -42,12 +54,58 @@ import java.util.Locale
 object Farming {
 	private val visitorsSection = SectionModuleSetting("visitors_section", "Visitors")
 
+	private const val WHERE_GARDEN = "Anywhere in the Garden"
+	private const val WHERE_VISITORS = "Near the visitors"
+	private const val WHERE_BAZAAR = "Near the Hub's Bazaar"
+	private const val WHERE_BAZAAR_MENUS = "In Bazaar menus"
+	private const val WHERE_VISITOR_MENU = "In a visitor's menu"
+
+	@JvmField
+	val listWhere = MultiSelectModuleSetting(
+		"visitor_list_where", "Show",
+		listOf(WHERE_GARDEN, WHERE_VISITORS, WHERE_BAZAAR, WHERE_BAZAAR_MENUS, WHERE_VISITOR_MENU),
+		defaultSelected = setOf(WHERE_VISITORS, WHERE_BAZAAR, WHERE_BAZAAR_MENUS, WHERE_VISITOR_MENU),
+		description = "Where the list shows; anywhere else it stays hidden. Bazaar menus count wherever you open them.",
+	)
+
+	private const val MENUS_BOTH = "In and out of menus"
+	private const val MENUS_ONLY = "Only in menus"
+	private const val MENUS_NEVER = "Only outside menus"
+
+	@JvmField
+	val listMenus = DropdownModuleSetting(
+		"visitor_list_menus", "Menus", listOf(MENUS_BOTH, MENUS_ONLY, MENUS_NEVER), 0,
+		"Whether it shows with a menu or your inventory open, outside them, or both. In a menu, hover an item for details and click it to open it on the Bazaar.",
+	)
+
+	private const val PRICE_INSTANT = "Instant buy"
+	private const val PRICE_ORDER = "Buy order"
+	private const val PRICE_OFF = "Off"
+
+	@JvmField
+	val listPrice = DropdownModuleSetting(
+		"visitor_list_price", "Prices", listOf(PRICE_INSTANT, PRICE_ORDER, PRICE_OFF), 0,
+		"What each item costs on the Bazaar for the amount wanted, and the total.",
+	)
+
+	@JvmField
+	val listNewVisitors = ToggleModuleSetting(
+		"visitor_list_new", "New visitors", true,
+		"Below the items, the visitors waiting in the Garden whose menu you haven't opened, so what they want isn't known yet. Read from the tab list's Visitors widget.",
+	)
+
+	@JvmField
+	val listVisitors = ToggleModuleSetting(
+		"visitor_list_names", "Visitors", true,
+		"Below those, the visitors whose menu you've opened, whose wants make up the list.",
+	)
+
 	@JvmField
 	val visitorList = ToggleModuleSetting(
-		"visitor_list", "Visitor list", true,
-		"Beside menus in the Garden and the Bazaar: everything your visitors want, together, and how many you're short counting " +
-			"your inventory and sacks. Click an item to open it on the Bazaar. A visitor is read when you open their menu, and leaves the list once you give to them or refuse them, or once the Garden's tab list no longer names them (served by your co-op, say).",
-	)
+		"visitor_list", "Shopping list", true,
+		"A HUD element with everything your visitors want, what it costs, and what your sacks hold of it. A visitor is read when you open their " +
+			"menu, and leaves the list once you give to them or refuse them, or once the Garden's tab list no longer names them (served by your co-op, say).",
+	).withMore(listWhere, listMenus, listPrice, listNewVisitors, listVisitors)
 
 	@JvmField
 	val visitorPresets = ToggleModuleSetting(
@@ -58,11 +116,45 @@ object Farming {
 
 	private val toolsSection = SectionModuleSetting("tools_section", "Tools")
 
+	/** A crop's mousemat angles, editable; the defaults are the ones SkyHanni suggests. */
+	private class Crop(val name: String, val icon: net.minecraft.world.item.Item, val yaw: Float, val pitch: Float) {
+		val setting = TextModuleSetting(
+			"mousemat_" + name.lowercase(Locale.ROOT).replace(' ', '_'), name, "${number(yaw)} ${number(pitch)}",
+			maxLength = 24, hint = "yaw pitch", description = "$name's yaw and pitch, as \"90 0\".",
+		)
+
+		/** The yaw and pitch as set, or the defaults when it doesn't read as two numbers. */
+		fun angles(): Pair<Float, Float> {
+			val numbers = NUMBER.findAll(setting.value).mapNotNull { it.value.toFloatOrNull() }.toList()
+			return if (numbers.size == 2) numbers[0] to numbers[1] else yaw to pitch
+		}
+	}
+
+	private val NUMBER = Regex("""-?\d+(?:\.\d+)?""")
+
+	private fun number(value: Float): String = if (value % 1f == 0f) value.toInt().toString() else value.toString()
+
+	private val CROPS = listOf(
+		Crop("Wheat", net.minecraft.world.item.Items.WHEAT, 90f, 0f),
+		Crop("Carrot", net.minecraft.world.item.Items.CARROT, -90f, 2.8f),
+		Crop("Potato", net.minecraft.world.item.Items.POTATO, -90f, 2.8f),
+		Crop("Nether Wart", net.minecraft.world.item.Items.NETHER_WART, 90f, 0f),
+		Crop("Pumpkin", net.minecraft.world.item.Items.CARVED_PUMPKIN, 90f, -58.5f),
+		Crop("Melon Slice", net.minecraft.world.item.Items.MELON_SLICE, 90f, -58.5f),
+		Crop("Cocoa Beans", net.minecraft.world.item.Items.COCOA_BEANS, 180f, -45f),
+		Crop("Sugar Cane", net.minecraft.world.item.Items.SUGAR_CANE, -135f, 0f),
+		Crop("Cactus", net.minecraft.world.item.Items.CACTUS, -90f, 0f),
+		Crop("Mushroom", net.minecraft.world.item.Items.RED_MUSHROOM, 116.5f, 0f),
+		Crop("Sunflower", net.minecraft.world.item.Items.SUNFLOWER, 45f, 0f),
+		Crop("Moonflower", net.minecraft.world.item.Items.BLUE_ORCHID, 45f, 0f),
+		Crop("Wild Rose", net.minecraft.world.item.Items.ROSE_BUSH, 45f, 0f),
+	)
+
 	@JvmField
 	val mousematPresets = ToggleModuleSetting(
 		"mousemat_presets", "Mousemat presets", true,
-		"Beside a mousemat's sign, each crop's yaw and pitch. Click one to write it into the sign, then press Done.",
-	)
+		"Beside a mousemat's sign, each crop's yaw and pitch. Click one to write it into the sign, then press Done. Change a crop's angles under ⋯.",
+	).withMore(*CROPS.map { it.setting }.toTypedArray())
 
 	private val pestsSection = SectionModuleSetting("pests_section", "Pests")
 
@@ -98,7 +190,7 @@ object Farming {
 	@JvmField
 	val autoSetspawn = ToggleModuleSetting(
 		"auto_setspawn", "Auto setspawn", false,
-		"A second after pests spawn, sets your spawn where you stand; when the last one dies, warps you back to it. Needs the Pests widget too.",
+		"A second after pests spawn, sets your spawn where you stand; when the last one dies, warps you back to it. Only on a numbered plot, never the barn's or the greenhouse. Needs the Pests widget too.",
 		restriction = Restriction.SEMI_LEGIT,
 	)
 
@@ -124,6 +216,7 @@ object Farming {
 		initialized = true
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		Hud.register(PestCooldownElement())
+		Hud.register(listElement)
 	}
 
 	private var level: ClientLevel? = null
@@ -144,7 +237,8 @@ object Farming {
 		if (inGarden && held != null && SkyblockItem.id(held) in VACUUMS) vacuumHeldAt = System.currentTimeMillis()
 		if (++ticks % 5 == 0) {
 			if (visitors.isNotEmpty()) SackContents.ensureFromApi()
-			if (inGarden && visitors.isNotEmpty()) pruneVisitors(client)
+			if (inGarden) readTabVisitors(client)
+			tickVisitorList(client)
 			pests = if (pestTracers.value && inGarden) findPests() else emptyList()
 		}
 		tickGuess()
@@ -153,10 +247,16 @@ object Farming {
 
 	// ---- Visitors -----------------------------------------------------------------------------
 
-	/** A visitor and what they want, by item name. */
-	private class Visitor(val name: String, val wants: Map<String, Int>)
+	/** A visitor, the colour of their rarity, and what they want by item name. */
+	private class Visitor(val name: String, val wants: Map<String, Int>, val colour: String)
 
 	private val visitors = LinkedHashMap<String, Visitor>()
+
+	/** The visitors the Garden's tab list last named, with their colour code. Kept off the island. */
+	private var waiting: List<Pair<String, String>> = emptyList()
+
+	private var nearVisitors = false
+	private var nearBazaar = false
 
 	/** "Enchanted Hay Bale x64", or just a name for one. */
 	private val requirement = Regex("""^(.+?)(?: x([\d,]+))?$""")
@@ -179,27 +279,57 @@ object Farming {
 			val amount = match.groupValues[2].replace(",", "").toIntOrNull() ?: 1
 			wants.merge(match.groupValues[1].trim(), amount, Int::plus)
 		}
-		if (wants.isNotEmpty()) visitors[name] = Visitor(name, wants)
+		if (wants.isNotEmpty()) visitors[name] = Visitor(name, wants, colourCode(head.hoverName))
 	}
 
 	/** "Visitors: (2)" in the Garden's tab list, with one visitor's name on each row below it. */
-	private val visitorsHeading = Regex("""^Visitors: \((\d+)\)$""")
+	private val visitorsHeading = Regex("""(?:^|[^A-Za-z])Visitors:?\s*\(?(\d+)\)?""")
 
 	/**
-	 * Drops visitors the Garden's tab list no longer names, so ones served by a co-op member (or
-	 * gone while you were away) leave the list. Only acts on a whole, readable list.
+	 * Reads who's waiting from the Garden's tab list, and drops read visitors it no longer names, so
+	 * ones served by a co-op member (or gone while you were away) leave the list. Pruning only acts on
+	 * a whole list.
 	 */
-	private fun pruneVisitors(client: Minecraft) {
+	private fun readTabVisitors(client: Minecraft) {
 		val connection = client.connection ?: return
 		val rows = connection.listedOnlinePlayers
 			.sortedWith(PlayerTabOverlayAccessor.`cryptic$ordering`())
-			.map { it.tabListDisplayName?.string?.replace(FORMATTING, "")?.trim().orEmpty() }
-		val at = rows.indexOfFirst { visitorsHeading.matches(it) }
+			.map { it.tabListDisplayName }
+		val plain = rows.map { row -> row?.string?.replace(FORMATTING, "")?.trim()?.trimStart { !it.isLetterOrDigit() }.orEmpty() }
+		val at = plain.indexOfFirst { visitorsHeading.containsMatchIn(it) && !it.startsWith("New", ignoreCase = true) }
 		if (at < 0) return
-		val count = visitorsHeading.find(rows[at])?.groupValues?.get(1)?.toIntOrNull() ?: return
-		val names = rows.drop(at + 1).take(count)
-		if (names.size < count || names.any { it.isEmpty() || it.endsWith(":") }) return
-		visitors.keys.removeAll { visitor -> names.none { it.equals(visitor, ignoreCase = true) || it.contains(visitor, ignoreCase = true) } }
+		val count = visitorsHeading.find(plain[at])?.groupValues?.get(1)?.toIntOrNull() ?: return
+		// Names run down to the next widget's heading or a blank row.
+		val names = plain.drop(at + 1).take(count).takeWhile { it.isNotEmpty() && ':' !in it }
+		waiting = names.mapIndexed { i, name -> name to (rows[at + 1 + i]?.let(::colourCode) ?: "§f") }
+		if (names.size == count) visitors.keys.removeAll { visitor -> names.none { namesMatch(it, visitor) } }
+	}
+
+	private fun namesMatch(tab: String, visitor: String) = tab.equals(visitor, ignoreCase = true) || tab.contains(visitor, ignoreCase = true)
+
+	/** The colour a tab row's name is written in: the last code before its first letter, or its style's. */
+	private fun colourCode(row: Component): String {
+		val raw = row.string
+		var code: String? = null
+		var i = 0
+		while (i < raw.length) {
+			val c = raw[i]
+			if (c == '§' && i + 1 < raw.length) {
+				ChatFormatting.getByCode(raw[i + 1])?.takeIf { it <= ChatFormatting.WHITE }?.let { code = it.toString() }
+				i += 2
+				continue
+			}
+			if (c.isLetterOrDigit()) break
+			i++
+		}
+		code?.let { return it }
+		var styled = "§f"
+		row.visit({ style: Style, text: String ->
+			if (text.isBlank()) return@visit Optional.empty<Unit>()
+			style.color?.let { colour -> ChatFormatting.entries.firstOrNull { TextColor.fromLegacyFormat(it) == colour }?.let { styled = it.toString() } }
+			Optional.of(Unit)
+		}, Style.EMPTY)
+		return styled
 	}
 
 	/** A click in a visitor's menu: giving or refusing sends them away. */
@@ -215,10 +345,21 @@ object Farming {
 
 	/** One item every visitor wants together, and what you hold of it. */
 	private class Wanted(val name: String, val amount: Int, val by: List<String>) {
+		val id = BazaarMarket.idForName(name)
 		val inventory = inventoryCount(name)
 		val sacks = SackContents.count(name)
 		val short: Int get() = (amount - inventory - sacks).coerceAtLeast(0)
 		val shortWithoutSacks: Int get() = (amount - inventory).coerceAtLeast(0)
+
+		/** One of it on the Bazaar, as the Prices setting asks, or null. */
+		fun unitPrice(): Double? {
+			val product = id?.let(BazaarMarket::product) ?: return null
+			return when (listPrice.selected) {
+				PRICE_INSTANT -> product.instantBuy
+				PRICE_ORDER -> product.instantSell
+				else -> null
+			}?.takeIf { it > 0 }
+		}
 	}
 
 	private fun wanted(): List<Wanted> {
@@ -245,7 +386,10 @@ object Farming {
 	 */
 	fun presetsFor(product: String?): List<Pair<String, Int>> {
 		if (!module.enabled || !visitorPresets.value || product == null) return emptyList()
-		val item = wanted().firstOrNull { it.name.equals(product, ignoreCase = true) } ?: return emptyList()
+		val items = wanted()
+		// A name cut short by a menu title still names one item, if only one starts that way.
+		val item = items.firstOrNull { it.name.equals(product, ignoreCase = true) }
+			?: items.singleOrNull { product.length >= 10 && it.name.startsWith(product, ignoreCase = true) } ?: return emptyList()
 		if (item.short == item.shortWithoutSacks) return if (item.short > 0) listOf("§aShort" to item.short) else emptyList()
 		return buildList {
 			if (item.short > 0) add("§aWith sacks" to item.short)
@@ -253,69 +397,314 @@ object Farming {
 		}
 	}
 
-	/** Only in a visitor's menu and in the Bazaar's, where it's of use. */
-	private fun showsList(screen: Any?): Boolean {
-		if (!module.enabled || !visitorList.value || visitors.isEmpty()) return false
-		val chest = screen as? AbstractContainerScreen<*> ?: return false
-		val title = chest.title.string.replace(FORMATTING, "")
-		val bazaar = title.startsWith("Bazaar") || title.contains("➜") || title == "How many do you want?" || title == "How much do you want to pay?"
-		return bazaar || (inGarden && isVisitorMenu(chest))
+	private fun isBazaarMenu(screen: AbstractContainerScreen<*>): Boolean {
+		val title = screen.title.string.replace(FORMATTING, "")
+		return title.startsWith("Bazaar") || title.contains("➜") || title == "How many do you want?" || title == "How much do you want to pay?"
 	}
 
 	private fun isVisitorMenu(screen: AbstractContainerScreen<*>): Boolean =
 		screen.menu.slots.getOrNull(13)?.item?.get(DataComponents.LORE)?.lines()?.any { it.string.contains("Times Visited") } == true
 
-	/** Where each row of the list was drawn, for clicks and hovering. */
-	private class Row(val item: Wanted, val x: Float, val y: Float, val width: Float, val height: Float) {
+	// ---- The shopping list --------------------------------------------------------------------
+
+	private const val NEAR = 16.0
+	private const val PRICE_MAX_AGE_MILLIS = 120_000L
+
+	/** Worked out a few times a second; drawing only reads it. */
+	private var listLines: List<ListLine> = emptyList()
+	private var listWidth = 0
+
+	/**
+	 * One row of the list. [item] makes it hoverable in menus; item rows leave room for an icon, and
+	 * [trailing] icons follow the text (what a new visitor usually wants).
+	 */
+	private class ListLine(
+		val prefix: String, val text: String, val item: Wanted? = null, val icon: ItemStack? = null, val hasIcon: Boolean = false,
+		val trailing: List<ItemStack> = emptyList(),
+	) {
+		val prefixWidth = Minecraft.getInstance().font.width(prefix)
+		val textWidth = Minecraft.getInstance().font.width(text)
+		val width = prefixWidth + (if (hasIcon) ICON + 2 else 0) + textWidth + if (trailing.isEmpty()) 0 else 2 + trailing.size * (ICON + 1)
+	}
+
+	private const val ROW = 10
+	private const val ICON = 10
+
+	private fun tickVisitorList(client: Minecraft) {
+		val shopping = if (visitors.isEmpty()) emptyList() else wanted()
+		if (!visitorList.value) {
+			nearVisitors = false
+			nearBazaar = false
+			listLines = emptyList()
+			return
+		}
+		nearVisitors = inGarden && nearNamed(client, waiting.map { it.first } + visitors.keys)
+		nearBazaar = SkyblockLocation.onSkyblock && SkyblockLocation.area == "Hub" &&
+			(SkyblockLocation.zone()?.contains("Bazaar", ignoreCase = true) == true || nearNamed(client, listOf("Bazaar")))
+		if (shopping.isNotEmpty() && listPrice.selected != PRICE_OFF) BazaarMarket.refresh(PRICE_MAX_AGE_MILLIS)
+		learnIcons(client, shopping)
+		listLines = buildLines(shopping)
+		listWidth = listLines.maxOfOrNull { it.width } ?: 0
+	}
+
+	private fun buildLines(shopping: List<Wanted>): List<ListLine> {
+		val lines = ArrayList<ListLine>()
+		if (shopping.isNotEmpty()) {
+			val prices = shopping.map { item -> item.unitPrice()?.let { it * item.amount } }
+			val total = prices.filterNotNull().takeIf { it.isNotEmpty() }?.sum()
+			lines += ListLine("", "§fVisitor Shopping List:" + (total?.let { " §7(§6${compact(it)}§7)" } ?: ""))
+			shopping.forEachIndexed { i, item ->
+				val text = StringBuilder()
+				text.append(ItemRarity.codeForName(item.name) ?: "§f").append(item.name).append(" §ex").append(item.amount)
+				prices[i]?.let { text.append(" §7(§6").append(compact(it)).append("§7)") }
+				if (item.sacks > 0) text.append(" §7(§a").append(String.format(Locale.US, "%,d", item.sacks)).append(" §7in sacks)")
+				if (item.short == 0) text.append(" §a✔")
+				lines += ListLine(" §7- ", text.toString(), item, iconFor(item.name), hasIcon = true)
+			}
+		}
+		// Who's waiting alone is only worth showing in the Garden.
+		if (!inGarden && shopping.isEmpty()) return lines
+		if (listNewVisitors.value) {
+			val unread = waiting.filter { (name, _) -> visitors.keys.none { namesMatch(name, it) } }
+			section(lines, "New Visitor", unread, wants = true)
+		}
+		if (listVisitors.value) section(lines, "Visitor", visitors.values.map { it.name to it.colour }, wants = false)
+		return lines
+	}
+
+	/** "6 New Visitors:" and a row per name, after a blank line; with [wants], what each usually asks for. */
+	private fun section(lines: MutableList<ListLine>, heading: String, names: List<Pair<String, String>>, wants: Boolean) {
+		if (names.isEmpty()) return
+		if (lines.isNotEmpty()) lines += ListLine("", "")
+		lines += ListLine("", "§e${names.size} §f$heading${if (names.size == 1) "" else "s"}:")
+		for ((name, colour) in names) {
+			val usual = if (wants) usuallyWants(name) else null
+			lines += when {
+				usual == null -> ListLine(" §7- ", colour + name)
+				usual.isEmpty() -> ListLine(" §7- ", "$colour$name §f(Any)")
+				else -> ListLine(" §7- ", colour + name, trailing = usual.mapNotNull(::iconFor))
+			}
+		}
+	}
+
+	/**
+	 * What each visitor asks for, by lower-case name; empty for one who takes any crop. Facts from
+	 * SkyHanni-REPO's Garden data (MIT).
+	 */
+	private val VISITOR_WANTS: Map<String, List<String>> by lazy {
+		runCatching {
+			Farming::class.java.getResourceAsStream("/assets/cryptic/garden/visitor_wants.json")!!.reader(Charsets.UTF_8).use { reader ->
+				com.google.gson.JsonParser.parseReader(reader).asJsonObject.entrySet()
+					.associate { (name, items) -> name.lowercase(Locale.ROOT) to items.asJsonArray.map { it.asString } }
+			}
+		}.getOrElse { emptyMap() }
+	}
+
+	private fun usuallyWants(name: String): List<String>? = VISITOR_WANTS[name.lowercase(Locale.ROOT)]
+
+	/** 948k, 1.2M. */
+	private fun compact(value: Double): String = when {
+		value >= 1e9 -> String.format(Locale.US, "%.1fB", value / 1e9)
+		value >= 1e6 -> String.format(Locale.US, "%.1fM", value / 1e6)
+		value >= 1e3 -> String.format(Locale.US, "%.0fk", value / 1e3)
+		else -> String.format(Locale.US, "%.0f", value)
+	}.replace(".0", "")
+
+	/** Whether an entity named one of [names] (an NPC's nametag) is within [NEAR] blocks. */
+	private fun nearNamed(client: Minecraft, names: Collection<String>): Boolean {
+		if (names.isEmpty()) return false
+		val player = client.player ?: return false
+		val level = client.level ?: return false
+		for (entity in level.entitiesForRendering()) {
+			if (entity === player || entity.distanceToSqr(player) > NEAR * NEAR) continue
+			val name = entity.customName?.string?.replace(FORMATTING, "")?.trim() ?: continue
+			if (names.any { it.equals(name, ignoreCase = true) }) return true
+		}
+		return false
+	}
+
+	/** Icons as seen in your inventory or a menu, by lower-case name; better than the items list's guess. */
+	private val seenIcons = HashMap<String, ItemStack>()
+	private val apiIcons = HashMap<String, ItemStack?>()
+
+	private fun learnIcons(client: Minecraft, shopping: List<Wanted>) {
+		val missing = shopping.map { it.name.lowercase(Locale.ROOT) }.filter { it !in seenIcons }
+		if (missing.isEmpty()) return
+		val menu = client.player?.containerMenu ?: return
+		for (slot in menu.slots) {
+			val stack = slot.item
+			if (stack.isEmpty) continue
+			val name = stack.hoverName.string.replace(FORMATTING, "").trim().lowercase(Locale.ROOT)
+			if (name in missing) seenIcons[name] = stack.copyWithCount(1)
+		}
+	}
+
+	/** An item's icon by its name: as seen in a menu, else from the items list. Null until it's known. */
+	fun iconFor(name: String): ItemStack? {
+		seenIcons[name.lowercase(Locale.ROOT)]?.let { return it }
+		val id = BazaarMarket.idForName(name) ?: return null
+		if (id in apiIcons) return apiIcons[id]
+		val look = BazaarMarket.look(id) ?: return null
+		return apiIcon(look, name).also { apiIcons[id] = it }
+	}
+
+	/**
+	 * Pre-1.13 materials the items list still uses, by "MATERIAL:durability" or "MATERIAL", to their
+	 * item now. Others keep their name.
+	 */
+	private val LEGACY_MATERIALS = mapOf(
+		"CARROT_ITEM" to "carrot", "POTATO_ITEM" to "potato", "MELON" to "melon_slice", "NETHER_STALK" to "nether_wart",
+		"SEEDS" to "wheat_seeds", "INK_SACK:0" to "ink_sac", "INK_SACK:1" to "red_dye", "INK_SACK:2" to "green_dye",
+		"INK_SACK:3" to "cocoa_beans", "INK_SACK:4" to "lapis_lazuli", "INK_SACK:15" to "bone_meal",
+		"HUGE_MUSHROOM_1" to "brown_mushroom_block", "HUGE_MUSHROOM_2" to "red_mushroom_block", "DOUBLE_PLANT:0" to "sunflower",
+		"DOUBLE_PLANT:4" to "rose_bush", "RED_ROSE:0" to "poppy", "RED_ROSE:1" to "blue_orchid", "YELLOW_FLOWER" to "dandelion",
+		"PORK" to "porkchop", "GRILLED_PORK" to "cooked_porkchop", "RAW_FISH:0" to "cod", "RAW_FISH:1" to "salmon",
+		"RAW_FISH:2" to "tropical_fish", "RAW_FISH:3" to "pufferfish", "RAW_CHICKEN" to "chicken", "RAW_BEEF" to "beef",
+		"WATER_LILY" to "lily_pad", "GOLD_RECORD" to "music_disc_13", "SULPHUR" to "gunpowder", "ENDER_STONE" to "end_stone",
+		"LOG:0" to "oak_log", "WOOD:0" to "oak_planks", "MUSHROOM_SOUP" to "mushroom_stew", "SKULL_ITEM" to "player_head",
+		"WEB" to "cobweb", "SNOW_BALL" to "snowball", "NETHER_BRICK_ITEM" to "nether_brick",
+	)
+
+	/**
+	 * An icon from the items list: the model Hypixel's resource pack draws a newer item with, a head's
+	 * skin, or the material.
+	 */
+	private fun apiIcon(look: BazaarMarket.Look, name: String): ItemStack? {
+		val glint = look.glowing || name.startsWith("Enchanted ")
+		look.itemModel?.let(Identifier::tryParse)?.let { model ->
+			return ItemStack(Items.PAPER).apply {
+				set(DataComponents.ITEM_MODEL, model)
+				if (glint) set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
+			}
+		}
+		look.skin?.let(SkyblockItem::textureHash)?.let { return SkyblockItem.head(it) }
+		val material = LEGACY_MATERIALS["${look.material}:${look.durability}"] ?: LEGACY_MATERIALS[look.material] ?: look.material.lowercase(Locale.ROOT)
+		val item = Identifier.tryParse(material)?.let { BuiltInRegistries.ITEM.getOptional(it).orElse(null) }?.takeIf { it != Items.AIR } ?: return null
+		return ItemStack(item).apply { if (glint) set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true) }
+	}
+
+	/** Whether the list shows: with [menu] open (null outside menus), by the Show and Menus settings. */
+	private fun shows(menu: AbstractContainerScreen<*>?): Boolean {
+		if (!module.enabled || !visitorList.value || listLines.isEmpty()) return false
+		when (listMenus.selected) {
+			MENUS_ONLY -> if (menu == null) return false
+			MENUS_NEVER -> if (menu != null) return false
+		}
+		return listWhere.isSelected(WHERE_GARDEN) && inGarden ||
+			listWhere.isSelected(WHERE_VISITORS) && nearVisitors ||
+			listWhere.isSelected(WHERE_BAZAAR) && nearBazaar ||
+			menu != null && listWhere.isSelected(WHERE_BAZAAR_MENUS) && isBazaarMenu(menu) ||
+			menu != null && listWhere.isSelected(WHERE_VISITOR_MENU) && inGarden && isVisitorMenu(menu)
+	}
+
+	private fun drawLines(context: GuiGraphicsExtractor, lines: List<ListLine>, width: Int, hovered: Int) {
+		val font = client.font
+		lines.forEachIndexed { i, line ->
+			val y = i * ROW
+			if (i == hovered) context.fill(-2, y, width + 2, y + ROW, 0x40FFFFFF)
+			if (line.prefix.isNotEmpty()) context.text(font, line.prefix, 0, y + 1, -1)
+			var x = line.prefixWidth
+			if (line.hasIcon) {
+				line.icon?.let { icon ->
+					val pose = context.pose()
+					pose.pushMatrix()
+					pose.translate(x.toFloat(), y.toFloat())
+					pose.scale(ICON / 16f, ICON / 16f)
+					context.item(icon, 0, 0)
+					pose.popMatrix()
+				}
+				x += ICON + 2
+			}
+			context.text(font, line.text, x, y + 1, -1)
+			if (line.trailing.isNotEmpty()) {
+				x += line.textWidth + 2
+				val pose = context.pose()
+				for (icon in line.trailing) {
+					pose.pushMatrix()
+					pose.translate(x.toFloat(), y.toFloat())
+					pose.scale(ICON / 16f, ICON / 16f)
+					context.item(icon, 0, 0)
+					pose.popMatrix()
+					x += ICON + 1
+				}
+			}
+		}
+	}
+
+	private val sampleLines: List<ListLine> by lazy {
+		fun glinting(item: net.minecraft.world.item.Item) = ItemStack(item).apply { set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true) }
+		listOf(
+			ListLine("", "§fVisitor Shopping List: §7(§6948k§7)"),
+			ListLine(" §7- ", "§9Polished Pumpkin §ex1 §7(§6256k§7)", icon = glinting(Items.CARVED_PUMPKIN), hasIcon = true),
+			ListLine(" §7- ", "§9Enchanted Baked Potato §ex5 §7(§6384k§7) §7(§a2 §7in sacks)", icon = glinting(Items.BAKED_POTATO), hasIcon = true),
+			ListLine(" §7- ", "§9Enchanted Hay Bale §ex2 §7(§6307k§7)", icon = glinting(Items.HAY_BLOCK), hasIcon = true),
+			ListLine("", ""),
+			ListLine("", "§e2 §fNew Visitors:"),
+			ListLine(" §7- ", "§aFarm Merchant §f(Any)"),
+			ListLine(" §7- ", "§9Fann", trailing = listOf(ItemStack(Items.NETHER_WART), ItemStack(Items.RED_MUSHROOM_BLOCK))),
+			ListLine("", ""),
+			ListLine("", "§e1 §fVisitor:"),
+			ListLine(" §7- ", "§9Chantelle"),
+		)
+	}
+
+	private class ShoppingListElement : HudElement("visitor_shopping_list", "Visitor Shopping List", 0.02, 0.3) {
+		private val lines: List<ListLine> get() = listLines.ifEmpty { sampleLines }
+
+		override val width: Int get() = maxOf(lines.maxOf { it.width }, 60)
+		override val height: Int get() = lines.size * ROW
+
+		override fun showInEditor(): Boolean = module.enabled && visitorList.value
+
+		// In a menu it's drawn over the menu by renderList instead, where it can be hovered and clicked.
+		override fun isVisible(): Boolean = client.gui.screen() !is AbstractContainerScreen<*> && shows(null)
+
+		override fun render(context: GuiGraphicsExtractor) {
+			keepOnScreen(context)
+			drawLines(context, listLines, listWidth, -1)
+		}
+
+		override fun renderExample(context: GuiGraphicsExtractor) = drawLines(context, lines, width, -1)
+	}
+
+	private val listElement = ShoppingListElement()
+
+	/** Where each item row was drawn in a menu, for clicks and hovering. */
+	private class Row(val item: Wanted, val index: Int, val x: Float, val y: Float, val width: Float, val height: Float) {
 		fun contains(mouseX: Double, mouseY: Double) = mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height
 	}
 
 	private var rows: List<Row> = emptyList()
 
-	private const val GAP = 12
-	private const val MIN_SCALE = 0.5f
-
-	/** The list, left of the menu, shrunk only when there's no room. */
+	/** The list over a menu, at its HUD place, kept on screen. */
 	@JvmStatic
 	fun renderList(screen: Screen, graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-		if (!showsList(screen)) {
+		val chest = screen as? AbstractContainerScreen<*>
+		if (chest == null || !shows(chest)) {
 			rows = emptyList()
 			return
 		}
-		val accessor = screen as? ContainerScreenAccessor ?: return
-		val font = client.font
-		val items = wanted()
-		val lineHeight = font.lineHeight + 2
-		val left = items.map { "§f${it.amount}x ${ItemRarity.codeForName(it.name) ?: "§f"}${it.name}" }
-		val right = items.map { if (it.short == 0) "§a✔" else "§c${String.format(Locale.US, "%,d", it.short)} short" }
-		val heading = "§a§lVisitors §7(${visitors.size})"
-		val width = maxOf(font.width(heading), left.indices.maxOf { font.width(left[it]) + GAP + font.width(right[it]) })
-		val height = (items.size + 1) * lineHeight
-		val room = (accessor.`cryptic$leftPos`() - 10).toFloat()
-		val scale = if (width <= room) 1f else (room / width).coerceAtLeast(MIN_SCALE)
-		val x = maxOf(2f, accessor.`cryptic$leftPos`() - 8 - width * scale)
-		val y = maxOf(2f, accessor.`cryptic$topPos`().toFloat())
+		val element = listElement
+		val scale = element.scale.toFloat()
+		val width = listWidth
+		val height = listLines.size * ROW
+		val left = Math.round(element.left(graphics.guiWidth()).coerceAtMost(graphics.guiWidth() - width * element.scale).coerceAtLeast(0.0)).toFloat()
+		val top = Math.round(element.top(graphics.guiHeight()).coerceAtMost(graphics.guiHeight() - height * element.scale).coerceAtLeast(0.0)).toFloat()
+		val placed = listLines.mapIndexedNotNull { i, line ->
+			line.item?.let { Row(it, i, left, top + i * ROW * scale, width * scale, ROW * scale) }
+		}
+		rows = placed
+		val hovered = placed.firstOrNull { it.contains(mouseX.toDouble(), mouseY.toDouble()) }
 
 		val pose = graphics.pose()
 		pose.pushMatrix()
-		pose.translate(x, y)
+		pose.translate(left, top)
 		pose.scale(scale, scale)
-		graphics.text(font, heading, 0, 0, -1)
-		val placed = ArrayList<Row>()
-		items.forEachIndexed { i, item ->
-			val rowY = (i + 1) * lineHeight
-			val row = Row(item, x, y + rowY * scale, width * scale, lineHeight * scale)
-			if (row.contains(mouseX.toDouble(), mouseY.toDouble())) graphics.fill(-2, rowY - 1, width + 2, rowY + lineHeight - 1, 0x40FFFFFF)
-			graphics.text(font, left[i], 0, rowY, -1)
-			graphics.text(font, right[i], width - font.width(right[i]), rowY, -1)
-			placed += row
-		}
+		drawLines(graphics, listLines, width, hovered?.index ?: -1)
 		pose.popMatrix()
-		rows = placed
 
-		placed.firstOrNull { it.contains(mouseX.toDouble(), mouseY.toDouble()) }?.let { row ->
-			val item = row.item
-			graphics.setComponentTooltipForNextFrame(font, listOf(
+		hovered?.item?.let { item ->
+			graphics.setComponentTooltipForNextFrame(client.font, listOf(
 				Component.literal("${ItemRarity.codeForName(item.name) ?: "§f"}${item.name}"),
 				Component.literal("§7Wanted by §f${item.by.joinToString("§7, §f")}"),
 				Component.literal("§7Needed: §f${item.amount}"),
@@ -335,26 +724,49 @@ object Farming {
 		return true
 	}
 
+	// ---- Debug --------------------------------------------------------------------------------
+
+	/** For /cryptic debug visitors: everything the list and the Bazaar presets go by. */
+	fun describeVisitors(): List<String> {
+		val player = client.player
+		val out = ArrayList<String>()
+		out += "Farming ${module.enabled}, shopping list ${visitorList.value}, Bazaar amounts ${visitorPresets.value}"
+		out += "List shows: ${listWhere.selected}; ${listMenus.selected}; prices ${listPrice.selected}; HUD at %.2f, %.2f".format(Locale.US, listElement.x, listElement.y)
+		out += "SkyBlock ${SkyblockLocation.onSkyblock}, area ${SkyblockLocation.area}, zone ${SkyblockLocation.zone()}, in the Garden $inGarden"
+		out += "Near the visitors $nearVisitors, near the Bazaar $nearBazaar, showing outside menus ${shows(null)}, ${listLines.size} lines"
+		out += "Tab list: ${waiting.size} waiting (${waiting.joinToString { it.first }})"
+		client.connection?.let { connection ->
+			val rows = connection.listedOnlinePlayers.sortedWith(PlayerTabOverlayAccessor.`cryptic$ordering`())
+				.map { it.tabListDisplayName?.string.orEmpty() }
+			val at = rows.indexOfFirst { it.replace(FORMATTING, "").contains("Visitor", ignoreCase = true) }
+			out += if (at < 0) "Tab rows: none mention visitors (${rows.size} rows)"
+			else "Tab rows from $at: " + rows.drop(at).take(7).joinToString(" | ") { "\"${it.replace("§", "&")}\"" }
+		}
+		out += "Read visitors (${visitors.size}):"
+		for (visitor in visitors.values) out += "  ${visitor.name}: ${visitor.wants.entries.joinToString { "${it.key} x${it.value}" }}"
+		for (item in wanted()) {
+			val product = item.id?.let(BazaarMarket::product)
+			val icon = when {
+				item.name.lowercase(Locale.ROOT) in seenIcons -> "seen"
+				item.id != null && apiIcons[item.id] != null -> "items list"
+				else -> "none (${item.id?.let(BazaarMarket::look)?.material ?: "no look"})"
+			}
+			out += "Item ${item.name} x${item.amount}: id ${item.id ?: "UNKNOWN"}, inventory ${item.inventory}, sacks ${item.sacks}, " +
+				"short ${item.short} (${item.shortWithoutSacks} keeping sacks), buy ${product?.instantBuy?.let(::compact)}, order ${product?.instantSell?.let(::compact)}, " +
+				"icon $icon, presets ${presetsFor(item.name).joinToString { "${it.first.replace(FORMATTING, "")} ${it.second}" }.ifEmpty { "none" }}"
+		}
+		if (player != null) {
+			val named = client.level?.entitiesForRendering()?.filter { it !== player && it.customName != null && it.distanceToSqr(player) <= NEAR * NEAR }
+				?.sortedBy { it.distanceToSqr(player) }?.take(12)
+				?.joinToString { "${it.customName!!.string.replace(FORMATTING, "").trim()} (${"%.0f".format(Locale.US, it.distanceTo(player))}m)" }
+			out += "Named entities within ${NEAR.toInt()} blocks: ${named?.ifEmpty { "none" }}"
+		}
+		out += BazaarPresets.describe()
+		out += SackContents.describe()
+		return out
+	}
+
 	// ---- Mousemat -----------------------------------------------------------------------------
-
-	/** A crop's angles for the mousemat, the ones SkyHanni suggests. */
-	private class Angles(val crop: String, val icon: net.minecraft.world.item.Item, val yaw: Float, val pitch: Float)
-
-	private val ANGLES = listOf(
-		Angles("Wheat", net.minecraft.world.item.Items.WHEAT, 90f, 0f),
-		Angles("Carrot", net.minecraft.world.item.Items.CARROT, -90f, 2.8f),
-		Angles("Potato", net.minecraft.world.item.Items.POTATO, -90f, 2.8f),
-		Angles("Nether Wart", net.minecraft.world.item.Items.NETHER_WART, 90f, 0f),
-		Angles("Pumpkin", net.minecraft.world.item.Items.CARVED_PUMPKIN, 90f, -58.5f),
-		Angles("Melon Slice", net.minecraft.world.item.Items.MELON_SLICE, 90f, -58.5f),
-		Angles("Cocoa Beans", net.minecraft.world.item.Items.COCOA_BEANS, 180f, -45f),
-		Angles("Sugar Cane", net.minecraft.world.item.Items.SUGAR_CANE, -135f, 0f),
-		Angles("Cactus", net.minecraft.world.item.Items.CACTUS, -90f, 0f),
-		Angles("Mushroom", net.minecraft.world.item.Items.RED_MUSHROOM, 116.5f, 0f),
-		Angles("Sunflower", net.minecraft.world.item.Items.SUNFLOWER, 45f, 0f),
-		Angles("Moonflower", net.minecraft.world.item.Items.BLUE_ORCHID, 45f, 0f),
-		Angles("Wild Rose", net.minecraft.world.item.Items.ROSE_BUSH, 45f, 0f),
-	)
 
 	/** A mousemat asks for yaw on its first line and pitch on its last, saying so in between. */
 	private fun mousematSign(screen: Any?): net.minecraft.client.gui.screens.inventory.AbstractSignEditScreen? {
@@ -364,13 +776,16 @@ object Farming {
 		return sign.takeIf { lines.getOrNull(1)?.contains("Set Yaw Above") == true && lines.getOrNull(2)?.contains("Set Pitch Below") == true }
 	}
 
-	private class AngleRow(val angles: Angles, val x: Float, val y: Float, val width: Float, val height: Float) {
+	private class AngleRow(val crop: Crop, val x: Float, val y: Float, val width: Float, val height: Float) {
 		fun contains(mouseX: Double, mouseY: Double) = mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height
 	}
 
 	private var angleRows: List<AngleRow> = emptyList()
 
-	private fun angleText(angles: Angles) = "§a${angles.crop} §7- §e${angles.yaw}§7/§e${angles.pitch}"
+	private fun angleText(crop: Crop): String {
+		val (yaw, pitch) = crop.angles()
+		return "§a${crop.name} §7- §e${number(yaw)}§7/§e${number(pitch)}"
+	}
 
 	/** The crops, right of the sign; shrunk when the screen is too small for them. */
 	@JvmStatic
@@ -381,12 +796,13 @@ object Farming {
 		}
 		val font = client.font
 		val rowHeight = 18
-		val width = 20 + ANGLES.maxOf { font.width(angleText(it)) }
-		val height = rowHeight * ANGLES.size
+		val texts = CROPS.map(::angleText)
+		val width = 20 + texts.maxOf { font.width(it) }
+		val height = rowHeight * CROPS.size
 		val left = screen.width / 2f + 70
 		val top = 40f
 		val scale = minOf(1f, (screen.height - top - 4) / height, (screen.width - left - 4) / width).coerceAtLeast(0.4f)
-		val rows = ANGLES.mapIndexed { i, angles -> AngleRow(angles, left, top + i * rowHeight * scale, width * scale, rowHeight * scale) }
+		val rows = CROPS.mapIndexed { i, crop -> AngleRow(crop, left, top + i * rowHeight * scale, width * scale, rowHeight * scale) }
 		val pose = graphics.pose()
 		pose.pushMatrix()
 		pose.translate(left, top)
@@ -394,8 +810,8 @@ object Farming {
 		rows.forEachIndexed { i, row ->
 			val y = i * rowHeight
 			if (row.contains(mouseX.toDouble(), mouseY.toDouble())) graphics.fill(-2, y, width + 2, y + rowHeight, 0x40FFFFFF)
-			graphics.item(net.minecraft.world.item.ItemStack(row.angles.icon), 0, y + 1)
-			graphics.text(font, angleText(row.angles), 20, y + 5, -1)
+			graphics.item(net.minecraft.world.item.ItemStack(row.crop.icon), 0, y + 1)
+			graphics.text(font, texts[i], 20, y + 5, -1)
 		}
 		pose.popMatrix()
 		angleRows = rows
@@ -410,8 +826,9 @@ object Farming {
 		val row = angleRows.firstOrNull { it.contains(mouseX, mouseY) } ?: return false
 		val accessor = sign as imicro.cryptic.mixin.SignEditScreenAccessor
 		val lines = accessor.`cryptic$messages`()
-		lines[0] = row.angles.yaw.toString()
-		lines[3] = row.angles.pitch.toString()
+		val (yaw, pitch) = row.crop.angles()
+		lines[0] = number(yaw)
+		lines[3] = number(pitch)
 		// The cursor was on a line that may now be shorter.
 		accessor.`cryptic$signField`()?.setCursorToEnd()
 		client.soundManager.play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1f))
@@ -485,7 +902,7 @@ object Farming {
 		val text = message.string.replace(FORMATTING, "").trim()
 		if (text == "There are not any Pests on your Garden right now! Keep farming!") clearGuess()
 		// A pest spawning mid-hunt is the same hunt: your spot is already saved.
-		if (autoSetspawn.value && inGarden && huntingSince == 0L && PEST_SPAWNED.containsMatchIn(text)) {
+		if (autoSetspawn.value && inGarden && huntingSince == 0L && onCropPlot() && PEST_SPAWNED.containsMatchIn(text)) {
 			val now = System.currentTimeMillis()
 			huntingSince = now
 			setspawnAt = now + SETSPAWN_DELAY_MILLIS
@@ -625,7 +1042,8 @@ object Farming {
 		}
 		if (setspawnAt != 0L && now >= setspawnAt) {
 			setspawnAt = 0L
-			command("setspawn")
+			// Walked off the plot in that second: nothing to come back to.
+			if (onCropPlot()) command("setspawn") else huntingSince = 0L
 		}
 		if (huntingSince == 0L) return
 		val alive = pestsAlive
@@ -638,6 +1056,12 @@ object Farming {
 			}
 		}
 	}
+
+	/**
+	 * On a numbered plot ("Plot - 4" in the sidebar), where you farm. The barn's plot reads "The
+	 * Garden" and the greenhouse has its own name, so neither counts.
+	 */
+	private fun onCropPlot(): Boolean = SkyblockLocation.zone()?.let { it.startsWith("Plot") && !it.contains("Greenhouse", ignoreCase = true) } == true
 
 	private fun command(line: String) {
 		if (DebugOverrides.previewPartyCommands) {

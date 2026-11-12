@@ -52,7 +52,8 @@ object CreditList {
 						"how Hypixel shapes a vacuum's trail and sack changes, the Rift's time, soul, effigy and Mirrorverse messages, " +
 						"Superpairs' boards for each stake and the names of its face-down cards, and the ideas of the experiment helpers " +
 						"(next click, misclick guard, max clicks and Ultra-Rare alerts, pair highlights, the experience overlay and the Superpairs panel), " +
-						"the particles that mark the Precision Mining target, and the idea of Better Chat's chat filter.",
+						"the particles that mark the Precision Mining target, the idea of Better Chat's chat filter, " +
+						"and the power orbs' names and ranges and the flare and orb timer's idea for Combat.",
 					"LGPL-2.1", "https://github.com/hannibal002/SkyHanni",
 				),
 				Credit("dtMap", "The dungeon map, its room database and the score.", "BSD 3-Clause", "https://github.com/ricedotwho/dtMap"),
@@ -88,7 +89,7 @@ object CreditList {
 				),
 				Credit("RSM", "Spirit Leap Features' two rotate fixes.", "BSD 3-Clause", "https://github.com/rs-mod/rsm"),
 				Credit("Ping Offset Miner", "Mining's ping offset timing and block hardness.", "CC0", "https://github.com/Revvilon/PingOffsetMiner"),
-				Credit("SkyOcean", "Fishing's hotspot highlight: finding, sizing and hiding the hotspot ring.", "MIT", "https://github.com/meowdding/SkyOcean"),
+				Credit("SkyOcean", "Fishing's hotspot highlight: finding, sizing and hiding the hotspot ring. Text Outline's look, from its Full Text Shadow.", "MIT", "https://github.com/meowdding/SkyOcean"),
 				Credit(
 					"Custom Block Highlight",
 					"Block Overlay's advanced highlight.",
@@ -130,6 +131,7 @@ object CreditList {
 					"LGPL-3.0", "https://github.com/Akinsoft/Skysoft",
 				),
 				Credit("Coflnet", "The price history data behind the Bazaar's chart.", url = "https://sky.coflnet.com"),
+				Credit("FlipperX", "The idea of the Flipping module's step-by-step guide, and the look of its panels.", url = "https://github.com/Miloldr/flipperx-assist"),
 				Credit("Feesh", "Fishing's hotspot found message and gone alert.", "Apache-2.0", "https://github.com/Sleepy-Panda/Feesh"),
 				Credit("Debugify", "Camera's riding input fix.", "LGPL-3.0", "https://github.com/isXander/Debugify"),
 				Credit("Zoomify", "What a zoom ought to offer.", "LGPL-3.0", "https://modrinth.com/mod/zoomify"),
@@ -165,7 +167,7 @@ object CreditList {
 				Credit("Devonian", "Every room's secret spots, for Dungeon Waypoints.", "GPL-3.0", "https://github.com/Synnerz/Devonian"),
 				Credit(
 					"SkyHanni Repository",
-					"The 39 places the Mines of Divan treasure turns up, and the Rift's Enigma Souls, Blood Effigies, dance steps and Mirrorverse parkour paths.",
+					"The 39 places the Mines of Divan treasure turns up, the Rift's Enigma Souls, Blood Effigies, dance steps and Mirrorverse parkour paths, the flares' head textures, and what each Garden visitor asks for.",
 					"MIT", "https://github.com/hannibal002/SkyHanni-REPO",
 				),
 				Credit(
@@ -180,7 +182,7 @@ object CreditList {
 						"which stone gives each reforge, and which item takes an enchantment past its top book.",
 					"MIT", "https://github.com/Altpapier/SkyHelper-Networth",
 				),
-				Credit("NotEnoughUpdates", "The Wither Cloak's shield texture.", "LGPL-3.0", "https://github.com/NotEnoughUpdates/NotEnoughUpdates"),
+				Credit("NotEnoughUpdates", "The Wither Cloak's shield texture, and the power orbs' head textures (as facts only).", "LGPL-3.0", "https://github.com/NotEnoughUpdates/NotEnoughUpdates"),
 			),
 		),
 		CreditGroup(

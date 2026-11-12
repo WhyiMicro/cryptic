@@ -36,6 +36,14 @@ object BetterChat {
 		description = "Runs a command from a clicked chat line straight away, without the \"Are you sure?\" screen.",
 	)
 
+	@JvmField
+	val hideProfileId = ToggleModuleSetting(
+		id = "hide_profile_id",
+		label = "Hide profile ID",
+		defaultValue = false,
+		description = "Shows the \"Profile ID: ...\" line Hypixel sends on joining as \"Profile ID: HIDDEN\", for streams and screenshots.",
+	)
+
 	private val historySection = SectionModuleSetting("history_section", "History")
 
 	@JvmField
@@ -207,7 +215,7 @@ object BetterChat {
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
 		settings = listOf(
-			hideGuild, ChatFilter.enabled, abbreviate, noConfirm, ChatPrompts.enabled, CurrentChat.enabled,
+			hideGuild, ChatFilter.enabled, abbreviate, hideProfileId, noConfirm, ChatPrompts.enabled, CurrentChat.enabled,
 			historySection, keepHistory, longHistory.withMore(historyLength),
 			compact.withMore(compactMode, compactWindow, compactSkipClickable),
 			toolsSection, animate.withMore(animationTime), tabs.withMore(shortTabs), search.withMore(searchAlways), contextMenu.withMore(rightClickCopy), peekKey,
@@ -229,7 +237,35 @@ object BetterChat {
 	 */
 	@JvmStatic
 	fun shown(message: Component): Component {
-		if (!module.enabled || !abbreviate.value) return message
+		if (!module.enabled) return message
+		return abbreviated(withoutProfileId(message))
+	}
+
+	private val PROFILE_ID = Regex("""^Profile ID: ([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})""")
+
+	/**
+	 * The "Profile ID: <uuid>" line with the uuid shown as HIDDEN. Clicks and hovers that carry the
+	 * uuid are dropped too, so it can't be copied or read from a tooltip either.
+	 */
+	private fun withoutProfileId(message: Component): Component {
+		if (!hideProfileId.value) return message
+		val plain = message.string.replace(FORMATTING, "").trim()
+		val id = PROFILE_ID.find(plain)?.groupValues?.get(1) ?: return message
+
+		val rebuilt = Component.empty()
+		message.visit({ style, piece ->
+			var kept = style
+			if (style.clickEvent?.toString()?.contains(id, ignoreCase = true) == true) kept = kept.withClickEvent(null)
+			if (style.hoverEvent?.toString()?.contains(id, ignoreCase = true) == true) kept = kept.withHoverEvent(null)
+			rebuilt.append(Component.literal(piece.replace(id, "HIDDEN", ignoreCase = true)).withStyle(kept))
+			java.util.Optional.empty<Unit>()
+		}, Style.EMPTY)
+		// A uuid split across pieces would survive the per-piece swap; fall back to plain text then.
+		return if (id in rebuilt.string) Component.literal(plain.replace(id, "HIDDEN")).withStyle(message.style) else rebuilt
+	}
+
+	private fun abbreviated(message: Component): Component {
+		if (!abbreviate.value) return message
 		val plain = message.string.replace(FORMATTING, "").trimStart()
 		val (word, short) = CHANNELS.firstOrNull { plain.startsWith("${it.first} > ") } ?: return message
 

@@ -6,6 +6,15 @@ import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import net.minecraft.client.Minecraft
+import net.minecraft.client.renderer.entity.FishingHookRenderer
+import net.minecraft.world.entity.HumanoidArm
+import net.minecraft.world.entity.player.Player
+import net.minecraft.world.item.ItemDisplayContext
+import net.minecraft.world.phys.Vec3
+import org.joml.Matrix4f
+import org.joml.Matrix4fc
+import org.joml.Vector3f
 
 /** First-person view-model controls, adapted from NoammAddons' Animations. */
 object Animations {
@@ -95,4 +104,68 @@ object Animations {
 		supportsKeybind = false,
 		settings = layout + reset,
 	)
+
+	// ---- The fishing line from the rod's tip ---------------------------------------------------
+
+	/** The cast rod texture's tip pixel (14, 1), in the item model's 0..1 space, mid-layer. */
+	private val ROD_TIP = Vector3f(14.5f / 16f, 14.5f / 16f, 0.5f)
+
+	/** Set while the first-person fishing rod is drawn, so the layer hook knows to note its pose. */
+	@JvmField var drawingRod: ItemDisplayContext? = null
+
+	/** The hands' pose before any arm transform: the inverse view rotation and the view bob. */
+	private val handBase = Matrix4f()
+	private val handBaseInverse = Matrix4f()
+	private var handBaseInverted = false
+
+	/** The rod tip as last drawn, from the camera in view space, bob left out; per hand. */
+	private val rodTip = arrayOf(Vector3f(), Vector3f())
+	private val rodTipAt = longArrayOf(0L, 0L)
+
+	@JvmStatic
+	fun noteHandBase(pose: Matrix4fc) {
+		handBase.set(pose)
+		handBaseInverted = false
+	}
+
+	/** Called with the rod's model pose, display transform included, so pack models line up too. */
+	@JvmStatic
+	fun noteRodPose(pose: Matrix4fc, rightHand: Boolean) {
+		if (!handBaseInverted) {
+			handBase.invert(handBaseInverse)
+			handBaseInverted = true
+		}
+		val side = if (rightHand) 0 else 1
+		// Bob is left out because the world's projection adds it again.
+		handBaseInverse.mul(pose, Matrix4f()).transformPosition(ROD_TIP, rodTip[side])
+		rodTipAt[side] = System.currentTimeMillis()
+	}
+
+	/**
+	 * Where the fishing line should start in first person: the rod's tip as drawn, moved from the
+	 * hand's field of view to the world's so it lands on the same pixel. Null to keep vanilla's.
+	 */
+	@JvmStatic
+	fun rodTipInWorld(owner: Player): Vec3? {
+		if (!Fishing.module.enabled || !Fishing.rodLine.value) return null
+		val client = Minecraft.getInstance()
+		if (owner !== client.player || !client.options.cameraType.isFirstPerson) return null
+		val side = if (FishingHookRenderer.getHoldingArm(owner) == HumanoidArm.RIGHT) 0 else 1
+		// Left hand draws the main hand on the other side.
+		val drawnSide = if (leftHand.value) 1 - side else side
+		if (System.currentTimeMillis() - rodTipAt[drawnSide] > 250) return null
+		val tip = rodTip[drawnSide]
+		val camera = client.gameRenderer.mainCamera()
+		val hudFov = client.gameRenderer.gameRenderState().levelRenderState.cameraRenderState.hudFov
+		if (hudFov <= 0f) return null
+		val k = (Math.tan(Math.toRadians(camera.fov.toDouble() / 2)) / Math.tan(Math.toRadians(hudFov.toDouble() / 2))).toFloat()
+		val left = camera.leftVector()
+		val up = camera.upVector()
+		val forward = camera.forwardVector()
+		val x = -left.x() * tip.x * k + up.x() * tip.y * k - forward.x() * tip.z
+		val y = -left.y() * tip.x * k + up.y() * tip.y * k - forward.y() * tip.z
+		val z = -left.z() * tip.x * k + up.z() * tip.y * k - forward.z() * tip.z
+		val position = camera.position()
+		return Vec3(position.x + x, position.y + y, position.z + z)
+	}
 }

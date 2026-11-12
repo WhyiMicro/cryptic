@@ -567,7 +567,7 @@
         "custom_tag": "",
         "show_own_nametag": true,
         "drop_shadow": true,
-        "background_opacity": 20.0
+        "background_opacity": 25.0
       }
     },
     "wither_cloak_effect": {
@@ -820,10 +820,22 @@
         "diorite": true
       }
     },
+    "combat": {
+      "enabled": false,
+      "settings": {
+        "timer_hud": true,
+        "show_flares": true,
+        "show_orbs": true,
+        "expiry_warning": true,
+        "warn_seconds": 10.0,
+        "pearl_trajectory": true
+      }
+    },
     "cookie_reminder": {
       "enabled": false,
       "settings": {
         "announce_expired": true,
+        "god_potion": true,
         "warn_minutes": 10.0,
         "seconds": 30.0
       }
@@ -1206,7 +1218,8 @@
         "sorting": "A-Z",
         "left_click_toggles": true,
         "right_click_edits": true,
-        "remember_search": true
+        "remember_search": true,
+        "reset_buttons": true
       }
     },
     "profiles": {}

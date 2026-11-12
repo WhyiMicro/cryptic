@@ -1,6 +1,7 @@
 package imicro.cryptic.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import imicro.cryptic.feature.CustomNametags;
 import imicro.cryptic.render.CrypticRenderLayers;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.SubmitNodeCollection;
@@ -13,6 +14,7 @@ import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
@@ -67,5 +69,18 @@ public abstract class SubmitNodeCollectionMixin {
             outlineColor
         ));
         info.cancel();
+    }
+
+    /**
+     * Custom Nametags' background, set on the submit itself: Essential reads it from there to pad
+     * the tag's sides, so changing it later at layout left those strips at vanilla's opacity.
+     */
+    @ModifyArg(
+        method = "submitNameTag",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/feature/NameTagFeatureRenderer$Submit;<init>(Lorg/joml/Matrix4fc;FFLnet/minecraft/network/chat/Component;IIILnet/minecraft/client/gui/Font$DisplayMode;)V"),
+        index = 6
+    )
+    private int cryptic$nameTagBackground(int backgroundColor) {
+        return CustomNametags.backgroundColor(backgroundColor);
     }
 }

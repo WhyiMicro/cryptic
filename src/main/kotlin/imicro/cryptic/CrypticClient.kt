@@ -278,6 +278,7 @@ object CrypticClient : ClientModInitializer {
 		imicro.cryptic.feature.Mining.initialize()
 		imicro.cryptic.feature.Fishing.initialize()
 		imicro.cryptic.feature.Bazaar.initialize()
+		imicro.cryptic.feature.Flipping.initialize()
 		imicro.cryptic.feature.Farming.initialize()
 		imicro.cryptic.feature.Rift.initialize()
 		imicro.cryptic.feature.ExperimentSolver.initialize()
@@ -293,6 +294,8 @@ object CrypticClient : ClientModInitializer {
 		MageBeam.initialize()
 		NucleusQol.initialize()
 		CookieReminder.initialize()
+		imicro.cryptic.feature.Combat.initialize()
+		imicro.cryptic.feature.Trajectories.initialize()
 		imicro.cryptic.feature.ConfirmDisconnect.initialize()
 		imicro.cryptic.feature.ChatExtras.initialize()
 		imicro.cryptic.feature.WitherDragons.initialize()
@@ -788,7 +791,7 @@ object CrypticClient : ClientModInitializer {
 							.then(BossTimings.timingCommand())
 							.then(BossTimings.bossLogCommand())
 							.then(ClientCommands.literal("cookie").executes { context ->
-								BoosterCookie.describe().forEach {
+								(BoosterCookie.describe() + imicro.cryptic.skyblock.GodPotion.describe()).forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
@@ -865,9 +868,40 @@ object CrypticClient : ClientModInitializer {
 								}
 								1
 							})
+							.then(ClientCommands.literal("bow").executes { context ->
+								val trajectories = imicro.cryptic.feature.Trajectories
+								trajectories.recordShots = !trajectories.recordShots
+								context.source.sendFeedback(
+									Component.literal(
+										if (trajectories.recordShots) {
+											"§aRecording your arrows: each volley's prediction and real path go to the game log, with a summary in chat."
+										} else {
+											"§cStopped recording arrows."
+										},
+									),
+								)
+								1
+							})
+							.then(ClientCommands.literal("cast").executes { context ->
+								val fishing = imicro.cryptic.feature.Fishing
+								fishing.recordCasts = !fishing.recordCasts
+								context.source.sendFeedback(
+									Component.literal(
+										if (fishing.recordCasts) "§aRecording casts to the game log." else "§cStopped recording casts.",
+									),
+								)
+								1
+							})
 							.then(ClientCommands.literal("farming").executes { context ->
 								imicro.cryptic.feature.Farming.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("visitors").executes { context ->
+								imicro.cryptic.feature.Farming.describeVisitors().forEach {
+									context.source.sendFeedback(Component.literal("§7$it"))
+									Cryptic.LOGGER.info("[visitors] {}", it)
 								}
 								1
 							})
@@ -1280,7 +1314,7 @@ object CrypticClient : ClientModInitializer {
 					LoadoutManager.needsSkyblock || imicro.cryptic.feature.ItemProtection.module.enabled ||
 					imicro.cryptic.feature.Mining.needsSkyblock || RenderOptimizer.needsSkyblock || imicro.cryptic.feature.Fishing.needsSkyblock || imicro.cryptic.feature.Bazaar.needsSkyblock || imicro.cryptic.feature.TooltipFeatures.needsSkyblock ||
 					imicro.cryptic.feature.AuctionHouse.module.enabled || imicro.cryptic.feature.Farming.module.enabled || imicro.cryptic.feature.Rift.needsSkyblock ||
-					KeybindManager.needsSkyblock || AutoGfs.needsSkyblock ||
+					KeybindManager.needsSkyblock || AutoGfs.needsSkyblock || CookieReminder.needsSkyblock || imicro.cryptic.feature.Combat.module.enabled ||
 					SmoothTeleport.predictive ||
 					DungeonWarpCooldown.module.enabled || imicro.cryptic.feature.QuickNav.module.enabled || imicro.cryptic.feature.CustomScoreboard.needsSkyblock || imicro.cryptic.feature.StorageOverlay.needsSkyblock || imicro.cryptic.feature.StatusBars.module.enabled,
 			)
@@ -1364,6 +1398,8 @@ object CrypticClient : ClientModInitializer {
 			imicro.cryptic.debug.GuiLog.tick()
 			imicro.cryptic.feature.PartyFinderPages.tick()
 			CookieReminder.tick(client)
+			imicro.cryptic.feature.Combat.tick(client)
+			imicro.cryptic.feature.Trajectories.tick(client)
 			TimeChanger.tick(client)
 			LavaToWater.tick(client)
 			imicro.cryptic.feature.PackTweaks.tick(client)
@@ -1384,6 +1420,7 @@ object CrypticClient : ClientModInitializer {
 			PartyFeatures.tick(client)
 			TerracottaTimer.tick()
 			ILoveGlass.tick(client)
+			imicro.cryptic.feature.TextOutline.tick(client)
 			imicro.cryptic.feature.TwitchChat.tick()
 			imicro.cryptic.feature.CustomScoreboard.tick(client)
 			imicro.cryptic.feature.StorageOverlay.tick(client)
@@ -1397,6 +1434,7 @@ object CrypticClient : ClientModInitializer {
 			imicro.cryptic.feature.Bazaar.tick(client)
 			imicro.cryptic.feature.AuctionHouse.tick(client)
 			imicro.cryptic.feature.BazaarPresets.tick()
+			imicro.cryptic.feature.Flipping.tick(client)
 			imicro.cryptic.feature.Farming.tick(client)
 			imicro.cryptic.feature.Rift.tick(client)
 			imicro.cryptic.debug.LaserDebug.tick()
@@ -1407,6 +1445,7 @@ object CrypticClient : ClientModInitializer {
 			imicro.cryptic.feature.QueueScreen.tick(client)
 			imicro.cryptic.feature.PartyKick.tick()
 			imicro.cryptic.feature.Freelook.tick(client)
+			imicro.cryptic.feature.AntiAfk.tick(client)
 			imicro.cryptic.feature.Freecam.tick(client)
 			imicro.cryptic.feature.Capes.tick()
 			imicro.cryptic.feature.ItemOutline.tick(client)

@@ -61,6 +61,7 @@ object HollowsMap {
 	 * and King Yolkar are measured (`/cryptic debug structure`), the rest judged from maps of the
 	 * Hollows. [centreOffsetX] and [centreOffsetZ] are where its middle sits, in blocks east and
 	 * south, from the spot that finds it exactly: its crystal, or with none its NPC's nametag.
+	 * [most] is how many a lobby can hold (up to three Fairy Grottos).
 	 */
 	enum class Place(
 		val title: String,
@@ -75,6 +76,7 @@ object HollowsMap {
 		val spanZ: Int = span,
 		val centreOffsetX: Double = 0.0,
 		val centreOffsetZ: Double = 0.0,
+		val most: Int = 1,
 	) {
 		JUNGLE_TEMPLE(
 			"Jungle Temple", 0xAA00AA, listOf("jungle temple", "temple", "jungle"), zone = "Jungle Temple",
@@ -100,7 +102,10 @@ object HollowsMap {
 			saidThere = "Topaz Crystal", crystal = "Topaz", crystalColor = { NucleusQol.topazColor },
 			span = 97, spanZ = 99, centreOffsetX = -3.0, centreOffsetZ = 12.0,
 		),
-		FAIRY_GROTTO("Fairy Grotto", 0xFF55FF, listOf("fairy grotto", "grotto", "fairy"), zone = "Fairy Grotto", small = true, span = 30),
+		FAIRY_GROTTO(
+			"Fairy Grotto", 0xFF55FF, listOf("fairy grotto", "grotto", "fairy"), zone = "Fairy Grotto", small = true, span = 30,
+			most = 3,
+		),
 		DRAGONS_LAIR("Dragon's Lair", 0xFFD24A, listOf("dragons lair", "dragon", "lair"), zone = "Dragon's Lair", saidThere = "[NPC] Golden Dragon:", span = 50),
 		CORLEONE("Corleone", 0xFFFFFF, listOf("corleone"), small = true, span = 30),
 		KING_YOLKAR(
@@ -184,8 +189,16 @@ object HollowsMap {
 		label = "Show",
 		// The compass target is always shown: it's the solver's answer, and hiding it looked like the solver failing.
 		options = Place.entries.filter { it != Place.COMPASS_TARGET }.map { it.title },
-		description = "Which places get a waypoint. The map shows them all, and a Wishing Compass's target is always marked.",
+		description = "Which places get a waypoint. A Wishing Compass's target is always marked.",
 		visibleIf = { labels.value },
+	)
+
+	@JvmField
+	val mapPlaces = imicro.cryptic.gui.MultiSelectModuleSetting(
+		id = "hollows_map_places",
+		label = "Show on map",
+		options = Place.entries.filter { it != Place.COMPASS_TARGET }.map { it.title },
+		description = "Which places the Crystal Hollows map shows. A Wishing Compass's target is always marked.",
 	)
 
 	@JvmField
@@ -211,11 +224,11 @@ object HollowsMap {
 				jungleColour, mithrilColour, goblinColour, precursorColour, nucleusColour, outlineColour,
 				structureSize, minimalText,
 			),
-			chatCoords, fromSkyblocker, CrystalStatus.setting,
 		)
 	}
 
-	private val marks = LinkedHashMap<Place, Mark>()
+	/** Each place's marks: one, or up to [Place.most] for a place a lobby can hold several of. */
+	private val marks = LinkedHashMap<Place, MutableList<Mark>>()
 
 	/** Everywhere you've stood in each place, summed, for its walked mark. */
 	private class Walk {
@@ -232,24 +245,51 @@ object HollowsMap {
 	/** Walked samples (two seconds apart) before a walked mark replaces one from chat or Skyblocker. */
 	private const val WALKED_SAMPLES_TO_TAKE_OVER = 3
 
-	/**
-	 * Keeps [pos] for [place] if found a better way than what's known, or the same way when that
-	 * way refines.
-	 */
-	fun markOf(place: Place): Mark? = marks[place]
+	fun markOf(place: Place): Mark? = marks[place]?.firstOrNull()
 
 	/** Takes a crystal-box mark back, when the box turned out to be another crystal's. */
 	fun dropCrystalMark(place: Place) {
-		if (marks[place]?.source == Source.CRYSTAL) marks.remove(place)
+		val list = marks[place] ?: return
+		list.removeIf { it.source == Source.CRYSTAL }
+		if (list.isEmpty()) marks.remove(place)
 	}
 
-	/** Whether [place] is known, at least as well as [source] would know it. */
-	fun knownAtLeast(place: Place, source: Source): Boolean = (marks[place]?.source ?: return false) >= source
+	/** How many of [place] are known at least as well as [source] would know them. */
+	fun countAtLeast(place: Place, source: Source): Int = marks[place]?.count { it.source >= source } ?: 0
 
-	fun offer(place: Place, pos: BlockPos, source: Source) {
-		val current = marks[place]
-		if (current != null && (current.source > source || (current.source == source && !source.refines))) return
-		marks[place] = Mark(pos, source)
+	/**
+	 * Whether [a] and [b] are the same one of [place]: always for a place with one per lobby,
+	 * otherwise within twice its width, so every Jasper crystal of a grotto counts as that grotto.
+	 */
+	private fun samePlace(place: Place, a: BlockPos, b: BlockPos): Boolean {
+		if (place.most == 1) return true
+		val dx = (a.x - b.x).toLong()
+		val dz = (a.z - b.z).toLong()
+		val reach = place.span * 2L
+		return dx * dx + dz * dz <= reach * reach
+	}
+
+	/**
+	 * Keeps [pos] for [place] if found a better way than what's known, or the same way when that
+	 * way refines. True when it's one of [place] not known before.
+	 */
+	fun offer(place: Place, pos: BlockPos, source: Source): Boolean {
+		val list = marks.getOrPut(place, ::ArrayList)
+		val index = list.indexOfFirst { samePlace(place, it.pos, pos) }
+		if (index >= 0) {
+			val current = list[index]
+			if (current.source < source || (current.source == source && source.refines)) list[index] = Mark(pos, source)
+			return false
+		}
+		if (list.size < place.most) {
+			list += Mark(pos, source)
+			return true
+		}
+		// Full: a better find takes the place of the least sure, which may have been a wrong guess.
+		val weakest = list.indices.minBy { list[it].source }
+		if (list[weakest].source >= source) return false
+		list[weakest] = Mark(pos, source)
+		return true
 	}
 
 	private fun resetLobby() {
@@ -279,9 +319,14 @@ object HollowsMap {
 		val player = client.player ?: return
 
 		Place.inZone(SkyblockLocation.zone())?.let { place ->
+			val here = player.blockPosition()
+			// Another of a place there can be several of: a walk of its own, not averaged with the last.
+			if (walks[place]?.let { !samePlace(place, it.middle, here) } == true) walks.remove(place)
 			val walk = walks.getOrPut(place, ::Walk)
-			walk.add(player.blockPosition())
-			if (place !in marks || walk.count >= WALKED_SAMPLES_TO_TAKE_OVER) offer(place, walk.middle, Source.WALKED)
+			walk.add(here)
+			val middle = walk.middle
+			val known = marks[place]?.any { samePlace(place, it.pos, middle) } == true
+			if (!known || walk.count >= WALKED_SAMPLES_TO_TAKE_OVER) offer(place, middle, Source.WALKED)
 		}
 		for (place in Place.entries) {
 			val crystal = place.crystal ?: continue
@@ -472,7 +517,7 @@ object HollowsMap {
 		val orientation = client.gameRenderer.mainCamera().rotation()
 		// Down on screen, so the second line sits under the first however you look at it.
 		val down = org.joml.Vector3f(0f, -1f, 0f).rotate(orientation)
-		for ((place, mark) in marks) {
+		for ((place, list) in marks) for (mark in list) {
 			if (place != Place.COMPASS_TARGET && (!labels.value || !poiPlaces.isSelected(place.title))) continue
 			val at = Vec3.atCenterOf(mark.pos)
 			val distance = eye.distanceTo(at)
@@ -543,9 +588,11 @@ object HollowsMap {
 		val coreBottom = onMap(CORE_MAX_Z + 1).roundToInt()
 		context.fill(coreLeft, coreTop, coreRight, coreBottom, nucleusColour.argb)
 
-		val shown = (if (example) EXAMPLE_MARKS else marks).entries
+		val shown = (if (example) EXAMPLE_MARKS else marks)
+			.filter { (place, _) -> place == Place.COMPASS_TARGET || mapPlaces.isSelected(place.title) }
+			.flatMap { (place, list) -> list.map { place to it } }
 		// Biggest first when drawn to size, so a small place inside a big one stays in sight.
-		for ((place, mark) in if (structureSize.value) shown.sortedByDescending { it.key.span * it.key.spanZ } else shown) {
+		for ((place, mark) in if (structureSize.value) shown.sortedByDescending { it.first.span * it.first.spanZ } else shown) {
 			drawMarker(context, place, mark, onMap(mark.pos.x + 0.5), onMap(mark.pos.z + 0.5))
 		}
 
@@ -671,16 +718,16 @@ object HollowsMap {
 	}
 
 	private val EXAMPLE_MARKS = mapOf(
-		Place.MINES_OF_DIVAN to Mark(BlockPos(700, 90, 300), Source.CRYSTAL),
-		Place.JUNGLE_TEMPLE to Mark(BlockPos(320, 110, 330), Source.WALKED),
-		Place.GOBLIN_QUEENS_DEN to Mark(BlockPos(300, 90, 700), Source.CRYSTAL),
-		Place.KHAZAD_DUM to Mark(BlockPos(520, 60, 760), Source.CHAT),
-		Place.FAIRY_GROTTO to Mark(BlockPos(420, 80, 420), Source.WALKED),
+		Place.MINES_OF_DIVAN to listOf(Mark(BlockPos(700, 90, 300), Source.CRYSTAL)),
+		Place.JUNGLE_TEMPLE to listOf(Mark(BlockPos(320, 110, 330), Source.WALKED)),
+		Place.GOBLIN_QUEENS_DEN to listOf(Mark(BlockPos(300, 90, 700), Source.CRYSTAL)),
+		Place.KHAZAD_DUM to listOf(Mark(BlockPos(520, 60, 760), Source.CHAT)),
+		Place.FAIRY_GROTTO to listOf(Mark(BlockPos(420, 80, 420), Source.WALKED)),
 	)
 
 	fun describe(): List<String> = listOf(
-		"Places this lobby: " + marks.entries.joinToString {
-			"${it.key.title} ${it.value.pos.toShortString()} (${it.value.source.name.lowercase()})"
+		"Places this lobby: " + marks.entries.flatMap { (place, list) -> list.map { place to it } }.joinToString { (place, mark) ->
+			"${place.title} ${mark.pos.toShortString()} (${mark.source.name.lowercase()})"
 		}.ifEmpty { "none" },
 		"Skyblocker installed: $skyblockerInstalled, readable: ${skyblockerWaypoints != null}, subscribed: $skyblockerSubscribed",
 	)

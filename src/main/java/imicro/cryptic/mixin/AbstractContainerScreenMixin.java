@@ -60,6 +60,7 @@ public abstract class AbstractContainerScreenMixin {
     @Inject(method = "extractSlot", at = @At("RETURN"))
     private void cryptic$drawOverSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY, CallbackInfo info) {
         ItemProtection.drawMenuSlot(graphics, slot, true);
+        imicro.cryptic.feature.Flipping.drawSlot(graphics, slot);
     }
 
     /** No tooltips for items the solver has hidden. */
@@ -73,6 +74,7 @@ public abstract class AbstractContainerScreenMixin {
     /** Every click the chest would make, including the drop key and hotbar numbers. */
     @Inject(method = "slotClicked", at = @At("HEAD"), cancellable = true)
     private void cryptic$clickTerminalSlot(Slot slot, int slotId, int button, ContainerInput input, CallbackInfo info) {
+        imicro.cryptic.feature.Flipping.onSlotClicked(slot);
         if (imicro.cryptic.feature.Bazaar.onSlotClicked((AbstractContainerScreen<?>) (Object) this, slot)
                 || ItemProtection.blocksClick((AbstractContainerScreen<?>) (Object) this, slot, slotId, button, input)) {
             info.cancel();
@@ -118,6 +120,11 @@ public abstract class AbstractContainerScreenMixin {
         }
 
         if (click.button() == 0 && imicro.cryptic.feature.BazaarPresets.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y())) {
+            info.setReturnValue(true);
+            return;
+        }
+
+        if (click.button() == 0 && imicro.cryptic.feature.Flipping.handleMouseClick((AbstractContainerScreen<?>) (Object) this, click.x(), click.y())) {
             info.setReturnValue(true);
             return;
         }
@@ -198,6 +205,11 @@ public abstract class AbstractContainerScreenMixin {
         }
 
         if (SlotBinds.handleKeyPress((AbstractContainerScreen<?>) (Object) this, event)) {
+            info.setReturnValue(true);
+            return;
+        }
+
+        if (imicro.cryptic.feature.Flipping.handleKey((AbstractContainerScreen<?>) (Object) this, event.key())) {
             info.setReturnValue(true);
         }
     }

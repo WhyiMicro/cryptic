@@ -60,8 +60,9 @@ object BazaarHistory {
 
 	private const val BUY_COLOR = 0x55FFFF
 	private const val SELL_COLOR = 0xFFAA00
-	private const val PANEL_FILL = 0xE0101418.toInt()
-	private const val PANEL_EDGE = 0x60FFFFFF
+	// Near-black fill with a dark grey edge, the look of FlipperX's assist HUD.
+	private const val PANEL_FILL = 0xD0121212.toInt()
+	private const val PANEL_EDGE = 0xFF2A2A2A.toInt()
 	private const val BUTTON_FILL = 0x30FFFFFF
 	private const val BUTTON_HOVER = 0x60FFFFFF
 	private const val BUTTON_ON = 0xB0FFAA00.toInt()
@@ -253,7 +254,7 @@ object BazaarHistory {
 		graphics.text(font, value, box.x + box.width - PADDING - font.width(value), y, -1)
 	}
 
-	/** The panel look shared by the side panels beside menus: dark fill, thin light edge. */
+	/** The panel look shared by the side panels beside menus: dark fill, thin grey edge. */
 	fun panelBox(graphics: GuiGraphicsExtractor, x: Int, y: Int, width: Int, height: Int) {
 		graphics.fill(x, y, x + width, y + height, PANEL_FILL)
 		graphics.fill(x, y, x + width, y + 1, PANEL_EDGE)

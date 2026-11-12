@@ -76,7 +76,7 @@ object Rift {
 		min = 0.0,
 		max = 30.0,
 		step = 1.0,
-		description = "While you're in the Rift and haven't played it yet. 0 reminds only on entry.",
+		description = "Until you've played it, in the Rift and outside it. 0 reminds once: on entry, or when the wait runs out.",
 	)
 
 	@JvmField
@@ -382,9 +382,12 @@ object Rift {
 	/** Facts from SkyHanni: the game's two-hour wait, and the line that says what's left of it. */
 	private const val UBIK_WAIT_MILLIS = 2L * 60 * 60 * 1000
 	private val UBIK_WAIT = Regex("""You need to wait (.+) before you can play again""")
+	/** The cube's split-or-steal match ends with this; it starts the two-hour wait. */
+	private val CUBE_MATCH_END = Regex("""^You earned [\d,]+ Motes in this match!$""")
 
-	/** When Ubik's game opens again, or 0 when that's unknown or has been said. */
+	/** When Ubik's game opens again, or 0 when that's unknown; and when that was last said outside the Rift. */
 	private var ubikReadyAt = 0L
+	private var ubikSaidAt = 0L
 	private val ubikFile get() = FabricLoader.getInstance().configDir.resolve("cryptic").resolve("rift-ubik.txt")
 	private const val KEEP_OR_SWITCH = "Will you keep the box you opened, or will you switch to the other?"
 	private val REVOLUTION = Regex("""^The previous revolution had [\d,]+ participants with an average choice of ([\d.]+)\.$""")
@@ -412,7 +415,11 @@ object Rift {
 		initialized = true
 		load()
 		loadFound()
-		ubikReadyAt = runCatching { java.nio.file.Files.readString(ubikFile).trim().toLong() }.getOrDefault(0L)
+		runCatching {
+			val saved = java.nio.file.Files.readString(ubikFile).trim().lines()
+			ubikReadyAt = saved[0].trim().toLong()
+			ubikSaidAt = saved.getOrNull(1)?.trim()?.toLongOrNull() ?: 0L
+		}
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		Hud.register(DanceElement())
 	}
@@ -451,13 +458,19 @@ object Rift {
 			if (seconds > 0) setUbikReady(System.currentTimeMillis() + seconds * 1000)
 			return
 		}
+		if (CUBE_MATCH_END.matches(text)) {
+			played = true
+			setUbikReady(System.currentTimeMillis() + UBIK_WAIT_MILLIS)
+			return
+		}
 		if (!text.startsWith(UBIK)) return
 		val said = text.removePrefix(UBIK)
 		if (PLAYED.any { said.startsWith(it) || said.endsWith(it) }) {
 			played = true
 			if (!said.endsWith(ALREADY_PLAYED)) setUbikReady(System.currentTimeMillis() + UBIK_WAIT_MILLIS)
+			// A wait that has run out is wrong; better unknown than reminding about a game already played.
+			else if (ubikReadyAt <= System.currentTimeMillis()) setUbikReady(0L)
 		}
-		if (said.startsWith("Your choice was")) setUbikReady(System.currentTimeMillis() + UBIK_WAIT_MILLIS)
 		if (!ubikTips.value) return
 		if (said == KEEP_OR_SWITCH) {
 			title("§aSwitch!", "§7Switching wins 2 in 3")
@@ -602,17 +615,28 @@ object Rift {
 
 	private fun setUbikReady(at: Long) {
 		ubikReadyAt = at
+		saveUbik()
+	}
+
+	private fun saveUbik() {
 		runCatching {
 			java.nio.file.Files.createDirectories(ubikFile.parent)
-			java.nio.file.Files.writeString(ubikFile, at.toString())
+			java.nio.file.Files.writeString(ubikFile, "$ubikReadyAt\n$ubikSaidAt")
 		}.onFailure { Cryptic.LOGGER.warn("Could not save Ubik's timer", it) }
 	}
 
-	/** Says once when the game has opened again, unless you're in the Rift to see it for yourself. */
+	/**
+	 * Says when the game has opened again, unless you're in the Rift to see it for yourself; then
+	 * again every [ubikRepeat] minutes until it's played.
+	 */
 	private fun remindOutside(now: Long) {
 		if (ubikReadyAt == 0L || now < ubikReadyAt || inRift || !SkyblockLocation.onSkyblock) return
 		if (!ubikReminder.value || !ubikOutside.value) return
-		setUbikReady(0L)
+		val repeat = ubikRepeat.value.toLong() * 60_000L
+		val due = ubikSaidAt < ubikReadyAt || (repeat > 0 && now - ubikSaidAt >= repeat)
+		if (!due) return
+		ubikSaidAt = now
+		saveUbik()
 		Toasts.show(SOURCE, "§dUbik's Cube §7is ready in the Rift", life = 10.0, color = Toasts.Colors.RIFT)
 	}
 

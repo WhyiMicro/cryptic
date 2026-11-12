@@ -81,7 +81,7 @@ object NucleusQol {
 
 	/** Each waypoint relative to the block you stand in, as (x, y, z). */
 	private val OFFSETS = listOf(
-		Triple(4, 10, 65),
+		Triple(4, 3, 65),
 		Triple(29, -32, 65),
 		Triple(29, -32, 48),
 	)
@@ -156,9 +156,19 @@ object NucleusQol {
 		description = "Draws the waypoints through the walls.",
 	)
 
-	private val crystalsSection = SectionModuleSetting("crystals_section", "Crystals")
+	@JvmField
+	val phaseUntilSetUp = ToggleModuleSetting(
+		id = "phase_until_set_up",
+		label = "Auto hide when cobblestone",
+		defaultValue = true,
+		description = "Each waypoint shows through walls only until its block is dug out. Once it's empty or " +
+			"filled with cobblestone it's drawn like a normal block, so the rest stand out as you set them up.",
+		visibleIf = { phase.value },
+	)
 
-	private val placesSection = SectionModuleSetting("places_section", "Places")
+	private val crystalsSection = SectionModuleSetting("crystals_section", "Crystal slots")
+
+	private val qolSection = SectionModuleSetting("qol_section", "QoL")
 
 	@JvmField
 	val crystalSlots = ToggleModuleSetting(
@@ -183,6 +193,73 @@ object NucleusQol {
 		defaultValue = true,
 		description = "Hides the sparkles on the loot laid out in the nucleus once a run is done.",
 	)
+
+	@JvmField
+	val npcItemSwap = ToggleModuleSetting(
+		id = "npc_item_swap",
+		label = "Swap to NPC items",
+		defaultValue = false,
+		description = "Clicking King Yolkar, a Kalhuiki Door Guardian or Professor Robot switches to the Goblin Egg, Jungle Key " +
+			"or Precursor Apparatus in your hotbar first, so the click hands it over.",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
+	)
+
+	@JvmField
+	val suggestBuy = ToggleModuleSetting(
+		id = "suggest_buy",
+		label = "Suggest Bazaar buy",
+		defaultValue = true,
+		description = "When King Yolkar, a Kalhuiki Door Guardian or Professor Robot turns you away for lacking their item, " +
+			"a notification offers to open it in the Bazaar.",
+	)
+
+	/**
+	 * An item an NPC is asking for, by how it starts turning you away; [search] goes after /bz.
+	 * [itemId] is a SkyBlock id prefix: carrying a match means the wrong item was clicked, not that one is missing.
+	 */
+	private class Wanted(val id: String, val item: String, val search: String, val itemId: String)
+
+	private val GOBLIN_EGG = Wanted("suggest_goblin_egg", "Goblin Egg", "goblin egg", "GOBLIN_EGG")
+
+	private val WANTED = mapOf(
+		"[NPC] King Yolkar: That is certainly not the meal I am looking for!" to GOBLIN_EGG,
+		"[NPC] King Yolkar: Bring me any type of Goblin Egg" to GOBLIN_EGG,
+		"[NPC] King Yolkar: Dark, right?!" to GOBLIN_EGG,
+		"[NPC] King Yolkar: Where is my Goblin Egg?" to GOBLIN_EGG,
+		"[NPC] Kalhuiki Door Guardian: This temple is locked" to Wanted("suggest_jungle_key", "Jungle Key", "jungle key", "JUNGLE_KEY"),
+		"[NPC] Professor Robot: That's not one of the components I need!" to Wanted("suggest_apparatus", "Precursor Apparatus", "Precursor Apparatus", "PRECURSOR_APPARATUS"),
+	)
+
+	private fun carrying(wanted: Wanted): Boolean {
+		val inventory = Minecraft.getInstance().player?.inventory ?: return false
+		return (0 until inventory.containerSize).any { SkyblockItem.id(inventory.getItem(it)).startsWith(wanted.itemId) }
+	}
+
+	private const val SUGGESTION_SECONDS = 10.0
+
+	/** NPCs say several turning-away lines at once (King Yolkar two), so a burst asks only once. */
+	private const val SUGGESTION_COOLDOWN_MS = 5_000L
+
+	/** When each item's NPC last turned you away. */
+	private val lastWanted = HashMap<String, Long>()
+
+	/** One question per item, however often the NPC is clicked. */
+	private fun offerBazaar(line: String) {
+		val wanted = WANTED.entries.firstOrNull { line.startsWith(it.key) }?.value ?: return
+		if (carrying(wanted)) return
+		val now = System.currentTimeMillis()
+		val last = lastWanted.put(wanted.id, now) ?: 0L
+		if (now - last < SUGGESTION_COOLDOWN_MS) return
+		if (Toasts.asking(wanted.id)) return
+		Toasts.ask(
+			"Bazaar", wanted.id, life = SUGGESTION_SECONDS,
+			keys = mapOf(
+				org.lwjgl.glfw.GLFW.GLFW_KEY_Y to { Minecraft.getInstance().connection?.sendCommand("bz ${wanted.search}") ?: Unit },
+				org.lwjgl.glfw.GLFW.GLFW_KEY_N to {},
+			),
+			color = Toasts.Colors.BAZAAR, footer = "§a[Y] §fOpen   §c[N] §fNo",
+		) { "Missing §f${wanted.item}§7. Open it in the Bazaar?" }
+	}
 
 	private val anyCrystals: () -> Boolean = { crystalSlots.value || crystalPickups.value }
 
@@ -366,8 +443,6 @@ object NucleusQol {
 
 	private val chestsSection = SectionModuleSetting("chests_section", "Treasure chests")
 
-	private val hudSection = SectionModuleSetting("hud_section", "HUD")
-
 	@JvmField
 	val showYaw = ToggleModuleSetting("show_yaw", "Yaw", true)
 
@@ -546,25 +621,30 @@ object NucleusQol {
 		category = ModuleCategory.GENERAL,
 		settings = listOf(
 			warpKey,
-			waypointsSection, autoWaypoints, calculate, clear, mode, fillColor, outlineColor, lineWidth, phase,
-			crystalsSection, crystalSlots, crystalPickups, crystalStyle,
-			amberColor, amethystColor, topazColor, jadeColor, sapphireColor, hideLootParticles,
-			placesSection, HollowsMap.labels.withMore(HollowsMap.poiPlaces), structureScanner.withMore(scanPlaces),
+			waypointsSection,
+			HollowsMap.labels.withMore(HollowsMap.poiPlaces, HollowsMap.mapPlaces),
+			structureScanner.withMore(scanPlaces),
+			WishingCompass.setting, HollowsMap.chatCoords, HollowsMap.fromSkyblocker,
+			autoWaypoints.withMore(mode, fillColor, outlineColor, lineWidth, phase, phaseUntilSetUp),
+			calculate, clear,
 		) + HollowsMap.settings + listOf(
-			WishingCompass.setting,
-			balSection, balStages, hideKhazadMobs,
+			crystalsSection,
+			crystalSlots.withMore(crystalPickups, crystalStyle, amberColor, amethystColor, topazColor, jadeColor, sapphireColor),
+			CrystalStatus.setting,
+			qolSection,
+			NucleusXray.setting, hideLootParticles, npcItemSwap, suggestBuy, angles,
 			treasureSection,
 			metalDetector.withMore(
 				detectorMode, detectorFill, detectorOutline, detectorPhase, detectorTracer, detectorTracerColor, detectorLabel,
 			),
 			muteMetalDetector, moleReminder, allToolsAlert, fullInventoryAlert, keeperOutlines,
+			balSection, balStages, hideKhazadMobs,
 			chestsSection,
 			treasureChests.withMore(
 				chestMode, chestTimeColors, chestFill, chestOutline, chestTimeFillAlpha, chestPhase,
-				chestTimer, chestLines, chestLineCount, chestLineRange,
+				chestTimer, chestLines, chestLineCount, chestLineRange, lockHelper,
 			),
-			lockHelper, muteChestFound, muteChestOpen,
-			hudSection, angles,
+			muteChestFound, muteChestOpen,
 		),
 	)
 
@@ -711,6 +791,7 @@ object NucleusQol {
 		sightings.clear()
 		locks.clear()
 		sparks.clear()
+		NucleusXray.reset()
 	}
 
 	/** Whether the warp key was down last tick, so holding it warps once. */
@@ -720,6 +801,7 @@ object NucleusQol {
 
 	/** Warps on the tick the key goes down, with no menu open. Silent outside the Hollows. */
 	fun tick(client: Minecraft) {
+		NucleusXray.tick(client, module.enabled)
 		if (!module.enabled) {
 			warpKeyDown = false
 			hiddenMobs.clear()
@@ -828,6 +910,37 @@ object NucleusQol {
 		if (guardians.size != 2) return null
 		val (a, b) = guardians
 		return if (Math.abs(a.x - b.x) >= Math.abs(a.z - b.z)) guardians.maxBy { it.x } else guardians.maxBy { it.z }
+	}
+
+	/** What each NPC takes, best first. Coloured eggs only when there's no plain one, cheapest first. */
+	private val NPC_ITEMS = listOf(
+		"King Yolkar" to listOf("GOBLIN_EGG", "GOBLIN_EGG_GREEN", "GOBLIN_EGG_RED", "GOBLIN_EGG_YELLOW", "GOBLIN_EGG_BLUE"),
+		DOOR_GUARDIAN to listOf("JUNGLE_KEY"),
+		"Professor Robot" to listOf("PRECURSOR_APPARATUS"),
+	)
+
+	/** The NPC's name: its own, or the nameplate standing over it. */
+	private fun npcName(level: net.minecraft.world.level.Level, entity: Entity): String? {
+		entity.customName?.string?.replace(FORMATTING, "")?.let { name -> if (NPC_ITEMS.any { it.first in name }) return name }
+		return level.getEntitiesOfClass(ArmorStand::class.java, entity.boundingBox.inflate(0.6, 3.5, 0.6)) { stand ->
+			Math.abs(stand.x - entity.x) < 0.6 && Math.abs(stand.z - entity.z) < 0.6 && stand.y - entity.y in 0.0..3.5
+		}.firstNotNullOfOrNull { stand -> stand.customName?.string?.replace(FORMATTING, "")?.takeIf { name -> NPC_ITEMS.any { it.first in name } } }
+	}
+
+	/**
+	 * A right click on an entity about to go out. Runs before the game sends the held slot, so the
+	 * swap reaches the server ahead of the click.
+	 */
+	@JvmStatic
+	fun beforeInteract(player: net.minecraft.world.entity.player.Player, entity: Entity, hand: net.minecraft.world.InteractionHand) {
+		if (hand != net.minecraft.world.InteractionHand.MAIN_HAND || !module.enabled || !npcItemSwap.value || !SkyblockLocation.inCrystalHollows) return
+		val name = npcName(player.level(), entity) ?: return
+		val wanted = NPC_ITEMS.first { it.first in name }.second
+		val inventory = player.inventory
+		if (SkyblockItem.id(inventory.getItem(inventory.selectedSlot)) in wanted) return
+		val hotbar = 0 until net.minecraft.world.entity.player.Inventory.getSelectionSize()
+		val slot = wanted.firstNotNullOfOrNull { id -> hotbar.firstOrNull { SkyblockItem.id(inventory.getItem(it)) == id } } ?: return
+		inventory.selectedSlot = slot
 	}
 
 	/** For `/cryptic debug temple`: the guardians found and which one the waypoints come from. */
@@ -1236,9 +1349,12 @@ object NucleusQol {
 	/** Places already announced this lobby: one notification each, however it was found. */
 	private val announced = HashSet<HollowsMap.Place>()
 
-	private fun announceFound(place: HollowsMap.Place, how: String) {
-		if (!announced.add(place)) return
-		Toasts.show(SOURCE, "Found §f${place.title} §7from afar ($how)", color = Toasts.Colors.MINING)
+	/** [another]: a second or third of a place a lobby can hold several of, announced too. */
+	private fun announceFound(place: HollowsMap.Place, how: String, another: Boolean = false) {
+		val first = announced.add(place)
+		if (!first && !(another && place.most > 1)) return
+		val which = if (first) "" else "another "
+		Toasts.show(SOURCE, "Found $which§f${place.title} §7from afar ($how)", color = Toasts.Colors.MINING)
 	}
 
 	/** Crystals whose box was measured from afar, until it's measured again up close. */
@@ -1301,7 +1417,7 @@ object NucleusQol {
 
 	/** A place still to find: ticked, and not yet known as well as a scan would know it. */
 	private fun sought(place: HollowsMap.Place): Boolean =
-		scanPlaces.isSelected(place.title) && !HollowsMap.knownAtLeast(place, HollowsMap.Source.SCANNED)
+		scanPlaces.isSelected(place.title) && HollowsMap.countAtLeast(place, HollowsMap.Source.SCANNED) < place.most
 
 	/** Whether anything ticked is still missing; when not, the scanner rests. */
 	private var searching = true
@@ -1372,8 +1488,8 @@ object NucleusQol {
 		// The Nucleus holds no places, and its slots are crystal-sized too.
 		if (baseX + 15 >= NUCLEUS_MIN && baseX <= NUCLEUS_MAX && baseZ + 15 >= NUCLEUS_MIN && baseZ <= NUCLEUS_MAX) return
 		HollowsStructures.scan(level, chunk, wanted = ::sought) { place, pos ->
-			HollowsMap.offer(place, pos, HollowsMap.Source.SCANNED)
-			announceFound(place, "structure scan")
+			val another = HollowsMap.offer(place, pos, HollowsMap.Source.SCANNED)
+			announceFound(place, "structure scan", another)
 		}
 		if (Crystal.entries.none { it !in crystalSpaces && CRYSTAL_PLACES[it]?.let(::sought) == true }) return
 		val seen = HashSet<BlockPos>()
@@ -1716,6 +1832,7 @@ object NucleusQol {
 		val text = content.string.replace(FORMATTING, "").trim()
 		CrystalStatus.onChat(text)
 		onKeeperChat(text)
+		if (suggestBuy.value) offerBazaar(text)
 		TREASURE_FOUND.matchEntire(text)?.let { found ->
 			// The treasure dug up, so the next reading is new. Until then it stays marked.
 			predicted = emptyList()
@@ -2272,7 +2389,8 @@ object NucleusQol {
 			sound.isSound(SoundEvents.EXPERIENCE_ORB_PICKUP) && pitch == 1f -> chest?.let { locks[it] = (locks[it] ?: 0) + 1 }
 			sound.isSound(SoundEvents.VILLAGER_NO) -> chest?.let { locks[it] = 0 }
 			sound.isSound(SoundEvents.CHEST_OPEN) -> chest?.let { opened ->
-				locks[opened]?.takeIf { it > 0 }?.let { locksPerChest = minOf(it, MAX_LOCKS) }
+				// Opened with no locks picked: it had none (the perk maxed), so no count is shown.
+				locksPerChest = minOf(locks[opened] ?: 0, MAX_LOCKS)
 				locks.remove(opened)
 			}
 			else -> return
@@ -2316,14 +2434,20 @@ object NucleusQol {
 		renderMetalDetector(context)
 		renderChests(context)
 		renderBal(context)
+		NucleusXray.render(context)
 	}
 
 	private fun renderWaypoints(context: LevelRenderContext) {
 		if (waypoints.isEmpty()) return
 		val fill = mode.selectedIndex != MODE_OUTLINE
 		val outline = mode.selectedIndex != MODE_FILL
+		val level = Minecraft.getInstance().level
 
 		for (pos in waypoints) {
+			// Dug out or filled with cobblestone means this spot is set up.
+			val setUp = phaseUntilSetUp.value && level != null && level.getBlockState(pos).let {
+				it.isAir || it.`is`(Blocks.COBBLESTONE)
+			}
 			WorldRender.drawBlock(
 				poseStack = context.poseStack(),
 				collector = context.submitNodeCollector(),
@@ -2332,7 +2456,7 @@ object NucleusQol {
 				fillArgb = fillColor.argb,
 				outline = outline,
 				fill = fill,
-				phase = phase.value,
+				phase = phase.value && !setUp,
 				lineWidth = lineWidth.value.toFloat(),
 				fullBlock = true,
 			)
@@ -2527,7 +2651,9 @@ object NucleusQol {
 
 		val picked = locks[chest] ?: 0
 		val label = when {
-			locksPerChest > 0 -> "${minOf(picked, locksPerChest)}/$locksPerChest"
+			// One lock is the plain right click that opens it (the perk maxed): no puzzle to count.
+			locksPerChest == 1 -> return
+			locksPerChest > 1 -> "${minOf(picked, locksPerChest)}/$locksPerChest"
 			picked > 0 -> "$picked picked"
 			else -> return
 		}

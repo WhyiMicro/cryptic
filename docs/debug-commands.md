@@ -83,9 +83,11 @@ read the list against the tab list and against where people actually are.
 Prints every row of the tab list that has anything on it, and what the Guardian
 reminder reads as your pet.
 
-A pet is only knowable from the `[Lvl 100] Guardian` row in the tab list — not
-from the thing following you, because plenty of people hide theirs. This says
-whether that row is being found and what it says.
+A pet is only knowable from the `[Lvl 100] Guardian` row in the tab list, or from
+the "You summoned your Guardian!" chat line (and Autopet's), not from the thing
+following you, because plenty of people hide theirs. The chat line wins until the
+tab list catches up. This says whether that row is being found, what it says,
+and what chat last said.
 
 ```
 /cryptic debug slayer
@@ -320,6 +322,11 @@ the row below, and nowhere else a client can reach. This says whether the headin
 is found in either place, and whether the line under it parsed as a duration, as "no cookie",
 or as neither — which is the difference between the reminder staying quiet
 because there is nothing to say and staying quiet because it cannot read.
+
+The God Potion lines after it do the same for its row (the Active Effects
+widget, when it is on) and the footer's Active Effects section. A footer with
+that section but no God Potion in it reads as "none"; in dungeons and the Rift,
+where potions are paused, it reads as unknown.
 
 ```
 /cryptic debug mimic
@@ -722,6 +729,36 @@ map.
 
 ---
 
+## Garden visitors
+
+```
+/cryptic debug visitors
+```
+
+Prints what the visitor shopping list and the Bazaar's visitor amounts go by: the
+settings, island and zone, whether you count as near the visitors or the Hub's
+Bazaar, who the tab list says is waiting, each visitor whose menu has been read
+and what they want, and per item its Bazaar id, inventory and sack counts, prices,
+icon source and the presets it would offer. It also names the last amount menu
+(buy order or instant buy) and which product it was taken for, since the chat
+closes the menu. Every line also goes to the game log under `[visitors]`.
+
+---
+
+## Bazaar and Flipping
+
+```
+/cryptic debug bazaar
+```
+
+Prints how fresh the Bazaar data is, each of your orders with where it stands
+and its product id, what the Flips HUD counts as bought and held, and for
+Flipping: whether the guide runs, the menu it thinks is open, its step (with the
+slot it outlines and the command it would send), the flips under way, the budget
+for the next one and the five best flips it sees.
+
+---
+
 ## Watching the Experimentation Table
 
 ```
@@ -759,6 +796,44 @@ and sign answer sent. Stopping writes it all to `logs/cryptic-gui.log`.
 This is how screens drawn over Hypixel's menus get built, such as the Party
 Finder's create and search pages: go through the menu once with it on, then send
 the file.
+
+---
+
+## Recording casts
+
+```
+/cryptic debug cast
+```
+
+Writes each fishing-rod cast to the game log (`latest.log`, under `cryptic/cast`):
+where the Fishing module's cast trajectory said the bobber would go, then where
+Hypixel says it is, tick by tick, for six seconds. Hypixel moves the bobber as
+Minecraft 1.8 did, where hitting a wall either stops it or lets it slide along,
+depending on where the tick falls; this is what the prediction was checked
+against. Needs the Fishing module and its cast trajectory on.
+
+---
+
+## Recording arrows
+
+```
+/cryptic debug bow
+```
+
+A toggle. While it is on, every volley you fire is checked against the bow
+trajectory: arrows that appear within a few blocks of your eyes count as yours,
+and arrows fired a tick or two apart count as one volley (the Terminator's
+three; Hypixel sends each side arrow twice, and the copy is left out). Once
+they have all landed or gone, chat gets a line per arrow — its yaw
+offset from where you looked, its speed, how far its path strayed from the
+prediction and how far apart the two ends are.
+
+The game log (`latest.log`, under `cryptic/bow`) gets the rest: your look for
+the last few ticks, each predicted path, and each arrow's spawn, launch motion,
+every position Hypixel sent and every position the client drew. Hypixel sends an
+arrow's position only now and then, so the comparison uses those and not the
+client's own guesses in between. This is how a bow's spread is found: fire one
+volley at a wall and send the log. It works without the trajectory turned on.
 
 ---
 

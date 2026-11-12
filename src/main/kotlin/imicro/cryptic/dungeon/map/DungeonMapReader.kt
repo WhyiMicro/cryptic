@@ -49,11 +49,6 @@ object DungeonMapReader {
 		DungeonStats.reset()
 	}
 
-	/**
-	 * A map update, checked for being the dungeon's: the only map whose pixels start with a
-	 * room-sized run of entrance green. Claiming the first map seen broke as soon as an unrelated
-	 * map arrived.
-	 */
 	/** Hands a finished run's score screen to [ScoreArt]. */
 	private fun captureEndArt(packet: ClientboundMapItemDataPacket) {
 		val level = Minecraft.getInstance().level ?: return
@@ -62,8 +57,16 @@ object DungeonMapReader {
 		status = "score art captured"
 	}
 
+	/**
+	 * A map update, checked for being the dungeon's: the only map whose pixels start with a
+	 * room-sized run of entrance green. Claiming the first map seen broke as soon as an unrelated
+	 * map arrived.
+	 */
 	fun accept(packet: ClientboundMapItemDataPacket) {
 		val level = Minecraft.getInstance().level ?: return
+		// Lobby map art can pass the green-run test. A packet missed before the sidebar is read
+		// costs nothing; the dungeon map updates every few ticks.
+		if (!DungeonLocation.inDungeon) return
 		// A finished run's score screen arrives as a new map, so its id isn't checked.
 		if (DungeonRun.ended) {
 			captureEndArt(packet)

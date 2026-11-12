@@ -1,6 +1,7 @@
 package imicro.cryptic.gui.menu
 
 import com.mojang.blaze3d.platform.InputConstants
+import imicro.cryptic.feature.ClickGui
 import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownSource
@@ -59,9 +60,10 @@ class ModulePage(val module: Module) {
 		class Button(box: Box, val setting: ButtonModuleSetting) : Hit(box)
 		class Swatch(box: Box, val setting: ColorModuleSetting) : Hit(box)
 		class Text(box: Box, val target: Edit) : Hit(box)
-		class ModuleSwitch(box: Box) : Hit(box)
+		class Search(box: Box) : Hit(box)
 		class Star(box: Box) : Hit(box)
 		class View(box: Box, val manager: Boolean, val tab: Int) : Hit(box)
+		class Reset(box: Box, val setting: ModuleSetting) : Hit(box)
 
 		/** A whole row behind its controls: a click on the rest of it. */
 		class Row(box: Box, val setting: ModuleSetting) : Hit(box)
@@ -115,7 +117,7 @@ class ModulePage(val module: Module) {
 	}
 
 	private fun remember(keepExpanded: Boolean) {
-		if (showingManager) managerScroll = scrollTarget else settingsScroll = scrollTarget
+		if (showingManager) managerScroll = scrollTarget else if (!searching) settingsScroll = scrollTarget
 		remembered[module.id] = Place(showingManager, tabIndex, settingsScroll, managerScroll, if (keepExpanded) expanded.toSet() else emptySet())
 	}
 
@@ -153,21 +155,34 @@ class ModulePage(val module: Module) {
 	/** Which part of the picker is dragged: 0 none, 1 square, 2 hue, 3 alpha. */
 	private var pickerDrag = 0
 
-	val capturingKeys: Boolean get() = editing != null || awaiting != null || (showingManager && manager?.capturingKeys == true)
+	/** The search in the title row; while it holds text, the list shows only what matches. */
+	private val query = TextField(48)
+	private var queryFocused = false
+	private var selectingQuery = false
+	private val searchable = module.supportsKeybind || module.settings.any {
+		it.hasOwnRow && it !is SectionModuleSetting && it !is TabModuleSetting && it !is SlotMapModuleSetting
+	}
+	private val searching: Boolean get() = query.text.isNotBlank()
+
+	/** Set by a key that set a bind, so the character it also types isn't taken as a search. */
+	private var swallowChar = false
+
+	/** A bind (or a manager's own capture) waiting for its key, which takes the mouse's side buttons too. */
+	val awaitingBind: Boolean get() = awaiting != null || (showingManager && manager?.capturingKeys == true)
+
+	val capturingKeys: Boolean get() = editing != null || awaiting != null || queryFocused || (showingManager && manager?.capturingKeys == true)
 
 	/** The row above the list: name, star and the module's switch. */
 	fun drawTitle(graphics: GuiGraphicsExtractor, box: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
 		// The controls first, so the title knows how much room it has.
 		var limit = box.right
-		if (module.supportsToggle) {
-			val switch = Box(box.right - 34f, box.y + (box.h - 16f) / 2f, 34f, 16f)
-			val t = approach(switchPosition[module] ?: if (module.enabled) 1f else 0f, if (module.enabled) 1f else 0f, 20f, dt)
-			switchPosition[module] = t
-			MenuStyle.drawSwitch(graphics, switch, t, alpha)
-			val label = if (module.enabled) "Enabled" else "Disabled"
-			UiText.draw(graphics, label, switch.x - 12f - UiText.width(label, 13f), box.y + (box.h - 13f) / 2f, 13f, fade(MenuStyle.MUTED, alpha))
-			hits += Hit.ModuleSwitch(switch)
-			limit = box.right - 34f - 12f - UiText.width("Disabled", 13f) - 24f
+		if (searchable) {
+			val field = Box(box.right - SEARCH_WIDTH, box.y, SEARCH_WIDTH, box.h)
+			MenuStyle.drawField(graphics, field, field.contains(mx, my), queryFocused, alpha)
+			UiText.drawIconCentered(graphics, Icons.SEARCH, field.right - field.h, field.y, field.h, 13f, fade(if (queryFocused) MenuStyle.TEXT else MenuStyle.MUTED, alpha))
+			query.draw(graphics, Box(field.x, field.y, field.w - field.h + 8f, field.h), 13f, MenuStyle.TEXT, queryFocused, alpha, dt, placeholder = "Search settings")
+			hits += Hit.Search(field)
+			limit = field.x - 24f
 		}
 		val section = manager
 		if (section != null && tabs.size > 1) {
@@ -219,6 +234,11 @@ class ModulePage(val module: Module) {
 			return
 		}
 
+		if (searching) {
+			drawResults(graphics, box, mx, my, pointerInside, dt, alpha)
+			return
+		}
+
 		if (!module.supportsKeybind && module.settings.none { it.onCard && it.isVisible() && it !is SlotMapModuleSetting }) {
 			UiText.draw(graphics, "This module has nothing to set. Its switch is all there is.", box.x + 2f, box.y + 6f, 14f, fade(MenuStyle.MUTED, alpha))
 			maxScroll = 0f
@@ -264,6 +284,85 @@ class ModulePage(val module: Module) {
 		scrollbar.draw(graphics, box.right + Scrollbar.GAP, box.y, box.h, contentH, scroll, maxScroll, mx, my, dt, alpha)
 	}
 
+	/** Every setting matching the search, from every tab and "⋯" panel, under its own heading. */
+	private fun drawResults(graphics: GuiGraphicsExtractor, box: Box, mx: Float, my: Float, pointerInside: Boolean, dt: Float, alpha: Float) {
+		val words = query.text.trim()
+		graphics.enableScissor(box.x.toInt(), box.y.toInt(), box.right.toInt() + 1, box.bottom.toInt())
+		var y = box.y - scroll
+		var first = true
+		if (module.supportsKeybind && "keybind".contains(words, ignoreCase = true)) {
+			y += drawKeybindRow(graphics, box.x, y, box.w, mx, my, pointerInside, dt, alpha)
+			first = false
+		}
+		var section: SectionModuleSetting? = null
+		var headed = false
+		for (setting in module.settings) {
+			when (setting) {
+				is SectionModuleSetting -> {
+					section = setting.takeIf { it.isVisible() }
+					headed = false
+					continue
+				}
+				is TabModuleSetting -> {
+					section = null
+					continue
+				}
+				else -> if (!matches(setting, words, section)) continue
+			}
+			if (section != null && !headed) {
+				y += drawHeading(graphics, section.label, box.x, y, first, alpha)
+				headed = true
+			}
+			first = false
+			y += drawRow(graphics, setting, box.x, y, box.w, nested = false, mx, my, pointerInside, dt, alpha)
+		}
+		if (first) UiText.draw(graphics, UiText.fit("No settings match \"$words\".", 14f, box.w - 4f), box.x + 2f, box.y + 6f, 14f, fade(MenuStyle.MUTED, alpha))
+		MenuStyle.drawScrollFades(graphics, box, scroll, maxScroll, alpha)
+		graphics.disableScissor()
+
+		val contentH = y + scroll - box.y
+		maxScroll = max(0f, contentH - box.h + 8f)
+		scrollTarget = scrollTarget.coerceIn(0f, maxScroll)
+		scroll = approach(scroll, scrollTarget, 16f, dt)
+		scrollbar.draw(graphics, box.right + Scrollbar.GAP, box.y, box.h, contentH, scroll, maxScroll, mx, my, dt, alpha)
+	}
+
+	/** A row the search shows: its label or description holds [words], or its heading does. */
+	private fun matches(setting: ModuleSetting, words: String, section: SectionModuleSetting?): Boolean {
+		if (!setting.hasOwnRow || setting is PanelModuleSetting || setting is SlotMapModuleSetting) return false
+		if (!setting.isVisible() || setting.parent?.isVisible() == false) return false
+		return setting.label.contains(words, ignoreCase = true) ||
+			descriptionOf(setting).contains(words, ignoreCase = true) ||
+			section?.label?.contains(words, ignoreCase = true) == true
+	}
+
+	private fun jump(to: Float) {
+		scrollTarget = to
+		scroll = to
+	}
+
+	/** Applies an edit to the search, moving between the results and the list they came from. */
+	private fun editQuery(change: () -> Boolean) {
+		val before = searching
+		if (!change()) return
+		when {
+			!before && searching -> {
+				// Searching from a manager's window searches its settings.
+				if (showingManager) {
+					managerScroll = scrollTarget
+					showingManager = false
+					manager?.ui?.blur()
+				} else {
+					settingsScroll = scrollTarget
+				}
+				jump(0f)
+			}
+			before && !searching -> jump(settingsScroll)
+			searching -> jump(0f)
+		}
+		openDropdown = null
+	}
+
 	/**
 	 * "Aliases | Settings", or a module's tabs, right-aligned at [right]. Each part is what it
 	 * switches to, with its label. Returns its left edge.
@@ -283,7 +382,7 @@ class ModulePage(val module: Module) {
 			val (target, text) = entry
 			val w = widths[index]
 			val part = Box(cx, y + 3f, w, h - 6f)
-			val chosen = showingManager == target.manager && (target.manager || target.tab == tabIndex)
+			val chosen = !searching && showingManager == target.manager && (target.manager || target.tab == tabIndex)
 			if (chosen) RoundRect.fill(graphics, part.x, part.y, part.right, part.bottom, fade(MenuStyle.TAB_PILL, alpha), 5f)
 			val color = when {
 				chosen -> MenuStyle.TEXT
@@ -334,7 +433,10 @@ class ModulePage(val module: Module) {
 		remember(keepExpanded)
 	}
 
-	fun keyReleased(event: KeyEvent): Boolean = showingManager && manager?.keyReleased(event) == true
+	fun keyReleased(event: KeyEvent): Boolean {
+		swallowChar = false
+		return showingManager && manager?.keyReleased(event) == true
+	}
 
 	fun drawOverlays(graphics: GuiGraphicsExtractor, mx: Float, my: Float, alpha: Float) {
 		if (showingManager) manager?.drawOverlays()
@@ -409,7 +511,8 @@ class ModulePage(val module: Module) {
 		val controlLeft = drawControl(graphics, setting, right, cy, row, mx, my, pointerInside, dt, alpha)
 
 		var labelRight = controlLeft - 16f
-		if (setting !is PanelModuleSetting && setting.hasVisibleMore()) {
+		// Search results list a row's extras on their own, so there's nothing to open.
+		if (!searching && setting !is PanelModuleSetting && setting.hasVisibleMore()) {
 			val chevron = Box(controlLeft - 10f - 26f, cy - 13f, 26f, 26f)
 			drawChevron(graphics, chevron, setting in expanded, pointerInside && chevron.contains(mx, my), alpha)
 			hits += Hit.Expand(chevron, setting)
@@ -417,14 +520,20 @@ class ModulePage(val module: Module) {
 		}
 
 		val labelX = x + if (nested) 34f else 18f
-		val room = labelRight - labelX
-		if (description.isEmpty()) {
-			UiText.draw(graphics, UiText.fit(setting.label, LABEL, room), labelX, cy - LABEL / 2f, LABEL, fade(MenuStyle.TEXT, alpha))
-		} else {
-			UiText.draw(graphics, UiText.fit(setting.label, LABEL, room), labelX, y + 10f, LABEL, fade(MenuStyle.TEXT, alpha))
-			lines.forEachIndexed { index, line ->
-				UiText.draw(graphics, line, labelX, y + 30f + index * DESCRIPTION_LINE, DESCRIPTION, fade(MenuStyle.MUTED, alpha))
-			}
+		val showReset = ClickGui.resetButtons.value && setting.changed
+		val room = labelRight - labelX - if (showReset) RESET_ROOM else 0f
+		val label = UiText.fit(setting.label, LABEL, room)
+		val labelY = if (description.isEmpty()) cy - LABEL / 2f else y + 10f
+		UiText.draw(graphics, label, labelX, labelY, LABEL, fade(MenuStyle.TEXT, alpha))
+		lines.forEachIndexed { index, line ->
+			UiText.draw(graphics, line, labelX, y + 30f + index * DESCRIPTION_LINE, DESCRIPTION, fade(MenuStyle.MUTED, alpha))
+		}
+		if (showReset) {
+			val button = Box(labelX + UiText.width(label, LABEL) + 6f, labelY + LABEL / 2f - 10f, 20f, 20f)
+			val over = pointerInside && button.contains(mx, my)
+			if (over) RoundRect.fill(graphics, button.x, button.y, button.right, button.bottom, fade(MenuStyle.BUTTON_HOVER, alpha), 5f)
+			UiText.drawIconCentered(graphics, Icons.RESET, button.x, button.y, button.w, 10f, fade(if (over) MenuStyle.TEXT else MenuStyle.MUTED, alpha))
+			hits += Hit.Reset(button, setting)
 		}
 		return h + ROW_GAP
 	}
@@ -860,6 +969,8 @@ class ModulePage(val module: Module) {
 			awaiting = null
 			return true
 		}
+		// Any press but one on the search leaves it; that one focuses it again below.
+		if (button == 0) queryFocused = false
 		// Managers hear every button (the crosshair canvas erases with right).
 		if (showingManager && button != 0 && openColor == null) return manager?.mouseClicked(mx, my, button, doubleClick) == true
 		// A right click anywhere on a row opens what it holds.
@@ -907,7 +1018,7 @@ class ModulePage(val module: Module) {
 
 		if (scrollbar.press(mx, my, maxScroll) { scroll = it; scrollTarget = it }) return true
 
-		val titleHit = hits.lastOrNull { (it is Hit.Star || it is Hit.ModuleSwitch || it is Hit.View) && it.box.contains(mx, my) }
+		val titleHit = hits.lastOrNull { (it is Hit.Star || it is Hit.Search || it is Hit.View) && it.box.contains(mx, my) }
 		if (showingManager && titleHit == null) {
 			commitEditing()
 			return manager?.mouseClicked(mx, my, button, doubleClick) == true || area.contains(mx, my)
@@ -925,9 +1036,21 @@ class ModulePage(val module: Module) {
 		when (hit) {
 			null -> Unit
 			is Hit.Toggle -> hit.setting.value = !hit.setting.value
-			is Hit.ModuleSwitch -> module.enabled = !module.enabled
+			is Hit.Search -> {
+				queryFocused = true
+				if (doubleClick) query.selectAll() else query.pointAt(mx)
+				selectingQuery = true
+			}
 			is Hit.Star -> MenuPrefs.toggleFavorite(module.id)
-			is Hit.View -> if (showingManager != hit.manager) {
+			// Picking a tab while searching ends the search on that tab.
+			is Hit.View -> if (searching) {
+				val sameList = hit.manager == showingManager && (hit.manager || hit.tab == tabIndex)
+				query.clear()
+				showingManager = hit.manager
+				if (!hit.manager) tabIndex = hit.tab
+				jump(if (showingManager) managerScroll else if (sameList) settingsScroll else 0f)
+				manager?.ui?.blur()
+			} else if (showingManager != hit.manager) {
 				if (showingManager) managerScroll = scrollTarget else settingsScroll = scrollTarget
 				showingManager = hit.manager
 				if (!hit.manager) tabIndex = hit.tab
@@ -944,6 +1067,7 @@ class ModulePage(val module: Module) {
 				openColor = null
 			}
 			is Hit.Expand -> if (!expanded.add(hit.setting)) expanded.remove(hit.setting)
+			is Hit.Reset -> hit.setting.resetToDefault()
 			// The rest of a toggle's row flips it.
 			is Hit.Row -> (hit.setting as? ToggleModuleSetting)?.let { it.value = !it.value }
 			is Hit.Track -> {
@@ -997,6 +1121,10 @@ class ModulePage(val module: Module) {
 	}
 
 	fun mouseDragged(mx: Float, my: Float): Boolean {
+		if (selectingQuery) {
+			query.pointAt(mx, extend = true)
+			return true
+		}
 		if (pickerDrag != 0) {
 			applyPicker(mx, my)
 			return true
@@ -1018,10 +1146,11 @@ class ModulePage(val module: Module) {
 		val managerHad = showingManager && manager?.mouseReleased() == true
 		if (pendingSelectAll) input.selectAll()
 		pendingSelectAll = false
-		val was = dragging != null || pickerDrag != 0 || selecting
+		val was = dragging != null || pickerDrag != 0 || selecting || selectingQuery
 		dragging = null
 		pickerDrag = 0
 		selecting = false
+		selectingQuery = false
 		return scrollbar.release() || was || managerHad
 	}
 
@@ -1038,6 +1167,21 @@ class ModulePage(val module: Module) {
 				is Module -> target.keybind.setKey(if (clear) null else runCatching { InputConstants.getKey(event) }.getOrNull())
 			}
 			awaiting = null
+			swallowChar = true
+			return true
+		}
+		val control = (event.modifiers() and GLFW.GLFW_MOD_CONTROL) != 0
+		if (searchable && control && event.key() == GLFW.GLFW_KEY_F) {
+			commitEditing()
+			queryFocused = true
+			query.selectAll()
+			return true
+		}
+		if (queryFocused) {
+			when (event.key()) {
+				GLFW.GLFW_KEY_ESCAPE, GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> queryFocused = false
+				else -> editQuery { query.keyPressed(event) }
+			}
 			return true
 		}
 		val edit = editing
@@ -1088,11 +1232,32 @@ class ModulePage(val module: Module) {
 			openColor = null
 			return true
 		}
+		// Escape clears a search before it closes the menu.
+		if (event.key() == GLFW.GLFW_KEY_ESCAPE && searching) {
+			editQuery { query.clear(); true }
+			return true
+		}
 		return false
 	}
 
 	fun charTyped(codePoint: Int): Boolean {
-		val edit = editing ?: return showingManager && manager?.charTyped(codePoint) == true
+		if (swallowChar) {
+			swallowChar = false
+			return true
+		}
+		if (queryFocused) {
+			editQuery { query.charTyped(codePoint) }
+			return true
+		}
+		val edit = editing
+		if (edit == null) {
+			if (showingManager) return manager?.charTyped(codePoint) == true
+			// Typing with nothing focused searches, as on the module grid.
+			if (!searchable || codePoint <= ' '.code) return false
+			queryFocused = true
+			editQuery { query.charTyped(codePoint) }
+			return true
+		}
 		if (input.charTyped(codePoint)) liveUpdate(edit)
 		return true
 	}
@@ -1199,6 +1364,12 @@ class ModulePage(val module: Module) {
 		const val ROW_GAP = 2f
 		const val LABEL = 14f
 		const val DESCRIPTION = 12f
+
+		/** As wide as the module search, so the two line up. */
+		const val SEARCH_WIDTH = 250f
+
+		/** The reset button and its gap, kept free after a label. */
+		const val RESET_ROOM = 26f
 
 		/** The step to a description's second line. */
 		const val DESCRIPTION_LINE = 15f

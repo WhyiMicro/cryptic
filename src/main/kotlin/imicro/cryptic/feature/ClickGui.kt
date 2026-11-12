@@ -98,6 +98,14 @@ object ClickGui {
 	)
 
 	@JvmField
+	val resetButtons = ToggleModuleSetting(
+		id = "reset_buttons",
+		label = "Reset buttons",
+		defaultValue = true,
+		description = "Shows a button beside each changed setting that puts it back to its default.",
+	)
+
+	@JvmField
 	val editHud = ButtonModuleSetting(
 		id = "edit_hud",
 		label = "Edit HUD",
@@ -117,6 +125,6 @@ object ClickGui {
 		supportsToggle = false,
 		supportsKeybind = true,
 		keybind = guiKeybind,
-		settings = listOf(accentColor, backgroundBlur, blurStrength, sorting, leftClickToggles, rightClickEdits, rememberSearch, editHud),
+		settings = listOf(accentColor, backgroundBlur, blurStrength, sorting, leftClickToggles, rightClickEdits, rememberSearch, resetButtons, editHud),
 	)
 }

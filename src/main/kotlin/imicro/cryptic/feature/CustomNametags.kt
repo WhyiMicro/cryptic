@@ -6,7 +6,6 @@ import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 import net.minecraft.network.chat.MutableComponent
@@ -56,6 +55,14 @@ object CustomNametags {
 	)
 
 	@JvmField
+	val hideHealth = ToggleModuleSetting(
+		id = "hide_health",
+		label = "Hide health tag",
+		defaultValue = false,
+		description = "Hides the health line Hypixel puts under players' names.",
+	)
+
+	@JvmField
 	val dropShadow = ToggleModuleSetting(
 		id = "drop_shadow",
 		label = "Drop shadow",
@@ -86,20 +93,13 @@ object CustomNametags {
 			customTag,
 			everyTagSection,
 			showOwnNametag,
+			hideHealth,
 			dropShadow,
 			backgroundOpacity,
 		),
 	)
 
-	private var initialized = false
-
-	fun initialize() {
-		if (initialized) return
-		initialized = true
-
-		// Hypixel's chat arrives as system messages, which a client may rewrite.
-		ClientReceiveMessageEvents.MODIFY_GAME.register { message, _ -> decorate(message) }
-	}
+	fun initialize() {}
 
 	private fun customName(): Component? {
 		if (!module.enabled || !customName.value) return null
@@ -119,27 +119,40 @@ object CustomNametags {
 		return entity === Minecraft.getInstance().player
 	}
 
-	/** The name over the player instead of the server's, or null to keep the game's. */
+	/**
+	 * Your tag with the custom name in place of your own, keeping Hypixel's rank and level around
+	 * it. Null to keep the game's.
+	 */
 	@JvmStatic
-	fun tagFor(entity: Entity): Component? {
-		if (!showsOwnNameTag(entity)) return null
-		return customName()
-	}
-
-	@JvmStatic
-	fun tabName(uuid: java.util.UUID, original: Component): Component? {
+	fun tagFor(entity: Entity, original: Component?): Component? {
+		if (original == null) return null
 		val player = Minecraft.getInstance().player ?: return null
-		if (player.uuid != uuid) return null
+		if (entity !== player) return null
 		val name = customName() ?: return null
-		// Hypixel decorates the row with rank and level; only the name inside changes.
 		return replaceName(original, player.gameProfile.name, name)
 	}
 
 	@JvmStatic
-	fun decorate(message: Component): Component {
-		val player = Minecraft.getInstance().player ?: return message
-		val name = customName() ?: return message
-		return replaceName(message, player.gameProfile.name, name)
+	fun hidesHealth(entity: Entity): Boolean =
+		module.enabled && hideHealth.value && entity is net.minecraft.world.entity.player.Player
+
+	/**
+	 * Any row naming you, not just your own entry: SkyBlock's tab rows are made-up profiles that
+	 * only carry your name as text.
+	 */
+	@JvmStatic
+	fun tabName(original: Component): Component? = decorateOrNull(original)
+
+	/** Every chat line, whichever mod added it. */
+	@JvmStatic
+	fun decorate(message: Component): Component = decorateOrNull(message) ?: message
+
+	private fun decorateOrNull(message: Component): Component? {
+		val player = Minecraft.getInstance().player ?: return null
+		val name = customName() ?: return null
+		val own = player.gameProfile.name
+		if (!message.string.contains(own)) return null
+		return replaceName(message, own, name)
 	}
 
 	@JvmStatic
@@ -147,11 +160,11 @@ object CustomNametags {
 
 	/**
 	 * The plate behind a name tag. Vanilla packs its opacity into the alpha byte, so only that byte
-	 * is replaced.
+	 * is replaced. A see-through tag's second, plateless pass stays plateless, or the two stack.
 	 */
 	@JvmStatic
 	fun backgroundColor(original: Int): Int {
-		if (!module.enabled) return original
+		if (!module.enabled || original ushr 24 == 0) return original
 		return (backgroundAlpha() shl 24) or (original and 0xFFFFFF)
 	}
 
@@ -181,6 +194,13 @@ object CustomNametags {
 				if (found > index) parts.append(Component.literal(text.substring(index, found)))
 				parts.append(replacement)
 				index = found + name.length
+				// Hypixel colours with § codes inside one string; the rest was relying on those.
+				val carried = legacyCodesBefore(text, found)
+				if (carried.isNotEmpty() && index < text.length) {
+					val next = text.indexOf(name, index).let { if (it < 0) text.length else it }
+					parts.append(Component.literal(carried + text.substring(index, next)))
+					index = next
+				}
 			}
 			parts
 		} else {
@@ -190,6 +210,19 @@ object CustomNametags {
 		rebuilt.setStyle(message.style)
 		message.siblings.forEach { rebuilt.append(replaceName(it, name, replacement)) }
 		return rebuilt
+	}
+
+	/** The § colour and formats in effect at [end]: a colour or reset clears the formats before it. */
+	private fun legacyCodesBefore(text: String, end: Int): String {
+		val codes = StringBuilder()
+		var i = text.indexOf('§')
+		while (i in 0 until end - 1) {
+			val code = text[i + 1].lowercaseChar()
+			if (code in '0'..'9' || code in 'a'..'f' || code == 'r') codes.setLength(0)
+			if (code != 'r') codes.append('§').append(code)
+			i = text.indexOf('§', i + 2)
+		}
+		return codes.toString()
 	}
 
 	private fun colored(text: String): String = COLOR_CODE.replace(text) { "§${it.groupValues[1]}" }

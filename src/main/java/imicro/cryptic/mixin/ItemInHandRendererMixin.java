@@ -195,6 +195,49 @@ public abstract class ItemInHandRendererMixin {
         imicro.cryptic.feature.ItemOutline.captureHandPose(poseStack.last().pose(), right, itemStack, displayContext);
     }
 
+    /** The fishing line's start: the rod's pose is noted from its model layer while this is set. */
+    @Inject(method = "renderItem", at = @At("HEAD"))
+    private void cryptic$flagRod(
+        net.minecraft.world.entity.LivingEntity livingEntity,
+        ItemStack itemStack,
+        net.minecraft.world.item.ItemDisplayContext displayContext,
+        PoseStack poseStack,
+        SubmitNodeCollector submitNodeCollector,
+        int light,
+        CallbackInfo ci
+    ) {
+        Animations.drawingRod = displayContext.firstPerson()
+            && livingEntity == Minecraft.getInstance().player
+            && itemStack.getItem() instanceof net.minecraft.world.item.FishingRodItem
+            ? displayContext
+            : null;
+    }
+
+    @Inject(method = "renderItem", at = @At("RETURN"))
+    private void cryptic$unflagRod(
+        net.minecraft.world.entity.LivingEntity livingEntity,
+        ItemStack itemStack,
+        net.minecraft.world.item.ItemDisplayContext displayContext,
+        PoseStack poseStack,
+        SubmitNodeCollector submitNodeCollector,
+        int light,
+        CallbackInfo ci
+    ) {
+        Animations.drawingRod = null;
+    }
+
+    @Inject(method = "submitHandsWithItems", at = @At("HEAD"))
+    private void cryptic$noteHandBase(
+        float frameInterp,
+        PoseStack poseStack,
+        SubmitNodeCollector submitNodeCollector,
+        net.minecraft.client.player.LocalPlayer player,
+        int light,
+        CallbackInfo ci
+    ) {
+        Animations.noteHandBase(poseStack.last().pose());
+    }
+
     /**
      * BringBlockingBack's block-hit swing, ported. Vanilla already applied the arm and equip
      * transform here, so only the attack rotation is needed; skipping swingArm's translation stops

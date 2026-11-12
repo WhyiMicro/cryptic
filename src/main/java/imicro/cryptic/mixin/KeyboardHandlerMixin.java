@@ -23,6 +23,7 @@ public abstract class KeyboardHandlerMixin {
     @Inject(method = "keyPress", at = @At("HEAD"), cancellable = true)
     private void cryptic$answerNotification(long handle, int action, KeyEvent event, CallbackInfo info) {
         if (handle != Minecraft.getInstance().getWindow().handle()) return;
+        imicro.cryptic.feature.AntiAfk.onInput();
         // The Keybinds Manager hears every key down and up, and keeps none from the game.
         if (action == RELEASE) {
             KeybindManager.onKey(event.key(), false);

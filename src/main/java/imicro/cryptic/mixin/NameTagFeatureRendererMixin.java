@@ -7,8 +7,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 
 /**
- * Lets Cryptic restyle every name tag. Since 26.2 a tag is laid out in {@code prepareText}, which
- * is static, so these handlers are too.
+ * Name tag shadows. Since 26.2 a tag is laid out in {@code prepareText}, which is static, so this
+ * handler is too. The background is set where the tag is submitted ({@link SubmitNodeCollectionMixin}).
  */
 @Mixin(NameTagFeatureRenderer.class)
 public abstract class NameTagFeatureRendererMixin {
@@ -19,10 +19,5 @@ public abstract class NameTagFeatureRendererMixin {
     @ModifyArg(method = "prepareText", at = @At(value = "INVOKE", target = FONT_PREPARE_TEXT), index = 4)
     private static boolean cryptic$nameTagShadow(boolean dropShadow) {
         return CustomNametags.dropShadow(dropShadow);
-    }
-
-    @ModifyArg(method = "prepareText", at = @At(value = "INVOKE", target = FONT_PREPARE_TEXT), index = 6)
-    private static int cryptic$nameTagBackground(int backgroundColor) {
-        return CustomNametags.backgroundColor(backgroundColor);
     }
 }

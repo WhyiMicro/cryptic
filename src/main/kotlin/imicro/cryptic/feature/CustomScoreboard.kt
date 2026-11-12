@@ -447,6 +447,10 @@ object CustomScoreboard {
 		if (initialized) return
 		initialized = true
 		Hud.register(ScoreboardElement())
+		// Another account or server may be on another profile; the join message says which.
+		net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
+			Minecraft.getInstance().execute { profile = null }
+		}
 	}
 
 	val needsSkyblock: Boolean get() = module.enabled && onlySkyblock.value
@@ -696,15 +700,69 @@ object CustomScoreboard {
 	 * The tab list row labelled [label], as shown there. A heading with nothing after its colon
 	 * ("Pet:", "Cookie Buff") has its value on the next row, which is joined on.
 	 */
-	private fun tabLine(rows: List<Component>, label: String): Component? {
+	private fun tabLine(rows: List<Component>, label: String): Component? = tabRow(rows, label)?.let { formatted(it, null, plain(it)) }
+
+	/** [tabLine] before it's formatted. */
+	private fun tabRow(rows: List<Component>, label: String): Component? {
 		val index = rows.indexOfFirst { plain(it).startsWith(label, ignoreCase = true) }
 		if (index < 0) return null
 		val row = rows[index]
 		val after = plain(row).substring(label.length).trimStart(':').trim()
-		if (after.isNotEmpty()) return formatted(row, null, plain(row))
+		if (after.isNotEmpty()) return row
 		val next = rows.getOrNull(index + 1)?.takeIf { plain(it).isNotEmpty() } ?: return null
-		val joined = Component.literal("§f$label: ").append(next.copy())
-		return formatted(joined, null, plain(joined))
+		return Component.literal("§f$label: ").append(next.copy())
+	}
+
+	// ---- Bank ----------------------------------------------------------------------------------
+
+	private val PROFILE_CHAT = Regex("""^You are playing on profile: (\w+)""")
+	private val PROFILE_TAB = Regex("""^Profile: (\w+)""")
+	private val bankFile get() = FabricLoader.getInstance().configDir.resolve("cryptic").resolve("scoreboard-bank.json")
+
+	/** The SkyBlock profile, from the join message or the tab list; null until one is seen. */
+	private var profile: String? = null
+
+	/** The last Bank row seen, § coded, by "player uuid:profile"; "last:uuid" is that player's last profile. */
+	private val banks: JsonObject by lazy {
+		runCatching { JsonParser.parseString(Files.readString(bankFile)).asJsonObject }.getOrNull() ?: JsonObject()
+	}
+
+	@JvmStatic
+	fun onSystemChat(message: Component, overlay: Boolean) {
+		if (overlay || !module.enabled) return
+		PROFILE_CHAT.find(plain(message))?.let { profile = it.groupValues[1] }
+	}
+
+	/**
+	 * The bank line on every island: Hypixel lists it only in the tab list's Profile widget, which
+	 * many islands leave out, so the last one seen for this profile stands in.
+	 */
+	private fun bankLine(tab: Lazy<List<Component>>): Component? {
+		val uuid = Minecraft.getInstance().player?.uuid?.toString() ?: return null
+		val rows = tab.value
+		rows.firstNotNullOfOrNull { PROFILE_TAB.find(plain(it)) }?.let { profile = it.groupValues[1] }
+		val name = profile ?: banks.get("last:$uuid")?.asString ?: return tabLine(rows, "Bank")
+		val key = "$uuid:$name"
+		val row = tabRow(rows, "Bank")
+		// "..." while the co-op's bank is still loading.
+		if (row != null && plain(row).any { it.isDigit() } && "..." !in plain(row)) {
+			val coded = legacy(row) ?: plain(row)
+			if (banks.get(key)?.asString != coded || banks.get("last:$uuid")?.asString != name) {
+				banks.addProperty(key, coded)
+				banks.addProperty("last:$uuid", name)
+				saveBanks()
+			}
+		}
+		val shown = row ?: banks.get(key)?.asString?.let { Component.literal(it) } ?: return null
+		return formatted(shown, null, plain(shown))
+	}
+
+	private fun saveBanks() {
+		val text = banks.toString()
+		runCatching {
+			Files.createDirectories(bankFile.parent)
+			Files.writeString(bankFile, text)
+		}
 	}
 
 	/** A tab list or Cryptic line's text; none when there's nothing to show. */
@@ -737,6 +795,7 @@ object CustomScoreboard {
 				)
 			}
 		}
+		Line.BANK -> listOfNotNull(bankLine(tab))
 		Line.MORE_TAB -> extraLabels.value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { tabLine(tab.value, it) }
 		else -> line.tabLabel?.let { tabLine(tab.value, it) }?.let { listOf(it) }.orEmpty()
 	}

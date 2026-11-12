@@ -133,7 +133,7 @@ object Bazaar {
 	val presets = ToggleModuleSetting(
 		"presets", "Amount presets", true,
 		"Buttons beside a buy order's \"How many do you want?\" and an instant buy's menu that fill in Custom Amount for you: your amounts, the most " +
-			"your purse allows, and when relisting a cancelled order with the reopen item, what of it hadn't filled.",
+			"your purse allows, and for a few minutes after you cancel a buy order, what of it hadn't filled.",
 	).withMore(presetAmounts)
 
 	@JvmField
@@ -200,25 +200,20 @@ object Bazaar {
 	).withMore(historyRange)
 
 	@JvmField
-	val suggestBuy = ToggleModuleSetting(
-		"suggest_buy", "Suggest Bazaar buy", true,
-		"When an NPC turns you away for lacking an item (King Yolkar, the Kalhuiki Door Guardian, Professor Robot), a notification offers to open that item in the Bazaar.",
-	)
-
-	@JvmField
 	val module = Module(
 		id = "bazaar",
 		name = "Bazaar",
 		description = "Bazaar orders and prices",
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
-		settings = listOf(ordersSection, menuStatus, breakdown, ordersHud, undercutAlert, filledAlert, coopAlerts, sounds, quietInDungeons, reopen, claimMine, presets, marketSection, priceHistory, dailyLimit, suggestBuy, escrowFix, hideProgress),
+		settings = listOf(ordersSection, menuStatus, breakdown, ordersHud, undercutAlert, filledAlert, coopAlerts, sounds, quietInDungeons, reopen, claimMine, presets, marketSection, priceHistory, dailyLimit, escrowFix, hideProgress),
 	)
 
 	private val client: Minecraft get() = Minecraft.getInstance()
 	private val FORMATTING = Regex("§.")
 
 	private var orders: MutableList<Order> = ArrayList()
+	val openOrders: List<Order> get() = orders
 	/** By [key], so the same order read again from the menu keeps its standing. */
 	private val statuses = HashMap<String, Status>()
 
@@ -235,10 +230,14 @@ object Bazaar {
 		loadDaily()
 		BazaarMarket.onUpdate = ::updateStatuses
 		Hud.register(OrdersElement())
+		BazaarFlips.initialize()
 		ItemTooltipCallback.EVENT.register { stack, _, _, lines -> addTooltip(stack, lines) }
 	}
 
-	val needsSkyblock: Boolean get() = module.enabled
+	/** Orders are read for Flipping too, with this module off. */
+	private val tracking: Boolean get() = module.enabled || Flipping.module.enabled
+
+	val needsSkyblock: Boolean get() = tracking
 
 	private fun inOrdersMenu(screen: Any?): Boolean {
 		val title = (screen as? AbstractContainerScreen<*>)?.title?.string ?: return false
@@ -254,7 +253,7 @@ object Bazaar {
 	private var stableTicks = 0
 
 	fun tick(client: Minecraft) {
-		if (!module.enabled || !SkyblockLocation.onSkyblock) return
+		if (!tracking || !SkyblockLocation.onSkyblock) return
 		val screen = client.gui.screen()
 		// Fresh while trading or with orders out; otherwise only now and then, for tooltips.
 		playDueSounds()
@@ -287,7 +286,11 @@ object Bazaar {
 			return
 		}
 		val sell = slots.firstOrNull { it.item.hoverName.string.replace(FORMATTING, "").trim() == "Create Sell Offer" }
-		val name = screen.title.string.replace(FORMATTING, "").substringAfterLast("➜").trim()
+		val titled = screen.title.string.replace(FORMATTING, "").substringAfterLast("➜").trim()
+		// A title cut at 32 characters ("Mutant Nether Wa"): the product's own item on the page has the whole name.
+		val name = if (titled.isEmpty() || BazaarMarket.idForName(titled) != null) titled else slots.asSequence()
+			.map { it.item.hoverName.string.replace(FORMATTING, "").trim() }
+			.firstOrNull { it.length > titled.length && it.startsWith(titled) && BazaarMarket.idForName(it) != null } ?: titled
 		openProduct = BazaarMarket.idForName(name)
 		val stamp = slots.sumOf { (it.item.hoverName.string.hashCode() * 31 + (it.item.get(DataComponents.LORE)?.lines()?.hashCode() ?: 0)) * (it.index + 1) }
 		if (stamp == pageStamp) return
@@ -326,7 +329,7 @@ object Bazaar {
 			return
 		}
 		if (++stableTicks != 3) return
-		val read = slots.mapNotNull { parseOrder(it.item) }
+		val read = slots.mapNotNull { slot -> parseOrder(slot.item)?.also { BazaarFlips.noteIcon(it.name, slot.item) } }
 		// The menu is the whole truth about your orders; chat only fills in between visits.
 		orders = read.toMutableList()
 		updateStatuses()
@@ -372,10 +375,9 @@ object Bazaar {
 
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
-		if (overlay || !module.enabled) return
+		if (overlay || !tracking) return
 		val line = message.string.replace(FORMATTING, "").trim()
-		if (suggestBuy.value && SkyblockLocation.onSkyblock) suggest(line)
-		if (escrowFix.value && ESCROW.matches(line) && SkyblockLocation.onSkyblock) {
+		if (module.enabled && escrowFix.value && ESCROW.matches(line) && SkyblockLocation.onSkyblock) {
 			val now = System.currentTimeMillis()
 			// One reopen for a burst of refunds.
 			if (now - escrowReopenedAt > ESCROW_COOLDOWN_MILLIS) {
@@ -385,6 +387,7 @@ object Bazaar {
 			return
 		}
 		if (!line.startsWith("[Bazaar]")) return
+		client.execute { BazaarFlips.onBazaarLine(line) }
 		instant.find(line)?.let { match ->
 			val total = match.groupValues[2].replace(",", "").toDoubleOrNull() ?: return
 			client.execute { spend(if (match.groupValues[1] == "Sold") total * (1 - tax.value / 100) else total) }
@@ -414,51 +417,12 @@ object Bazaar {
 				orders.firstOrNull { it.sell == sell && it.name == name && it.amount == amount && it.filled < it.amount }?.filled = amount
 				updateStatuses()
 				save()
-				if (filledAlert.value && (!coop || coopAlerts.value)) {
+				if (module.enabled && filledAlert.value && (!coop || coopAlerts.value)) {
 					val whose = if (coop) "Your co-op's" else "Your"
 					notify("§7$whose ${if (sell) "sell offer" else "buy order"} for §f${amount}x ${named(name)} §7was ${Status.FILLED.code}filled§7.")
 				}
 			}
 		}
-	}
-
-	/** An item an NPC is asking for, by how it starts turning you away; [search] goes after /bz. */
-	private class Wanted(val id: String, val item: String, val search: String)
-
-	private val GOBLIN_EGG = Wanted("suggest_goblin_egg", "Goblin Egg", "goblin egg")
-
-	private val WANTED = mapOf(
-		"[NPC] King Yolkar: That is certainly not the meal I am looking for!" to GOBLIN_EGG,
-		"[NPC] King Yolkar: Bring me any type of Goblin Egg" to GOBLIN_EGG,
-		"[NPC] King Yolkar: Dark, right?!" to GOBLIN_EGG,
-		"[NPC] King Yolkar: Where is my Goblin Egg?" to GOBLIN_EGG,
-		"[NPC] Kalhuiki Door Guardian: This temple is locked" to Wanted("suggest_jungle_key", "Jungle Key", "jungle key"),
-		"[NPC] Professor Robot: That's not one of the components I need!" to Wanted("suggest_apparatus", "Precursor Apparatus", "Precursor Apparatus"),
-	)
-
-	private const val SUGGESTION_SECONDS = 10.0
-
-	/** NPCs say several turning-away lines at once (King Yolkar two), so a burst asks only once. */
-	private const val SUGGESTION_COOLDOWN_MS = 5_000L
-
-	/** When each item's NPC last turned you away. */
-	private val lastWanted = HashMap<String, Long>()
-
-	/** One question per item, however often the NPC is clicked. */
-	private fun suggest(line: String) {
-		val wanted = WANTED.entries.firstOrNull { line.startsWith(it.key) }?.value ?: return
-		val now = System.currentTimeMillis()
-		val last = lastWanted.put(wanted.id, now) ?: 0L
-		if (now - last < SUGGESTION_COOLDOWN_MS) return
-		if (Toasts.asking(wanted.id)) return
-		Toasts.ask(
-			"Bazaar", wanted.id, life = SUGGESTION_SECONDS,
-			keys = mapOf(
-				GLFW.GLFW_KEY_Y to { client.connection?.sendCommand("bz ${wanted.search}") ?: Unit },
-				GLFW.GLFW_KEY_N to {},
-			),
-			color = Toasts.Colors.BAZAAR, footer = "§a[Y] §fOpen   §c[N] §fNo",
-		) { "Missing §f${wanted.item}§7. Open it in the Bazaar?" }
 	}
 
 	/** Hypixel's progress lines, kept out of chat. */
@@ -499,7 +463,7 @@ object Bazaar {
 			val beaten = now == Status.UNDERCUT && (was == Status.TOP || was == Status.MATCHED)
 			val matched = now == Status.MATCHED && was == Status.TOP
 			val backOnTop = now == Status.TOP && (was == Status.MATCHED || was == Status.UNDERCUT)
-			if (undercutAlert.value && (beaten || matched || backOnTop) && (coopAlerts.value || !order.coopMember)) {
+			if (module.enabled && undercutAlert.value && (beaten || matched || backOnTop) && (coopAlerts.value || !order.coopMember)) {
 				val best = BazaarMarket.idForName(order.name)?.let(BazaarMarket::product)?.let { if (order.sell) it.sellOffers else it.buyOrders }?.firstOrNull()
 				val whose = if (order.coopMember) "§f${order.owner}§7's" else "Your"
 				val what = "§7$whose ${if (order.sell) "sell offer" else "buy order"} for ${named(order.name)} §7"
@@ -798,6 +762,8 @@ object Bazaar {
 			val order = picked ?: return false
 			cancelled = order
 			reopenShown = false
+			// Offered however the product's page is reached again, not only through the reopen item.
+			BazaarPresets.relisting(order.name, order.sell, order.left)
 			if (client.hasControlDown() && order.left > 0) {
 				client.keyboardHandler.clipboard = order.left.toString()
 				notify("§7Copied §f${order.left} §7to the clipboard.")
@@ -972,6 +938,9 @@ object Bazaar {
 	private val parsed = java.util.WeakHashMap<ItemStack, Order>()
 	private val NOT_AN_ORDER = Order()
 
+	/** The order a menu stack shows, or null when it isn't one. */
+	fun orderOf(stack: ItemStack): Order? = parsed.getOrPut(stack) { parseOrder(stack) ?: NOT_AN_ORDER }.takeIf { it !== NOT_AN_ORDER }
+
 	@JvmStatic
 	fun drawSlot(graphics: GuiGraphicsExtractor, slot: Slot) {
 		if (!module.enabled || !menuStatus.value || slot.container is Inventory) return
@@ -1056,5 +1025,5 @@ object Bazaar {
 
 	fun describe(): List<String> = listOf(
 		"Bazaar: ${BazaarMarket.products.size} products, updated ${(System.currentTimeMillis() - BazaarMarket.updatedAt) / 1000}s ago",
-	) + orders.map { "${it.kind} ${it.amount}x ${it.name} @ ${it.price}: ${statusFor(it).label} (id ${BazaarMarket.idForName(it.name) ?: "unknown"})" }
+	) + orders.map { "${it.kind} ${it.amount}x ${it.name} @ ${it.price}: ${statusFor(it).label} (id ${BazaarMarket.idForName(it.name) ?: "unknown"})" } + BazaarFlips.describe() + Flipping.describe()
 }

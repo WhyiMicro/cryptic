@@ -408,6 +408,8 @@ object ConfigManager {
         mergeRetiredModules(modules)
         migrateTerminatorOnly(modules)
         migrateFireFreeze(modules)
+        migrateSuggestBuy(modules)
+        migrateFlipHud(modules)
         ModuleRegistry.byId.forEach { (id, module) ->
             val value = modules.objectOrNull(id) ?: return@forEach
             if (module.supportsToggle) value.boolean("enabled")?.let { module.enabled = it }
@@ -463,6 +465,26 @@ object ConfigManager {
             RetiredModule("arrow_hitboxes", enabledAs = "arrow_hitboxes", prefix = "hitbox_"),
         ),
     )
+
+    /** Bazaar's Flips HUD, which moved to Flipping: on there for whoever had it on. */
+    private fun migrateFlipHud(modules: JsonObject) {
+        if (modules.has("flipping")) return
+        val bazaar = modules.objectOrNull("bazaar") ?: return
+        val shown = bazaar.objectOrNull("settings")?.boolean("flip_hud") ?: true
+        bazaar.objectOrNull("settings")?.remove("flip_hud")
+        val flipping = JsonObject().also { modules.add("flipping", it) }
+        flipping.addProperty("enabled", (bazaar.boolean("enabled") ?: false) && shown)
+    }
+
+    /** Bazaar's "Suggest Bazaar buy", which moved to Nucleus Features beside its NPCs. */
+    private fun migrateSuggestBuy(modules: JsonObject) {
+        val bazaar = modules.objectOrNull("bazaar")?.objectOrNull("settings") ?: return
+        val on = bazaar.boolean("suggest_buy") ?: return
+        bazaar.remove("suggest_buy")
+        val nucleus = modules.objectOrNull("nucleus_qol") ?: JsonObject().also { modules.add("nucleus_qol", it) }
+        val settings = nucleus.objectOrNull("settings") ?: JsonObject().also { nucleus.add("settings", it) }
+        if (!settings.has("suggest_buy")) settings.addProperty("suggest_buy", on)
+    }
 
     /** Smart Tick Timer's Fire Freeze switch, which moved to F3/M3 Features with its own element. */
     private fun migrateFireFreeze(modules: JsonObject) {

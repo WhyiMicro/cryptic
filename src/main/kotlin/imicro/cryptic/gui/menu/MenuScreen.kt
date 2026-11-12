@@ -380,7 +380,7 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		val button = event.button()
 
 		// A bind waiting for its key takes any button first.
-		if (current != null && current.capturingKeys && button != 0) {
+		if (current != null && current.awaitingBind && button != 0) {
 			current.mouseClicked(mx, my, button)
 			return true
 		}
@@ -403,10 +403,17 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 
 		if (current != null) {
 			if ((button == 0 && backBox.contains(mx, my)) || button == GLFW.GLFW_MOUSE_BUTTON_4) {
+				forward = current.module
 				page = null
 				return true
 			}
 			current.mouseClicked(mx, my, button, doubleClick)
+			return true
+		}
+
+		// The mouse's forward button reopens the module just left, as a browser would.
+		if (button == GLFW.GLFW_MOUSE_BUTTON_5) {
+			forward?.let(::open)
 			return true
 		}
 
@@ -449,9 +456,13 @@ class MenuScreen : Screen(Component.literal("Cryptic")) {
 		return super.mouseClicked(event, doubleClick)
 	}
 
+	/** The module Back last left, for the mouse's forward button. */
+	private var forward: Module? = null
+
 	private fun open(module: Module) {
 		page = ModulePage(module)
 		searchFocused = false
+		forward = null
 	}
 
 	private fun setScroll(value: Float) {

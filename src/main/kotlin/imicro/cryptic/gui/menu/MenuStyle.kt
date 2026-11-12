@@ -51,6 +51,7 @@ object MenuStyle {
 
 	/** The Font Awesome glyphs the menu uses. [STAR] comes in solid and outline. */
 	object Icons {
+		const val RESET = ""
 		const val ELLIPSIS_VERTICAL = ""
 		const val STAR = ""
 		const val SEARCH = ""

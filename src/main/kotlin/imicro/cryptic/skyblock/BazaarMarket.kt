@@ -28,9 +28,13 @@ object BazaarMarket {
 	/**
 	 * A product. [instantBuy] is what buying now costs (the cheapest sell offer); [instantSell] is
 	 * what selling now gets (the best buy order). [sellOffers] runs cheapest first, [buyOrders]
-	 * dearest first.
+	 * dearest first. [boughtWeekly] and [soldWeekly] are how many were instantly bought and sold in
+	 * the last seven days: what fills sell offers and buy orders.
 	 */
-	class Product(val id: String, val instantBuy: Double, val instantSell: Double, val sellOffers: List<Level>, val buyOrders: List<Level>)
+	class Product(
+		val id: String, val instantBuy: Double, val instantSell: Double, val sellOffers: List<Level>, val buyOrders: List<Level>,
+		val boughtWeekly: Long = 0, val soldWeekly: Long = 0,
+	)
 
 	private val http: HttpClient by lazy {
 		HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NORMAL).build()
@@ -64,6 +68,8 @@ object BazaarMarket {
 			instantSell = orders.firstOrNull()?.price ?: old?.instantSell ?: 0.0,
 			sellOffers = offers,
 			buyOrders = orders,
+			boughtWeekly = old?.boughtWeekly ?: 0,
+			soldWeekly = old?.soldWeekly ?: 0,
 		)
 		products = products + (id to updated)
 	}
@@ -109,6 +115,8 @@ object BazaarMarket {
 			instantSell = buyOrders.firstOrNull()?.price ?: status.get("sellPrice").asDouble,
 			sellOffers = sellOffers,
 			buyOrders = buyOrders,
+			boughtWeekly = status.get("buyMovingWeek")?.asLong ?: 0,
+			soldWeekly = status.get("sellMovingWeek")?.asLong ?: 0,
 		)
 	}
 
@@ -166,6 +174,18 @@ object BazaarMarket {
 	@Volatile
 	private var upgrades: Map<String, JsonObject> = emptyMap()
 
+	/**
+	 * What an item looks like, as the items list has it: a (pre-1.13) material and its durability
+	 * (which picked the variant then), a head's skin, a glint, and for newer items the model
+	 * Hypixel's resource pack draws them with.
+	 */
+	class Look(val material: String, val durability: Int, val skin: String?, val glowing: Boolean, val itemModel: String?)
+
+	fun look(id: String): Look? = looks[id]
+
+	@Volatile
+	private var looks: Map<String, Look> = emptyMap()
+
 	/** Loads the items list (names and NPC prices) if it isn't yet, without the Bazaar. */
 	fun ensureItems() = ensureNames()
 
@@ -199,6 +219,7 @@ object BazaarMarket {
 		val tier = HashMap<String, String>()
 		val byId = HashMap<String, String>()
 		val upgrade = HashMap<String, JsonObject>()
+		val look = HashMap<String, Look>()
 		JsonParser.parseString(body).asJsonObject.getAsJsonArray("items")?.forEach { element ->
 			val item = element.asJsonObject
 			val id = item.get("id")?.asString ?: return@forEach
@@ -210,15 +231,29 @@ object BazaarMarket {
 					item.get("gemstone_slots")?.let { add("gemstone_slots", it) }
 				}
 			}
+			item.get("material")?.takeIf { it.isJsonPrimitive }?.asString?.let { material ->
+				val skin = item.get("skin")?.let { if (it.isJsonObject) it.asJsonObject.get("value")?.asString else it.takeIf { it.isJsonPrimitive }?.asString }
+				look[id] = Look(
+					material,
+					item.get("durability")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
+					skin,
+					item.get("glowing")?.takeIf { it.isJsonPrimitive }?.asBoolean == true,
+					item.get("item_model")?.takeIf { it.isJsonPrimitive }?.asString,
+				)
+			}
 			val shown = item.get("name")?.asString?.replace(Regex("§."), "")?.trim() ?: return@forEach
 			byId[id] = shown
 			table.getOrPut(shown.lowercase(Locale.ROOT)) { ArrayList() } += id
+			// Gemstones lead with a symbol that chat and searches leave out.
+			val bare = shown.trimStart { !it.isLetterOrDigit() }.trim()
+			if (bare != shown) table.getOrPut(bare.lowercase(Locale.ROOT)) { ArrayList() } += id
 		}
 		idsByName = table
 		namesById = byId
 		npcPrices = npc
 		tiers = tier
 		upgrades = upgrade
+		looks = look
 	}
 
 	/** Fetches [url] off the client thread, as text. */

@@ -2,6 +2,7 @@ package imicro.cryptic.skyblock
 
 import imicro.cryptic.debug.DebugOverrides
 import net.minecraft.client.Minecraft
+import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.world.scores.DisplaySlot
 import net.minecraft.world.scores.PlayerTeam
 
@@ -21,6 +22,8 @@ object SkyblockLocation {
 
 	private var ticksUntilRefresh = 0
 
+	private var lastLevel: ClientLevel? = null
+
 	var onSkyblock = false
 		private set
 
@@ -34,6 +37,11 @@ object SkyblockLocation {
 		if (!active || client.level == null) {
 			clear()
 			return
+		}
+		// A new world is a new lobby: the last island must not outlive the hop.
+		if (client.level !== lastLevel) {
+			lastLevel = client.level
+			ticksUntilRefresh = 0
 		}
 		if (ticksUntilRefresh-- > 0) return
 		ticksUntilRefresh = REFRESH_INTERVAL_TICKS

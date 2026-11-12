@@ -5,6 +5,8 @@ import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import java.lang.reflect.Method
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.entity.state.AvatarRenderState
 import net.minecraft.core.component.DataComponents
@@ -69,8 +71,63 @@ object HideArmor {
 			state.wornHeadProfile = null
 		}
 		// An elytra is worn in the chest slot; it isn't armour.
-		if (chestplate.value && !state.chestEquipment.has(DataComponents.GLIDER)) state.chestEquipment = ItemStack.EMPTY
+		val hideChest = chestplate.value && !state.chestEquipment.has(DataComponents.GLIDER)
+		if (hideChest) state.chestEquipment = ItemStack.EMPTY
 		if (leggings.value) state.legsEquipment = ItemStack.EMPTY
 		if (boots.value) state.feetEquipment = ItemStack.EMPTY
+		CatharsisArmor.clear(state, helmet.value, hideChest, leggings.value, boots.value)
+	}
+
+	/**
+	 * Catharsis (FurfSky Reborn's armour models) keeps its own per-slot models on the render state,
+	 * read from the entity rather than the state's stacks, and draws a 3D one even for an empty
+	 * stack. Reached by reflection so Cryptic needn't depend on it.
+	 */
+	private object CatharsisArmor {
+		private class Access(
+			val hook: Class<*>,
+			val definitions: Method,
+			val setters: Array<Method>,
+			val getters: Array<Method>,
+			val partVisibility: Method,
+		)
+
+		private val access: Access? = try {
+			if (!FabricLoader.getInstance().isModLoaded("catharsis")) null else {
+				val hook = Class.forName("me.owdding.catharsis.hooks.armor.LivingEntityRenderStateHook")
+				val definitions = hook.getMethod("catharsis\$getArmorDefinitionRenderState")
+				val type = definitions.returnType
+				val model = type.getMethod("getHead").returnType
+				val slots = arrayOf("Head", "Chest", "Legs", "Feet")
+				Access(
+					hook,
+					definitions,
+					Array(4) { type.getMethod("set${slots[it]}", model) },
+					Array(4) { type.getMethod("get${slots[it]}") },
+					type.getMethod("getPartVisibility"),
+				)
+			}
+		} catch (e: Throwable) {
+			null
+		}
+
+		fun clear(state: AvatarRenderState, head: Boolean, chest: Boolean, legs: Boolean, feet: Boolean) {
+			val access = access ?: return
+			if (!access.hook.isInstance(state)) return
+			try {
+				val definitions = access.definitions.invoke(state) ?: return
+				var cleared = false
+				val hide = booleanArrayOf(head, chest, legs, feet)
+				for (i in 0 until 4) {
+					if (!hide[i] || access.getters[i].invoke(definitions) == null) continue
+					access.setters[i].invoke(definitions, null)
+					cleared = true
+				}
+				// A hidden piece may have hidden the body part under it; don't leave a hole.
+				if (cleared) (access.partVisibility.invoke(definitions) as? MutableMap<*, *>)?.clear()
+			} catch (e: Throwable) {
+				// A changed Catharsis only costs the 3D pieces staying visible.
+			}
+		}
 	}
 }

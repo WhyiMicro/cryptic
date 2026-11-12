@@ -118,7 +118,8 @@ Several features are ported from other mods, whose licences travel with them:
   Fishing's hotspots: which particles mark a hotspot's edge on each island, its
   radius taken as the most common distance they land at (to the half block) with
   a cap per island, hiding those particles, the perk colours, and a filled circle
-  with a low rim. Licence in [`licenses/SkyOcean-LICENSE.txt`](licenses/SkyOcean-LICENSE.txt).
+  with a low rim; and Text Outline's look, its Full Text Shadow (the shadow drawn
+  on every side of a letter). Licence in [`licenses/SkyOcean-LICENSE.txt`](licenses/SkyOcean-LICENSE.txt).
 
 Lumen, DailyRewards, Devonian, Custom Block Highlight, Skyblocker, SkyHanni and
 NotEnoughUpdates each had features ported into Cryptic. Those features have
@@ -157,12 +158,16 @@ left. What is still theirs is data and artwork, kept as it is:
   "Remaining Clicks" line, powerups' lore and where a book card names its
   enchantment, and the ideas of its experiment helpers (next click, misclick
   guard, max clicks and Ultra-Rare alerts, pair highlights, the experience
-  overlay and the Superpairs panel). No code was taken.
+  overlay and the Superpairs panel); and for Combat: the power orbs' names and
+  ranges, how long a flare lasts, and the idea of the flare and orb timer. No code
+  was taken.
 - **[SkyHanni repository](https://github.com/hannibal002/SkyHanni-REPO)** (MIT,
   Copyright (c) 2022 hannibal2) — the 39 places the Mines of Divan treasure
   turns up, for Nucleus Features' Metal Detector solver; and for Rift
   (`assets/cryptic/rift/rift.json`), the Enigma Souls, the Blood Effigies, the dance
-  room's steps, and the lava maze's, upside-down parkour's and Tubulator's paths. Licence in
+  room's steps, and the lava maze's, upside-down parkour's and Tubulator's paths; and the
+  flares' head textures, for Combat; and what each Garden visitor asks for
+  (`assets/cryptic/garden/visitor_wants.json`), for Farming's shopping list. Licence in
   [`licenses/SkyHanni-REPO-LICENSE.txt`](licenses/SkyHanni-REPO-LICENSE.txt).
 - **[SkyHelper Networth](https://github.com/Altpapier/SkyHelper-Networth)** (MIT,
   Copyright (c) 2022 Altpapier) — the share of its price each applied upgrade
@@ -173,6 +178,7 @@ left. What is still theirs is data and artwork, kept as it is:
 - **[NotEnoughUpdates](https://github.com/NotEnoughUpdates/NotEnoughUpdates)**
   (LGPL-3.0) — the Wither Cloak effect's shield texture. Notice in
   [`src/main/resources/META-INF/notices/`](src/main/resources/META-INF/notices/).
+  From its item repository, as facts only, the power orbs' head textures for Combat.
 
 Terminal Order's numbering and its class assignments are the M7 Guides
 community's, as published in Stella's terminal data. They are facts about the

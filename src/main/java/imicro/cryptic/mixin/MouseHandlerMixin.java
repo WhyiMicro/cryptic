@@ -39,6 +39,7 @@ public abstract class MouseHandlerMixin {
 
     @Inject(method = "onScroll", at = @At("HEAD"), cancellable = true)
     private void cryptic$zoomScroll(long handle, double xoffset, double yoffset, CallbackInfo ci) {
+        imicro.cryptic.feature.AntiAfk.onInput();
         // Shift and the wheel picks what to place in the waypoint editors.
         if (DungeonWaypoints.onScroll(yoffset) || BossWaypoints.onScroll(yoffset)) {
             ci.cancel();
@@ -62,6 +63,7 @@ public abstract class MouseHandlerMixin {
     @Inject(method = "onButton", at = @At("HEAD"), cancellable = true)
     private void cryptic$clickNotification(long handle, MouseButtonInfo button, int action, CallbackInfo ci) {
         if (handle != Minecraft.getInstance().getWindow().handle()) return;
+        imicro.cryptic.feature.AntiAfk.onInput();
 
         if (action != 1) {
             KeybindManager.onMouse(button.button(), false);

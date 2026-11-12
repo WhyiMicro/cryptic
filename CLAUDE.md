@@ -127,6 +127,8 @@ check that `git diff --word-diff` shows only the new entry.
   `C:\Users\imicro\AppData\Roaming\PrismLauncher\instances\Hypixel Skyblock\minecraft\mods\` and
   delete the old Cryptic jar. If the game holds it, delete it in a background loop
   (`while [ -f "$OLD" ]; do rm -f "$OLD" 2>/dev/null || sleep 3; done`).
+  Copy with `cp -n` and never over a jar of the same name: Windows lets the copy overwrite a jar
+  the running game has open, and the game then crashes on its next class load ("invalid LOC header").
 - **Commit and push only when the user asks.** Work happens on `terminals-and-general-modules`;
   `master` is the default branch and is fast-forwarded to it on release.
 - **Release:** commit, push, then `git push origin terminals-and-general-modules:master`.

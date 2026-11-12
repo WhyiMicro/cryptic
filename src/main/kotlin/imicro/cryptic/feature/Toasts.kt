@@ -299,6 +299,7 @@ object Toasts {
 		const val PARTY = 0xFF5555FF.toInt()
 		const val FRIEND = 0xFF55FF55.toInt()
 		const val COOKIE = 0xFFF0A040.toInt()
+		const val GOD_POTION = 0xFFE060E0.toInt()
 		const val INVENTORY = 0xFFFFFF55.toInt()
 		const val TELEPORT = 0xFFAA55FF.toInt()
 		const val MINING = 0xFF55FFFF.toInt()

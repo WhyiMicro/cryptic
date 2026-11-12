@@ -53,14 +53,11 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
 
     @Inject(method = "extractRenderState", at = @At("TAIL"))
     private void cryptic$hideReplacedNameTag(T entity, S state, float partialTick, CallbackInfo info) {
-        Component customTag = CustomNametags.tagFor(entity);
+        if (CustomNametags.hidesHealth(entity)) state.scoreText = null;
+
+        Component customTag = CustomNametags.tagFor(entity, state.nameTag);
         if (customTag != null) {
             state.nameTag = customTag;
-            // Vanilla never works out a tag position for the player, so it's filled in here.
-            if (state.nameTagAttachment == null) {
-                state.nameTagAttachment = entity.getAttachments()
-                    .getNullable(EntityAttachment.NAME_TAG, 0, entity.getYRot(partialTick));
-            }
             return;
         }
 

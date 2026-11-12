@@ -147,6 +147,12 @@ sealed class ModuleSetting(
 
 	val onCard: Boolean get() = hasOwnRow && parent == null
 
+	/** Whether this holds something other than its default; rows that only open or act never do. */
+	open val changed: Boolean get() = false
+
+	/** Puts the value back to its default, as the row's reset button does. */
+	open fun resetToDefault() {}
+
 	fun hasVisibleMore(): Boolean {
 		val children = more
 		for (index in children.indices) {
@@ -192,6 +198,14 @@ class ToggleModuleSetting(
 
 	var inlineColor: ColorModuleSetting? = null
 		internal set
+
+	// The colour drawn beside the switch shares its row, so it shares the reset too.
+	override val changed: Boolean get() = storedValue != defaultValue || inlineColor?.changed == true
+
+	override fun resetToDefault() {
+		reset()
+		inlineColor?.reset()
+	}
 }
 
 class SliderModuleSetting(
@@ -230,7 +244,15 @@ class SliderModuleSetting(
 	val boxValue: String get() = boxLabel.of(value)
 
 	fun reset() { value = defaultValue }
+
+	override val changed: Boolean get() = !sameNumber(value, defaultValue, step)
+
+	override fun resetToDefault() = reset()
 }
+
+/** Snapping to a step leaves float noise (0.30000000000000004), so equal within a sliver of it. */
+private fun sameNumber(a: Double, b: Double, step: Double): Boolean =
+	kotlin.math.abs(a - b) <= maxOf(step * 1e-3, 1e-9)
 
 /**
  * Two numbers bounding each other, drawn as one slider with two handles. [random] draws from it, so
@@ -271,6 +293,10 @@ class RangeModuleSetting(
 		lower = defaultLower
 		upper = defaultUpper
 	}
+
+	override val changed: Boolean get() = !sameNumber(lower, defaultLower, step) || !sameNumber(upper, defaultUpper, step)
+
+	override fun resetToDefault() = reset()
 }
 
 class ColorModuleSetting(
@@ -321,6 +347,10 @@ class ColorModuleSetting(
 	}
 
 	fun reset() { argb = defaultArgb }
+
+	override val changed: Boolean get() = argb != defaultArgb
+
+	override fun resetToDefault() = reset()
 }
 
 class TextModuleSetting(
@@ -340,6 +370,10 @@ class TextModuleSetting(
 		set(text) { field = text.take(maxLength) }
 
 	fun reset() { value = defaultValue }
+
+	override val changed: Boolean get() = value != defaultValue
+
+	override fun resetToDefault() = reset()
 }
 
 /**
@@ -380,6 +414,10 @@ class KeybindModuleSetting(
 	}
 
 	fun reset() { keyCode = defaultKey }
+
+	override val changed: Boolean get() = keyCode != defaultKey
+
+	override fun resetToDefault() = reset()
 
 	companion object {
 		const val UNBOUND = -1
@@ -446,6 +484,10 @@ class DropdownModuleSetting(
 	}
 
 	fun reset() { storedIndex = defaultIndex }
+
+	override val changed: Boolean get() = storedIndex != defaultIndex
+
+	override fun resetToDefault() = reset()
 }
 
 /**
@@ -504,6 +546,10 @@ class MultiSelectModuleSetting(
 	}
 
 	fun reset() { ticked = defaultIndices }
+
+	override val changed: Boolean get() = ticked != defaultIndices
+
+	override fun resetToDefault() = reset()
 
 	private companion object {
 		const val SEPARATOR = "|"
@@ -617,6 +663,7 @@ object ModuleRegistry {
 		imicro.cryptic.feature.Zoom.module,
 		imicro.cryptic.feature.NoJumpDelay.module,
 		imicro.cryptic.feature.AutoClicker.module,
+		imicro.cryptic.feature.AntiAfk.module,
 		imicro.cryptic.feature.ExperimentSolver.module,
 		imicro.cryptic.feature.ClassColors.module,
 		imicro.cryptic.feature.DungeonMap.module,
@@ -664,7 +711,9 @@ object ModuleRegistry {
 		imicro.cryptic.feature.PuzzleHud.module,
 		imicro.cryptic.feature.DungeonWarpCooldown.module,
 		imicro.cryptic.feature.ILoveGlass.module,
+		imicro.cryptic.feature.TextOutline.module,
 		imicro.cryptic.feature.CookieReminder.module,
+		imicro.cryptic.feature.Combat.module,
 		imicro.cryptic.feature.ConfirmDisconnect.module,
 		imicro.cryptic.feature.WitherDragons.module,
 		imicro.cryptic.feature.Relics.module,
@@ -700,6 +749,7 @@ object ModuleRegistry {
 		imicro.cryptic.feature.NucleusQol.module,
 		imicro.cryptic.feature.ItemProtection.module,
 		imicro.cryptic.feature.Bazaar.module,
+		imicro.cryptic.feature.Flipping.module,
 		imicro.cryptic.feature.AuctionHouse.module,
 		imicro.cryptic.feature.Mining.module,
 		imicro.cryptic.feature.QuickNav.module,

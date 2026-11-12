@@ -20,21 +20,28 @@ import java.util.Locale
  * Amount buttons beside a buy order's "How many do you want?" menu and an instant buy's menu. A
  * button clicks Hypixel's Custom Amount and writes its number into the sign that opens. Besides
  * your own amounts: the most your purse and the limit allow, what your visitors still need, and
- * when relisting a cancelled order through the reopen item, what of it hadn't filled.
+ * for a few minutes after a buy order is cancelled, what of it hadn't filled.
  */
 object BazaarPresets {
 	private const val TITLE = "How many do you want?"
 
 	/**
 	 * "Enchanted Wild Rose ➜ Instant Buy". Hypixel cuts titles at 32 characters, so the end is often
-	 * missing ("➜ Instan").
+	 * missing: "➜ Insta", "➜ I", or for a long name just "➜".
 	 */
-	private val INSTANT_TITLE = Regex("""^(.*?)\s*➜\s*Instan""")
+	private val ARROW_TITLE = Regex("""^(.*?)\s*➜\s*(\S*)""")
+
+	private fun instantMatch(title: String): MatchResult? = ARROW_TITLE.find(title)?.takeIf { match ->
+		val tail = match.groupValues[2]
+		tail.startsWith("Instant") || tail.isNotEmpty() && "Instant".startsWith(tail) ||
+			// Only the arrow left: an instant buy if the product page just open starts that way.
+			tail.isEmpty() && match.groupValues[1].isNotEmpty() && Bazaar.lastProduct?.startsWith(match.groupValues[1].trim()) == true
+	}
 	private const val CUSTOM_AMOUNT = "Custom Amount"
 	private const val ORDER_LIMIT = 71_680
 
 	/** How long a relist's amount is offered, and a click waits for its sign. */
-	private const val RELIST_MILLIS = 120_000L
+	private const val RELIST_MILLIS = 300_000L
 	private const val SIGN_WAIT_MILLIS = 3_000L
 
 	private val FORMATTING = Regex("§.")
@@ -51,10 +58,16 @@ object BazaarPresets {
 	private var pending: Int? = null
 	private var pendingAt = 0L
 
-	/** Called when the reopen item opens a cancelled order's product again. */
+	/** Called when an order is cancelled, and again when the reopen item opens its product. */
 	fun relisting(name: String, sell: Boolean, left: Int) {
 		// A sell offer sells what you carry; only a buy order asks how many.
 		relist = if (!sell && left > 0) Relist(name, left, System.currentTimeMillis()) else null
+	}
+
+	/** The order's name against the product page's, which a long title may have cut short. */
+	private fun sameName(order: String, page: String?): Boolean {
+		val shown = page?.trim()?.takeIf { it.isNotEmpty() } ?: return false
+		return order.equals(shown, ignoreCase = true) || order.startsWith(shown, ignoreCase = true) && shown.length >= 12
 	}
 
 	private class Button(val label: String, val amount: Int, val x: Int, val y: Int, val width: Int, val height: Int) {
@@ -63,17 +76,28 @@ object BazaarPresets {
 
 	private var buttons: List<Button> = emptyList()
 
+	/** The last amount menu drawn, for /cryptic debug visitors (chat closes the menu). */
+	private var lastMenuTitle: String? = null
+	private var lastMenuProduct: String? = null
+	private var lastMenuInstant = false
+
+	fun describe(): List<String> = listOf(
+		"Bazaar presets: module ${Bazaar.module.enabled}, presets ${Bazaar.presets.value}, last product page ${Bazaar.lastProduct ?: "none"}",
+		lastMenuTitle?.let { "Last amount menu: \"${it.replace("§", "&")}\" (${if (lastMenuInstant) "instant buy" else "buy order"}) for ${lastMenuProduct ?: "no product"}" }
+			?: "Last amount menu: none opened since the game started",
+	)
+
 	private fun title(screen: Any?) = (screen as? AbstractContainerScreen<*>)?.title?.string?.replace(FORMATTING, "")?.trim()
 
 	private fun inAmountMenu(screen: Any?): Boolean {
 		if (!Bazaar.module.enabled || !Bazaar.presets.value) return false
 		val title = title(screen) ?: return false
-		return title == TITLE || INSTANT_TITLE.containsMatchIn(title)
+		return title == TITLE || instantMatch(title) != null
 	}
 
 	/** An instant buy: its title names the product. */
 	private fun instantProduct(screen: Any?): String? {
-		val match = title(screen)?.let { INSTANT_TITLE.find(it) } ?: return null
+		val match = title(screen)?.let(::instantMatch) ?: return null
 		// A name cut short is the product page's, whose title had room for it.
 		val named = match.groupValues[1].trim()
 		return Bazaar.lastProduct?.takeIf { named.isEmpty() || (it.startsWith(named) && it != named) } ?: named
@@ -116,9 +140,12 @@ object BazaarPresets {
 		val now = System.currentTimeMillis()
 		val instant = instantProduct(screen)
 		val product = instant ?: Bazaar.lastProduct
+		lastMenuTitle = chest.title.string
+		lastMenuProduct = product
+		lastMenuInstant = instant != null
 		val sections = ArrayList<Section>()
 		// A relist is a buy order again, never an instant buy.
-		if (instant == null) relist?.takeIf { now - it.at < RELIST_MILLIS && it.name == product }?.let {
+		if (instant == null) relist?.takeIf { now - it.at < RELIST_MILLIS && sameName(it.name, product) }?.let {
 			sections += Section("§aRelisting", SUGGESTED_ACCENT, SUGGESTED_FILL, listOf("§aLast order" to it.amount))
 		}
 		Farming.presetsFor(product).takeIf { it.isNotEmpty() }?.let {

@@ -34,6 +34,12 @@ public abstract class ChatComponentMixin {
         if (imicro.cryptic.feature.HollowsMap.eatsSkyblockerLine(contents)) info.cancel();
     }
 
+    /** Custom Nametags' name, here rather than at the packet so lines other mods add get it too. */
+    @ModifyVariable(method = "addMessage", at = @At("HEAD"), argsOnly = true, ordinal = 0)
+    private Component cryptic$customName(Component contents) {
+        return imicro.cryptic.feature.CustomNametags.decorate(contents);
+    }
+
     /** A repeat of a recent line replaces it, with a count. */
     @ModifyVariable(method = "addMessage", at = @At("HEAD"), argsOnly = true, ordinal = 0)
     private Component cryptic$compact(Component contents) {

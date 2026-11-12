@@ -15,7 +15,7 @@ public abstract class PlayerTabOverlayMixin {
     private void cryptic$customTabName(PlayerInfo info, CallbackInfoReturnable<Component> cir) {
         Component original = cir.getReturnValue();
         if (original == null) return;
-        Component renamed = CustomNametags.tabName(info.getProfile().id(), original);
+        Component renamed = CustomNametags.tabName(original);
         if (renamed != null) cir.setReturnValue(renamed);
     }
 }

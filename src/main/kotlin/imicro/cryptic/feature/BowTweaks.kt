@@ -1,5 +1,6 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
@@ -7,7 +8,7 @@ import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
 import net.minecraft.world.item.ItemStack
 
-/** Shortbow and arrow tweaks in one card: [ArrowFix], [ArrowHitSound] and [ArrowHitboxes]. */
+/** Shortbow and arrow tweaks in one card: [ArrowFix], [ArrowHitSound], [ArrowHitboxes] and the bow's [Trajectories]. */
 object BowTweaks {
 	@JvmField
 	val arrowFix = ToggleModuleSetting(
@@ -38,6 +39,28 @@ object BowTweaks {
 	)
 
 	@JvmField
+	val trajectoryLine = ToggleModuleSetting(
+		id = "trajectory_line",
+		label = "Show path",
+		defaultValue = true,
+		description = "Draws the arrow's path. Off, only where it lands and the mob it hits are marked.",
+	)
+
+	@JvmField
+	val trajectoryColor = ColorModuleSetting("trajectory_color", "Line", defaultRgb = 0xFFFFFF)
+
+	@JvmField
+	val trajectoryHitColor = ColorModuleSetting("trajectory_hit_color", "Mob it hits", defaultRgb = 0xFF5555)
+
+	@JvmField
+	val trajectory = ToggleModuleSetting(
+		id = "trajectory",
+		label = "Bow trajectory",
+		defaultValue = true,
+		description = "Where your arrows would go: while you draw a bow, and whenever you hold a shortbow. Stops at the first mob it would hit.",
+	)
+
+	@JvmField
 	val module = Module(
 		id = "bow_tweaks",
 		name = "Bow Tweaks",
@@ -49,6 +72,7 @@ object BowTweaks {
 			arrowFix,
 			noShortbowSwing,
 			SectionModuleSetting("arrow_section", "Arrows"),
+			trajectory.withMore(trajectoryLine, trajectoryColor, trajectoryHitColor),
 			hitSound.withMore(*ArrowHitSound.settings.toTypedArray()),
 			hitboxes.withMore(*ArrowHitboxes.settings.toTypedArray()),
 		),

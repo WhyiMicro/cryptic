@@ -32,6 +32,7 @@ import net.minecraft.world.item.Items
 import net.minecraft.world.item.component.DyedItemColor
 import net.minecraft.world.item.component.ResolvableProfile
 import java.util.Base64
+import java.lang.ref.WeakReference
 import java.util.UUID
 
 /**
@@ -143,6 +144,53 @@ object QuickNav {
 		"container/creative_inventory/tab_${if (top) "top" else "bottom"}_${if (selected) "selected" else "unselected"}_${column + 1}",
 	)
 
+	private val CHEST = Identifier.withDefaultNamespace("textures/gui/container/generic_54.png")
+	private val TAB_FILE = Identifier.withDefaultNamespace("textures/gui/sprites/container/creative_inventory/tab_top_unselected_1.png")
+
+	private var checkedScreen = WeakReference<Screen>(null)
+	private var fromChest = false
+
+	/**
+	 * Whether to build the tabs from the chest's own texture: when a pack retextures the chest but
+	 * not the creative tabs, the vanilla tabs would clash with it. Checked once per menu.
+	 */
+	private fun fromChest(screen: Screen): Boolean {
+		if (checkedScreen.get() !== screen) {
+			checkedScreen = WeakReference(screen)
+			val resources = Minecraft.getInstance().resourceManager
+			fun pack(id: Identifier) = resources.getResource(id).map { it.sourcePackId() }.orElse("")
+			fromChest = pack(CHEST) != pack(TAB_FILE)
+		}
+		return fromChest
+	}
+
+	private fun drawTab(screen: Screen, graphics: GuiGraphicsExtractor, x: Int, y: Int, top: Boolean, selected: Boolean, column: Int) {
+		if (!fromChest(screen)) {
+			graphics.blitSprite(RenderPipelines.GUI_TEXTURED, sprite(top, selected, column), x, y, TAB_WIDTH, TAB_HEIGHT)
+			return
+		}
+		// Corners, edges and fill cut from generic_54 (176 wide, its bottom edge ending at row 221);
+		// unselected tabs are shorter and darker, like the creative inventory's. They reach only
+		// 2 px into the chest, as far as its border, since a pack's chest may be see-through.
+		val tint = if (selected) -1 else 0xFFB4B4B4.toInt()
+		val height = if (selected) TAB_HEIGHT - 2 else TAB_HEIGHT - 4
+		val boxY = if (top && selected) y else y + 2
+		val c = 4
+		val w = TAB_WIDTH
+		fun piece(dx: Int, dy: Int, pw: Int, ph: Int, u: Int, v: Int, uw: Int, vh: Int) = graphics.blit(
+			RenderPipelines.GUI_TEXTURED, CHEST, x + dx, boxY + dy, u.toFloat(), v.toFloat(), pw, ph, uw, vh, 256, 256, tint,
+		)
+		val edgeY = if (top) 0 else height - c
+		val sideY = if (top) c else 0
+		val cornerV = if (top) 0 else 218
+		piece(0, edgeY, c, c, 0, cornerV, c, c)
+		piece(w - c, edgeY, c, c, 172, cornerV, c, c)
+		piece(c, edgeY, w - 2 * c, c, 8, cornerV, 1, c)
+		piece(0, sideY, c, height - c, 0, 8, c, 1)
+		piece(w - c, sideY, c, height - c, 172, 8, c, 1)
+		piece(c, sideY, w - 2 * c, height - c, 8, 8, 1, 1)
+	}
+
 	private fun applies(screen: Screen): AbstractContainerScreen<*>? {
 		if (!module.enabled || !SkyblockLocation.onSkyblock) return null
 		if (screen !is AbstractContainerScreen<*> || screen is CreativeModeInventoryScreen) return null
@@ -179,7 +227,7 @@ object QuickNav {
 		for (button in buttons) {
 			if (!button.shown.value || button.matches(title)) continue
 			val (x, y, top) = place(container, button.index)
-			graphics.blitSprite(RenderPipelines.GUI_TEXTURED, sprite(top == 1, false, button.index % 7), x, y, TAB_WIDTH, TAB_HEIGHT)
+			drawTab(screen, graphics, x, y, top == 1, false, button.index % 7)
 		}
 	}
 
@@ -193,7 +241,7 @@ object QuickNav {
 			if (!button.shown.value) continue
 			val (x, y, top) = place(container, button.index)
 			if (button.matches(title)) {
-				graphics.blitSprite(RenderPipelines.GUI_TEXTURED, sprite(top == 1, true, button.index % 7), x, y, TAB_WIDTH, TAB_HEIGHT)
+				drawTab(screen, graphics, x, y, top == 1, true, button.index % 7)
 			}
 			graphics.item(button.icon(), x + 5, y + 8 + if (top == 1) 1 else -1)
 			if (hovered(container, button.index, mouseX.toDouble(), mouseY.toDouble())) {

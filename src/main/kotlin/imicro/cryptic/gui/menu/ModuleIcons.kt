@@ -12,10 +12,12 @@ object ModuleIcons {
 		// General
 		"bow_tweaks" to "\uf140", // bullseye
 		"auto_clicker" to "\uf8cc", // computer-mouse
+		"anti_afk" to "\uf554", // person-walking
 		"auto_gfs" to "\uf49e", // box-open
 		"auto_sprint" to "\uf70c", // person-running
 		"better_chat" to "\uf086", // comments
 		"cookie_reminder" to "\uf564", // cookie-bite
+		"combat" to "\uf6de", // hand-fist
 		"confirm_disconnect" to "\uf2f5", // right-from-bracket
 		"party_finder" to "\ue533", // people-group
 		"party_blacklist" to "\uf235", // user-xmark
@@ -59,6 +61,7 @@ object ModuleIcons {
 		"hidden_mobs" to "\uf6e2", // ghost
 		"highlight" to "\uf591", // highlighter
 		"i_love_glass" to "\uf530", // glasses
+		"text_outline" to "\uf032", // bold
 		"invincibility_timer" to "\uf3ed", // shield-halved
 		"mage_beam" to "\uf6e8", // hat-wizard
 		"no_item_place" to "\uf05e", // ban
@@ -123,6 +126,7 @@ object ModuleIcons {
 		"toasts" to "\uf0f3", // bell
 		"item_protection" to "\uf132", // shield
 		"bazaar" to "\uf54e", // store
+		"flipping" to "\uf0ec", // arrow-right-arrow-left
 		"auction_house" to "\uf0e3", // gavel
 		"farming" to "\uf4d8", // seedling
 		"rift" to "\uf252", // hourglass-half

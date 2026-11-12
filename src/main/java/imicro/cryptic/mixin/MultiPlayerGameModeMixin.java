@@ -64,6 +64,8 @@ public abstract class MultiPlayerGameModeMixin {
     /** A terminal's stand being clicked, which Terminal ESP flashes. */
     @Inject(method = "interact", at = @At("HEAD"))
     private void cryptic$noteEntityUse(Player player, Entity entity, EntityHitResult hit, InteractionHand hand, CallbackInfoReturnable<?> info) {
+        // Before ensureHasSentCarriedItem, so a swap goes out ahead of the click.
+        imicro.cryptic.feature.NucleusQol.beforeInteract(player, entity, hand);
         TerminalEsp.onClicked(entity);
     }
 
