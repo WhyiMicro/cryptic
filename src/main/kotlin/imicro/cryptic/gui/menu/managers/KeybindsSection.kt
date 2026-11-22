@@ -106,15 +106,15 @@ class KeybindsSection : ManagerSection("Bindings") {
 		val headH = 60f
 		ui.card(Box(x, cy, width, headH))
 		val count = KeybindManager.bindings.size
-		ui.text(if (count == 1) "1 binding" else "$count bindings", x + 18f, cy + 14f, 15f, MenuStyle.TEXT, UiText.Face.MEDIUM)
-		ui.text("Keys that run a command or say something, wherever and whenever you choose.", x + 18f, cy + 36f, 12f, MenuStyle.MUTED)
+		ui.text(if (count == 1) "1 binding" else "$count bindings", x + 20f, cy + 14f, 15f, MenuStyle.TEXT, UiText.Face.MEDIUM)
+		ui.text("Keys that run a command or say something, wherever and whenever you choose.", x + 20f, cy + 36f, 12f, MenuStyle.MUTED)
 		val newW = ui.buttonWidth("New binding")
-		ui.button(Box(x + width - 18f - newW, cy + (headH - 34f) / 2f, newW, 34f), "New binding", primary = true) { openEditor(null) }
-		cy += headH + 14f
+		ui.button(Box(x + width - 20f - newW, cy + (headH - 34f) / 2f, newW, 34f), "New binding", primary = true) { openEditor(null) }
+		cy += headH
 
 		if (KeybindManager.bindings.isEmpty()) {
-			ui.text("No bindings yet.", x + 2f, cy + 4f, 13f, MenuStyle.MUTED)
-			return cy + 24f - y
+			ui.text("No bindings yet.", x + 2f, cy + 18f, 13f, MenuStyle.MUTED)
+			return cy + 38f - y
 		}
 
 		val groups = KeybindManager.bindings.groupBy { it.category }
@@ -122,23 +122,26 @@ class KeybindsSection : ManagerSection("Bindings") {
 		for (name in order) {
 			val members = groups[name] ?: continue
 			if (name.isNotEmpty()) {
+				cy += Sections.HEADING_GAP
 				val group = KeybindManager.categories.firstOrNull { it.name == name }
-				Sections.heading(ui, "$name  ·  ${members.size}", x, cy)
 				val on = group?.enabled != false
-				ui.switch(Box(x + width - 18f - 32f, cy + 6f, 32f, 15f), on, "category:$name") { KeybindManager.toggleCategory(name) }
-				cy += Sections.HEADING
+				ui.switch(Box(x + width - 20f - 32f, cy + 1f, 32f, 15f), on, "category:$name") { KeybindManager.toggleCategory(name) }
+				cy += Sections.heading(ui, "$name  ·  ${members.size}", x, cy, x + width - 20f, trailing = 32f)
+			} else {
+				cy += 14f
 			}
-			for (binding in members) cy += drawRow(binding, x, cy, width) + 2f
-			cy += 12f
+			ui.beginGroup(x, cy, width)
+			for (binding in members) cy += drawRow(binding, x, cy, width)
+			ui.endGroup(cy)
 		}
 		return cy - y
 	}
 
 	private fun drawRow(binding: Binding, x: Float, y: Float, width: Float): Float {
-		val h = 58f
+		val h = 62f
+		ui.row(Box(x, y, width, h), key = binding)
 		if (y + h < ui.area.y || y > ui.area.bottom) return h
-		ui.card(Box(x, y, width, h))
-		val pad = 18f
+		val pad = 20f
 		val cy = y + h / 2f
 
 		var right = x + width - pad
@@ -149,9 +152,9 @@ class KeybindsSection : ManagerSection("Bindings") {
 		right -= 32f + 16f
 
 		var cx = x + pad
-		cx += ui.badge(KeybindManager.describe(binding.keys), cx, y + 9f, lit = binding.enabled) + 10f
-		ui.text(ui.fit(binding.command, 13f, right - cx), cx, y + 13f, 13f, if (binding.enabled) MenuStyle.TEXT else MenuStyle.MUTED)
-		ui.text(ui.fit(conditions(binding), 12f, right - x - pad), x + pad, y + 37f, 12f, MenuStyle.MUTED)
+		cx += ui.badge(KeybindManager.describe(binding.keys), cx, y + 11f, lit = binding.enabled) + 10f
+		ui.text(ui.fit(binding.command, 14f, right - cx, UiText.Face.MEDIUM), cx, y + 15f, 14f, if (binding.enabled) MenuStyle.TEXT else MenuStyle.MUTED, UiText.Face.MEDIUM)
+		ui.text(ui.fit(conditions(binding), 12f, right - x - pad), x + pad, y + 39f, 12f, MenuStyle.MUTED)
 		return h
 	}
 
@@ -168,12 +171,12 @@ class KeybindsSection : ManagerSection("Bindings") {
 
 	private fun drawEditor(x: Float, y: Float, width: Float, binding: Binding): Float {
 		var cy = y
-		Sections.heading(ui, if (original == null) "New binding" else "Edit binding", x, cy)
-		cy += Sections.HEADING
+		cy += Sections.heading(ui, if (original == null) "New binding" else "Edit binding", x, cy, x + width)
 
 		val labelW = 200f
 		val controlX = x + labelW
-		val controlW = width - labelW - 18f
+		val controlW = width - labelW - 20f
+		ui.beginGroup(x, cy, width)
 
 		cy += editorRow(x, cy, width, "Command", "Starts with / for a command; anything else is said in chat.", 34f) { top ->
 			ui.field(Box(controlX, top, controlW, 34f), command, "/warp dungeon_hub, or a chat message")
@@ -227,9 +230,10 @@ class KeybindsSection : ManagerSection("Bindings") {
 		cy += chipsRow(x, cy, width, "Kuudra tiers", "None picked means anywhere. Picked, it only fires in those tiers.", (1..KuudraLocation.TIERS.size).toList(), { KuudraLocation.TIERS[it - 1] }, { it in binding.kuudraTiers }) {
 			if (!binding.kuudraTiers.remove(it)) binding.kuudraTiers += it
 		}
+		ui.endGroup(cy)
 
 		// Cancel and Save, with what's still missing beside them.
-		cy += 12f
+		cy += 14f
 		val problem = when {
 			command.text.isBlank() -> "Give it a command or a message."
 			binding.keys.isEmpty() -> "Give it a key."
@@ -246,19 +250,19 @@ class KeybindsSection : ManagerSection("Bindings") {
 
 	/** An editor row: name and hint on the left, control on the right. */
 	private fun editorRow(x: Float, y: Float, width: Float, label: String, hint: String, controlH: Float, control: (top: Float) -> Unit): Float {
-		val h = max(56f, controlH + 28f)
-		ui.card(Box(x, y, width, h))
-		ui.text(label, x + 18f, y + 12f, 14f, MenuStyle.TEXT)
-		ui.text(ui.fit(hint, 12f, 175f), x + 18f, y + 32f, 12f, MenuStyle.MUTED)
-		control(y + 14f)
-		return h + 2f
+		val h = max(64f, controlH + 30f)
+		ui.row(Box(x, y, width, h))
+		ui.text(label, x + 20f, y + 15f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
+		ui.text(ui.fit(hint, 12f, 170f), x + 20f, y + 36f, 12f, MenuStyle.MUTED)
+		control(y + 15f)
+		return h
 	}
 
 	private fun <T> chipsRow(
 		x: Float, y: Float, width: Float, label: String, hint: String,
 		items: List<T>, name: (T) -> String, selected: (T) -> Boolean, onClick: (T) -> Unit,
 	): Float {
-		val controlW = width - 200f - 18f
+		val controlW = width - 200f - 20f
 		val chipsH = ui.chipsHeight(controlW, items.map(name))
 		return editorRow(x, y, width, label, hint, chipsH) { top ->
 			ui.chips(x + 200f, top, controlW, items, name, selected, onClick)

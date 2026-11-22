@@ -6,7 +6,7 @@ import java.nio.ByteBuffer
  *
  * The full fonts live in src/fonts. Font Awesome keeps only the icons the code
  * uses (found by scanning the Kotlin sources, so a new icon is picked up on its
- * own); Poppins keeps everything but its Devanagari. A dropped glyph keeps its
+ * own); the text fonts keep everything but Devanagari. A dropped glyph keeps its
  * id and metrics with no outline, so nothing else in the font has to change.
  * Hinting is kept, so text renders exactly as before. The layout tables
  * (GSUB, GPOS, kern) go: the menu draws one character at a time.
@@ -48,7 +48,7 @@ fun iconCodePoints(root: File): Set<Int> {
 	return found
 }
 
-/** Poppins keeps everything except its Devanagari, which nothing in a SkyBlock menu is written in. */
+/** Text fonts keep everything except Devanagari, which nothing in a SkyBlock menu is written in. */
 fun isTextCodePoint(c: Int): Boolean = c !in 0x0900..0x097F && c !in 0x1CD0..0x1CFF && c !in 0xA8E0..0xA8FF
 
 fun u16(b: ByteArray, at: Int): Int = ((b[at].toInt() and 0xFF) shl 8) or (b[at + 1].toInt() and 0xFF)

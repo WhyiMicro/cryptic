@@ -1,7 +1,7 @@
 # Keybinds, Aliases, Sounds and Updates
 
 The Keybinds, Alias and Sound managers are in the menu's General tab, and the
-Update Checker is in Settings. Each manager is on its module's page:
+Update Checker is on the Settings tab. Each manager is on its module's page:
 open the card with its **⋮** (or a right-click), or use its `/cryptic` command,
 which opens the menu straight on it. A manager works whether or not its module
 is on; the switch in the page's title row turns the module on.
@@ -14,6 +14,7 @@ is on; the switch in the page's title row turns the module on.
 | `/cryptic update` | Checks for an update now |
 | `/cryptic changelog` | Changelog |
 | `/cryptic blacklist` | Party Blacklist |
+| `/cryptic ahwatch` | Auction House watch list |
 
 ## Keybinds Manager
 
@@ -89,10 +90,22 @@ that play quieter than full to begin with. Most of Hypixel's do.
 
 Volumes are kept in `config/cryptic/sound-volumes.json`.
 
+## Settings tab
+
+**Settings**, at the foot of the menu's sidebar, holds Cryptic's own settings on
+one page, under a heading each: Client Restrictions, Click GUI (with the key
+that opens the menu), Update Checker, Toast Notifications and the HUD Editor.
+**Credits**, at the bottom, opens the list of projects Cryptic learned from.
+The search box finds any of these settings, and a search from the module list
+shows a Settings card that opens the tab on what matched.
+
+**Config** sits above it in the sidebar, with your saved setups.
+
 ## Update Checker
 
-On by default. Once per session, on the first server you join, it reads the
-latest release on GitHub and compares it with the version you have installed.
+On by default (**Check for updates** on the Settings tab). Once per session, on
+the first server you join, it reads the latest release on GitHub and compares
+it with the version you have installed.
 
 Only a release with a jar for your Minecraft version is offered. If it's
 newer, what happens depends on **Install updates automatically**:
@@ -115,15 +128,30 @@ download fail; neither downloads anything.
 
 ## Changelog
 
-The Changelog card in Settings, or `/cryptic changelog`, shows the release
+**Read all** on the Profile view, or `/cryptic changelog`, shows the release
 notes for the version you have, read from its GitHub release. A build newer
 than the last release, such as one you built yourself, shows that release's
 notes and says so. **All releases** opens the GitHub releases page with every
 older changelog.
 
-After Cryptic updates, the first time you join a world or server a
-notification says so; press **Y** to open the Changelog. Turn it off with
-**Show what's new after an update** in Update Checker.
+Turn on **Offer what's new** under Update Checker on the Settings tab. While
+it's on, the first time you join a world or server after Cryptic updates, a
+notification says so; press **Y** to open the Changelog. Off (the default),
+there's no notification, though the Changelog still opens from the Profile view
+or the command.
+
+## Profile
+
+**Profile**, at the top of the menu's sidebar, is an overview of your
+SkyBlock time: how long you've played today and in all, runs finished, slayer
+bosses, the week's Bazaar flip profit and how many modules are on; a chart of
+the last 30 days (rest the pointer on a day for its time); where your time went
+by island; the latest release notes (**Read all** opens the Changelog); and this
+session.
+
+The numbers are counted by Cryptic from then on, while you're on SkyBlock, and
+kept per Minecraft account in `config/cryptic/stats.json`. Nothing is sent
+anywhere. Days older than 90 are dropped; the totals are kept.
 
 ## Party Blacklist
 

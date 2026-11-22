@@ -175,10 +175,6 @@ object CrosshairEditor {
 		description = "Puts the crosshair on the screen's true centre. Vanilla rounds it to a GUI pixel, which leaves it half a pixel off at some window sizes and GUI scales.",
 	)
 
-	private val configurable = listOf(
-		gridSize, blendMode, scale, opacity, outline, outlineColor, targetTint, targetColor, thirdPerson, hideDefault, centreFix,
-	)
-
 	/** The card's bind button, pointed at the real key mapping. */
 	private val openKeybind = KeybindSetting(
 		currentKeyName = {

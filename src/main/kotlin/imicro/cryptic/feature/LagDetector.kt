@@ -63,7 +63,7 @@ object LagDetector {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(LagElement())
+		Hud.register(LagElement(), module)
 		// A server hop isn't a lag spike.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> ServerTicks.forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> ServerTicks.forget() }

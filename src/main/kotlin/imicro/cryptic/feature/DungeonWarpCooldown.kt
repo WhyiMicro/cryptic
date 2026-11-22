@@ -48,7 +48,7 @@ object DungeonWarpCooldown {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(CooldownElement())
+		Hud.register(CooldownElement(), module)
 	}
 
 	/** A chat packet. The message is framed in dash rules, so every line is tried. */

@@ -42,7 +42,7 @@ class SoundsSection : ManagerSection("Sounds") {
 
 	override fun draw(x: Float, y: Float, width: Float): Float {
 		var cy = y
-		val pad = 18f
+		val pad = 20f
 		// The card's height depends on how the chips wrap, so they're measured first.
 		val wrap = chipRows(width - pad * 2f)
 		val cardH = 18f + 34f + 12f + wrap * (imicro.cryptic.gui.menu.UiKit.CHIP_HEIGHT + 6f) - 6f + 14f + 18f + 14f
@@ -52,19 +52,22 @@ class SoundsSection : ManagerSection("Sounds") {
 		inner += 34f + 12f
 		inner += ui.chips(x + pad, inner, width - pad * 2f, Tab.entries, { it.title }, { it == tab }) { tab = it } + 14f
 		ui.text("0% is silent, up to 200%. Over 100% only helps sounds that play quietly to begin with.", x + pad, inner, 12f, MenuStyle.MUTED)
-		cy += cardH + 14f
+		cy += cardH + Sections.HEADING_GAP
 
 		val list = filtered()
+		cy += Sections.heading(ui, if (list.size == 1) "1 sound" else "${list.size} sounds", x, cy, x + width)
 		if (list.isEmpty()) {
 			val text = if (tab == Tab.RECENT && search.isEmpty) "Nothing has played yet." else "No sounds match."
-			ui.text(text, x + 2f, cy + 4f, 13f, MenuStyle.MUTED)
-			return cy + 24f - y
+			ui.text(text, x + 2f, cy, 13f, MenuStyle.MUTED)
+			return cy + 20f - y
 		}
-		val rowH = 44f
+		val rowH = 50f
+		ui.beginGroup(x, cy, width)
 		for (id in list) {
 			if (cy + rowH >= ui.area.y && cy <= ui.area.bottom) drawRow(id, x, cy, width, rowH)
-			cy += rowH + 2f
+			cy += rowH
 		}
+		ui.endGroup(cy)
 		return cy - y
 	}
 
@@ -83,8 +86,8 @@ class SoundsSection : ManagerSection("Sounds") {
 	}
 
 	private fun drawRow(id: String, x: Float, y: Float, width: Float, h: Float) {
-		ui.card(Box(x, y, width, h))
-		val pad = 18f
+		ui.row(Box(x, y, width, h), key = id)
+		val pad = 20f
 		val cy = y + h / 2f
 		val percent = SoundVolumes.percent(id)
 
@@ -114,7 +117,7 @@ class SoundsSection : ManagerSection("Sounds") {
 		}
 		val name = id.removePrefix("minecraft:")
 		val room = right - sliderW - 20f - (x + pad)
-		ui.text(ui.fit(name, 13f, room), x + pad, cy - 6.5f, 13f, if (percent == 100) MenuStyle.TEXT else MenuStyle.accent(), UiText.Face.REGULAR)
+		ui.text(ui.fit(name, 14f, room, UiText.Face.MEDIUM), x + pad, cy - 7f, 14f, if (percent == 100) MenuStyle.TEXT else MenuStyle.accent(), UiText.Face.MEDIUM)
 	}
 
 	/** What the search and tab leave, recomputed only when either changes. */

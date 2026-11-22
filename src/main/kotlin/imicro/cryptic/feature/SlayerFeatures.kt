@@ -5,6 +5,7 @@ import imicro.cryptic.gui.ColorModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.MultiSelectModuleSetting
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.TabModuleSetting
@@ -49,13 +50,13 @@ import org.joml.Vector3f
  * `<player>'s SLAYER BOSS` stand over it ([SlayerBosses]), so kill times, highlights and alerts
  * are for your own boss (or a carried player's).
  *
- * Voidgloom: the phase comes off its name stand ("50 Hits" while shielded, health otherwise), and
- * the laser from the armour stand it rides; that lasts 8.2 seconds from when it mounts (Athen,
- * BSD-3). A beacon, skull or laser belongs to the Voidgloom nearest it; only yours and a carried
- * player's are marked.
- *
- * The Fire Veil overlay is IQ's (Apache 2.0): the wand's 3.5-block ring for the five seconds it
- * burns, and its flames hidden for nine seconds from the cast.
+ * Each boss's stage and what it's doing come off its name stand and the stands around it: a
+ * Voidgloom's hits shield and laser (the laser lasts 8.2 seconds from when it mounts its stand;
+ * Athen, BSD-3), an Inferno's attunement and fire pillars, Sven's pups, an Atoned Horror's TNT, a
+ * Bloodfiend's Twinclaws, Mania and steak. Voidgloom and Inferno stages split their health evenly,
+ * a Tarantula V is a Broodfather and then a Conjoined Brood, and a Bloodfiend can be staked from 20%
+ * health (SkyHanni and Skyblocker, as facts only). A beacon, skull or laser belongs to the
+ * Voidgloom nearest it; only yours and a carried player's are marked.
  */
 object SlayerFeatures {
 	private const val VOIDGLOOM_ISLAND = "The End"
@@ -87,21 +88,6 @@ object SlayerFeatures {
 
 	private const val BY_PHASE = 0
 
-	private const val VEIL_CIRCLE = 0
-
-	/** The Fire Veil Wand's ring, how long it burns, and how long its flames are hidden. */
-	private const val VEIL_ID = "FIRE_VEIL_WAND"
-	private const val VEIL_RADIUS = 3.5
-	private const val VEIL_WALL_HEIGHT = 1.0
-	private const val VEIL_MILLIS = 5_000L
-	private const val VEIL_FLAME_MILLIS = 9_000L
-
-	/** Flames this close to you while the veil burns are its own. */
-	private const val VEIL_FLAME_REACH = 6.0
-
-	/** A click and the use that follows it both fire; one cast is counted from both. */
-	private const val VEIL_DEBOUNCE_MILLIS = 500L
-
 	/** A kill's time stays where the boss died this long. */
 	private const val KILL_LABEL_MILLIS = 3_000L
 
@@ -119,6 +105,53 @@ object SlayerFeatures {
 		SlayerType.VOIDGLOOM to listOf(300_000.0, 12_000_000.0, 50_000_000.0, 210_000_000.0),
 		SlayerType.INFERNO to listOf(2_500_000.0, 10_000_000.0, 45_000_000.0, 150_000_000.0),
 		SlayerType.RIFTSTALKER to listOf(625.0, 1_100.0, 1_800.0, 2_400.0, 3_000.0),
+	)
+
+	/** A Tarantula V's second boss, which spawns when the Broodfather dies, and its health. */
+	private const val CONJOINED = "Conjoined Brood"
+	private const val CONJOINED_HEALTH = 20_000_000.0
+
+	/** A Broodfather V's death this recent dates the Conjoined Brood's fight from it. */
+	private const val BROOD_JOIN_MILLIS = 30_000L
+
+	/** A Bloodfiend can be staked from this share of its health. */
+	private const val STEAK_SHARE = 0.2
+
+	/** Mania's circles, in ticks of the stand a Bloodfiend rides, shown once they've lasted two seconds. */
+	private const val MANIA_TICKS = 520
+	private const val MANIA_SHOWN_AFTER = 40
+
+	/** Hypixel's line when a Broodfather III+ can't be hurt until its hatchlings die. */
+	private const val HATCHLINGS_LINE = "You need to kill the Broodfather's hatchlings before it can be damaged again!"
+
+	/** A stuck Broodfather moved this far (squared, in blocks) is free again. */
+	private const val UNSTUCK_DISTANCE = 0.01
+
+	private val ATTUNEMENT_CODES = mapOf("ASHEN" to "§8", "SPIRIT" to "§f", "CRYSTAL" to "§b", "AURIC" to "§e", "IMMUNE" to "§c")
+
+	private val ROMAN = listOf("I", "II", "III", "IV", "V")
+
+	/** A Bloodfiend's dripping lava, purple spell and portal particles; the hearts it draws from you. */
+	private val RIFT_PARTICLES = setOf(
+		ParticleTypes.DRIPPING_LAVA, ParticleTypes.FALLING_LAVA, ParticleTypes.LANDING_LAVA,
+		ParticleTypes.WITCH, ParticleTypes.PORTAL, ParticleTypes.REVERSE_PORTAL, ParticleTypes.HEART,
+	)
+	private val RIFT_HEARTS = setOf(ParticleTypes.HEART)
+	private val RIFT_SMOKE = setOf(ParticleTypes.LARGE_SMOKE, ParticleTypes.SMOKE)
+	private const val RIFT_SMOKE_REACH = 16.0
+
+	/** Particles this close to your Bloodfiend are counted for `/cryptic debug rift`. */
+	private const val PARTICLE_WATCH_REACH = 6.0
+
+	@Volatile
+	private var particleWatch: AABB? = null
+	private val particleCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+
+	/** A Bloodfiend's skill and its countdown, on the stand with the despawn timer. */
+	private val skillPattern = Regex("""\b(TWINCLAWS|ICHOR|MANIA|STONEWRATH|KILLER SPRING)\b(?:\s+(\d+(?:\.\d+)?s))?""")
+	private val SKILL_COLOURS = mapOf(
+		"TWINCLAWS" to "§6", "ICHOR" to "§3", "MANIA" to "§c", "STONEWRATH" to "§7", "KILLER SPRING" to "§d",
 	)
 
 	/** The four minutes a Voidgloom has before it despawns, which dates a fight seen part way in. */
@@ -166,12 +199,7 @@ object SlayerFeatures {
 	)
 
 	/** A Riftstalker that can be staked has this in its name. */
-	private const val STEAK_MARK = "҉"
-
-	private val STAKES = setOf("STEAK_STAKE", "SHARP_STEAK_STAKE")
-
-	/** How close to your boss a hit still counts as on it, since the name stand and the body are apart. */
-	private const val STAKE_REACH = 2.0
+	const val STEAK_MARK = "҉"
 
 	// ---- General -------------------------------------------------------------------------------
 
@@ -184,7 +212,42 @@ object SlayerFeatures {
 		id = "boss_label",
 		label = "Stats on boss",
 		defaultValue = true,
-		description = "Health on every slayer boss, shaded by what's left, and how long its fight has taken. A Voidgloom's shows its phase, the laser's time left and its hits. At its feet, you see them looking down in first person. The kill time stays there a moment after it dies.",
+		description = "Every slayer boss's stage, what it's doing (hits shield, laser, pups, attunement, fire pillar, Twinclaws, steak and more), its health shaded by what's left, and how long its fight has taken. At its feet, you see them looking down in first person. The kill time stays there a moment after it dies.",
+	)
+
+	@JvmField
+	val hudBar = ToggleModuleSetting(
+		id = "boss_hud_bar",
+		label = "Health bar",
+		defaultValue = true,
+		visibleIf = { bossHud.value },
+	)
+
+	@JvmField
+	val hudCarried = ToggleModuleSetting(
+		id = "boss_hud_carried",
+		label = "Carried players' bosses",
+		defaultValue = true,
+		description = "With no boss of your own up, shows the nearest carried player's.",
+		visibleIf = { bossHud.value },
+	)
+
+	@JvmField
+	val bossHud = ToggleModuleSetting(
+		id = "boss_hud",
+		label = "Boss HUD",
+		defaultValue = false,
+		description = "Your boss on the HUD: its stage, health, what it's doing, the fight's time and the time left before it despawns. Place it with /cryptic hud.",
+	)
+
+	@JvmField
+	val labelWhose = MultiSelectModuleSetting(
+		id = "boss_label_whose",
+		label = "Whose bosses",
+		options = listOf(WHOSE_YOURS, WHOSE_CARRIED, WHOSE_OTHERS),
+		defaultSelected = setOf(WHOSE_YOURS, WHOSE_CARRIED),
+		description = "Which bosses get their stats and kill time: your own, carried players', everyone else's.",
+		visibleIf = { bossLabel.value },
 	)
 
 	@JvmField
@@ -222,7 +285,7 @@ object SlayerFeatures {
 		label = "Health colour",
 		options = listOf("By phase", "By total health"),
 		defaultIndex = BY_PHASE,
-		description = "Whether a Voidgloom's health goes green to red over each phase, or over the whole fight.",
+		description = "Whether a staged boss's health (Voidgloom, Inferno) goes green to red over each stage, or over the whole fight.",
 		visibleIf = { bossLabel.value },
 	)
 
@@ -248,7 +311,7 @@ object SlayerFeatures {
 		id = "highlight_own",
 		label = "Highlight your boss",
 		defaultValue = false,
-		description = "Makes your own boss glow, so it stands out from everyone else's.",
+		description = "Marks your own boss, so it stands out from everyone else's.",
 	)
 
 	@JvmField
@@ -258,6 +321,45 @@ object SlayerFeatures {
 		defaultRgb = 0x55FF55,
 		visibleIf = { highlightOwn.value },
 		inlineWith = highlightOwn,
+	)
+
+	@JvmField
+	val highlightStyle = DropdownModuleSetting(
+		id = "highlight_style",
+		label = "Style",
+		options = listOf("Glow", "Outline", "Fill", "Fill + Outline"),
+		defaultIndex = STYLE_GLOW,
+		description = "Glow is the game's own outline, always through walls; the rest are a box around it.",
+		visibleIf = { highlightOwn.value },
+	)
+
+	@JvmField
+	val ownFill = ColorModuleSetting(
+		id = "own_fill",
+		label = "Fill",
+		defaultRgb = 0x55FF55,
+		supportsAlpha = true,
+		defaultAlpha = 0x40,
+		visibleIf = { highlightOwn.value && boxFills() },
+	)
+
+	@JvmField
+	val highlightWidth = SliderModuleSetting(
+		id = "highlight_width",
+		label = "Line width",
+		defaultValue = 2.0,
+		min = 1.0,
+		max = 10.0,
+		step = 0.5,
+		visibleIf = { highlightOwn.value && boxOutlines() },
+	)
+
+	@JvmField
+	val highlightThroughWalls = ToggleModuleSetting(
+		id = "highlight_through_walls",
+		label = "Through walls",
+		defaultValue = true,
+		visibleIf = { highlightOwn.value && highlightStyle.selectedIndex != STYLE_GLOW },
 	)
 
 	@JvmField
@@ -340,63 +442,29 @@ object SlayerFeatures {
 		description = "A title with its name when a slayer mini-boss spawns near you.",
 	)
 
-	private val veilSection = SectionModuleSetting("veil_section", "Fire Veil")
-
-	@JvmField
-	val fireVeil = ToggleModuleSetting(
-		id = "fire_veil",
-		label = "Fire Veil overlay",
-		defaultValue = false,
-		description = "Draws the Fire Veil Wand's reach around you while it burns.",
-	)
-
-	@JvmField
-	val veilStyle = DropdownModuleSetting(
-		id = "veil_style",
-		label = "Style",
-		options = listOf("Circle", "Wall"),
-		defaultIndex = VEIL_CIRCLE,
-		visibleIf = { fireVeil.value },
-	)
-
-	@JvmField
-	val veilColor = ColorModuleSetting(
-		id = "veil_color",
-		label = "Colour",
-		defaultRgb = 0xFFAA00,
-		supportsAlpha = true,
-		defaultAlpha = 0xC8,
-		visibleIf = { fireVeil.value },
-	)
-
-	@JvmField
-	val veilWidth = SliderModuleSetting(
-		id = "veil_width",
-		label = "Line width",
-		defaultValue = 3.0,
-		min = 1.0,
-		max = 10.0,
-		step = 0.5,
-		visibleIf = { fireVeil.value },
-	)
-
-	@JvmField
-	val veilThroughWalls = ToggleModuleSetting(
-		id = "veil_through_walls",
-		label = "Through walls",
-		defaultValue = false,
-		visibleIf = { fireVeil.value },
-	)
-
-	@JvmField
-	val hideVeilFlames = ToggleModuleSetting(
-		id = "hide_veil_flames",
-		label = "Hide Fire Veil flames",
-		defaultValue = true,
-		description = "Hides the flame particles the wand puts around you.",
-	)
-
 	private val progressSection = SectionModuleSetting("progress_section", "Progress")
+
+	@JvmField
+	val tubaEvery = SliderModuleSetting(
+		id = "tuba_every",
+		label = "Every",
+		unit = "s",
+		defaultValue = 30.0,
+		min = 20.0,
+		max = 60.0,
+		step = 1.0,
+		description = "How often to blow it. The Weirder Tuba's buff lasts 30 seconds (the Weird Tuba's 20) and its cooldown is 20, so 30 saves the most mana.",
+		visibleIf = { autoTuba.value },
+	)
+
+	@JvmField
+	val autoTuba = ToggleModuleSetting(
+		id = "auto_tuba",
+		label = "Auto tuba",
+		defaultValue = false,
+		description = "When your Bloodfiend spawns, uses the Weird or Weirder Tuba in your hotbar and switches back, then again every so often while it's up.",
+		restriction = imicro.cryptic.gui.Restriction.CHEAT,
+	)
 
 	@JvmField
 	val xpOverlay = ToggleModuleSetting(
@@ -628,6 +696,25 @@ object SlayerFeatures {
 
 	private val riftstalkerTab = TabModuleSetting("riftstalker_tab", "Riftstalker")
 
+	private val riftAutoSection = SectionModuleSetting("rift_auto_section", "Automation")
+
+	@JvmField
+	val steakHighlight = ToggleModuleSetting(
+		id = "steak_highlight",
+		label = "Stakeable colour",
+		defaultValue = true,
+		description = "With Highlight your boss on, your Bloodfiend's highlight changes colour once it's under 20% health and can be staked.",
+	)
+
+	@JvmField
+	val steakColor = ColorModuleSetting(
+		id = "steak_color",
+		label = "Stakeable",
+		defaultRgb = 0xFF0058,
+		visibleIf = { steakHighlight.value },
+		inlineWith = steakHighlight,
+	)
+
 	@JvmField
 	val steakAlert = ToggleModuleSetting(
 		id = "steak_alert",
@@ -641,7 +728,114 @@ object SlayerFeatures {
 		id = "auto_stake",
 		label = "Auto stake",
 		defaultValue = false,
-		description = "Hitting your Bloodfiend while it can be staked switches to the Steak Stake in your hotbar first, so the hit kills it.",
+		description = "Hitting your Bloodfiend, or a thrall, splatter or fledgling, while it can be staked (20% health) switches to the Steak Stake in your hotbar for the hit, then back. The first hit after a stake kill uses it too, for the Sharp Steak Stake's Bloodcrave.",
+		restriction = imicro.cryptic.gui.Restriction.CHEAT,
+	)
+
+	@JvmField
+	val stakeDoubleHit = ToggleModuleSetting(
+		id = "stake_double_hit",
+		label = "Double hit without Bloodcrave",
+		defaultValue = true,
+		description = "With no Bloodcrave stored from a stake kill, the stake stays out for a second hit once the mob can be hit again, so the kill is the stake's and stores Bloodcrave for the next.",
+		visibleIf = { autoStake.value },
+	)
+
+	@JvmField
+	val stakeSwapBack = SliderModuleSetting(
+		id = "stake_swap_back",
+		label = "Swap back after",
+		unit = "ms",
+		defaultValue = 300.0,
+		min = 100.0,
+		max = 1000.0,
+		step = 50.0,
+		description = "How long the stake stays in your hand after it comes out, before going back to what you held.",
+		visibleIf = { autoStake.value },
+	)
+
+	@JvmField
+	val holyIceAt = SliderModuleSetting(
+		id = "holy_ice_at",
+		label = "Use at",
+		unit = "s",
+		defaultValue = 0.6,
+		min = 0.0,
+		max = 1.5,
+		step = 0.1,
+		description = "Uses the ice when the Twinclaws countdown over your boss reaches this. The ice protects for 1.5 seconds, so it covers the claws landing at zero.",
+		visibleIf = { autoHolyIce.value },
+	)
+
+	@JvmField
+	val autoHolyIce = ToggleModuleSetting(
+		id = "auto_holy_ice",
+		label = "Auto Holy Ice",
+		defaultValue = false,
+		description = "When your Bloodfiend starts Twinclaws, uses the Holy Ice in your hotbar and switches back.",
+		restriction = imicro.cryptic.gui.Restriction.CHEAT,
+	)
+
+	@JvmField
+	val healThreshold = SliderModuleSetting(
+		id = "heal_threshold",
+		label = "Below",
+		unit = "%",
+		defaultValue = 40.0,
+		min = 10.0,
+		max = 90.0,
+		step = 5.0,
+		description = "Heals when your health drops below this share of its maximum.",
+		visibleIf = { autoHeal.value },
+	)
+
+	@JvmField
+	val autoHeal = ToggleModuleSetting(
+		id = "auto_heal",
+		label = "Auto heal",
+		defaultValue = false,
+		description = "While your Bloodfiend is up and your health is low, uses the Healing Melon in your hotbar and switches back.",
+		restriction = imicro.cryptic.gui.Restriction.CHEAT,
+	)
+
+	@JvmField
+	val maniaDelay = SliderModuleSetting(
+		id = "mania_helper_delay",
+		label = "Delay",
+		unit = "ms",
+		defaultValue = 300.0,
+		min = 0.0,
+		max = 1500.0,
+		step = 50.0,
+		description = "How long after the prompt shows to answer it. Tier III gives 2.5 seconds, tiers IV and V two.",
+		visibleIf = { maniaHelper.value },
+	)
+
+	@JvmField
+	val impelPrompts = DropdownModuleSetting(
+		id = "impel_prompts",
+		label = "Impel prompts",
+		options = listOf("Show", "Hide jump and sneak", "Hide all"),
+		defaultIndex = 1,
+		description = "Hides the Impel titles the helper answers for you (jump and sneak), or every Impel title.",
+		visibleIf = { maniaHelper.value },
+	)
+
+	@JvmField
+	val maniaHelper = ToggleModuleSetting(
+		id = "mania_helper",
+		label = "Mania helper",
+		defaultValue = false,
+		description = "Jumps or sneaks when your Bloodfiend's Impel prompt says to.",
+		restriction = imicro.cryptic.gui.Restriction.CHEAT,
+	)
+
+	@JvmField
+	val autoKillerSpring = ToggleModuleSetting(
+		id = "auto_killer_spring",
+		label = "Auto Killer Spring",
+		defaultValue = false,
+		description = "While you look at the Killer Spring, clicks it the way it asks (left or right), so it's compacted in time.",
 		restriction = imicro.cryptic.gui.Restriction.CHEAT,
 	)
 
@@ -651,6 +845,77 @@ object SlayerFeatures {
 		label = "Twinclaws alert",
 		defaultValue = true,
 		description = "A title when your Bloodfiend starts Twinclaws: time for Holy Ice.",
+	)
+
+	@JvmField
+	val hideRiftParticles = ToggleModuleSetting(
+		id = "hide_rift_particles",
+		label = "Hide boss particles",
+		defaultValue = false,
+		description = "Hides the dripping lava, purple spell and portal particles around Bloodfiends, the hearts between you and yours, and the smoke puffs around its arena.",
+	)
+
+	@JvmField
+	val impelDisplay = ToggleModuleSetting(
+		id = "impel_display",
+		label = "Impel display",
+		defaultValue = true,
+		description = "Replaces Hypixel's Impel title with a bigger flashing one, arrows for CLICK UP and CLICK DOWN, and the time left under it. Place it with /cryptic hud.",
+	)
+
+	@JvmField
+	val twinclawsPath = ToggleModuleSetting(
+		id = "twinclaws_path",
+		label = "Twinclaws path",
+		defaultValue = false,
+		description = "While your Bloodfiend counts down Twinclaws, a line at your chest height along the claws' path, from it through you; when the count ends the line stays where the claws will go.",
+	)
+
+	@JvmField
+	val twinclawsColor = ColorModuleSetting(
+		id = "twinclaws_color",
+		label = "Twinclaws path",
+		defaultRgb = 0xFFAA00,
+		supportsAlpha = true,
+		visibleIf = { twinclawsPath.value },
+		inlineWith = twinclawsPath,
+	)
+
+	@JvmField
+	val stonewrathMark = ToggleModuleSetting(
+		id = "stonewrath_mark",
+		label = "Stonewrath lock-on",
+		defaultValue = false,
+		description = "A box at your feet where your Bloodfiend locked on for Stonewrath (three quick, rising notes), until it lands.",
+	)
+
+	@JvmField
+	val stonewrathColor = ColorModuleSetting(
+		id = "stonewrath_color",
+		label = "Stonewrath box",
+		defaultRgb = 0xFF2020,
+		supportsAlpha = true,
+		defaultAlpha = 0x60,
+		visibleIf = { stonewrathMark.value },
+		inlineWith = stonewrathMark,
+	)
+
+	@JvmField
+	val ichorLine = ToggleModuleSetting(
+		id = "ichor_line",
+		label = "Line to Ichor",
+		defaultValue = false,
+		description = "A line from your tier V Bloodfiend to the Blood Ichor it spawned (after its ICHOR countdown), to aim the Twinclaws at it.",
+	)
+
+	@JvmField
+	val ichorColor = ColorModuleSetting(
+		id = "ichor_color",
+		label = "Ichor line",
+		defaultRgb = 0xFF2020,
+		supportsAlpha = true,
+		visibleIf = { ichorLine.value },
+		inlineWith = ichorLine,
 	)
 
 	@JvmField
@@ -670,18 +935,16 @@ object SlayerFeatures {
 		settings = listOf(
 			generalTab,
 			bossSection,
-			bossLabel.withMore(labelPlace, labelSize, labelThroughWalls, healthColour),
+			bossLabel.withMore(labelWhose, labelPlace, labelSize, labelThroughWalls, healthColour),
+			bossHud.withMore(hudBar, hudCarried),
 			killTime.withMore(phaseTimes),
-			highlightOwn, ownColor,
+			highlightOwn.withMore(highlightStyle, ownFill, highlightWidth, highlightThroughWalls), ownColor,
 			lineToOwn, lineColor,
 			fadeOthers,
 			alertSection,
 			cocoonAlert,
 			highlightMinibosses, minibossColor,
 			minibossAlert,
-			veilSection,
-			fireVeil.withMore(veilStyle, veilColor, veilWidth, veilThroughWalls),
-			hideVeilFlames,
 			progressSection,
 			xpOverlay,
 			revenantTab,
@@ -711,9 +974,21 @@ object SlayerFeatures {
 			muteBlazes,
 			riftstalkerTab,
 			steakAlert,
-			autoStake,
+			steakHighlight, steakColor,
+			autoStake.withMore(stakeSwapBack, stakeDoubleHit),
 			twinclawsAlert,
 			maniaAlert,
+			hideRiftParticles,
+			impelDisplay,
+			ichorLine, ichorColor,
+			twinclawsPath, twinclawsColor,
+			stonewrathMark, stonewrathColor,
+			riftAutoSection,
+			autoHolyIce.withMore(holyIceAt),
+			autoHeal.withMore(healThreshold),
+			maniaHelper.withMore(maniaDelay, impelPrompts),
+			autoKillerSpring,
+			autoTuba.withMore(tubaEvery),
 		),
 	)
 
@@ -726,9 +1001,22 @@ object SlayerFeatures {
 	}
 
 	/** One boss, and how its fight has gone so far. */
-	private class Fight(val bossId: Int, val type: SlayerType, val tier: Int, var since: Long) {
+	private class Fight(val bossId: Int, val type: SlayerType, val tier: Int, val form: String, var since: Long) {
 		/** Kept from its stand, which a dying boss loses before the death event. */
 		var owner: String? = null
+
+		/** A Broodfather V: the first of the tier's two bosses. */
+		val firstBrood get() = type == SlayerType.TARANTULA && tier >= 5 && form != CONJOINED
+
+		/** A Conjoined Brood dated from its Broodfather, or found to have none. */
+		var joined = false
+
+		/** What the boss is doing, as shown under its stage. */
+		var state: List<String> = emptyList()
+
+		/** Where a Broodfather stood when Hypixel said its hatchlings must die first, or NaN. */
+		var stuckX = Double.NaN
+		var stuckZ = Double.NaN
 
 		var phase: Phase? = null
 		var phaseSince = since
@@ -744,7 +1032,7 @@ object SlayerFeatures {
 		var hits: Int? = null
 
 		/** Health as last read off the name; the name shows hits instead during a shield. */
-		var health = MAX_HEALTH[type]?.let { it.getOrElse(tier - 1) { _ -> it.last() } } ?: 1.0
+		var health = if (form == CONJOINED) CONJOINED_HEALTH else MAX_HEALTH[type]?.let { it.getOrElse(tier - 1) { _ -> it.last() } } ?: 1.0
 		var maxHealth = health
 		var healthText: String? = null
 
@@ -771,6 +1059,9 @@ object SlayerFeatures {
 	private class KillLabel(val text: String, val where: Vec3, val at: Long)
 
 	private val killLabels = ArrayList<KillLabel>()
+
+	/** Each owner's last Broodfather V to die: when its fight began, and when it died. */
+	private val broodDeaths = HashMap<String, Pair<Long, Long>>()
 
 	/** A boss whose name stand has been gone this long is forgotten. */
 	private const val FORGET_MILLIS = 2_000L
@@ -809,13 +1100,6 @@ object SlayerFeatures {
 	@Volatile
 	private var particleZones: List<ParticleZone> = emptyList()
 
-	/** When the Fire Veil was last cast, and where you were last tick; both read by the particle hook. */
-	@Volatile
-	private var veilCastAt = 0L
-
-	@Volatile
-	private var playerAt: Vec3 = Vec3.ZERO
-
 	/** Whether each skull texture seen is a Nukekubi, so each is decoded once. */
 	private val skullTextures = HashMap<String, Boolean>()
 
@@ -834,7 +1118,9 @@ object SlayerFeatures {
 		if (initialized) return
 		initialized = true
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
-		imicro.cryptic.hud.Hud.register(imicro.cryptic.slayer.SlayerXp.Element())
+		imicro.cryptic.hud.Hud.register(imicro.cryptic.slayer.SlayerXp.Element(), module, xpOverlay)
+		imicro.cryptic.hud.Hud.register(imicro.cryptic.slayer.BossHud(), module, bossHud)
+		imicro.cryptic.hud.Hud.register(imicro.cryptic.slayer.ImpelDisplay(), module, impelDisplay)
 	}
 
 	private val active: Boolean
@@ -847,7 +1133,6 @@ object SlayerFeatures {
 	fun tick(client: Minecraft) {
 		val level = client.level
 		val player = client.player
-		tickVeil(player)
 		if (!active || level == null || player == null) {
 			clear()
 			return
@@ -857,15 +1142,16 @@ object SlayerFeatures {
 		val seen = SlayerBosses.bosses
 		for (entry in seen) {
 			// Back-dated to when the client first saw the boss.
-			val fight = fights.getOrPut(entry.boss.id) { Fight(entry.boss.id, entry.type, entry.tier, now - entry.boss.tickCount * 50L) }
-			read(fight, entry, now)
+			val fight = fights.getOrPut(entry.boss.id) { Fight(entry.boss.id, entry.type, entry.tier, form(entry), now - entry.boss.tickCount * 50L) }
+			read(fight, entry, level, now)
 		}
 		fights.values.removeIf { now - it.lastSeen > FORGET_MILLIS || level.getEntity(it.bossId) == null }
 		killLabels.removeIf { now - it.at > KILL_LABEL_MILLIS }
+		broodDeaths.values.removeIf { now - it.second > BROOD_JOIN_MILLIS }
 
 		val glow = HashMap<Int, Int>()
 		val mine = SlayerBosses.mine()
-		if (highlightOwn.value && mine != null) glow[mine.boss.id] = ARGB.opaque(ownColor.rgb)
+		if (highlightOwn.value && mine != null && highlightStyle.selectedIndex == STYLE_GLOW) glow[mine.boss.id] = ARGB.opaque(highlightRgb(mine))
 		tickMinibosses(player, glow)
 		tickAlerts(level, mine, player.position(), now)
 		val zones = ArrayList<ParticleZone>()
@@ -903,6 +1189,16 @@ object SlayerFeatures {
 			skulls = emptyList()
 			laserBosses = emptyList()
 		}
+		val bloodfiend = mine?.takeIf { it.type == SlayerType.RIFTSTALKER }
+		if (hideRiftParticles.value) {
+			seen.filter { it.type == SlayerType.RIFTSTALKER }.mapTo(zones) { ParticleZone(it.boss.boundingBox.inflate(PARTICLE_REACH), RIFT_PARTICLES) }
+			// The hearts fly from you to your boss, so they're hidden all along the way.
+			bloodfiend?.let { zones += ParticleZone(it.boss.boundingBox.minmax(player.boundingBox).inflate(PARTICLE_REACH), RIFT_HEARTS) }
+			// Its smoke puffs land all over the arena, as far out as the Mania circle.
+			bloodfiend?.let { zones += ParticleZone(it.boss.boundingBox.inflate(RIFT_SMOKE_REACH), RIFT_SMOKE) }
+		}
+		particleWatch = bloodfiend?.boss?.boundingBox?.inflate(PARTICLE_WATCH_REACH)
+		imicro.cryptic.slayer.RiftIndicators.tick(level, player, bloodfiend, now)
 		particleZones = zones
 		fadeKeep = if (fadeOthers.value && mine != null) {
 			HashSet<Int>().apply {
@@ -913,6 +1209,7 @@ object SlayerFeatures {
 			null
 		}
 		glows = glow
+		imicro.cryptic.slayer.SlayerAutomation.tick(client, player, mine, now)
 	}
 
 	/** Whether [at] is nearest a Voidgloom that's yours or a client's, and near enough to it. */
@@ -922,8 +1219,11 @@ object SlayerFeatures {
 	}
 
 	private fun clear() {
+		imicro.cryptic.slayer.SlayerAutomation.clear()
+		imicro.cryptic.slayer.RiftIndicators.clear()
 		fights.clear()
 		killLabels.clear()
+		broodDeaths.clear()
 		flying.clear()
 		placed.clear()
 		skulls = emptyList()
@@ -948,12 +1248,38 @@ object SlayerFeatures {
 	@JvmStatic
 	fun beforeAttack(player: net.minecraft.world.entity.player.Player, target: Entity) {
 		if (!active || !autoStake.value) return
-		val mine = SlayerBosses.mine() ?: return
-		if (mine.type != SlayerType.RIFTSTALKER || STEAK_MARK !in mine.name) return
-		if (target.id != mine.boss.id && target.distanceToSqr(mine.boss) > STAKE_REACH * STAKE_REACH) return
-		val inventory = player.inventory
-		val slot = (0 until net.minecraft.world.entity.player.Inventory.getSelectionSize()).firstOrNull { SkyblockItem.id(inventory.getItem(it)) in STAKES } ?: return
-		inventory.selectedSlot = slot
+		imicro.cryptic.slayer.SlayerAutomation.beforeAttack(player, target)
+	}
+
+	private const val WHOSE_YOURS = "Yours"
+	private const val WHOSE_CARRIED = "Carried players"
+	private const val WHOSE_OTHERS = "Others"
+
+	/** Whether Stats on boss is shown for a boss of [owner]'s; one not yet read counts as someone else's. */
+	private fun labelled(owner: String?): Boolean = labelWhose.isSelected(
+		when {
+			SlayerBosses.isMe(owner) -> WHOSE_YOURS
+			owner != null && CarryManager.isCarried(owner) -> WHOSE_CARRIED
+			else -> WHOSE_OTHERS
+		},
+	)
+
+	private const val STYLE_GLOW = 0
+	private const val STYLE_OUTLINE = 1
+	private const val STYLE_FILL = 2
+
+	private fun boxOutlines() = highlightStyle.selectedIndex == STYLE_OUTLINE || highlightStyle.selectedIndex == STYLE_FILL + 1
+	private fun boxFills() = highlightStyle.selectedIndex >= STYLE_FILL
+
+	/** Your boss's glow or outline colour: the stakeable colour for a Bloodfiend that can be staked. */
+	private fun highlightRgb(mine: SlayerBosses.Seen): Int = if (stakeColoured(mine)) steakColor.rgb else ownColor.rgb
+
+	/** A Bloodfiend at 20% or under, or marked as stakeable, with Stakeable colour on. */
+	private fun stakeColoured(mine: SlayerBosses.Seen): Boolean {
+		if (!steakHighlight.value || mine.type != SlayerType.RIFTSTALKER) return false
+		if (STEAK_MARK in mine.name) return true
+		val fight = fights[mine.boss.id] ?: return false
+		return fight.healthText != null && fight.health <= fight.maxHealth * STEAK_SHARE
 	}
 
 	/** Yours, or a carried player's. */
@@ -979,16 +1305,21 @@ object SlayerFeatures {
 		if (changed) fight.timerPinned = true
 	}
 
+	/** Which of the type's names the boss goes by ("Atoned Horror" for a Revenant V). */
+	private fun form(seen: SlayerBosses.Seen): String =
+		seen.type.names.sortedByDescending { it.length }.firstOrNull { it in seen.name } ?: seen.type.title
+
 	/** What follows the boss's name and tier: "67 Hits", or health as "266k/750k" (or "45M❤"). */
 	private fun tail(seen: SlayerBosses.Seen): String {
 		val name = seen.type.names.sortedByDescending { it.length }.firstOrNull { it in seen.name } ?: return ""
 		return seen.name.substringAfter(name).trim().removePrefix(roman(seen.tier)).trim()
 	}
 
-	private fun read(fight: Fight, seen: SlayerBosses.Seen, now: Long) {
+	private fun read(fight: Fight, seen: SlayerBosses.Seen, level: ClientLevel, now: Long) {
 		fight.lastSeen = now
 		if (seen.owner != null) fight.owner = seen.owner
 		syncStart(fight, seen, now)
+		joinBrood(fight)
 
 		val tail = tail(seen)
 		val voidgloom = fight.type == SlayerType.VOIDGLOOM
@@ -1007,6 +1338,7 @@ object SlayerFeatures {
 				fight.maxHealth = stated ?: maxOf(fight.maxHealth, health)
 			}
 		}
+		fight.state = readState(fight, seen, level)
 		if (!voidgloom) return
 		// The laser comes in a hits phase, so it's checked first.
 		fight.enter(
@@ -1018,6 +1350,86 @@ object SlayerFeatures {
 			now,
 		)
 	}
+
+	/**
+	 * A Conjoined Brood's fight is its Broodfather's too, so it's dated from when the Broodfather
+	 * spawned: one of the same owner's still up, or one that just died.
+	 */
+	private fun joinBrood(fight: Fight) {
+		if (fight.joined || fight.form != CONJOINED) return
+		val owner = fight.owner ?: return
+		fight.joined = true
+		val alive = fights.values.filter { it.firstBrood && it.owner == owner }.minOfOrNull { it.since }
+		val start = alive ?: broodDeaths.remove(owner)?.first ?: return
+		fight.since = minOf(fight.since, start)
+	}
+
+	/** What the boss is doing, each a coloured phrase, from its name and the stands around it. */
+	private fun readState(fight: Fight, seen: SlayerBosses.Seen, level: ClientLevel): List<String> {
+		val out = ArrayList<String>(2)
+		fight.laserLeft?.let { left -> out += if (left <= 0) "§bLaser §fsoon" else "§bLaser §f${seconds(left)}" }
+		when (fight.type) {
+			SlayerType.REVENANT -> standsNear(level, seen.boss, STAND_REACH).firstOrNull { "Boom!" in it }?.let { out += "§c§l${it.trim()}" }
+			SlayerType.SVEN -> if (standsNear(level, seen.boss, STAND_REACH).any { "Calling the pups!" in it }) out += "§fPups! §7Immune"
+			SlayerType.TARANTULA -> {
+				if (!fight.stuckX.isNaN()) {
+					val dx = seen.boss.x - fight.stuckX
+					val dz = seen.boss.z - fight.stuckZ
+					if (dx * dx + dz * dz > UNSTUCK_DISTANCE) {
+						fight.stuckX = Double.NaN
+						fight.stuckZ = Double.NaN
+					} else {
+						out += "§eKill the hatchlings"
+					}
+				}
+			}
+			SlayerType.INFERNO -> {
+				attunement(level, seen.boss)?.let { out += it }
+				pillarNear(level, seen.boss)?.let { out += "§5Pillar §f$it" }
+			}
+			SlayerType.RIFTSTALKER -> {
+				if (STEAK_MARK in seen.name) {
+					out += "§c§lSteak!"
+				} else if (fight.healthText != null) {
+					val left = fight.health - fight.maxHealth * STEAK_SHARE
+					if (left > 0) out += "§7Steak in §c${ceil(left).toLong()}"
+				}
+				// Skills share the despawn timer's stand: "03:45 TWINCLAWS 1.2s ICHOR 1.4s".
+				val skills = standsNear(level, seen.boss, STAND_REACH)
+					.flatMap { text -> skillPattern.findAll(text).map { it.groupValues[1] to it.groupValues[2] } }
+					.distinctBy { it.first }
+				val circles = seen.boss.vehicle?.tickCount
+				val maniaCircles = circles != null && circles > MANIA_SHOWN_AFTER
+				for ((skill, time) in skills) {
+					if (skill == "MANIA" && maniaCircles) continue
+					out += (SKILL_COLOURS[skill] ?: "§f") + skill.lowercase().replaceFirstChar { it.uppercase() } +
+						(if (time.isNotEmpty()) " §f$time" else "")
+				}
+				if (maniaCircles) out += "§cMania §f${seconds((MANIA_TICKS - circles).coerceAtLeast(0) * 50L)}"
+			}
+			SlayerType.VOIDGLOOM -> {}
+		}
+		return out
+	}
+
+	/** The attunement over an Inferno boss, coloured, with its hits ("ASHEN ♨8"). */
+	private fun attunement(level: ClientLevel, boss: Entity): String? {
+		val stand = level.getEntitiesOfClass(ArmorStand::class.java, boss.boundingBox.inflate(ATTUNEMENT_REACH)) { it.customName != null }
+			.filter { attunementPattern.containsMatchIn(it.customName!!.string.replace(formattingPattern, "")) }
+			.minByOrNull { it.distanceToSqr(boss) } ?: return null
+		val text = stand.customName!!.string.replace(formattingPattern, "").trim()
+		val word = attunementPattern.find(text)?.groupValues?.get(1) ?: return null
+		return (ATTUNEMENT_CODES[word] ?: "§f") + text.substring(text.indexOf(word))
+	}
+
+	/** The fire pillar nearest to going off around an Inferno boss ("4s 8 hits"). */
+	private fun pillarNear(level: ClientLevel, boss: Entity): String? =
+		level.getEntitiesOfClass(ArmorStand::class.java, boss.boundingBox.inflate(PILLAR_REACH)) { it.customName != null }
+			.mapNotNull { stand ->
+				val text = stand.customName!!.string.replace(formattingPattern, "").trim()
+				pillarPattern.matchEntire(text)?.groupValues?.get(1)?.toIntOrNull()?.let { it to text }
+			}
+			.minByOrNull { it.first }?.second
 
 	/** "45M" as 45 million; Hypixel writes k, M and B. */
 	private fun parseHealth(text: String): Double? {
@@ -1031,6 +1443,17 @@ object SlayerFeatures {
 		}
 	}
 
+	/** Health in Hypixel's short form: "750k", "2.4M". */
+	private fun shortHealth(value: Double): String {
+		fun trim(number: Double, unit: String) = String.format(Locale.ROOT, "%.1f", number).removeSuffix(".0") + unit
+		return when {
+			value >= 1e9 -> trim(value / 1e9, "B")
+			value >= 1e6 -> trim(value / 1e6, "M")
+			value >= 1e4 -> trim(value / 1e3, "k")
+			else -> String.format(Locale.ROOT, "%,d", value.toLong())
+		}
+	}
+
 	/** Green, then yellow, then red as [left] runs down from [full]. */
 	private fun shade(left: Double, full: Double): String {
 		val fraction = if (full > 0) left / full else 1.0
@@ -1041,34 +1464,127 @@ object SlayerFeatures {
 		}
 	}
 
+	/** How many even health stages the boss has, as SkyHanni splits them; 0 for none. */
+	private fun healthStages(fight: Fight): Int = when (fight.type) {
+		SlayerType.VOIDGLOOM -> if (fight.tier >= 4) 6 else 3
+		SlayerType.INFERNO -> if (fight.tier >= 3) 3 else 2
+		else -> 0
+	}
+
+	/** One boss as the label and the HUD show it. Every text is coloured. */
+	class BossView(
+		val title: String,
+		/** "2/3", or null for a boss without stages. */
+		val stage: String?,
+		/** Hits or health, shaded by what's left; null until the name has been read. */
+		val main: String?,
+		/** The boss's full health, or the shield's hits, as "/750k"; empty when unknown. */
+		val maximum: String,
+		/** What's left of the health (or the shield), 0 to 1, for the bar; its colour code. */
+		val fraction: Double,
+		val shade: String,
+		val state: List<String>,
+		val elapsedMillis: Long,
+		val timeLeft: Int?,
+		/** The player whose boss it is, when not you. */
+		val owner: String?,
+	)
+
+	private fun view(fight: Fight, now: Long): BossView {
+		val title = "${fight.type.colour}${fight.form} ${roman(fight.tier)}"
+		val hits = fight.hits
+		val steps = healthStages(fight)
+		var stage: String? = null
+		var colour = shade(fight.health, fight.maxHealth)
+		if (fight.type == SlayerType.TARANTULA && fight.tier >= 5) {
+			stage = if (fight.form == CONJOINED) "§e2/2" else "§e1/2"
+		} else if (steps > 0) {
+			val step = fight.maxHealth / steps
+			val index = (steps - ceil(fight.health / step).toInt() + 1).coerceIn(1, steps)
+			stage = "§e$index/$steps"
+			if (healthColour.selectedIndex == BY_PHASE) colour = shade(fight.health - step * (steps - index), step)
+		}
+		val main: String?
+		val maximum: String
+		val fraction: Double
+		if (hits != null) {
+			val full = MAX_HITS.getOrElse(fight.tier - 1) { 100 }.toDouble()
+			colour = shade(hits.toDouble(), full)
+			main = "$colour$hits Hits"
+			maximum = ""
+			fraction = hits / full
+		} else {
+			main = fight.healthText?.let { "$colour$it" }
+			maximum = if (fight.healthText != null) "/${shortHealth(fight.maxHealth)}" else ""
+			fraction = if (fight.maxHealth > 0) fight.health / fight.maxHealth else 1.0
+		}
+		return BossView(
+			title = title,
+			stage = stage,
+			main = main,
+			maximum = maximum,
+			fraction = fraction.coerceIn(0.0, 1.0),
+			shade = colour,
+			state = fight.state,
+			elapsedMillis = now - fight.since,
+			timeLeft = SlayerBosses.byId(fight.bossId)?.timeLeft,
+			owner = fight.owner?.takeIf { !SlayerBosses.isMe(it) },
+		)
+	}
+
 	/**
-	 * A Voidgloom's stats as two lines: the phase (out of three, or six for a tier IV, split by
-	 * health as SkyHanni does) with the laser's time left, then hits or health shaded by what's left.
-	 * Any other boss's: its health, then how long the fight has taken.
+	 * The label's lines: the stage and what the boss is doing, then its hits or health, then how
+	 * long the fight has taken.
 	 */
 	private fun statLines(fight: Fight, now: Long): List<String> {
-		if (fight.type != SlayerType.VOIDGLOOM) {
-			val health = fight.healthText?.let { "${shade(fight.health, fight.maxHealth)}$it" }
-			return listOfNotNull(health, "§7${seconds(now - fight.since)}")
-		}
-		val steps = if (fight.tier >= 4) 6 else 3
-		val step = fight.maxHealth / steps
-		val index = (steps - ceil(fight.health / step).toInt() + 1).coerceIn(1, steps)
-		// Lag can keep the boss on its stand past the 8.2 seconds.
-		val laser = fight.laserLeft?.let { if (it <= 0) " §fsoon" else " §f${seconds(it)}" } ?: ""
-		val second = fight.hits?.let { hits ->
-			val full = MAX_HITS.getOrElse(fight.tier - 1) { 100 }.toDouble()
-			"${shade(hits.toDouble(), full)}$hits Hits"
-		} ?: fight.healthText?.let {
-			val colour = if (healthColour.selectedIndex == BY_PHASE) {
-				shade(fight.health - step * (steps - index), step)
-			} else {
-				shade(fight.health, fight.maxHealth)
-			}
-			"$colour$it"
-		}
-		return listOfNotNull("§e$index/$steps$laser", second)
+		val view = view(fight, now)
+		val top = listOfNotNull(view.stage) + view.state
+		return listOfNotNull(
+			top.takeIf { it.isNotEmpty() }?.joinToString(" §8· "),
+			view.main,
+			"§7${seconds(view.elapsedMillis)}",
+		)
 	}
+
+	/**
+	 * The boss for the HUD: your own, or else (when allowed) the nearest carried player's. Null
+	 * while neither is up.
+	 */
+	fun hudView(): BossView? {
+		if (!active || !bossHud.value) return null
+		val now = System.currentTimeMillis()
+		SlayerBosses.mine()?.let { mine -> fights[mine.boss.id]?.let { return view(it, now) } }
+		if (!hudCarried.value) return null
+		val player = Minecraft.getInstance().player ?: return null
+		val carried = SlayerBosses.bosses
+			.filter { it.owner != null && CarryManager.isCarried(it.owner) }
+			.minByOrNull { it.boss.distanceToSqr(player) } ?: return null
+		return fights[carried.boss.id]?.let { view(it, now) }
+	}
+
+	val hudOn: Boolean get() = module.enabled && bossHud.value
+
+	/** For the HUD editor, when no boss is up. */
+	fun exampleView(): BossView = BossView(
+		title = "${SlayerType.VOIDGLOOM.colour}Voidgloom Seraph IV",
+		stage = "§e2/6",
+		main = "§e142M",
+		maximum = "/210M",
+		fraction = 142.0 / 210,
+		shade = "§e",
+		state = listOf("§bLaser §f3.4s"),
+		elapsedMillis = 41_300,
+		timeLeft = 199,
+		owner = null,
+	)
+
+	/** "1:23" for a time left in seconds. */
+	fun clock(seconds: Int): String = String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60)
+
+	/** "41.3s", or "1:23.4" from a minute. */
+	fun duration(millis: Long): String =
+		if (millis < 60_000) seconds(millis)
+		else String.format(Locale.ROOT, "%d:%04.1f", millis / 60_000, (millis % 60_000) / 1000.0)
 
 	// ---- Alerts --------------------------------------------------------------------------------
 
@@ -1188,18 +1704,15 @@ object SlayerFeatures {
 		return nearest != null && nearest.ours && best <= LASER_REACH * LASER_REACH
 	}
 
-	/**
-	 * Whether a particle is a Voidgloom's own, or the Fire Veil's, to be dropped. Network thread:
-	 * reads only the volatile fields.
-	 */
+	/** Whether a particle is a boss's own, to be dropped. Network thread: reads only the volatile fields. */
 	@JvmStatic
 	fun hidesParticle(packet: ClientboundLevelParticlesPacket): Boolean {
 		return try {
 			val type = packet.particle.type
-			if (type == ParticleTypes.FLAME && veilFlamesHidden() &&
-				playerAt.distanceToSqr(packet.x, packet.y, packet.z) <= VEIL_FLAME_REACH * VEIL_FLAME_REACH
-			) {
-				return true
+			// Counted on the network thread only, where each packet arrives once.
+			val watch = particleWatch
+			if (watch != null && !Minecraft.getInstance().isSameThread && watch.contains(packet.x, packet.y, packet.z)) {
+				particleCounts.merge(net.minecraft.core.registries.BuiltInRegistries.PARTICLE_TYPE.getKey(type)?.path ?: "?", 1, Int::plus)
 			}
 			val zones = particleZones
 			zones.isNotEmpty() && zones.any { type in it.types && it.box.contains(packet.x, packet.y, packet.z) }
@@ -1208,28 +1721,11 @@ object SlayerFeatures {
 		}
 	}
 
-	private fun veilFlamesHidden(): Boolean =
-		module.enabled && hideVeilFlames.value && veilCastAt > 0 && System.currentTimeMillis() - veilCastAt <= VEIL_FLAME_MILLIS
-
-	/** A right click with an item, from the game-mode mixin (a block click and the use after it both come). */
-	@JvmStatic
-	fun onItemUsed(stack: ItemStack) {
-		if (!module.enabled || (!fireVeil.value && !hideVeilFlames.value)) return
-		if (stack.isEmpty) return
-		val isVeil = SkyblockItem.id(stack) == VEIL_ID ||
-			stack.hoverName.string.replace(formattingPattern, "").contains("Fire Veil", ignoreCase = true)
-		if (!isVeil) return
-		val now = System.currentTimeMillis()
-		if (now - veilCastAt < VEIL_DEBOUNCE_MILLIS) return
-		veilCastAt = now
-	}
-
-	private fun tickVeil(player: net.minecraft.client.player.LocalPlayer?) {
-		if (player == null || !module.enabled) {
-			veilCastAt = 0L
-			return
-		}
-		playerAt = player.position()
+	/** The particle types seen around your Bloodfiend since the last call, most first, for `/cryptic debug rift`. */
+	fun particleReport(): String {
+		val counts = particleCounts.entries.sortedByDescending { it.value }.joinToString(", ") { "${it.key} ${it.value}" }
+		particleCounts.clear()
+		return counts.ifEmpty { "none seen" }
 	}
 
 	/** The glow colour for [entity]. Asked per entity per frame, so it's one map lookup. */
@@ -1320,12 +1816,18 @@ object SlayerFeatures {
 	 */
 	@JvmStatic
 	fun onEntityDied(entityId: Int) {
+		imicro.cryptic.slayer.SlayerAutomation.onEntityDied(entityId)
 		val fight = fights.remove(entityId) ?: return
 		if (!module.enabled) return
 		val now = System.currentTimeMillis()
 		fight.finish(now)
+		// Half a Tarantula V: the Conjoined Brood that follows carries the fight on.
+		if (fight.firstBrood) {
+			fight.owner?.let { broodDeaths[it] = fight.since to now }
+			return
+		}
 		val where = Minecraft.getInstance().level?.getEntity(entityId)?.position() ?: return
-		if (bossLabel.value) killLabels += KillLabel("§aKilled in: §f${killSeconds(now - fight.since)}", where, now)
+		if (bossLabel.value && labelled(fight.owner)) killLabels += KillLabel("§aKilled in: §f${killSeconds(now - fight.since)}", where, now)
 		if (ours(fight.owner)) announce(fight, now)
 	}
 
@@ -1333,9 +1835,16 @@ object SlayerFeatures {
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
 		imicro.cryptic.slayer.SlayerXp.onSystemChat(message, overlay)
-		if (overlay || !module.enabled || !cocoonAlert.value) return
+		if (overlay || !module.enabled) return
 		val text = message.string.replace(formattingPattern, "").trim()
-		if (text == "YOU COCOONED YOUR SLAYER BOSS") title("§6§lCocooned!")
+		if (text == "YOU COCOONED YOUR SLAYER BOSS" && cocoonAlert.value) title("§6§lCocooned!")
+		if (text == HATCHLINGS_LINE) {
+			// Said when you hit it, so it's about your own Broodfather; it stays stuck until it moves.
+			val mine = SlayerBosses.mine() ?: return
+			val fight = fights[mine.boss.id] ?: return
+			fight.stuckX = mine.boss.x
+			fight.stuckZ = mine.boss.z
+		}
 	}
 
 	private fun announce(fight: Fight, now: Long) {
@@ -1348,7 +1857,7 @@ object SlayerFeatures {
 			""
 		}
 		Minecraft.getInstance().gui.hud.chat.addClientSystemMessage(
-			Component.literal("§8[Cryptic] §5${fight.type.title} ${roman(fight.tier)}$whose §7killed in: §f${killSeconds(now - fight.since)}$splits"),
+			Component.literal("§8[Cryptic] §5${fight.form} ${roman(fight.tier)}$whose §7killed in: §f${killSeconds(now - fight.since)}$splits"),
 		)
 	}
 
@@ -1415,8 +1924,6 @@ object SlayerFeatures {
 	private fun render(context: LevelRenderContext) {
 		val client = Minecraft.getInstance()
 		val partialTick = client.deltaTracker.getGameTimeDeltaPartialTick(false)
-		// The veil works on every island.
-		renderVeil(context, partialTick, System.currentTimeMillis())
 		if (!active) return
 		if (inEnd) renderLasers(context, partialTick)
 		val level = client.level ?: return
@@ -1442,6 +1949,28 @@ object SlayerFeatures {
 			text = Component.literal(text), x = x, y = y, z = z,
 			scale = scale, seeThrough = seeThrough, centered = true,
 		)
+
+		if (highlightOwn.value && highlightStyle.selectedIndex != STYLE_GLOW) {
+			SlayerBosses.mine()?.let { mine ->
+				val boss = mine.boss
+				val dx = Mth.lerp(partialTick.toDouble(), boss.xo, boss.x) - boss.x
+				val dy = Mth.lerp(partialTick.toDouble(), boss.yo, boss.y) - boss.y
+				val dz = Mth.lerp(partialTick.toDouble(), boss.zo, boss.z) - boss.z
+				val b = boss.boundingBox
+				val staking = stakeColoured(mine)
+				WorldRender.drawBox(
+					poseStack = poseStack, collector = collector,
+					minX = b.minX + dx, minY = b.minY + dy, minZ = b.minZ + dz,
+					maxX = b.maxX + dx, maxY = b.maxY + dy, maxZ = b.maxZ + dz,
+					outlineArgb = ARGB.opaque(highlightRgb(mine)),
+					fillArgb = if (staking) (ownFill.argb and 0xFF000000.toInt()) or steakColor.rgb else ownFill.argb,
+					outline = boxOutlines(), fill = boxFills(),
+					phase = highlightThroughWalls.value, lineWidth = highlightWidth.value.toFloat(),
+				)
+			}
+		}
+
+		imicro.cryptic.slayer.RiftIndicators.render(poseStack, collector, partialTick, now)
 
 		if (lineToOwn.value) {
 			SlayerBosses.mine()?.boss?.let { boss ->
@@ -1498,6 +2027,7 @@ object SlayerFeatures {
 		for (kill in killLabels) lines(listOf(kill.text), kill.where.add(0.0, 0.1, 0.0), onFloor = true)
 
 		for (fight in fights.values) {
+			if (!labelled(fight.owner)) continue
 			val boss = level.getEntity(fight.bossId) ?: continue
 			if (!boss.isAlive) continue
 			val x = Mth.lerp(partialTick.toDouble(), boss.xo, boss.x)
@@ -1514,32 +2044,10 @@ object SlayerFeatures {
 		}
 	}
 
-	/** The veil's ring (or low wall) around you while it burns. */
-	private fun renderVeil(context: LevelRenderContext, partialTick: Float, now: Long) {
-		if (!module.enabled || !fireVeil.value || veilCastAt == 0L || now - veilCastAt > VEIL_MILLIS) return
-		val player = Minecraft.getInstance().player ?: return
-		val centre = Vec3(
-			Mth.lerp(partialTick.toDouble(), player.xo, player.x),
-			Mth.lerp(partialTick.toDouble(), player.yo, player.y) + 0.02,
-			Mth.lerp(partialTick.toDouble(), player.zo, player.z),
-		)
-		if (veilStyle.selectedIndex == VEIL_CIRCLE) {
-			WorldRender.drawCircle(
-				context.poseStack(), context.submitNodeCollector(), centre, VEIL_RADIUS,
-				veilColor.argb, veilWidth.value.toFloat(), veilThroughWalls.value, segments = 60,
-			)
-		} else {
-			WorldRender.drawCylinder(
-				context.poseStack(), context.submitNodeCollector(), centre, VEIL_RADIUS, VEIL_WALL_HEIGHT,
-				veilColor.argb, veilWidth.value.toFloat(), veilThroughWalls.value, segments = 60,
-			)
-		}
-	}
-
 	private fun seconds(millis: Long): String = String.format(Locale.ROOT, "%.1fs", millis / 1000.0)
 
 	/** A kill's time to the millisecond, as "42.315s". */
 	private fun killSeconds(millis: Long): String = String.format(Locale.ROOT, "%.3fs", millis / 1000.0)
 
-	private fun roman(tier: Int) = listOf("I", "II", "III", "IV", "V").getOrElse(tier - 1) { tier.toString() }
+	private fun roman(tier: Int) = ROMAN.getOrElse(tier - 1) { tier.toString() }
 }

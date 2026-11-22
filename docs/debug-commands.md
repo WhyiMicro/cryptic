@@ -102,6 +102,22 @@ it. Slayer Features and the Carry Manager both go by that owner, so this is what
 says whether it is still being read.
 
 ```
+/cryptic debug rift
+```
+
+What Slayer Features' automation reads, for checking it against Hypixel's real
+texts. It prints your boss, which hotbar slots hold a stake, Holy Ice, a
+Healing Melon and a tuba, your health, and whether Bloodcrave is waiting. Then
+the entity under your crosshair: its name stand, whether a hit on it would be
+staked, whether it counts as the Killer Spring, and the armour stands around it
+with their names and head textures. Then the particle types seen around your
+Bloodfiend since the last run, most first. Last come the most recent titles and
+subtitles, each new text seen on the stands around your Bloodfiend (numbers
+folded, so a timer shows once), and what the automation did. Run it while
+looking at a thrall, splatter, fledgling or the Killer Spring, and just after an Impel
+prompt. The same lines go to the game log under `[rift]`.
+
+```
 /cryptic debug sidebar
 ```
 
@@ -188,6 +204,41 @@ measured from, how far away that base is, the last readings, and how many
 spots fit the last still reading from where you stand.
 
 ```
+/cryptic debug areas
+```
+
+Each Crystal Hollows place's area as Cryptic places it from its crystal (the
+Mines of Divan also from its Keepers): the blocks your feet can be at to count as
+inside, and whether you are. The Metal Detector, the Mole reminder and the area
+borders all go by these.
+
+```
+/cryptic debug clock
+```
+
+Starts or stops recording Hypixel's once-a-second clock in the Crystal Hollows into
+`config/cryptic/hollows-clock.log`, to check the Tick timer's phase. Each line has
+the server tick and how many ticks it came after the last beat (the server's time
+packet): sidebar lines, chat and action bar lines, you crossing into or out of
+Khazad-dûm, the Jungle Temple or the Mines of Divan, and changes to your effects
+and movement speed.
+
+`/cryptic debug areas` also reads the column of the block you look at, as the
+area border line does: which wall's outside column it is, and each block's
+collision and the height you'd stand at.
+
+```
+/cryptic debug balspawn
+```
+
+Starts or stops recording Bal's spawns into `config/cryptic/bal-spawn.log`, for a
+Bal spawn timer. Each line has the time and the server tick: Bal's sizes from
+first sight to removal and why it went (killed or out of range), where it stood
+from the Topaz crystal, you and other players entering or leaving Khazad-dûm, chat
+lines there or about Bal, particles near the Topaz, and every 30 seconds whether
+you're still in range.
+
+```
 /cryptic debug bal
 ```
 
@@ -196,6 +247,9 @@ cube in sight, nearest first: its id, its size now and when first seen, its
 width, where it is and the nameplate over it. Nucleus Features shows Bal's size
 as its growth out of 25, where the fight starts, and hides it once Bal shrinks to
 despawn. A magma cube counts as Bal when its size isn't 3, the size of every Yog.
+The last line is the Bal spawn timer's state: the cube it follows, whether Bal
+has risen, when it retreated and whether that's from its chat line or worked
+out from its size, and the spawn spot.
 
 ```
 /cryptic debug keepers
@@ -280,22 +334,27 @@ a crystal that is not boxed, this says what it actually is.
 
 ```
 /cryptic debug structure
+/cryptic debug structure side north|east|south|west|roof|floor
 /cryptic debug structure done <name>
 /cryptic debug structure undo|clear
 ```
 
 Measures a Crystal Hollows structure for the Nucleus map's **Use structure size
 for scale**. The first command switches measuring on (and off). While it's on,
-right-click a block of each of the structure's four outer walls with a wooden
-axe; the click is kept from the server. The roof and floor don't matter, as the
-map draws a square. Picked blocks are outlined in yellow and the square between
-them in cyan, through walls. `done <name>` reports the square's size, its x and
-z range and centre, the closest crystal Nucleus Features has found (its spot
-among the barriers, which the map centres the square on) with where it sits
-against the square, and the structure's centre measured from that crystal; then
-it clears the blocks for the next structure. `undo` takes the last block back,
-`clear` starts over. Every report also goes to the game log as `[structure]`
-lines, with the name.
+right-click a block with a wooden axe to pick it for the side shown in chat
+(north, east, south and west walls, roof, floor); the click is kept from the
+server, and the next side not yet picked comes up. Sneak + right-click cycles
+the side, as does `side <side>`; picking a side again replaces its block. Each
+picked block is outlined and labelled in its side's colour, and the box between
+them drawn in cyan, through walls. The walls give the square; with the roof and
+floor picked, the height too (without them the box spans the picks' own y).
+`done <name>` reports the box's size, its x, y and z range and centre, any
+missing or swapped sides, the closest crystal Nucleus Features has found (its
+spot among the barriers, which the map centres the square on) with where it
+sits against the square and between floor and roof, and the structure's centre
+measured from that crystal; then it clears the sides for the next structure.
+`undo` takes the last side back, `clear` starts over. Every report also goes to
+the game log as `[structure]` lines, with the name and all six sides.
 
 ```
 /cryptic debug timers
@@ -315,7 +374,7 @@ first.
 ```
 
 Prints every tab row in display order, every line of the footer under it, and
-what the Cookie Reminder reads from each.
+what the Reminders module reads from each.
 
 The cookie's remaining time is written as a `Cookie Buff` row with the value on
 the row below, and nowhere else a client can reach. This says whether the heading
@@ -327,6 +386,14 @@ The God Potion lines after it do the same for its row (the Active Effects
 widget, when it is on) and the footer's Active Effects section. A footer with
 that section but no God Potion in it reads as "none"; in dungeons and the Rift,
 where potions are paused, it reads as unknown.
+
+```
+/cryptic debug calendar
+```
+
+Prints the SkyBlock date and time, then each Reminders event: whether it is under
+way or how long until it starts, and the SkyBlock date of that start. Last, which
+year's New Year Cake you are known to have.
 
 ```
 /cryptic debug mimic
@@ -497,6 +564,12 @@ answer is written in those coordinates, so when one draws in the wrong place
 this is the first thing to look at: a missing turn means the marker buried at
 the corner of the roof has not been found, and a wrong one means every position
 in the room is being reflected.
+
+In the Water Board with the Dynamic solver on, it also prints the simulated
+board's tick, gates and source, the current plan (each pull as `lever@tick` and
+how often it solved with random ticks and clicks a tick off), and the tracker's
+last few events: flips seen, random ticks it placed, flips it moved a tick, and
+any time it read the board again because the simulation stopped matching.
 
 ```
 /cryptic debug blaze
@@ -690,6 +763,27 @@ The Kalhuiki Door Guardians in sight, where each stands, and which one Nucleus
 Features' automatic waypoints are measured from (the right-hand one as you face
 the door), with the three waypoints it gives.
 
+## Chunk Cache
+
+```
+/cryptic debug chunkcache
+/cryptic debug chunkcache <extra>
+/cryptic debug chunkcache island
+```
+
+Alone, it prints what the Chunk Cache is doing: how many cached chunks are
+shown, how many are stored for which island and in how much memory, the render
+distance against the distance drawn, and every other island still kept.
+
+A single-player world sends chunks as far as you render, which leaves the cache
+nothing to show. **`<extra>`** (0 to 24, 0 for off) has it draw that many chunks
+past the render distance and run in single player: set a short render distance,
+fly away, and the chunks behind you stay.
+
+**island** treats every world as one island, so Keep across lobbies can be tried
+without Hypixel: go to the Nether or the End, far from where you were, come
+back somewhere else in the overworld, and the chunks from before are there.
+
 ## Tabbed out
 
 ```
@@ -755,7 +849,12 @@ Prints how fresh the Bazaar data is, each of your orders with where it stands
 and its product id, what the Flips HUD counts as bought and held, and for
 Flipping: whether the guide runs, the menu it thinks is open, its step (with the
 slot it outlines and the command it would send), the flips under way, the budget
-for the next one and the five best flips it sees.
+for the next one and the five best flips it sees of the kind on show. The last
+line is the day's NPC trading: coins sold against the 500M limit, what was
+bought from shops, and how many shop prices were read from shops' menus.
+After the auction prices come the Auction House watch list: how many items are
+watched, the last read of Hypixel's newest auctions (or why it failed) and how
+old that page is, then each item with the ID it matches and its price.
 
 ---
 

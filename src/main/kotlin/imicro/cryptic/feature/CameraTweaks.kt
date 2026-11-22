@@ -137,11 +137,6 @@ object CameraTweaks {
 		description = "Fixes the mouse lag while riding (MC-206540).",
 	)
 
-	private val configurable = listOf(
-		fullbright, noFrontCamera, noCameraClip, customDistance, distance, customFov, fov,
-		hideWaterOverlay, hidePortalOverlay, hideBlockOverlay, doubleSneakFix, ridingInputFix,
-	)
-
 	@JvmField
 	val module = Module(
 		id = "camera",

@@ -36,8 +36,13 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
      */
     @Inject(method = "shouldRender", at = @At("HEAD"), cancellable = true)
     private void cryptic$skipHiddenEntities(T entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> info) {
-        if (RenderOptimizer.hidesEntity(entity) || Highlight.hidesNameTag(entity) || HidePlayers.hides(entity) || MageBeam.hidesSheep(entity) || LividSolver.hides(entity) || imicro.cryptic.puzzle.BlazeSolver.hides(entity) || imicro.cryptic.feature.NucleusQol.hidesMob(entity)) {
+        if (RenderOptimizer.hidesEntity(entity) || Highlight.hidesNameTag(entity) || HidePlayers.hides(entity) || MageBeam.hidesSheep(entity) || LividSolver.hides(entity) || imicro.cryptic.puzzle.BlazeSolver.hides(entity) || imicro.cryptic.feature.NucleusQol.hidesMob(entity) || imicro.cryptic.feature.Rift.hidesHorse(entity)) {
             info.setReturnValue(false);
+            return;
+        }
+        // Fake zpew draws you at the landing, so your real spot being out of view mustn't cull you.
+        if (entity == net.minecraft.client.Minecraft.getInstance().player && imicro.cryptic.feature.EtherwarpZeroPing.feetPosition() != null) {
+            info.setReturnValue(true);
         }
     }
 
@@ -80,6 +85,8 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
     private void cryptic$smoothTeleportModel(T entity, S state, float partialTick, CallbackInfo info) {
         if (entity != net.minecraft.client.Minecraft.getInstance().player) return;
         net.minecraft.world.phys.Vec3 position = SmoothTeleport.playerPosition(partialTick);
+        // Fake zpew's landing, for third person: the model stands where the camera went.
+        if (position == null && !imicro.cryptic.feature.LeapPreview.capturing) position = imicro.cryptic.feature.EtherwarpZeroPing.feetPosition();
         if (position == null) return;
         state.x = position.x;
         state.y = position.y;

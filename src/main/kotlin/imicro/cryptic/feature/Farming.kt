@@ -215,8 +215,8 @@ object Farming {
 		if (initialized) return
 		initialized = true
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
-		Hud.register(PestCooldownElement())
-		Hud.register(listElement)
+		Hud.register(PestCooldownElement(), module, pestCooldownHud)
+		Hud.register(listElement, module, visitorList)
 	}
 
 	private var level: ClientLevel? = null

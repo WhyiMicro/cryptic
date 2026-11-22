@@ -27,7 +27,7 @@ class ScoreboardSection : ManagerSection("Lines") {
 			CustomScoreboard.resetOrder()
 			dragging = null
 		}
-		cy += 46f
+		cy += 50f
 
 		val list = CustomScoreboard.lines()
 		listTop = cy
@@ -35,32 +35,33 @@ class ScoreboardSection : ManagerSection("Lines") {
 			ui.text("No lines. Add some below.", x + 2f, cy + 4f, 13f, MenuStyle.MUTED)
 			cy += 28f
 		}
+		ui.beginGroup(x, cy, width)
 		for ((index, line) in list.withIndex()) cy += drawRow(line, index, list.size, x, cy, width) + GAP
+		ui.endGroup(cy)
 
-		cy += 14f
-		Sections.heading(ui, "Add a line", x, cy)
-		cy += Sections.HEADING
+		cy += Sections.HEADING_GAP
+		cy += Sections.heading(ui, "Add a line", x, cy, x + width)
 		cy += ui.chips(x, cy, width, CustomScoreboard.addable(), { it.label }, { false }) { CustomScoreboard.add(it) } + 8f
 		return cy - y
 	}
 
 	private fun drawRow(line: Line, index: Int, count: Int, x: Float, y: Float, width: Float): Float {
-		if (y + ROW < ui.area.y || y > ui.area.bottom) return ROW
 		val box = Box(x, y, width, ROW)
-		ui.card(box, if (dragging == index) MenuStyle.ROW_HOVER else MenuStyle.ROW)
+		ui.row(box, if (dragging == index) MenuStyle.ROW_HOVER else MenuStyle.ROW, line)
+		if (y + ROW < ui.area.y || y > ui.area.bottom) return ROW
 		val cy = y + ROW / 2f
 
 		// The grip: press and drag up or down.
-		val grip = Box(x + 6f, y, 28f, ROW)
+		val grip = Box(x + 8f, y, 28f, ROW)
 		ui.icon(GRIP, grip, 12f, if (dragging == index || ui.hovered(grip)) MenuStyle.TEXT else MenuStyle.MUTED)
 		ui.onPress(grip, drag = { _, my -> dragTo(my, count) }) { button, _, _ -> if (button == 0) dragging = index }
 
-		var left = x + 40f
+		var left = x + 44f
 		val name = line.label
 		ui.text(name, left, cy - 7f, 14f, if (line == Line.BLANK) MenuStyle.MUTED else MenuStyle.TEXT, UiText.Face.MEDIUM)
 		left += ui.width(name, 14f, UiText.Face.MEDIUM) + 12f
 
-		var right = x + width - 10f
+		var right = x + width - 14f
 		ui.iconButton(Box(right - 26f, cy - 13f, 26f, 26f), REMOVE, MenuStyle.MUTED) { CustomScoreboard.remove(index) }
 		right -= 26f + 8f
 		ui.iconButton(Box(right - 26f, cy - 13f, 26f, 26f), DOWN, if (index < count - 1) MenuStyle.TAB_HOVER else MenuStyle.ICON_OFF) {
@@ -101,8 +102,8 @@ class ScoreboardSection : ManagerSection("Lines") {
 	}
 
 	private companion object {
-		const val ROW = 34f
-		const val GAP = 2f
+		const val ROW = 44f
+		const val GAP = 0f
 
 		const val GRIP = "\uF58E" // grip-vertical
 		const val UP = "\uF077" // chevron-up

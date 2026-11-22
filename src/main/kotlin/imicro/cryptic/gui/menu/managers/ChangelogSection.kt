@@ -49,8 +49,8 @@ class ChangelogSection : ManagerSection("Changelog") {
 		}
 		for (group in laidOut) {
 			if (group.title != null) {
-				Sections.heading(ui, group.title, x, cy)
-				cy += Sections.HEADING
+				cy += HEADING_EXTRA
+				cy += Sections.heading(ui, group.title, x, cy, x + width)
 			}
 			val h = group.height + PAD
 			if (cy < ui.area.bottom && cy + h > ui.area.y) {
@@ -198,8 +198,11 @@ class ChangelogSection : ManagerSection("Changelog") {
 	}
 
 	companion object {
-		private const val PAD = 18f
+		private const val PAD = 20f
 		private const val LINE = 17f
+
+		/** Added to the gap after a card, to make a heading's [Sections.HEADING_GAP]. */
+		private const val HEADING_EXTRA = Sections.HEADING_GAP - 14f
 		private const val PARAGRAPH_GAP = 8f
 		private const val BULLET_GAP = 14f
 		private const val BULLET_GAP_AFTER = 3f
@@ -209,13 +212,15 @@ class ChangelogSection : ManagerSection("Changelog") {
 		/** "0.92.20-26.2" reads "0.92.20". */
 		private fun short(version: String) = version.substringBefore('-')
 
-		/** The card in Settings the Changelog page hangs from. */
+		/**
+		 * The card in Settings the Changelog page hangs from. On, the first join after an update
+		 * offers the changelog in a notification.
+		 */
 		val module = Module(
 			id = "changelog",
 			name = "Changelog",
-			description = "What's new in this version",
+			description = "Offers what's new on update",
 			category = ModuleCategory.MISC,
-			supportsToggle = false,
 		)
 	}
 }

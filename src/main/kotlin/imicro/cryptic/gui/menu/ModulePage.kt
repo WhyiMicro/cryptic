@@ -15,6 +15,7 @@ import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.TabModuleSetting
 import imicro.cryptic.gui.TextModuleSetting
+import imicro.cryptic.gui.Restriction
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.SlotMapModuleSetting
@@ -37,7 +38,14 @@ import kotlin.math.round
  * settings of its own gets a chevron that opens them indented underneath. Dropdowns and the colour
  * picker float over the list.
  */
-class ModulePage(val module: Module) {
+class ModulePage(val module: Module, private val keybindPlacement: KeybindPlacement = KeybindPlacement.TOP) {
+	/** Where a page shows its module's own bind: under [section], or first when that is null. */
+	class KeybindPlacement(val section: ModuleSetting?, val label: String, val description: String) {
+		companion object {
+			val TOP = KeybindPlacement(null, "Keybind", "The key bound to this module. Escape or Backspace clears it.")
+		}
+	}
+
 	/** The module's extras besides settings, if any; the page opens on it. */
 	val manager: ManagerSection? = ManagerSection.forModule(module)?.also { it.page = this }
 
@@ -116,6 +124,29 @@ class ModulePage(val module: Module) {
 		scroll = scrollTarget
 	}
 
+	/** Shows [setting]: its tab, with its own "⋯" panel and any it sits in open. */
+	fun reveal(setting: ModuleSetting) {
+		openSettings()
+		var top = setting
+		while (true) {
+			val parent = top.parent ?: break
+			expanded += parent
+			top = parent
+		}
+		if (setting.more.isNotEmpty()) expanded += setting
+		var tab = -1
+		for (each in module.settings) {
+			if (each is TabModuleSetting) tab = tabs.indexOf(each)
+			if (each === top) break
+		}
+		if (tab >= 0 && tab != tabIndex) {
+			tabIndex = tab
+			settingsScroll = 0f
+			scrollTarget = 0f
+			scroll = 0f
+		}
+	}
+
 	private fun remember(keepExpanded: Boolean) {
 		if (showingManager) managerScroll = scrollTarget else if (!searching) settingsScroll = scrollTarget
 		remembered[module.id] = Place(showingManager, tabIndex, settingsScroll, managerScroll, if (keepExpanded) expanded.toSet() else emptySet())
@@ -159,7 +190,7 @@ class ModulePage(val module: Module) {
 	private val query = TextField(48)
 	private var queryFocused = false
 	private var selectingQuery = false
-	private val searchable = module.supportsKeybind || module.settings.any {
+	val searchable = module.supportsKeybind || module.settings.any {
 		it.hasOwnRow && it !is SectionModuleSetting && it !is TabModuleSetting && it !is SlotMapModuleSetting
 	}
 	private val searching: Boolean get() = query.text.isNotBlank()
@@ -170,42 +201,40 @@ class ModulePage(val module: Module) {
 	/** A bind (or a manager's own capture) waiting for its key, which takes the mouse's side buttons too. */
 	val awaitingBind: Boolean get() = awaiting != null || (showingManager && manager?.capturingKeys == true)
 
-	val capturingKeys: Boolean get() = editing != null || awaiting != null || queryFocused || (showingManager && manager?.capturingKeys == true)
-
-	/** The row above the list: name, star and the module's switch. */
-	fun drawTitle(graphics: GuiGraphicsExtractor, box: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
-		// The controls first, so the title knows how much room it has.
-		var limit = box.right
-		if (searchable) {
-			val field = Box(box.right - SEARCH_WIDTH, box.y, SEARCH_WIDTH, box.h)
-			MenuStyle.drawField(graphics, field, field.contains(mx, my), queryFocused, alpha)
-			UiText.drawIconCentered(graphics, Icons.SEARCH, field.right - field.h, field.y, field.h, 13f, fade(if (queryFocused) MenuStyle.TEXT else MenuStyle.MUTED, alpha))
-			query.draw(graphics, Box(field.x, field.y, field.w - field.h + 8f, field.h), 13f, MenuStyle.TEXT, queryFocused, alpha, dt, placeholder = "Search settings")
-			hits += Hit.Search(field)
-			limit = field.x - 24f
-		}
+	/** The view switch's parts: a manager and its settings, or the module's tabs. Null when there's one view. */
+	private fun viewParts(): List<Pair<Hit.View, String>>? {
 		val section = manager
-		if (section != null && tabs.size > 1) {
+		return when {
 			// A manager beside a module's own tabs: one part for it, then each tab.
-			val parts = listOf(Hit.View(Box.NONE, true, 0) to section.tabLabel) +
+			section != null && tabs.size > 1 -> listOf(Hit.View(Box.NONE, true, 0) to section.tabLabel) +
 				tabs.withIndex().filter { it.value.isVisible() }.map { Hit.View(Box.NONE, false, it.index) to it.value.label }
-			limit = drawViewSwitch(graphics, parts, limit, box, mx, my, alpha) - 24f
-		} else if (section != null && (module.supportsKeybind || module.settings.any { it.onCard && it.isVisible() && it !is SlotMapModuleSetting })) {
-			val parts = listOf(Hit.View(Box.NONE, true, 0) to section.tabLabel, Hit.View(Box.NONE, false, 0) to "Settings")
-			limit = drawViewSwitch(graphics, parts, limit, box, mx, my, alpha) - 24f
-		} else if (tabs.size > 1) {
-			val parts = tabs.withIndex().filter { it.value.isVisible() }.map { Hit.View(Box.NONE, false, it.index) to it.value.label }
-			limit = drawViewSwitch(graphics, parts, limit, box, mx, my, alpha) - 24f
+			section != null && (module.supportsKeybind || module.settings.any { it.onCard && it.isVisible() && it !is SlotMapModuleSetting }) ->
+				listOf(Hit.View(Box.NONE, true, 0) to section.tabLabel, Hit.View(Box.NONE, false, 0) to "Settings")
+			tabs.size > 1 -> tabs.withIndex().filter { it.value.isVisible() }.map { Hit.View(Box.NONE, false, it.index) to it.value.label }
+			else -> null
 		}
+	}
 
-		val nameSize = 19f
-		val detailSize = 14f
-		var x = box.x + 4f
-		UiText.draw(graphics, module.name, x, box.y + (box.h - nameSize) / 2f, nameSize, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
-		x += UiText.width(module.name, nameSize, UiText.Face.MEDIUM) + 12f
+	/** The view switch, left-aligned at [x] and centred on [row], if the module has more than one view. */
+	fun drawViewSwitchAt(graphics: GuiGraphicsExtractor, x: Float, row: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
+		val parts = viewParts() ?: return
+		drawViewSwitch(graphics, parts, x + viewSwitchWidth(parts), row, mx, my, dt, alpha)
+	}
+
+	/** The title row: the module's name, its description and its star, across [box]. */
+	fun drawTitle(graphics: GuiGraphicsExtractor, box: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
+		val limit = box.right
+		val nameSize = 21f
+		val nameW = UiText.width(module.name, nameSize, UiText.Face.MEDIUM)
 		val starRoom = 22f + 10f
+		val row = box
+
+		val detailSize = 14f
+		var x = row.x + 4f
+		UiText.draw(graphics, module.name, x, row.y + (row.h - nameSize) / 2f, nameSize, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
+		x += nameW + 12f
 		if (module.description.isNotEmpty() && limit - x - starRoom > 60f) {
-			val detailY = box.y + (box.h - detailSize) / 2f
+			val detailY = row.y + (row.h - detailSize) / 2f
 			UiText.draw(graphics, "|", x, detailY, detailSize, fade(MenuStyle.FIELD_EDGE_HOVER, alpha))
 			x += UiText.width("|", detailSize) + 12f
 			val detail = UiText.fit(module.description, detailSize, limit - x - starRoom)
@@ -213,7 +242,7 @@ class ModulePage(val module: Module) {
 			x += UiText.width(detail, detailSize) + 10f
 		}
 
-		val star = Box(x, box.y + 4f, 22f, 22f)
+		val star = Box(x, row.y + (row.h - 22f) / 2f, 22f, 22f)
 		val favorite = MenuPrefs.isFavorite(module.id)
 		val starColor = when {
 			favorite -> MenuStyle.STAR
@@ -224,7 +253,21 @@ class ModulePage(val module: Module) {
 		hits += Hit.Star(star)
 	}
 
-	fun draw(graphics: GuiGraphicsExtractor, box: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
+	/** The settings search, in the menu's search box. A module with nothing to search shows it inert. */
+	fun drawSearch(graphics: GuiGraphicsExtractor, box: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
+		MenuStyle.drawSearchBox(graphics, box, query, queryFocused, searchable && box.contains(mx, my), "Search for a setting…", dt, alpha)
+		if (searchable) hits += Hit.Search(box)
+	}
+
+	fun draw(graphics: GuiGraphicsExtractor, content: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
+		var box = content
+		// One heads-up above the settings, where it stays while they scroll, for the module and any
+		// settings past it; the settings themselves only carry a small sign.
+		pageNotice?.let { (title, text, level) ->
+			val h = MenuStyle.drawCallout(graphics, Icons.WARNING, title, text, MenuStyle.restrictionColor(level), content.x, content.y, content.w, alpha)
+			val below = content.y + h + 14f
+			box = Box(content.x, below, content.w, content.bottom - below)
+		}
 		area = box
 		frameDt = dt
 		val pointerInside = box.contains(mx, my) && !overlayContains(mx, my)
@@ -240,16 +283,16 @@ class ModulePage(val module: Module) {
 		}
 
 		if (!module.supportsKeybind && module.settings.none { it.onCard && it.isVisible() && it !is SlotMapModuleSetting }) {
-			UiText.draw(graphics, "This module has nothing to set. Its switch is all there is.", box.x + 2f, box.y + 6f, 14f, fade(MenuStyle.MUTED, alpha))
+			MenuStyle.drawEmptyState(graphics, box, Icons.SLIDERS, "Nothing to set", "This module has no settings. Click its card to turn it on or off.", alpha)
 			maxScroll = 0f
 			return
 		}
 
-		graphics.enableScissor(box.x.toInt(), box.y.toInt(), box.right.toInt() + 1, box.bottom.toInt())
-		var y = box.y - scroll
+		val shown = MenuStyle.clipList(graphics, box)
+		var y = box.y + LIST_TOP - scroll
 		var first = true
 
-		if (module.supportsKeybind) {
+		if (module.supportsKeybind && keybindPlacement.section == null) {
 			y += drawKeybindRow(graphics, box.x, y, box.w, mx, my, pointerInside, dt, alpha)
 			first = false
 		}
@@ -263,34 +306,34 @@ class ModulePage(val module: Module) {
 			}
 			if (!inTab || !setting.onCard || !setting.isVisible()) continue
 			if (setting is SectionModuleSetting) {
-				y += drawHeading(graphics, setting.label, box.x, y, first, alpha)
+				y += drawHeading(graphics, setting.label, box.x, y, box.w, first, alpha)
 				first = false
+				if (module.supportsKeybind && keybindPlacement.section === setting) y += drawKeybindRow(graphics, box.x, y, box.w, mx, my, pointerInside, dt, alpha)
 				if (setting.hasVisibleMore()) y += drawChildren(graphics, setting, box, y, mx, my, pointerInside, dt, alpha, alwaysOpen = true)
 				continue
 			}
 			first = false
 			y += drawRow(graphics, setting, box.x, y, box.w, nested = false, mx, my, pointerInside, dt, alpha)
-			if (setting in expanded && setting.hasVisibleMore()) {
-				y += drawChildren(graphics, setting, box, y, mx, my, pointerInside, dt, alpha, alwaysOpen = false)
-			}
+			y += drawExpanding(graphics, setting, box, y, mx, my, pointerInside, dt, alpha)
 		}
-		MenuStyle.drawScrollFades(graphics, box, scroll, maxScroll, alpha)
+		closeGroup(graphics, y, alpha)
+		MenuStyle.drawScrollFades(graphics, shown, scroll, maxScroll, alpha)
 		graphics.disableScissor()
 
 		val contentH = y + scroll - box.y
 		maxScroll = max(0f, contentH - box.h + 8f)
 		scrollTarget = scrollTarget.coerceIn(0f, maxScroll)
 		scroll = approach(scroll, scrollTarget, 16f, dt)
-		scrollbar.draw(graphics, box.right + Scrollbar.GAP, box.y, box.h, contentH, scroll, maxScroll, mx, my, dt, alpha)
+		drawScrollbar(graphics, box, contentH, mx, my, dt, alpha)
 	}
 
 	/** Every setting matching the search, from every tab and "⋯" panel, under its own heading. */
 	private fun drawResults(graphics: GuiGraphicsExtractor, box: Box, mx: Float, my: Float, pointerInside: Boolean, dt: Float, alpha: Float) {
 		val words = query.text.trim()
-		graphics.enableScissor(box.x.toInt(), box.y.toInt(), box.right.toInt() + 1, box.bottom.toInt())
-		var y = box.y - scroll
+		val shown = MenuStyle.clipList(graphics, box)
+		var y = box.y + LIST_TOP - scroll
 		var first = true
-		if (module.supportsKeybind && "keybind".contains(words, ignoreCase = true)) {
+		if (module.supportsKeybind && ("keybind".contains(words, ignoreCase = true) || keybindPlacement.label.contains(words, ignoreCase = true))) {
 			y += drawKeybindRow(graphics, box.x, y, box.w, mx, my, pointerInside, dt, alpha)
 			first = false
 		}
@@ -310,30 +353,46 @@ class ModulePage(val module: Module) {
 				else -> if (!matches(setting, words, section)) continue
 			}
 			if (section != null && !headed) {
-				y += drawHeading(graphics, section.label, box.x, y, first, alpha)
+				y += drawHeading(graphics, section.label, box.x, y, box.w, first, alpha)
 				headed = true
 			}
 			first = false
 			y += drawRow(graphics, setting, box.x, y, box.w, nested = false, mx, my, pointerInside, dt, alpha)
+			y += drawExpanding(graphics, setting, box, y, mx, my, pointerInside, dt, alpha)
 		}
-		if (first) UiText.draw(graphics, UiText.fit("No settings match \"$words\".", 14f, box.w - 4f), box.x + 2f, box.y + 6f, 14f, fade(MenuStyle.MUTED, alpha))
-		MenuStyle.drawScrollFades(graphics, box, scroll, maxScroll, alpha)
+		if (first) MenuStyle.drawEmptyState(graphics, box, Icons.SEARCH, "No settings match \"$words\"", "Try another keyword, or clear the search to see every setting.", alpha)
+		closeGroup(graphics, y, alpha)
+		MenuStyle.drawScrollFades(graphics, shown, scroll, maxScroll, alpha)
 		graphics.disableScissor()
 
 		val contentH = y + scroll - box.y
 		maxScroll = max(0f, contentH - box.h + 8f)
 		scrollTarget = scrollTarget.coerceIn(0f, maxScroll)
 		scroll = approach(scroll, scrollTarget, 16f, dt)
-		scrollbar.draw(graphics, box.right + Scrollbar.GAP, box.y, box.h, contentH, scroll, maxScroll, mx, my, dt, alpha)
+		drawScrollbar(graphics, box, contentH, mx, my, dt, alpha)
 	}
 
-	/** A row the search shows: its label or description holds [words], or its heading does. */
+	/**
+	 * A row the search shows: its label or description holds [words], or its heading does. Only
+	 * rows of the list itself; what sits behind a "⋯" opens from its row, as outside a search.
+	 */
 	private fun matches(setting: ModuleSetting, words: String, section: SectionModuleSetting?): Boolean {
-		if (!setting.hasOwnRow || setting is PanelModuleSetting || setting is SlotMapModuleSetting) return false
+		if (!setting.hasOwnRow || setting is SlotMapModuleSetting) return false
+		val parent = setting.parent
+		if (parent != null && parent !is SectionModuleSetting) return false
 		if (!setting.isVisible() || setting.parent?.isVisible() == false) return false
 		return setting.label.contains(words, ignoreCase = true) ||
 			descriptionOf(setting).contains(words, ignoreCase = true) ||
 			section?.label?.contains(words, ignoreCase = true) == true
+	}
+
+	/** Shows the settings matching [text], as typing it into the search would. */
+	fun search(text: String) {
+		if (!searchable) return
+		editQuery {
+			query.set(text)
+			true
+		}
 	}
 
 	private fun jump(to: Float) {
@@ -367,31 +426,41 @@ class ModulePage(val module: Module) {
 	 * "Aliases | Settings", or a module's tabs, right-aligned at [right]. Each part is what it
 	 * switches to, with its label. Returns its left edge.
 	 */
-	private fun drawViewSwitch(graphics: GuiGraphicsExtractor, parts: List<Pair<Hit.View, String>>, right: Float, row: Box, mx: Float, my: Float, alpha: Float): Float {
-		val size = 13f
-		// Many tabs sit closer, to leave the title room.
-		val pad = if (parts.size > 2) 9f else 14f
-		val h = 28f
+	// Many tabs sit closer, to leave the title room.
+	private fun viewSwitchPad(parts: List<Pair<Hit.View, String>>) = if (parts.size > 4) 13f else 15f
+
+	private fun viewSwitchWidth(parts: List<Pair<Hit.View, String>>): Float {
+		val pad = viewSwitchPad(parts)
+		return parts.sumOf { (UiText.width(it.second, PILL_TEXT, UiText.Face.MEDIUM) + pad * 2f).toDouble() }.toFloat() + PILL_GAP * (parts.size - 1)
+	}
+
+	/** How far each view-switch pill has lit for the pointer, and towards being the chosen one, by position. */
+	private val pillHover = HashMap<Int, Float>()
+	private val pillChosen = HashMap<Int, Float>()
+
+	private fun drawViewSwitch(graphics: GuiGraphicsExtractor, parts: List<Pair<Hit.View, String>>, right: Float, row: Box, mx: Float, my: Float, dt: Float, alpha: Float): Float {
+		val size = PILL_TEXT
+		val pad = viewSwitchPad(parts)
+		val h = 31f
+		val radius = 8f
 		val y = row.y + (row.h - h) / 2f
 		val widths = parts.map { UiText.width(it.second, size, UiText.Face.MEDIUM) + pad * 2f }
-		val x = right - widths.sum() - 6f
-		RoundRect.fill(graphics, x, y, right, y + h, fade(MenuStyle.FIELD, alpha), 7f)
-		RoundRect.outline(graphics, x, y, right, y + h, fade(MenuStyle.FIELD_EDGE, alpha), 7f, 1f)
-		var cx = x + 3f
+		val x = right - viewSwitchWidth(parts)
+		var cx = x
 		for ((index, entry) in parts.withIndex()) {
 			val (target, text) = entry
-			val w = widths[index]
-			val part = Box(cx, y + 3f, w, h - 6f)
+			val part = Box(cx, y, widths[index], h)
 			val chosen = !searching && showingManager == target.manager && (target.manager || target.tab == tabIndex)
-			if (chosen) RoundRect.fill(graphics, part.x, part.y, part.right, part.bottom, fade(MenuStyle.TAB_PILL, alpha), 5f)
-			val color = when {
-				chosen -> MenuStyle.TEXT
-				part.contains(mx, my) -> MenuStyle.TAB_HOVER
-				else -> MenuStyle.MUTED
-			}
+			val lift = approach(pillHover[index] ?: 0f, if (part.contains(mx, my)) 1f else 0f, 18f, dt).also { pillHover[index] = it }
+			val on = approach(pillChosen[index] ?: 0f, if (chosen) 1f else 0f, 16f, dt).also { pillChosen[index] = it }
+			// Flat pills with no edge; the chosen one takes a faint wash of the accent and accent text.
+			val restFill = blend(PILL_FILL, PILL_FILL_HOVER, lift)
+			val fill = blend(restFill, blend(PILL_FILL, MenuStyle.accent(), 0.12f + 0.04f * lift), on)
+			RoundRect.fill(graphics, part.x, part.y, part.right, part.bottom, fade(fill, alpha), radius)
+			val color = blend(blend(PILL_TEXT_COLOR, MenuStyle.TEXT, lift), MenuStyle.accent(), on)
 			UiText.draw(graphics, text, part.x + (part.w - UiText.width(text, size, UiText.Face.MEDIUM)) / 2f, part.y + (part.h - size) / 2f, size, fade(color, alpha), UiText.Face.MEDIUM)
 			hits += Hit.View(part, target.manager, target.tab)
-			cx += w
+			cx += part.w + PILL_GAP
 		}
 		return x
 	}
@@ -401,14 +470,14 @@ class ModulePage(val module: Module) {
 		// Nothing under an open colour picker counts as hovered.
 		val covered = overlayContains(mx, my)
 		section.ui.begin(graphics, box, if (covered) -1e6f else mx, if (covered) -1e6f else my, dt, alpha)
-		graphics.enableScissor(box.x.toInt(), box.y.toInt(), box.right.toInt() + 1, box.bottom.toInt())
-		val used = section.draw(box.x, box.y - scroll, box.w)
-		MenuStyle.drawScrollFades(graphics, box, scroll, maxScroll, alpha)
+		val shown = MenuStyle.clipList(graphics, box)
+		val used = section.draw(box.x, box.y + LIST_TOP - scroll, box.w) + LIST_TOP
+		MenuStyle.drawScrollFades(graphics, shown, scroll, maxScroll, alpha)
 		graphics.disableScissor()
 		maxScroll = max(0f, used - box.h + 8f)
 		scrollTarget = scrollTarget.coerceIn(0f, maxScroll)
 		scroll = approach(scroll, scrollTarget, 16f, dt)
-		scrollbar.draw(graphics, box.right + Scrollbar.GAP, box.y, box.h, used, scroll, maxScroll, mx, my, dt, alpha)
+		drawScrollbar(graphics, box, used, mx, my, dt, alpha)
 	}
 
 	/**
@@ -445,15 +514,66 @@ class ModulePage(val module: Module) {
 		drawSuggestions(graphics, mx, my, alpha)
 	}
 
+	/** The span the scrollbar runs, top to bottom, when the menu gives one; else the list's own. */
+	var trackTop = Float.NaN
+	var trackBottom = Float.NaN
+
+	private fun drawScrollbar(graphics: GuiGraphicsExtractor, box: Box, contentH: Float, mx: Float, my: Float, dt: Float, alpha: Float) {
+		val top = if (trackTop.isNaN()) box.y else trackTop
+		val bottom = if (trackBottom.isNaN()) box.bottom else trackBottom
+		scrollbar.draw(graphics, box.right + Scrollbar.GAP, top, bottom - top, contentH, scroll, maxScroll, mx, my, dt, alpha)
+	}
+
 	fun beginFrame() {
 		hits.clear()
 		suggestFor = null
+		rowTip = null
+		groupTop = Float.NaN
 	}
 
-	private fun drawHeading(graphics: GuiGraphicsExtractor, label: String, x: Float, y: Float, first: Boolean, alpha: Float): Float {
-		val gap = if (first) 2f else 18f
-		UiText.draw(graphics, label.uppercase(), x + 2f, y + gap + 4f, 11f, fade(MenuStyle.MUTED, alpha), UiText.Face.MEDIUM)
-		return gap + 26f
+	/** The row under the pointer whose words were cut short, and them in full, for the menu's tooltip. */
+	var rowTip: Pair<Any, String>? = null
+		private set
+
+	/** A heading closes the group above it: its name, then a hairline to the right edge. */
+	private fun drawHeading(graphics: GuiGraphicsExtractor, label: String, x: Float, y: Float, w: Float, first: Boolean, alpha: Float): Float {
+		closeGroup(graphics, y, alpha)
+		val gap = if (first) 0f else 26f
+		val size = 17f
+		val top = y + gap
+		UiText.draw(graphics, label, x + 2f, top, size, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
+		val lineX = x + 2f + UiText.width(label, size, UiText.Face.MEDIUM) + 14f
+		RoundRect.fill(graphics, lineX, top + size / 2f, x + w, top + size / 2f + 1f, fade(MenuStyle.HEADING_LINE, alpha), 0f)
+		return gap + size + 14f
+	}
+
+	/** The top of the group of rows being drawn, NaN between groups, and its sides. */
+	private var groupTop = Float.NaN
+	private var groupX = 0f
+	private var groupW = 0f
+
+	/** Puts a row starting at [y] in the open group, opening one if none is. True for a group's first row. */
+	private fun joinGroup(x: Float, y: Float, w: Float): Boolean {
+		if (!groupTop.isNaN()) return false
+		groupTop = y
+		groupX = x
+		groupW = w
+		return true
+	}
+
+	/**
+	 * Ends the open group at [bottom]: rounds its corners by laying the panel's colour over what the
+	 * square rows leave outside them, then draws its edge.
+	 */
+	private fun closeGroup(graphics: GuiGraphicsExtractor, bottom: Float, alpha: Float) {
+		val top = groupTop
+		groupTop = Float.NaN
+		if (top.isNaN() || bottom <= top) return
+		val r = GROUP_RADIUS
+		// The band reaches r(√2 - 1) in from the corner at least, enough to cover it.
+		val k = r * 0.5f
+		RoundRect.outline(graphics, groupX - k, top - k, groupX + groupW + k, bottom + k, fade(MenuStyle.WINDOW_BG, alpha), r + k, k)
+		RoundRect.outline(graphics, groupX, top, groupX + groupW, bottom, fade(MenuStyle.GROUP_EDGE, alpha), r, 1f)
 	}
 
 	private fun drawChildren(
@@ -466,6 +586,43 @@ class ModulePage(val module: Module) {
 			y += drawRow(graphics, child, box.x, y, box.w, nested = !alwaysOpen, mx, my, pointerInside, dt, alpha)
 		}
 		return y - top
+	}
+
+	/** How far each setting's sub-settings are open, 0 to 1, easing towards whether they're expanded. */
+	private val openness = HashMap<ModuleSetting, Float>()
+
+	private fun openness(setting: ModuleSetting): Float = openness[setting] ?: if (setting in expanded) 1f else 0f
+
+	/**
+	 * [setting]'s sub-settings under its row, opening and closing like an accordion: drawn whole,
+	 * shown through a clip that grows and shrinks. Returns the height they take this frame.
+	 */
+	private fun drawExpanding(
+		graphics: GuiGraphicsExtractor, setting: ModuleSetting, box: Box, top: Float,
+		mx: Float, my: Float, pointerInside: Boolean, dt: Float, alpha: Float,
+	): Float {
+		val target = if (setting in expanded) 1f else 0f
+		var t = approach(openness(setting), target, 16f, dt)
+		if (abs(t - target) < 0.004f) t = target
+		openness[setting] = t
+		if (t <= 0f || !setting.hasVisibleMore()) return 0f
+		if (t >= 1f) return drawChildren(graphics, setting, box, top, mx, my, pointerInside, dt, alpha, alwaysOpen = false)
+		val full = setting.more.filter { it.hasOwnRow && it.isVisible() }.sumOf { rowHeight(it, box.w, nested = true).toDouble() }.toFloat()
+		val shown = full * t
+		MenuStyle.clip(graphics, Box(box.x, top, box.w, shown))
+		drawChildren(graphics, setting, box, top, mx, my, pointerInside, dt, alpha * t, alwaysOpen = false)
+		graphics.disableScissor()
+		return shown
+	}
+
+	/** A row's height, gap included, as [drawRow] lays it out. */
+	private fun rowHeight(setting: ModuleSetting, w: Float, nested: Boolean): Float {
+		val lines = descriptionLines(setting, w, nested)
+		return when {
+			descriptionOf(setting).isEmpty() -> ROW_SHORT
+			lines.size > 1 -> ROW_TALL + DESCRIPTION_LINE
+			else -> ROW_TALL
+		} + ROW_GAP
 	}
 
 	private fun descriptionOf(setting: ModuleSetting): String = when (setting) {
@@ -481,6 +638,60 @@ class ModulePage(val module: Module) {
 		else -> ""
 	}
 
+	/**
+	 * What a notice says of [subject] at [restriction], or null when it's legit. Plain about what it
+	 * is, without warning people off it.
+	 */
+	private fun restrictionText(restriction: Restriction, subject: String, plural: Boolean = false): String? {
+		val verb = if (plural) "are" else "is"
+		return when (restriction) {
+			Restriction.LEGIT -> null
+			Restriction.SEMI_LEGIT -> "$subject $verb considered semi-legit. Use at your own risk."
+			Restriction.CHEAT -> "$subject $verb considered a cheat. Use at your own risk."
+		}
+	}
+
+	/**
+	 * The heads-up above the page: its title, its words and its level. It covers the module's own
+	 * restriction and any settings marked past it, or is null when everything is legit.
+	 */
+	private val pageNotice: Triple<String, String, Restriction>? by lazy {
+		val own = module.restriction.takeIf { it != Restriction.LEGIT }
+		val marked = module.settings.mapNotNull { settingNotice(it)?.second }.toSortedSet()
+		if (own == null && marked.isEmpty()) return@lazy null
+		val top = (marked + listOfNotNull(own)).maxBy { it.ordinal }
+		fun kind(level: Restriction) = if (level == Restriction.CHEAT) "cheats" else "semi-legit"
+		fun sign(level: Restriction) = if (level == Restriction.CHEAT) "red" else "yellow"
+		val text = when {
+			own == null && marked.size > 1 -> "Some settings are considered semi-legit, marked with a yellow sign, or cheats, marked with a red one. Use them at your own risk."
+			own == null -> "Some settings are considered ${kind(top)}. They're marked with a ${sign(top)} sign. Use them at your own risk."
+			marked.isEmpty() -> restrictionText(own, "This module")!!
+			else -> "This module is considered ${if (own == Restriction.CHEAT) "a cheat" else "semi-legit"}, and the settings marked with a ${sign(top)} sign are considered ${kind(top)}. Use at your own risk."
+		}
+		val title = if (own == top) MenuStyle.restrictionTitle(top) else MenuStyle.restrictionTitle(top) + " settings"
+		Triple(title, text, top)
+	}
+
+	/**
+	 * The warning for [setting], and its level: for a toggle past what the module itself is,
+	 * or a dropdown with such options. Null for the rest.
+	 */
+	private fun settingNotice(setting: ModuleSetting): Pair<String, Restriction>? {
+		val floor = module.restriction.ordinal
+		return when (setting) {
+			is ToggleModuleSetting -> setting.restriction.takeIf { it.ordinal > floor }?.let { level ->
+				restrictionText(level, "This setting")?.let { it to level }
+			}
+			is DropdownModuleSetting -> {
+				val options = setting.restrictedOptions.filterValues { it.ordinal > floor }
+				val level = options.values.maxByOrNull { it.ordinal } ?: return null
+				val names = options.keys.joinToString(" and ") { "“$it”" }
+				restrictionText(level, names, plural = options.size > 1)?.let { it to level }
+			}
+			else -> null
+		}
+	}
+
 	/** One row, label left and control right. Returns its height. */
 	private fun drawRow(
 		graphics: GuiGraphicsExtractor, setting: ModuleSetting,
@@ -489,12 +700,9 @@ class ModulePage(val module: Module) {
 	): Float {
 		val description = descriptionOf(setting)
 		val lines = descriptionLines(setting, w, nested)
-		ModulePageMetrics.lastRowWidth = w
-		val h = when {
-			description.isEmpty() -> ROW_SHORT
-			lines.size > 1 -> ROW_TALL + DESCRIPTION_LINE
-			else -> ROW_TALL
-		}
+		val h = rowHeight(setting, w, nested) - ROW_GAP
+		val notice = settingNotice(setting)
+		val firstInGroup = joinGroup(x, y, w)
 		if (y + h < area.y || y > area.bottom) return h + ROW_GAP
 
 		val row = Box(x, y, w, h)
@@ -502,34 +710,46 @@ class ModulePage(val module: Module) {
 		val lift = approach(hover[setting] ?: 0f, if (hovered) 1f else 0f, 18f, dt).also { hover[setting] = it }
 		val base = if (nested) MenuStyle.ROW_NESTED else MenuStyle.ROW
 		RoundRect.fill(graphics, x, y, x + w, y + h, fade(blend(base, MenuStyle.ROW_HOVER, lift), alpha), 0f)
-		if (nested) RoundRect.fill(graphics, x, y, x + 2f, y + h, fade(MenuStyle.FIELD_EDGE, alpha), 0f)
-
+		val lineFrom = x + if (nested) NESTED_PAD else ROW_PAD
+		if (!firstInGroup) RoundRect.fill(graphics, lineFrom, y, x + w - ROW_PAD, y + 1f, fade(MenuStyle.ROW_LINE, alpha), 0f)
 		val cy = y + h / 2f
-		val right = x + w - 16f
+		val right = x + w - ROW_PAD
 		// Registered before the controls, so a control is hit first.
 		hits += Hit.Row(row, setting)
 		val controlLeft = drawControl(graphics, setting, right, cy, row, mx, my, pointerInside, dt, alpha)
 
 		var labelRight = controlLeft - 16f
-		// Search results list a row's extras on their own, so there's nothing to open.
-		if (!searching && setting !is PanelModuleSetting && setting.hasVisibleMore()) {
+		if (setting !is PanelModuleSetting && setting.hasVisibleMore()) {
 			val chevron = Box(controlLeft - 10f - 26f, cy - 13f, 26f, 26f)
-			drawChevron(graphics, chevron, setting in expanded, pointerInside && chevron.contains(mx, my), alpha)
+			drawChevron(graphics, chevron, openness(setting), pointerInside && chevron.contains(mx, my), alpha)
 			hits += Hit.Expand(chevron, setting)
 			labelRight = chevron.x - 10f
 		}
 
-		val labelX = x + if (nested) 34f else 18f
+		val labelX = x + if (nested) NESTED_PAD else ROW_PAD
 		val showReset = ClickGui.resetButtons.value && setting.changed
-		val room = labelRight - labelX - if (showReset) RESET_ROOM else 0f
-		val label = UiText.fit(setting.label, LABEL, room)
-		val labelY = if (description.isEmpty()) cy - LABEL / 2f else y + 10f
-		UiText.draw(graphics, label, labelX, labelY, LABEL, fade(MenuStyle.TEXT, alpha))
+		val room = labelRight - labelX - (if (showReset) RESET_ROOM else 0f) - (if (notice != null) SIGN_ROOM else 0f)
+		val label = UiText.fit(setting.label, LABEL, room, UiText.Face.MEDIUM)
+		val labelY = if (description.isEmpty()) cy - LABEL / 2f else y + LABEL_TOP
+		UiText.draw(graphics, label, labelX, labelY, LABEL, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
 		lines.forEachIndexed { index, line ->
-			UiText.draw(graphics, line, labelX, y + 30f + index * DESCRIPTION_LINE, DESCRIPTION, fade(MenuStyle.MUTED, alpha))
+			UiText.draw(graphics, line, labelX, y + DESCRIPTION_TOP + index * DESCRIPTION_LINE, DESCRIPTION, fade(MenuStyle.MUTED, alpha))
+		}
+		// Cut short to fit: a rest on the label or description shows it whole.
+		val cut = label != setting.label || lines.lastOrNull()?.let { it.endsWith("…") && !description.endsWith("…") } == true
+		if (cut && pointerInside && mx >= labelX && mx < labelRight && my >= y && my < y + h) {
+			rowTip = setting to if (description.isEmpty()) setting.label else "${setting.label}: $description"
+		}
+		var afterLabel = labelX + UiText.width(label, LABEL, UiText.Face.MEDIUM)
+		// A setting past the module's own level carries a small sign in its colour; resting on it says why.
+		notice?.let { (text, level) ->
+			val sign = Box(afterLabel + 4f, labelY + LABEL / 2f - 10f, 20f, 20f)
+			UiText.drawIconCentered(graphics, Icons.WARNING, sign.x, sign.y, sign.w, 11f, fade(MenuStyle.restrictionColor(level), alpha))
+			if (pointerInside && sign.contains(mx, my)) rowTip = (setting to "sign") to text
+			afterLabel = sign.right - 4f
 		}
 		if (showReset) {
-			val button = Box(labelX + UiText.width(label, LABEL) + 6f, labelY + LABEL / 2f - 10f, 20f, 20f)
+			val button = Box(afterLabel + 6f, labelY + LABEL / 2f - 10f, 20f, 20f)
 			val over = pointerInside && button.contains(mx, my)
 			if (over) RoundRect.fill(graphics, button.x, button.y, button.right, button.bottom, fade(MenuStyle.BUTTON_HOVER, alpha), 5f)
 			UiText.drawIconCentered(graphics, Icons.RESET, button.x, button.y, button.w, 10f, fade(if (over) MenuStyle.TEXT else MenuStyle.MUTED, alpha))
@@ -541,11 +761,11 @@ class ModulePage(val module: Module) {
 	/** How much of a row's right side a setting's control takes, its chevron included. */
 	private fun controlWidth(setting: ModuleSetting): Float {
 		val control = when (setting) {
-			is ToggleModuleSetting -> 34f + if (setting.inlineColor != null) 36f else 0f
-			is SliderModuleSetting -> 62f + 16f + 210f + 8f
-			is RangeModuleSetting -> 52f + 6f + 52f + 16f + 180f + 8f
+			is ToggleModuleSetting -> 40f + if (setting.inlineColor != null) 36f else 0f
+			is SliderModuleSetting -> 60f + 16f + 210f + 8f
+			is RangeModuleSetting -> 56f + 16f + 170f + 16f + 56f
 			is DropdownModuleSetting, is MultiSelectModuleSetting -> 220f
-			is KeybindModuleSetting -> 110f
+			is KeybindModuleSetting -> 120f
 			is ButtonModuleSetting -> 150f
 			is ColorModuleSetting -> 26f + 10f + UiText.width(setting.hex, 12f)
 			is TextModuleSetting -> 220f + if (setting.button != null) 88f else 0f
@@ -563,25 +783,11 @@ class ModulePage(val module: Module) {
 	private fun descriptionLines(setting: ModuleSetting, rowWidth: Float, nested: Boolean): List<String> {
 		val description = descriptionOf(setting)
 		if (description.isEmpty()) return emptyList()
-		val room = rowWidth - 16f - controlWidth(setting) - 16f - (if (nested) 34f else 18f)
+		val room = rowWidth - ROW_PAD - controlWidth(setting) - 16f - (if (nested) NESTED_PAD else ROW_PAD)
 		if (UiText.width(description, DESCRIPTION) <= room) return listOf(description)
 		val wrapped = UiText.wrap(description, DESCRIPTION, room)
 		if (wrapped.size <= 2) return wrapped
 		return listOf(wrapped[0], UiText.fit(wrapped.drop(1).joinToString(" "), DESCRIPTION, room))
-	}
-
-	/** Every description that needs more than two lines, for checking the wording fits. */
-	fun overflowing(rowWidth: Float): List<String> = module.settings.filter { it.hasOwnRow }.mapNotNull { setting ->
-		val description = descriptionOf(setting)
-		if (description.isEmpty()) return@mapNotNull null
-		val nested = setting.parent != null
-		val room = rowWidth - 16f - controlWidth(setting) - 16f - (if (nested) 34f else 18f)
-		val lines = UiText.wrap(description, DESCRIPTION, room).size
-		if (lines > 2) "${module.id}.${setting.id} ($lines lines): $description" else null
-	} + module.settings.filter { it.hasOwnRow }.mapNotNull { setting ->
-		val nested = setting.parent != null
-		val room = rowWidth - 16f - controlWidth(setting) - 16f - (if (nested) 34f else 18f)
-		if (UiText.width(setting.label, LABEL) > room) "${module.id}.${setting.id} label too long: ${setting.label}" else null
 	}
 
 	/** Draws [setting]'s control right-aligned at [right], centred on [cy]. Returns its left edge. */
@@ -592,7 +798,7 @@ class ModulePage(val module: Module) {
 		fun hovered(box: Box) = pointerInside && box.contains(mx, my)
 		return when (setting) {
 			is ToggleModuleSetting -> {
-				val switch = Box(right - 34f, cy - 8f, 34f, 16f)
+				val switch = Box(right - 40f, cy - 11f, 40f, 22f)
 				val t = approach(switchPosition[setting] ?: if (setting.value) 1f else 0f, if (setting.value) 1f else 0f, 20f, dt)
 				switchPosition[setting] = t
 				MenuStyle.drawSwitch(graphics, switch, t, alpha)
@@ -607,7 +813,7 @@ class ModulePage(val module: Module) {
 				left
 			}
 			is SliderModuleSetting -> {
-				val valueBox = Box(right - 62f, cy - 13f, 62f, 26f)
+				val valueBox = Box(right - 60f, cy - 15f, 60f, 30f)
 				drawValueBox(graphics, valueBox, Edit.Slider(setting), setting.boxValue, hovered(valueBox), alpha)
 				val barW = 210f
 				val barX = valueBox.x - 16f - barW
@@ -617,22 +823,23 @@ class ModulePage(val module: Module) {
 				barX - 8f
 			}
 			is RangeModuleSetting -> {
-				val upperBox = Box(right - 52f, cy - 13f, 52f, 26f)
-				val lowerBox = Box(upperBox.x - 6f - 52f, cy - 13f, 52f, 26f)
+				// Low, track, high: each number beside its own end.
+				val barW = 170f
+				val upperBox = Box(right - 56f, cy - 15f, 56f, 30f)
+				val barX = upperBox.x - 16f - barW
+				val lowerBox = Box(barX - 16f - 56f, cy - 15f, 56f, 30f)
 				drawValueBox(graphics, lowerBox, Edit.Lower(setting), setting.displayLower, hovered(lowerBox), alpha)
 				drawValueBox(graphics, upperBox, Edit.Upper(setting), setting.displayUpper, hovered(upperBox), alpha)
-				val barW = 180f
-				val barX = lowerBox.x - 16f - barW
 				val span = setting.max - setting.min
 				val lower = ((setting.lower - setting.min) / span).toFloat().coerceIn(0f, 1f)
 				val upper = ((setting.upper - setting.min) / span).toFloat().coerceIn(0f, 1f)
 				drawTrack(graphics, barX, barW, cy, lower, upper, alpha, twoHandles = true)
 				hits += Hit.Track(Box(barX - 8f, cy - 10f, barW + 16f, 20f), setting, barX, barW)
-				barX - 8f
+				lowerBox.x
 			}
 			is DropdownModuleSetting, is MultiSelectModuleSetting -> {
 				val source = setting as DropdownSource
-				val box = Box(right - 220f, cy - 15f, 220f, 30f)
+				val box = Box(right - 220f, cy - 16f, 220f, 32f)
 				drawDropdownBox(graphics, box, source, hovered(box), alpha)
 				hits += Hit.Dropdown(box, source)
 				if (openDropdown === source) dropdownAnchor = box
@@ -640,7 +847,7 @@ class ModulePage(val module: Module) {
 			}
 			is KeybindModuleSetting -> {
 				val capturing = awaiting === setting
-				drawBadge(graphics, if (capturing) "Press a key" else setting.keyName, right, cy, capturing || setting.bound, mx, my, pointerInside, alpha)
+				drawBadge(graphics, if (capturing) "Press a key" else setting.keyName, right, cy, capturing || setting.bound, capturing, mx, my, pointerInside, alpha)
 					.also { hits += Hit.Keybind(it, setting) }.x
 			}
 			is ButtonModuleSetting -> drawButton(graphics, setting, right, cy, 150f, mx, my, pointerInside, alpha)
@@ -655,7 +862,7 @@ class ModulePage(val module: Module) {
 			}
 			is TextModuleSetting -> {
 				val fieldRight = setting.button?.let { drawButton(graphics, it, right, cy, 80f, mx, my, pointerInside, alpha) - 8f } ?: right
-				val box = Box(fieldRight - 220f, cy - 15f, 220f, 30f)
+				val box = Box(fieldRight - 220f, cy - 16f, 220f, 32f)
 				val edit = Edit.Text(setting)
 				drawTextField(graphics, box, edit, setting.value, setting.hint, hovered(box), alpha)
 				if (setting.suggestions != null && editing == edit) {
@@ -673,7 +880,7 @@ class ModulePage(val module: Module) {
 					return noteX
 				}
 				val chevron = Box(right - 26f, cy - 13f, 26f, 26f)
-				drawChevron(graphics, chevron, setting in expanded, hovered(row), alpha)
+				drawChevron(graphics, chevron, openness(setting), hovered(row), alpha)
 				hits += Hit.Expand(row, setting)
 				chevron.x
 			}
@@ -686,41 +893,52 @@ class ModulePage(val module: Module) {
 		mx: Float, my: Float, pointerInside: Boolean, dt: Float, alpha: Float,
 	): Float {
 		val h = ROW_TALL
+		joinGroup(x, y, w)
 		val row = Box(x, y, w, h)
 		val lift = approach(hover[module] ?: 0f, if (pointerInside && row.contains(mx, my)) 1f else 0f, 18f, dt).also { hover[module] = it }
 		RoundRect.fill(graphics, x, y, x + w, y + h, fade(blend(MenuStyle.ROW, MenuStyle.ROW_HOVER, lift), alpha), 0f)
 		val cy = y + h / 2f
 		val capturing = awaiting === module
 		val name = module.keybind.keyName
-		val badge = drawBadge(graphics, if (capturing) "Press a key" else name, x + w - 16f, cy, capturing || name != "None", mx, my, pointerInside, alpha)
+		val badge = drawBadge(graphics, if (capturing) "Press a key" else name, x + w - ROW_PAD, cy, capturing || name != "None", capturing, mx, my, pointerInside, alpha)
 		hits += Hit.Keybind(badge, module)
-		UiText.draw(graphics, "Keybind", x + 18f, y + 10f, LABEL, fade(MenuStyle.TEXT, alpha))
-		UiText.draw(graphics, "The key bound to this module. Escape or Backspace clears it.", x + 18f, y + 30f, DESCRIPTION, fade(MenuStyle.MUTED, alpha))
+		UiText.draw(graphics, keybindPlacement.label, x + ROW_PAD, y + LABEL_TOP, LABEL, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
+		UiText.draw(graphics, keybindPlacement.description, x + ROW_PAD, y + DESCRIPTION_TOP, DESCRIPTION, fade(MenuStyle.MUTED, alpha))
 		return h + ROW_GAP
 	}
 
 	private fun drawBadge(
-		graphics: GuiGraphicsExtractor, text: String, right: Float, cy: Float, lit: Boolean,
+		graphics: GuiGraphicsExtractor, text: String, right: Float, cy: Float, lit: Boolean, capturing: Boolean,
 		mx: Float, my: Float, pointerInside: Boolean, alpha: Float,
 	): Box {
 		val size = 12f
-		val w = max(64f, UiText.width(text, size, UiText.Face.MEDIUM) + 22f)
-		val box = Box(right - w, cy - 13f, w, 26f)
+		// Key names read in capitals, and an empty bind says so.
+		val shown = (if (text == "None") "Not bound" else text).uppercase()
+		val w = max(120f, UiText.width(shown, size, UiText.Face.MEDIUM) + 28f)
+		val box = Box(right - w, cy - 16f, w, 32f)
 		val over = pointerInside && box.contains(mx, my)
-		val fill = if (lit) fade(MenuStyle.accent(), 0.18f) else MenuStyle.FIELD
-		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(fill, alpha), 6f)
-		RoundRect.outline(graphics, box.x, box.y, box.right, box.bottom, fade(if (over) MenuStyle.FIELD_EDGE_HOVER else MenuStyle.FIELD_EDGE, alpha), 6f, 1f)
+		// The accent's edge marks one waiting for a key.
+		MenuStyle.drawControlBox(graphics, box, over, capturing, alpha)
 		UiText.draw(
-			graphics, text, box.x + (box.w - UiText.width(text, size, UiText.Face.MEDIUM)) / 2f, box.y + (box.h - size) / 2f, size,
-			fade(if (lit) MenuStyle.accent() else MenuStyle.MUTED, alpha), UiText.Face.MEDIUM,
+			graphics, shown, box.x + (box.w - UiText.width(shown, size, UiText.Face.MEDIUM)) / 2f, box.y + (box.h - size) / 2f, size,
+			fade(if (lit) MenuStyle.TEXT else MenuStyle.MUTED, alpha), UiText.Face.MEDIUM,
 		)
 		return box
 	}
 
-	private fun drawChevron(graphics: GuiGraphicsExtractor, box: Box, open: Boolean, hovered: Boolean, alpha: Float) {
-		if (hovered) RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.BUTTON_HOVER, alpha), 6f)
-		val glyph = if (open) Icons.CHEVRON_DOWN else Icons.CHEVRON_RIGHT
-		UiText.drawIconCentered(graphics, glyph, box.x, box.y, box.w, 11f, fade(if (open || hovered) MenuStyle.TEXT else MenuStyle.MUTED, alpha))
+	/** The chevron that opens sub-settings: pointing right when shut, turning down as they open ([open], 0 to 1). */
+	private fun drawChevron(graphics: GuiGraphicsExtractor, box: Box, open: Float, hovered: Boolean, alpha: Float) {
+		if (hovered) RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.CONTROL, alpha), 6f)
+		val cx = box.x + box.w / 2f
+		val cy = box.y + box.h / 2f
+		val pose = graphics.pose()
+		pose.pushMatrix()
+		pose.translate(cx, cy)
+		pose.rotate(open * (Math.PI / 2.0).toFloat())
+		pose.translate(-cx, -cy)
+		val color = blend(MenuStyle.MUTED, MenuStyle.TEXT, if (hovered) 1f else open)
+		UiText.drawIconCentered(graphics, Icons.CHEVRON_RIGHT, box.x, box.y, box.w, 11f, fade(color, alpha))
+		pose.popMatrix()
 	}
 
 	private fun drawTrack(graphics: GuiGraphicsExtractor, barX: Float, barW: Float, cy: Float, from: Float, to: Float, alpha: Float, twoHandles: Boolean = false) {
@@ -738,7 +956,7 @@ class ModulePage(val module: Module) {
 
 	private fun drawValueBox(graphics: GuiGraphicsExtractor, box: Box, edit: Edit, value: String, hovered: Boolean, alpha: Float) {
 		val focused = editing == edit
-		MenuStyle.drawField(graphics, box, hovered, focused, alpha)
+		MenuStyle.drawControlBox(graphics, box, hovered, focused, alpha)
 		val size = 12f
 		if (focused) {
 			input.draw(graphics, box, size, MenuStyle.TEXT, true, alpha, frameDt, padding = 6f, centered = true)
@@ -757,7 +975,7 @@ class ModulePage(val module: Module) {
 		val w = max(minWidth, UiText.width(setting.label, size, UiText.Face.MEDIUM) + 32f)
 		val box = Box(right - w, cy - 15f, w, 30f)
 		val over = pointerInside && box.contains(mx, my)
-		MenuStyle.drawField(graphics, box, over, false, alpha)
+		MenuStyle.drawControlBox(graphics, box, over, false, alpha)
 		UiText.draw(
 			graphics, setting.label, box.x + (box.w - UiText.width(setting.label, size, UiText.Face.MEDIUM)) / 2f,
 			box.y + (box.h - size) / 2f, size, fade(if (over) MenuStyle.TEXT else MenuStyle.TAB_HOVER, alpha), UiText.Face.MEDIUM,
@@ -768,7 +986,7 @@ class ModulePage(val module: Module) {
 
 	private fun drawTextField(graphics: GuiGraphicsExtractor, box: Box, edit: Edit, value: String, hint: String, hovered: Boolean, alpha: Float) {
 		val focused = editing == edit
-		MenuStyle.drawField(graphics, box, hovered, focused, alpha)
+		MenuStyle.drawControlBox(graphics, box, hovered, focused, alpha)
 		val size = 13f
 		if (focused) {
 			input.draw(graphics, box, size, MenuStyle.TEXT, true, alpha, frameDt)
@@ -785,11 +1003,21 @@ class ModulePage(val module: Module) {
 
 	private fun drawDropdownBox(graphics: GuiGraphicsExtractor, box: Box, source: DropdownSource, hovered: Boolean, alpha: Float) {
 		val open = openDropdown === source
-		MenuStyle.drawField(graphics, box, hovered, open, alpha)
+		MenuStyle.drawControlBox(graphics, box, hovered, open, alpha)
 		val size = 13f
-		val text = UiText.fit(source.selected, size, box.w - 44f)
-		UiText.draw(graphics, text, box.x + 12f, box.y + (box.h - size) / 2f, size, fade(if (open || hovered) MenuStyle.TEXT else MenuStyle.TAB_HOVER, alpha))
-		UiText.drawIconCentered(graphics, Icons.CHEVRON_DOWN, box.right - 30f, box.y, 30f, 10f, fade(if (open) MenuStyle.accent() else MenuStyle.MUTED, alpha))
+		var textX = box.x + 12f
+		// A multi-select leads with how many of its options are ticked.
+		if (source is MultiSelectModuleSetting) {
+			val count = "${source.ticked.size} / ${source.options.size}"
+			val countSize = 11f
+			val pill = Box(box.x + 7f, box.y + (box.h - 20f) / 2f, UiText.width(count, countSize, UiText.Face.MEDIUM) + 14f, 20f)
+			RoundRect.fill(graphics, pill.x, pill.y, pill.right, pill.bottom, fade(blend(MenuStyle.CONTROL, MenuStyle.accent(), 0.25f), alpha), 4f)
+			UiText.draw(graphics, count, pill.x + 7f, pill.y + (pill.h - countSize) / 2f, countSize, fade(blend(MenuStyle.accent(), 0xFFFFFFFF.toInt(), 0.45f), alpha), UiText.Face.MEDIUM)
+			textX = pill.right + 9f
+		}
+		val text = UiText.fit(source.selected, size, box.right - 30f - textX)
+		UiText.draw(graphics, text, textX, box.y + (box.h - size) / 2f, size, fade(MenuStyle.TEXT, alpha))
+		UiText.drawIconCentered(graphics, Icons.CHEVRON_DOWN, box.right - 28f, box.y, 28f, 8f, fade(if (open) MenuStyle.accent() else MenuStyle.MUTED, alpha))
 	}
 
 	private fun drawSwatch(graphics: GuiGraphicsExtractor, setting: ColorModuleSetting, box: Box, hovered: Boolean, alpha: Float) {
@@ -856,31 +1084,109 @@ class ModulePage(val module: Module) {
 		liveUpdate(edit)
 	}
 
+	/**
+	 * The open dropdown's list, under its box (or over it, near the bottom). It eases in, shows at
+	 * most [DROPDOWN_ROWS] options and scrolls past that. A multi-select ticks boxes; a plain one
+	 * tints and checks the chosen option. Options past the module's own level carry its sign.
+	 */
 	private fun drawDropdownList(graphics: GuiGraphicsExtractor, source: DropdownSource, mx: Float, my: Float, alpha: Float) {
 		dropdownRows.clear()
 		val anchor = dropdownAnchor
-		val rowH = 28f
-		val pad = 4f
+		val rowH = 30f
+		val pad = 5f
 		val shown = source.shownOptions
-		val h = shown.size * rowH + pad * 2f
-		val below = anchor.bottom + 4f
-		val y = if (below + h > area.bottom + 40f) anchor.y - 4f - h else below
-		val box = Box(anchor.x, y, anchor.w, h)
+		val listH = minOf(shown.size, DROPDOWN_ROWS) * rowH
+		val h = listH + pad * 2f
+		val below = anchor.bottom + 6f
+		val above = anchor.y - 6f - h
+		val upward = below + h > area.bottom + 40f && above > area.y - 60f
+		dropdownOpening = minOf(1f, dropdownOpening + frameDt / DROPDOWN_SECONDS)
+		val eased = MenuStyle.easeOut(dropdownOpening)
+		val shownAlpha = alpha * eased
+		val slide = (1f - eased) * if (upward) 6f else -6f
+		val box = Box(anchor.x, (if (upward) above else below) + slide, anchor.w, h)
 		dropdownBox = box
-		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.POPUP, alpha), 8f)
-		RoundRect.outline(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.FIELD_EDGE, alpha), 8f, 1f)
+		RoundRect.shadow(graphics, box.x, box.y, box.right, box.bottom, fade(0x70000000, shownAlpha), 8f, 16f)
+		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.POPUP, shownAlpha), 8f)
+		RoundRect.outline(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.POPUP_EDGE, shownAlpha), 8f, 1f)
+
+		val view = Box(box.x + pad, box.y + pad, box.w - pad * 2f, listH)
+		dropdownView = view
+		dropdownMax = maxOf(0f, shown.size * rowH - listH)
+		dropdownScroll = dropdownScroll.coerceIn(0f, dropdownMax)
+		val floor = module.restriction.ordinal
+		val restricted = (source as? DropdownModuleSetting)?.restrictedOptions.orEmpty()
 		val size = 13f
+		MenuStyle.clip(graphics, view)
 		for ((place, index) in shown.withIndex()) {
-			val option = source.options[index]
-			val row = Box(box.x + pad, box.y + pad + place * rowH, box.w - pad * 2f, rowH)
+			val row = Box(view.x, view.y + place * rowH - dropdownScroll, view.w, rowH)
+			if (row.bottom < view.y || row.y > view.bottom) continue
 			dropdownRows += index to row
-			val over = row.contains(mx, my)
-			if (over) RoundRect.fill(graphics, row.x, row.y, row.right, row.bottom, fade(MenuStyle.POPUP_HOVER, alpha), 6f)
+			val option = source.options[index]
+			val over = view.contains(mx, my) && row.contains(mx, my)
 			val checked = source.isChecked(index)
-			val color = if (checked) MenuStyle.accent() else if (over) MenuStyle.TEXT else MenuStyle.TAB_HOVER
-			UiText.draw(graphics, UiText.fit(option, size, row.w - 40f), row.x + 10f, row.y + (rowH - size) / 2f, size, fade(color, alpha))
-			if (checked) UiText.drawIconCentered(graphics, Icons.CHECK, row.right - 28f, row.y, rowH, 10f, fade(MenuStyle.accent(), alpha))
+			val chosenRow = checked && !source.multiple
+			when {
+				chosenRow -> RoundRect.fill(graphics, row.x, row.y, row.right, row.bottom, fade(blend(MenuStyle.POPUP, MenuStyle.accent(), if (over) 0.2f else 0.14f), shownAlpha), 6f)
+				over -> RoundRect.fill(graphics, row.x, row.y, row.right, row.bottom, fade(MenuStyle.POPUP_HOVER, shownAlpha), 6f)
+			}
+			var textX = row.x + 10f
+			if (source.multiple) {
+				val tick = Box(row.x + 9f, row.y + (rowH - 16f) / 2f, 16f, 16f)
+				// The box fades between empty and ticked rather than snapping.
+				val key = source to index
+				val target = if (checked) 1f else 0f
+				val ticked = approach(tickness[key] ?: target, target, 20f, frameDt).also { tickness[key] = it }
+				if (ticked < 0.99f) {
+					RoundRect.outline(graphics, tick.x, tick.y, tick.right, tick.bottom, fade(if (over) MenuStyle.MUTED else MenuStyle.FIELD_EDGE_HOVER, shownAlpha * (1f - ticked)), 4f, 1.2f)
+				}
+				if (ticked > 0.01f) {
+					RoundRect.fill(graphics, tick.x, tick.y, tick.right, tick.bottom, fade(MenuStyle.accent(), shownAlpha * ticked), 4f)
+					UiText.drawIconCentered(graphics, Icons.CHECK, tick.x, tick.y, tick.w, 9f, fade(0xFFFFFFFF.toInt(), shownAlpha * ticked))
+				}
+				textX = tick.right + 10f
+			}
+			val level = restricted[option]?.takeIf { it.ordinal > floor }
+			val room = row.right - textX - (if (chosenRow) 30f else 10f) - (if (level != null) 20f else 0f)
+			val text = UiText.fit(option, size, room)
+			val color = when {
+				checked || over -> MenuStyle.TEXT
+				else -> MenuStyle.TAB_HOVER
+			}
+			UiText.draw(graphics, text, textX, row.y + (rowH - size) / 2f, size, fade(color, shownAlpha))
+			if (level != null) {
+				UiText.drawIconCentered(graphics, Icons.WARNING, textX + UiText.width(text, size) + 2f, row.y + (rowH - 20f) / 2f, 20f, 10f, fade(MenuStyle.restrictionColor(level), shownAlpha))
+			}
+			if (chosenRow) UiText.drawIconCentered(graphics, Icons.CHECK, row.right - 28f, row.y, rowH, 10f, fade(MenuStyle.accent(), shownAlpha))
 		}
+		graphics.disableScissor()
+
+		// A thin bar inside the right edge when there are more options than fit.
+		if (dropdownMax > 0f) {
+			val trackH = view.h - 8f
+			val thumbH = maxOf(24f, trackH * listH / (shown.size * rowH))
+			val thumbY = view.y + 4f + (trackH - thumbH) * (dropdownScroll / dropdownMax)
+			val barX = box.right - 5f
+			RoundRect.fill(graphics, barX, thumbY, barX + 3f, thumbY + thumbH, fade(MenuStyle.SCROLL_THUMB, shownAlpha), 1.5f)
+		}
+	}
+
+	/** How ticked each multi-select option's box looks, 0 to 1, so a tick fades in and out. */
+	private val tickness = HashMap<Pair<DropdownSource, Int>, Float>()
+
+	/** How far the open dropdown has eased in, and its list's scroll. */
+	private var dropdownOpening = 0f
+	private var dropdownScroll = 0f
+	private var dropdownMax = 0f
+	private var dropdownView = Box.NONE
+
+	/** Opens [source]'s list under [anchor], scrolled so its chosen option shows. */
+	private fun openDropdownList(source: DropdownSource, anchor: Box) {
+		openDropdown = source
+		dropdownAnchor = anchor
+		dropdownOpening = 0f
+		val place = source.shownOptions.indexOfFirst { source.isChecked(it) && !source.multiple }
+		dropdownScroll = if (place < 0) 0f else maxOf(0f, (place - DROPDOWN_ROWS / 2) * 30f)
 	}
 
 	private fun drawPicker(graphics: GuiGraphicsExtractor, setting: ColorModuleSetting, mx: Float, my: Float, alpha: Float) {
@@ -990,7 +1296,7 @@ class ModulePage(val module: Module) {
 		}
 		openDropdown?.let { source ->
 			for ((index, row) in dropdownRows) {
-				if (row.contains(mx, my)) {
+				if (row.contains(mx, my) && dropdownView.contains(mx, my)) {
 					source.pick(index)
 					if (!source.multiple) openDropdown = null
 					return true
@@ -1081,10 +1387,7 @@ class ModulePage(val module: Module) {
 			// Clicking a number's box selects it, so typing replaces it.
 			is Hit.Value -> focusField(hit.target, hit.box, mx, selectAll = true, doubleClick)
 			is Hit.Text -> focusField(hit.target, hit.box, mx, selectAll = false, doubleClick)
-			is Hit.Dropdown -> {
-				openDropdown = hit.source
-				dropdownAnchor = hit.box
-			}
+			is Hit.Dropdown -> openDropdownList(hit.source, hit.box)
 			is Hit.Keybind -> awaiting = hit.target
 			is Hit.Button -> {
 				val action = hit.setting.action
@@ -1155,7 +1458,11 @@ class ModulePage(val module: Module) {
 	}
 
 	fun mouseScrolled(amount: Float) {
-		if (openDropdown != null) return
+		// An open list takes the wheel.
+		if (openDropdown != null) {
+			dropdownScroll = (dropdownScroll - amount * 30f).coerceIn(0f, dropdownMax)
+			return
+		}
 		scrollTarget = (scrollTarget - amount * 70f).coerceIn(0f, maxScroll)
 	}
 
@@ -1359,14 +1666,35 @@ class ModulePage(val module: Module) {
 	private companion object {
 		val remembered = HashMap<String, Place>()
 
-		const val ROW_TALL = 56f
-		const val ROW_SHORT = 44f
-		const val ROW_GAP = 2f
+		const val ROW_TALL = 64f
+		const val ROW_SHORT = 54f
+		const val PILL_GAP = 7f
+		const val PILL_TEXT = 15f
+		const val PILL_FILL = 0xFF222226.toInt()
+		const val PILL_FILL_HOVER = 0xFF2D2D32.toInt()
+		const val PILL_TEXT_COLOR = 0xFFA9ABB8.toInt()
+
+		/** A row's inner margin either side, and a nested row's indent. */
+		const val ROW_PAD = 20f
+		const val NESTED_PAD = 36f
+
+		/** Where a label and its description start below a row's top. */
+		const val LABEL_TOP = 15f
+		const val DESCRIPTION_TOP = 36f
+		const val ROW_GAP = 0f
+
+		/** An open dropdown shows this many options before it scrolls, and eases in over this long. */
+		const val DROPDOWN_ROWS = 8
+		const val DROPDOWN_SECONDS = 0.12f
+		const val GROUP_RADIUS = 8f
+
+		/** Room above a list, so the clip (snapped to whole pixels) can't take a group's top edge. */
+		const val LIST_TOP = 2f
+
+		/** The warning sign after a restricted setting's label. */
+		const val SIGN_ROOM = 20f
 		const val LABEL = 14f
 		const val DESCRIPTION = 12f
-
-		/** As wide as the module search, so the two line up. */
-		const val SEARCH_WIDTH = 250f
 
 		/** The reset button and its gap, kept free after a label. */
 		const val RESET_ROOM = 26f
@@ -1374,9 +1702,4 @@ class ModulePage(val module: Module) {
 		/** The step to a description's second line. */
 		const val DESCRIPTION_LINE = 15f
 	}
-}
-
-/** The width of the last settings row drawn, for measuring descriptions outside a frame. */
-object ModulePageMetrics {
-	var lastRowWidth = 0f
 }

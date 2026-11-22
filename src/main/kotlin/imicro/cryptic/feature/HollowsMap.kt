@@ -58,9 +58,10 @@ object HollowsMap {
 	 * The places that move between lobbies. [zone] is its sidebar zone if it has one; [saidThere]
 	 * the start of a line only said there; [words] what players call it in chat; [span] and [spanZ]
 	 * how wide it is east to west and north to south, for markers drawn to size. The crystal places
-	 * and King Yolkar are measured (`/cryptic debug structure`), the rest judged from maps of the
-	 * Hollows. [centreOffsetX] and [centreOffsetZ] are where its middle sits, in blocks east and
-	 * south, from the spot that finds it exactly: its crystal, or with none its NPC's nametag.
+	 * are measured (`/cryptic debug structure`) as their areas, one block in from where you can
+	 * still stand outside (see [HollowsBounds]); King Yolkar by its walls, the rest judged from maps
+	 * of the Hollows. [centreOffsetX] and [centreOffsetZ] are where its middle sits, in blocks east
+	 * and south, from the spot that finds it exactly: its crystal, or with none its NPC's nametag.
 	 * [most] is how many a lobby can hold (up to three Fairy Grottos).
 	 */
 	enum class Place(
@@ -81,11 +82,11 @@ object HollowsMap {
 		JUNGLE_TEMPLE(
 			"Jungle Temple", 0xAA00AA, listOf("jungle temple", "temple", "jungle"), zone = "Jungle Temple",
 			saidThere = "[NPC] Kalhuiki Door Guardian:", crystal = "Amethyst", crystalColor = { NucleusQol.amethystColor },
-			span = 99, spanZ = 101, centreOffsetX = -1.0, centreOffsetZ = -30.0,
+			span = 105, centreOffsetX = -1.0, centreOffsetZ = -30.0,
 		),
 		MINES_OF_DIVAN(
 			"Mines of Divan", 0x55FF55, listOf("mines of divan", "divan", "mines"), zone = "Mines of Divan",
-			saidThere = "Jade Crystal", crystal = "Jade", crystalColor = { NucleusQol.jadeColor }, span = 106,
+			saidThere = "Jade Crystal", crystal = "Jade", crystalColor = { NucleusQol.jadeColor }, span = 105,
 		),
 		GOBLIN_QUEENS_DEN(
 			"Goblin Queen's Den", 0xFFAA00, listOf("goblin queen", "queens den", "queen", "den"), zone = "Goblin Queen's Den",
@@ -95,12 +96,12 @@ object HollowsMap {
 		LOST_PRECURSOR_CITY(
 			"Lost Precursor City", 0x55FFFF, listOf("precursor city", "precursor", "city", "lpc"), zone = "Lost Precursor City",
 			saidThere = "Sapphire Crystal", crystal = "Sapphire", crystalColor = { NucleusQol.sapphireColor },
-			span = 101, spanZ = 104, centreOffsetX = 33.0, centreOffsetZ = -33.5,
+			span = 105, centreOffsetX = 33.0, centreOffsetZ = -33.0,
 		),
 		KHAZAD_DUM(
 			"Khazad-dûm", 0xFFFF55, listOf("khazad-dum", "khazad dum", "khazad"), zone = "Khazad-dûm",
 			saidThere = "Topaz Crystal", crystal = "Topaz", crystalColor = { NucleusQol.topazColor },
-			span = 97, spanZ = 99, centreOffsetX = -3.0, centreOffsetZ = 12.0,
+			span = 105, centreOffsetX = -5.0, centreOffsetZ = 12.0,
 		),
 		FAIRY_GROTTO(
 			"Fairy Grotto", 0xFF55FF, listOf("fairy grotto", "grotto", "fairy"), zone = "Fairy Grotto", small = true, span = 30,
@@ -304,7 +305,7 @@ object HollowsMap {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(MapElement())
+		Hud.register(MapElement(), NucleusQol.module, showMap)
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> resetLobby() }
 	}

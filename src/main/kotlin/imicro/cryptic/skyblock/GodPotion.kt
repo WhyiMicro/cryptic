@@ -15,7 +15,13 @@ object GodPotion {
 
 	private val PAUSED_AREAS = setOf("Catacombs", "The Rift")
 
+	/** Long enough for a warp's tab list to replace the old island's Area row. */
+	private const val SETTLE_TICKS = 100
+
 	fun read(): BuffReading {
+		// Just after a warp the area may still be the island left behind while the footer is
+		// already the Rift's, which would read as the potion running out.
+		if (SkyblockLocation.ticksInWorld < SETTLE_TICKS) return BuffReading.Unknown
 		// The footer arrives before the Area row, so an unknown island may still be a paused one.
 		val area = SkyblockLocation.area ?: return BuffReading.Unknown
 		if (area in PAUSED_AREAS) return BuffReading.Unknown

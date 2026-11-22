@@ -203,7 +203,7 @@ object DungeonScore {
 		if (initialized) return
 		initialized = true
 
-		Hud.register(element)
+		Hud.register(element, DungeonMap.module)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> resetRun() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> resetRun() }
 	}

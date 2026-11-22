@@ -97,7 +97,7 @@ object Relics {
 		initialized = true
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
-		Hud.register(SpawnElement())
+		Hud.register(SpawnElement(), module, spawnTimer)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ ->
 			pickups.clear()
 			p5StartTick = -1

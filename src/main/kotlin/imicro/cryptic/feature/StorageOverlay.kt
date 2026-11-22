@@ -274,6 +274,7 @@ object StorageOverlay {
 			val old = overview
 			if (old == null || old.size != seen.size || old.indices.any { !ItemStack.matches(old[it], seen[it]) }) {
 				overview = seen
+				encodeNow(seen)
 				dirty = true
 			}
 			for (slot in 0 until end) {
@@ -297,8 +298,31 @@ object StorageOverlay {
 		val old = pages[menu]
 		if (old == null || old.size != items.size || old.indices.any { !ItemStack.matches(old[it], items[it]) }) {
 			pages[menu] = items
+			encodeNow(items)
 			dirty = true
 		}
+	}
+
+	/**
+	 * Each stack's JSON, made with the registries it was read under. Hypixel sends fresh registries
+	 * on every server change, and a stack from an older set (its enchantments) no longer encodes.
+	 */
+	private val encoded = WeakHashMap<ItemStack, com.google.gson.JsonElement>()
+
+	private fun encodeNow(items: List<ItemStack>) {
+		val level = Minecraft.getInstance().level ?: return
+		val ops = RegistryOps.create(JsonOps.INSTANCE, level.registryAccess())
+		for (stack in items) encode(stack, ops)
+	}
+
+	private fun encode(stack: ItemStack, ops: RegistryOps<com.google.gson.JsonElement>): com.google.gson.JsonElement =
+		encoded[stack] ?: ItemStack.OPTIONAL_CODEC.encodeStart(ops, stack).result().orElse(null)?.also { encoded[stack] = it }
+			?: JsonObject()
+
+	private fun decode(element: com.google.gson.JsonElement, ops: RegistryOps<com.google.gson.JsonElement>): ItemStack {
+		val stack = ItemStack.OPTIONAL_CODEC.parse(ops, element).result().orElse(ItemStack.EMPTY)
+		if (!stack.isEmpty) encoded[stack] = element
+		return stack
 	}
 
 	@JvmStatic
@@ -375,11 +399,11 @@ object StorageOverlay {
 		for ((key, value) in stored.entrySet()) {
 			val index = indexOf(key) ?: continue
 			pages[index] = (value as? JsonArray)?.map { element ->
-				ItemStack.OPTIONAL_CODEC.parse(ops, element).result().orElse(ItemStack.EMPTY)
+				decode(element, ops)
 			}
 		}
 		(mine.get("overview") as? JsonArray)?.let { array ->
-			overview = array.map { ItemStack.OPTIONAL_CODEC.parse(ops, it).result().orElse(ItemStack.EMPTY) }
+			overview = array.map { decode(it, ops) }
 		}
 		lastPage = runCatching { mine.get("last")?.asInt }.getOrNull()?.takeIf { it in 0 until PAGES }
 		mine.getAsJsonObject("names")?.entrySet()?.forEach { (key, value) ->
@@ -401,7 +425,7 @@ object StorageOverlay {
 				continue
 			}
 			val array = JsonArray()
-			for (stack in items) array.add(ItemStack.OPTIONAL_CODEC.encodeStart(ops, stack).result().orElse(JsonObject()))
+			for (stack in items) array.add(encode(stack, ops))
 			stored.add(index.toString(), array)
 		}
 		val named = JsonObject()
@@ -412,7 +436,7 @@ object StorageOverlay {
 		lastPage?.let { mine.addProperty("last", it) }
 		overview?.let { menu ->
 			val array = JsonArray()
-			for (stack in menu) array.add(ItemStack.OPTIONAL_CODEC.encodeStart(ops, stack).result().orElse(JsonObject()))
+			for (stack in menu) array.add(encode(stack, ops))
 			mine.add("overview", array)
 		}
 		val all = saved ?: JsonObject().also { saved = it }
@@ -635,18 +659,48 @@ object StorageOverlay {
 		// Slots are placed in screen coordinates; clicks off the chest are handled by [clickedOutside].
 		accessor.`cryptic$setLeftPos`(0)
 		accessor.`cryptic$setTopPos`(0)
-		// Skyblocker's buttons (quick navigation, container value) are placed around the chest, which
-		// isn't there any more, so they'd float over the pages. Other mods' widgets stay: SkyBlock
-		// Item List lays itself out beside the overlay.
+		val at = measure(screen.width, screen.height, chest, liveIndex)
+		layout = at
+		placeWidgets(screen, at, liveIndex)
+		placeSlots(chest, liveIndex, at)
+		draw(graphics, at, chest, liveIndex, mouseX, mouseY, chest.carried.isEmpty)
+	}
+
+	/** How wide Skyblocker's container value is in the open page's title row, to keep the name clear of it. */
+	private var valueWidth = 0
+
+	/**
+	 * Skyblocker's widgets are placed around the chest, which isn't there any more, so they'd float
+	 * over the pages. Its container value button and the value it shows move into the open page's
+	 * title row; the rest are hidden. Other mods' widgets stay: SkyBlock Item List lays itself out
+	 * beside the overlay.
+	 */
+	private fun placeWidgets(screen: AbstractContainerScreen<*>, at: Layout, liveIndex: Int) {
+		val liveBox = at.boxes.firstOrNull { it.index == liveIndex }?.takeIf { it.y >= at.viewTop && it.y + TITLE <= at.viewBottom }
+		valueWidth = 0
 		for (child in screen.children()) {
-			if (child !is AbstractWidget || !child.javaClass.name.startsWith(SKYBLOCKER)) continue
+			if (child !is AbstractWidget) continue
+			val name = child.javaClass.name
+			// The value button is a plain Button: "$", 12 by 12.
+			val valueButton = child is net.minecraft.client.gui.components.Button && child.width == 12 && child.height == 12 &&
+				child.message.string == "$"
+			if (!valueButton && !name.startsWith(SKYBLOCKER)) continue
+			// Of its two text widgets, the value is the one not in the chest title's grey.
+			val valueText = name == CHEST_VALUE_TEXT && child.message.style.color?.value != 0x404040
+			if (liveBox != null && (valueButton || valueText)) {
+				if (valueButton) {
+					child.setPosition(liveBox.x + liveBox.width - 14, liveBox.y)
+					valueWidth = maxOf(valueWidth, 16)
+				} else {
+					child.setPosition(liveBox.x + liveBox.width - 3 - child.width, liveBox.y + 2)
+					valueWidth = maxOf(valueWidth, child.width + 6)
+				}
+				hiddenWidgets[child]?.let { child.visible = it }
+				continue
+			}
 			if (child !in hiddenWidgets) hiddenWidgets[child] = child.visible
 			child.visible = false
 		}
-		val at = measure(screen.width, screen.height, chest, liveIndex)
-		layout = at
-		placeSlots(chest, liveIndex, at)
-		draw(graphics, at, chest, liveIndex, mouseX, mouseY, chest.carried.isEmpty)
 	}
 
 	private fun draw(graphics: GuiGraphicsExtractor, at: Layout, live: ChestMenu?, liveIndex: Int, mouseX: Int, mouseY: Int, emptyHand: Boolean) {
@@ -680,10 +734,11 @@ object StorageOverlay {
 			}
 			if (editing == box.index) {
 				graphics.fill(box.x + 2, box.y + TITLE - 2, box.x + box.width - 2, box.y + TITLE - 1, ACCENT)
-				graphics.text(font, field + caret(), box.x + 4, box.y + 2, -1, false)
+				drawField(graphics, font, box.x + 4, box.y + 2, box.width - 8 - (if (isLive) valueWidth else 0))
 			} else {
 				val title = DungeonScore.colored(nameOf(box.index), if (isLive) "§a" else "§f")
-				graphics.text(font, title, box.x + 4, box.y + 2, -1, false)
+				val room = box.width - 8 - (if (isLive) valueWidth else 0)
+				graphics.text(font, font.plainSubstrByWidth(title, room), box.x + 4, box.y + 2, -1, false)
 			}
 			grid(graphics, box.x + 2, box.y + TITLE, rows)
 
@@ -776,23 +831,65 @@ object StorageOverlay {
 		at.search?.let { box ->
 			graphics.fill(box[0], box[1], box[2], box[3], PANEL)
 			graphics.outline(box[0], box[1], box[2] - box[0], box[3] - box[1], if (editing == SEARCH) 0xFFFFFFFF.toInt() else BORDER)
-			val shown = when {
-				editing == SEARCH -> field + caret()
-				query.isNotEmpty() -> query
-				else -> "§8Search..."
+			if (editing == SEARCH) {
+				drawField(graphics, font, box[0] + 3, box[1] + 3, box[2] - box[0] - 6)
+			} else {
+				val shown = if (query.isNotEmpty()) query else "§8Search..."
+				graphics.text(font, font.plainSubstrByWidth(shown, box[2] - box[0] - 6), box[0] + 3, box[1] + 3, -1, false)
 			}
-			graphics.text(font, font.plainSubstrByWidth(shown, box[2] - box[0] - 6), box[0] + 3, box[1] + 3, -1, false)
 		}
 
 		hovered?.let { graphics.setTooltipForNextFrame(font, it, mouseX, mouseY) }
 	}
 
-	private fun caret() = if (System.currentTimeMillis() / 500 % 2 == 0L) "_" else ""
+	/** Where the box being typed in was last drawn, for clicks: x, y, width. */
+	private var fieldX = 0
+	private var fieldY = 0
+	private var fieldRoom = 0
+
+	/** The first character shown, so the caret stays in view in a long name. */
+	private var fieldScroll = 0
+
+	/** The box being typed in: its text from [fieldScroll], the selection, and a blinking caret. */
+	private fun drawField(graphics: GuiGraphicsExtractor, font: net.minecraft.client.gui.Font, x: Int, y: Int, room: Int) {
+		fieldX = x
+		fieldY = y
+		fieldRoom = room
+		fieldScroll = fieldScroll.coerceIn(0, cursor)
+		while (fieldScroll < cursor && font.width(field.substring(fieldScroll, cursor)) > room - 1) fieldScroll++
+		val shown = font.plainSubstrByWidth(field.substring(fieldScroll), room)
+		val end = fieldScroll + shown.length
+		fun xAt(index: Int) = x + font.width(field.substring(fieldScroll, index.coerceIn(fieldScroll, end)))
+		if (anchor != cursor) {
+			val from = xAt(minOf(anchor, cursor))
+			val to = xAt(maxOf(anchor, cursor))
+			if (to > from) graphics.fill(from, y - 1, to, y + 9, 0xFF3D6FB8.toInt())
+		}
+		graphics.text(font, shown, x, y, -1, false)
+		if (System.currentTimeMillis() / 500 % 2 == 0L) {
+			val cx = xAt(cursor)
+			graphics.fill(cx, y - 1, cx + 1, y + 9, 0xFFD0D0D0.toInt())
+		}
+	}
+
+	/** The gap in the box's text nearest [mx], when the box starts at [x] and shows from [from]. */
+	private fun indexAt(mx: Double, x: Int, from: Int): Int {
+		val font = Minecraft.getInstance().font
+		var index = from
+		while (index < field.length) {
+			val left = font.width(field.substring(from, index))
+			val right = font.width(field.substring(from, index + 1))
+			if (mx < x + (left + right) / 2.0) break
+			index++
+		}
+		return index
+	}
 
 	/** Room each side of the overlay for SkyBlock Item List's list and favourites. */
 	private const val ITEM_LIST_ROOM = 140
 
 	private const val SKYBLOCKER = "de.hysky.skyblocker."
+	private const val CHEST_VALUE_TEXT = "de.hysky.skyblocker.skyblock.ChestValue\$ChestValueTextWidget"
 
 	private val itemListLoaded: Boolean by lazy { FabricLoader.getInstance().isModLoaded("skyblock-item-list") }
 
@@ -883,6 +980,15 @@ object StorageOverlay {
 		stopEditing(true)
 		editing = target
 		field = if (target == SEARCH) query else nameOf(target).replace('§', '&')
+		cursor = field.length
+		anchor = cursor
+		fieldScroll = 0
+	}
+
+	/** A click in the box being typed in: moves the caret there, or with Shift selects up to it. */
+	private fun clickField(x: Double) {
+		cursor = indexAt(x, fieldX, fieldScroll)
+		if (!shiftDown()) anchor = cursor
 	}
 
 	/** A click on the overlay. True when it was ours (a page, a title, the search box). */
@@ -890,17 +996,30 @@ object StorageOverlay {
 	fun handleMouseClick(screen: AbstractContainerScreen<*>, x: Double, y: Double, button: Int): Boolean {
 		if (!active(screen)) return false
 		val at = layout ?: return false
+		// Widgets shown over the overlay (Skyblocker's value button) take their own clicks.
+		if (screen.children().any { it is AbstractWidget && it.visible && it.isMouseOver(x, y) }) return false
 		val box = at.search
 		if (box != null && x >= box[0] && x < box[2] && y >= box[1] && y < box[3]) {
 			if (button == 1) {
 				query = ""
 				field = ""
+				cursor = 0
+				anchor = 0
 			}
 			if (editing != SEARCH) startEditing(SEARCH)
+			if (button == 0) clickField(x)
 			return true
 		}
-		stopEditing(true)
 		val liveIndex = menuOf(screen)
+		val renaming = editing
+		if (renaming != null && renaming == liveIndex && button == 0) {
+			val title = at.boxes.firstOrNull { it.index == renaming }
+			if (title != null && y >= title.y && y < title.y + TITLE && x >= title.x && x < title.x + title.width - valueWidth) {
+				clickField(x)
+				return true
+			}
+		}
+		stopEditing(true)
 
 		// In /storage the overview panel is the menu itself: a click there is a click on that slot,
 		// any button, held item and all (backpacks go in and out this way).
@@ -940,8 +1059,10 @@ object StorageOverlay {
 		val hit = at.boxes.firstOrNull { it.contains(x, y) } ?: return false
 		if (hit.index == liveIndex) {
 			// Its title renames it; its slots are the game's.
-			if (y < hit.y + TITLE) {
+			if (y < hit.y + TITLE && x < hit.x + hit.width - valueWidth) {
 				startEditing(hit.index)
+				fieldX = hit.x + 4
+				clickField(x)
 				return true
 			}
 			return false
@@ -999,16 +1120,77 @@ object StorageOverlay {
 	fun handleKey(screen: AbstractContainerScreen<*>, key: Int): Boolean {
 		val target = editing ?: return false
 		if (!active(screen)) return false
-		when (key) {
-			GLFW.GLFW_KEY_ESCAPE -> stopEditing(false)
-			GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> stopEditing(true)
-			GLFW.GLFW_KEY_BACKSPACE -> {
-				field = field.dropLast(1)
-				if (target == SEARCH) query = field
+		val control = controlDown()
+		val shift = shiftDown()
+		val clipboard = Minecraft.getInstance().keyboardHandler
+		when {
+			key == GLFW.GLFW_KEY_ESCAPE -> stopEditing(false)
+			key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER -> stopEditing(true)
+			key == GLFW.GLFW_KEY_BACKSPACE || key == GLFW.GLFW_KEY_DELETE -> {
+				if (anchor == cursor) {
+					val back = key == GLFW.GLFW_KEY_BACKSPACE
+					cursor = when {
+						back && control -> wordLeft(cursor)
+						back -> (cursor - 1).coerceAtLeast(0)
+						control -> wordRight(cursor)
+						else -> (cursor + 1).coerceAtMost(field.length)
+					}
+				}
+				replaceSelection("")
 			}
-			GLFW.GLFW_KEY_V -> if (controlDown()) typeText(Minecraft.getInstance().keyboardHandler.clipboard)
+			control && key == GLFW.GLFW_KEY_A -> {
+				anchor = 0
+				cursor = field.length
+			}
+			control && key == GLFW.GLFW_KEY_C -> if (anchor != cursor) clipboard.clipboard = selection()
+			control && key == GLFW.GLFW_KEY_X -> if (anchor != cursor) {
+				clipboard.clipboard = selection()
+				replaceSelection("")
+			}
+			control && key == GLFW.GLFW_KEY_V -> typeText(clipboard.clipboard)
+			key == GLFW.GLFW_KEY_LEFT || key == GLFW.GLFW_KEY_RIGHT || key == GLFW.GLFW_KEY_HOME || key == GLFW.GLFW_KEY_END -> {
+				val left = key == GLFW.GLFW_KEY_LEFT
+				cursor = when {
+					key == GLFW.GLFW_KEY_HOME -> 0
+					key == GLFW.GLFW_KEY_END -> field.length
+					// Without Shift, an arrow first collapses a selection to that side.
+					!shift && anchor != cursor -> if (left) minOf(anchor, cursor) else maxOf(anchor, cursor)
+					control -> if (left) wordLeft(cursor) else wordRight(cursor)
+					left -> (cursor - 1).coerceAtLeast(0)
+					else -> (cursor + 1).coerceAtMost(field.length)
+				}
+				if (!shift) anchor = cursor
+			}
 		}
+		if (editing == SEARCH) query = field
 		return true
+	}
+
+	/** The caret, and the other end of the selection (the same when nothing is selected). */
+	private var cursor = 0
+	private var anchor = 0
+
+	private fun selection() = field.substring(minOf(anchor, cursor), maxOf(anchor, cursor))
+
+	private fun replaceSelection(text: String) {
+		val from = minOf(anchor, cursor)
+		field = field.substring(0, from) + text + field.substring(maxOf(anchor, cursor))
+		cursor = from + text.length
+		anchor = cursor
+	}
+
+	private fun wordLeft(from: Int): Int {
+		var i = from
+		while (i > 0 && field[i - 1] == ' ') i--
+		while (i > 0 && field[i - 1] != ' ') i--
+		return i
+	}
+
+	private fun wordRight(from: Int): Int {
+		var i = from
+		while (i < field.length && field[i] == ' ') i++
+		while (i < field.length && field[i] != ' ') i++
+		return i
 	}
 
 	private fun controlDown(): Boolean {
@@ -1016,10 +1198,17 @@ object StorageOverlay {
 		return InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_CONTROL) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_CONTROL)
 	}
 
+	private fun shiftDown(): Boolean {
+		val window = Minecraft.getInstance().window
+		return InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_SHIFT) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_SHIFT)
+	}
+
 	private fun typeText(text: String) {
 		val target = editing ?: return
 		val clean = text.replace('\n', ' ').filter { it >= ' ' && it != '§' }
-		field = (field + clean).take(if (target == SEARCH) 40 else 48)
+		val limit = if (target == SEARCH) 40 else 48
+		val room = limit - (field.length - selection().length)
+		replaceSelection(clean.take(room.coerceAtLeast(0)))
 		if (target == SEARCH) query = field
 	}
 

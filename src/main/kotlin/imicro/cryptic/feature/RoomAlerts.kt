@@ -89,13 +89,6 @@ object RoomAlerts {
 		visibleIf = { playSound.value },
 	)
 
-	private val configurableSettings = listOf(
-		alertCleared,
-		alertSecrets,
-		playSound,
-		volume,
-	)
-
 	@JvmField
 	val module = Module(
 		id = "room_alerts",

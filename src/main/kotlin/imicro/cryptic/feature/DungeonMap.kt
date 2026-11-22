@@ -421,7 +421,7 @@ object DungeonMap {
 		if (initialized) return
 		initialized = true
 
-		Hud.register(element)
+		Hud.register(element, module)
 
 		// A chunk arriving is what can give the scan more rooms.
 		ClientChunkEvents.CHUNK_LOAD.register { _, _ ->

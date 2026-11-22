@@ -288,12 +288,12 @@ object StatusBars {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(BarElement("status_health", "Health bar", 0.31, 0.855, { healthShow.selectedIndex == OURS }, { healthOptions.numbers.value }, ::healthState))
-		Hud.register(BarElement("status_mana", "Mana bar", 0.523, 0.855, { manaShow.selectedIndex == OURS }, { manaOptions.numbers.value }, ::manaState))
-		Hud.register(BarElement("status_vitality", "Vitality bar", 0.31, 0.815, { vitalityShow.selectedIndex == OURS }, { vitalityOptions.numbers.value }, ::vitalityState))
-		Hud.register(TextElement("status_defense", "Defense", 0.235, 0.86, { defenseShow.selectedIndex == OURS }) { defenseValue?.let { "§a❈ ${format(it)}" } })
-		Hud.register(TextElement("status_speed", "Speed", 0.70, 0.86, { speedShow.selectedIndex == OURS }) { speedText() })
-		Hud.register(ExperienceElement())
+		Hud.register(BarElement("status_health", "Health bar", 0.31, 0.855, { healthShow.selectedIndex == OURS }, { healthOptions.numbers.value }, ::healthState), module)
+		Hud.register(BarElement("status_mana", "Mana bar", 0.523, 0.855, { manaShow.selectedIndex == OURS }, { manaOptions.numbers.value }, ::manaState), module)
+		Hud.register(BarElement("status_vitality", "Vitality bar", 0.31, 0.815, { vitalityShow.selectedIndex == OURS }, { vitalityOptions.numbers.value }, ::vitalityState), module)
+		Hud.register(TextElement("status_defense", "Defense", 0.235, 0.86, { defenseShow.selectedIndex == OURS }) { defenseValue?.let { "§a❈ ${format(it)}" } }, module)
+		Hud.register(TextElement("status_speed", "Speed", 0.70, 0.86, { speedShow.selectedIndex == OURS }) { speedText() }, module)
+		Hud.register(ExperienceElement(), module)
 	}
 
 	private val ours = setOf("status_health", "status_mana", "status_vitality", "status_defense", "status_speed", "status_experience")

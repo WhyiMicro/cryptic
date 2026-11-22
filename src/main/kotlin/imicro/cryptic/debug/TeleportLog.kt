@@ -98,6 +98,10 @@ object TeleportLog {
 	@JvmStatic
 	fun skipped(reason: String) = add("skip", reason)
 
+	/** Fake zpew's queue changing: a refusal, a resync, a click given up on. */
+	@JvmStatic
+	fun note(text: String) = add("zpew", text)
+
 	@JvmStatic
 	fun predicted(kind: EtherwarpZeroPing.Kind, from: Vec3, feet: Vec3, sameClick: Boolean, waiting: Int) =
 		add("predict", "$kind from=${v(from)} to=${v(feet)} sameClick=$sameClick waiting=$waiting")

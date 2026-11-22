@@ -159,8 +159,33 @@ object BazaarMarket {
 	/** An item's name as the items list writes it ("Enchanted Wild Rose"), by its id. */
 	fun nameOf(id: String): String? = namesById[id]
 
+	/** Every item's name from the items list, for suggestions. */
+	fun itemNames(): Collection<String> = namesById.values
+
+	/** Every item's id from the items list. */
+	fun itemIds(): Collection<String> = namesById.keys
+
+	/** The ids the items list files under [category] ("PET_ITEM"). */
+	fun idsIn(category: String): List<String> = categories.filterValues { it == category }.keys.toList()
+
 	@Volatile
 	private var namesById: Map<String, String> = emptyMap()
+
+	@Volatile
+	private var categories: Map<String, String> = emptyMap()
+
+	/**
+	 * Names for items Hypixel's list leaves out (dyes, skins, Abiphone covers...), compiled from
+	 * the NEU item repo.
+	 */
+	private val extraNames: Map<String, String> by lazy {
+		runCatching {
+			val stream = BazaarMarket::class.java.getResourceAsStream("/assets/cryptic/bazaar/item_names.json") ?: error("missing from the jar")
+			stream.reader(Charsets.UTF_8).use { reader ->
+				JsonParser.parseReader(reader).asJsonObject.entrySet().associate { it.key to it.value.asString }
+			}
+		}.onFailure { Cryptic.LOGGER.warn("Could not read the extra item names", it) }.getOrNull() ?: emptyMap()
+	}
 
 	@Volatile
 	private var tiers: Map<String, String> = emptyMap()
@@ -220,9 +245,18 @@ object BazaarMarket {
 		val byId = HashMap<String, String>()
 		val upgrade = HashMap<String, JsonObject>()
 		val look = HashMap<String, Look>()
+		val category = HashMap<String, String>()
+		fun name(id: String, shown: String) {
+			byId[id] = shown
+			table.getOrPut(shown.lowercase(Locale.ROOT)) { ArrayList() } += id
+			// Gemstones lead with a symbol that chat and searches leave out.
+			val bare = shown.trimStart { !it.isLetterOrDigit() }.trim()
+			if (bare != shown) table.getOrPut(bare.lowercase(Locale.ROOT)) { ArrayList() } += id
+		}
 		JsonParser.parseString(body).asJsonObject.getAsJsonArray("items")?.forEach { element ->
 			val item = element.asJsonObject
 			val id = item.get("id")?.asString ?: return@forEach
+			item.get("category")?.takeIf { it.isJsonPrimitive }?.asString?.let { category[id] = it }
 			item.get("npc_sell_price")?.takeIf { it.isJsonPrimitive }?.asDouble?.let { npc[id] = it }
 			item.get("tier")?.takeIf { it.isJsonPrimitive }?.asString?.let { tier[id] = it }
 			if (item.has("upgrade_costs") || item.has("gemstone_slots")) {
@@ -242,14 +276,12 @@ object BazaarMarket {
 				)
 			}
 			val shown = item.get("name")?.asString?.replace(Regex("§."), "")?.trim() ?: return@forEach
-			byId[id] = shown
-			table.getOrPut(shown.lowercase(Locale.ROOT)) { ArrayList() } += id
-			// Gemstones lead with a symbol that chat and searches leave out.
-			val bare = shown.trimStart { !it.isLetterOrDigit() }.trim()
-			if (bare != shown) table.getOrPut(bare.lowercase(Locale.ROOT)) { ArrayList() } += id
+			name(id, shown)
 		}
+		for ((id, shown) in extraNames) if (id !in byId) name(id, shown)
 		idsByName = table
 		namesById = byId
+		categories = category
 		npcPrices = npc
 		tiers = tier
 		upgrades = upgrade

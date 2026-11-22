@@ -98,7 +98,7 @@ object F3Features {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(FireFreezeElement())
+		Hud.register(FireFreezeElement(), module, fireFreezeTimer)
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> forget() }

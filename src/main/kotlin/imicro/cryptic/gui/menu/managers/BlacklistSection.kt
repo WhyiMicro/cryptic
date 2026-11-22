@@ -27,21 +27,22 @@ class BlacklistSection : ManagerSection("Blacklist") {
 
 	override fun draw(x: Float, y: Float, width: Float): Float {
 		var cy = y
-		cy += drawEditor(x, cy, width) + 14f
+		cy += drawEditor(x, cy, width) + Sections.HEADING_GAP
 
+		cy += Sections.heading(ui, "Blacklisted (${PartyBlacklist.entries.size})", x, cy, x + width)
 		if (PartyBlacklist.entries.isEmpty()) {
-			ui.text("Nobody yet. Add a player above, or type /cryptic blacklist add <name> <reason>.", x + 2f, cy + 4f, 13f, MenuStyle.MUTED)
-			return cy + 24f - y
+			ui.text("Nobody yet. Add a player above, or type /cryptic blacklist add <name> <reason>.", x + 2f, cy, 13f, MenuStyle.MUTED)
+			return cy + 20f - y
 		}
-		Sections.heading(ui, "Blacklisted (${PartyBlacklist.entries.size})", x, cy)
-		cy += Sections.HEADING
+		ui.beginGroup(x, cy, width)
 		// Newest first: the one just added is the one being looked for.
-		for (entry in PartyBlacklist.entries.sortedByDescending { it.added }) cy += drawRow(entry, x, cy, width) + 2f
+		for (entry in PartyBlacklist.entries.sortedByDescending { it.added }) cy += drawRow(entry, x, cy, width)
+		ui.endGroup(cy)
 		return cy - y
 	}
 
 	private fun drawEditor(x: Float, y: Float, width: Float): Float {
-		val pad = 18f
+		val pad = 20f
 		val typed = name.text + "\u0000" + reason.text
 		if (typed != errorFor) error = null
 		val height = 18f + 22f + 6f + 34f + 12f + (if (error != null) 20f else 0f) + 18f + 14f
@@ -79,10 +80,10 @@ class BlacklistSection : ManagerSection("Blacklist") {
 	}
 
 	private fun drawRow(entry: Entry, x: Float, y: Float, width: Float): Float {
-		val h = 52f
+		val h = 56f
+		ui.row(Box(x, y, width, h), if (editing === entry) MenuStyle.rowSelected() else MenuStyle.ROW, entry)
 		if (y + h < ui.area.y || y > ui.area.bottom) return h
-		ui.card(Box(x, y, width, h), if (editing === entry) MenuStyle.scale(MenuStyle.accent(), 0.28f) or 0xFF000000.toInt() else MenuStyle.ROW)
-		val pad = 14f
+		val pad = 20f
 		val cy = y + h / 2f
 
 		val face = 28f

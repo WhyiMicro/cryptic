@@ -20,7 +20,7 @@ object ClickGui {
 	val accentColor = ColorModuleSetting(
 		id = "accent_color",
 		label = "Accent color",
-		defaultRgb = 0x998DF4,
+		defaultRgb = 0xA78BFA,
 	)
 
 	private val guiKeybind = KeybindSetting(
@@ -52,14 +52,6 @@ object ClickGui {
 	)
 
 	@JvmField
-	val leftClickToggles = ToggleModuleSetting(
-		id = "left_click_toggles",
-		label = "Left-click to toggle",
-		defaultValue = true,
-		description = "Turns a module on or off by clicking its card, as well as its switch.",
-	)
-
-	@JvmField
 	val rememberSearch = ToggleModuleSetting(
 		id = "remember_search",
 		label = "Remember search",
@@ -68,6 +60,14 @@ object ClickGui {
 	)
 
 	var rememberedSearch: String = ""
+
+	@JvmField
+	val colouredIcons = ToggleModuleSetting(
+		id = "coloured_icons",
+		label = "Coloured icons",
+		defaultValue = true,
+		description = "Gives each card's icon a colour of its own. Off, icons are grey and take the accent when the module is on.",
+	)
 
 	@JvmField
 	val backgroundBlur = ToggleModuleSetting(
@@ -94,7 +94,7 @@ object ClickGui {
 		id = "right_click_edits",
 		label = "Right-click to edit module",
 		defaultValue = true,
-		description = "Opens a module's settings when you right-click its card, as well as from its '⋮'.",
+		description = "Opens a module's settings when you right-click its card, as well as from its three-dot button.",
 	)
 
 	@JvmField
@@ -125,6 +125,6 @@ object ClickGui {
 		supportsToggle = false,
 		supportsKeybind = true,
 		keybind = guiKeybind,
-		settings = listOf(accentColor, backgroundBlur, blurStrength, sorting, leftClickToggles, rightClickEdits, rememberSearch, resetButtons, editHud),
+		settings = listOf(accentColor, colouredIcons, backgroundBlur, blurStrength, sorting, rightClickEdits, rememberSearch, resetButtons, editHud),
 	)
 }

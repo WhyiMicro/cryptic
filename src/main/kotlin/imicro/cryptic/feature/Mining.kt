@@ -45,7 +45,10 @@ object Mining {
 	val showOutside = ToggleModuleSetting("show_outside", "Show outside mining islands", false, "Also shows the timer away from the mines while you hold a mining tool.")
 
 	@JvmField
-	val abilityNameColor = ColorModuleSetting("ability_name_color", "Name", defaultRgb = 0xFFAA00)
+	val onlyHolding = ToggleModuleSetting("ability_only_holding", "Only while holding a tool", false, "Shows the timer only while you hold a pickaxe, drill or gauntlet that can use the ability.")
+
+	@JvmField
+	val abilityNameColor =ColorModuleSetting("ability_name_color", "Name", defaultRgb = 0xFFAA00)
 
 	@JvmField
 	val abilityCooldownColor = ColorModuleSetting("ability_cooldown_color", "Cooling down", defaultRgb = 0xFF5555)
@@ -60,7 +63,7 @@ object Mining {
 	val abilityTimer = ToggleModuleSetting(
 		"ability_timer", "Cooldown timer", true,
 		"A HUD timer for your pickaxe ability on mining islands, from the tab list when it shows one, otherwise from when you used it.",
-	).withMore(showOutside, abilityNameColor, abilityCooldownColor, abilityReadyColor, abilityShadow)
+	).withMore(showOutside, onlyHolding, abilityNameColor, abilityCooldownColor, abilityReadyColor, abilityShadow)
 
 	@JvmField
 	val alertTitle = TextModuleSetting(
@@ -340,9 +343,9 @@ object Mining {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(AbilityElement())
-		Hud.register(TickElement())
-		Hud.register(PickobulusElement())
+		Hud.register(AbilityElement(), module, abilityTimer)
+		Hud.register(TickElement(), module, tickCounter)
+		Hud.register(PickobulusElement(), module, pickobulus)
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		// False cancels the vanilla outline.
 		LevelRenderEvents.BEFORE_BLOCK_OUTLINE.register { _, outline -> !hidesOutline(outline.pos()) }
@@ -923,7 +926,9 @@ object Mining {
 		override val height: Int get() = font.lineHeight
 
 		override fun isVisible(): Boolean =
-			module.enabled && abilityTimer.value && abilityName != null && (onMiningIsland() || (showOutside.value && heldTool() != null))
+			module.enabled && abilityTimer.value && abilityName != null &&
+				(!onlyHolding.value || heldTool() != null) &&
+				(onMiningIsland() || (showOutside.value && heldTool() != null))
 
 		override fun showInEditor(): Boolean = module.enabled && abilityTimer.value
 

@@ -42,8 +42,6 @@ object DoorFix {
 		.setValue(BlockStateProperties.DOOR_HINGE, DoorHingeSide.LEFT)
 		.setValue(BlockStateProperties.OPEN, false)
 
-	val needsPhaseTracking: Boolean get() = active
-
 	fun tick(client: Minecraft) {
 		if (!active || Floor7.p3Section != 3) return
 		val level = client.level ?: return

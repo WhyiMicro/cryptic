@@ -3,7 +3,10 @@ package imicro.cryptic.feature
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.KeybindModuleSetting
+import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.skyblock.ItemRarity
 import net.minecraft.network.chat.Component
 import net.minecraft.sounds.SoundEvent
@@ -12,7 +15,7 @@ import net.minecraft.sounds.SoundEvents
 /**
  * The Auction House: a notification when one of your auctions sells or someone outbids you, and
  * (if wanted) for what you do there yourself. Read from Hypixel's chat lines, so it works anywhere
- * on SkyBlock without the API.
+ * on SkyBlock without the API. Its watch list ([AuctionWatch]) reads the API for new listings.
  */
 object AuctionHouse {
 	@JvmField
@@ -45,14 +48,34 @@ object AuctionHouse {
 		"When someone else buys an item first and Hypixel closes the menu and refunds the escrow, it opens /ah and the Auctions Browser again.",
 	)
 
+	private val watchSection = SectionModuleSetting("watch_section", "Watch list")
+
+	@JvmField
+	val watchChat = ToggleModuleSetting(
+		"watch_chat", "Also in chat", true,
+		"Each listing in chat too, with an [Open] that runs /viewauction for it.",
+	)
+
+	@JvmField
+	val watchKey = KeybindModuleSetting(
+		"watch_key", "Watch hovered item",
+		"Over any menu, puts the hovered item on the watch list at any price, or takes it off. A pet is watched at every level.",
+	)
+
+	@JvmField
+	val watch = ToggleModuleSetting(
+		"watch", "Notify on new listings", true,
+		"A notification when an item on your watch list is put up for sale at or under your price. The list is on this page's Watch list tab, or /cryptic ahwatch. Reads Hypixel's newest auctions about once a minute while something is watched, and when you come back, tells you what went up while you were away. Each auction is told once.",
+	).withMore(watchChat, watchKey)
+
 	@JvmField
 	val module = Module(
 		id = "auction_house",
 		name = "Auction House",
-		description = "Sales and outbid alerts",
+		description = "Sales, outbids, watch list",
 		category = ModuleCategory.GENERAL,
 		supportsKeybind = false,
-		settings = listOf(soldAlert, outbidAlert, ownActions, coopAlerts, sounds, quietInDungeons, escrowReopen),
+		settings = listOf(soldAlert, outbidAlert, ownActions, coopAlerts, sounds, quietInDungeons, escrowReopen, watchSection, watch),
 	)
 
 	private const val SOURCE = "Auction House"
@@ -134,6 +157,7 @@ object AuctionHouse {
 
 	/** Presses the Auctions Browser (the gold block) once /ah has opened and filled. */
 	fun tick(client: net.minecraft.client.Minecraft) {
+		AuctionWatch.tick(client)
 		if (browseUntil == 0L) return
 		if (System.currentTimeMillis() > browseUntil) {
 			browseUntil = 0L

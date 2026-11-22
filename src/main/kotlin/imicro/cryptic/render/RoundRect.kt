@@ -94,6 +94,40 @@ object RoundRect {
 	fun shadow(graphics: GuiGraphicsExtractor, x0: Float, y0: Float, x1: Float, y1: Float, color: Int, radius: Float, blur: Float) =
 		emit(graphics, x0, y0, x1, y1, color, color, color, color, radius, radius, radius, radius, blur, AA_PADDING + blur, SHADOW)
 
+	private val RING: RenderPipeline = pipeline("ring_segment")
+
+	/**
+	 * A slice of a ring centred on ([cx], [cy]) between [inner] and [outer] radii, from [from] to
+	 * [to] as fractions of a turn clockwise from the top: a donut chart's piece.
+	 */
+	fun ringSegment(graphics: GuiGraphicsExtractor, cx: Float, cy: Float, outer: Float, inner: Float, from: Float, to: Float, color: Int) {
+		if (color and ALPHA_MASK == 0 || to <= from) return
+		if (!(cx + cy + outer + inner).isFinite()) return
+		val pose = snapshotPose(graphics.pose())
+		val scissor = graphics.scissorStack.peek()
+		val quadX0 = floor(cx - outer - AA_PADDING).toInt()
+		val quadY0 = floor(cy - outer - AA_PADDING).toInt()
+		val quadX1 = ceil(cx + outer + AA_PADDING).toInt()
+		val quadY1 = ceil(cy + outer + AA_PADDING).toInt()
+		val quad = ScreenRectangle(quadX0, quadY0, quadX1 - quadX0, quadY1 - quadY0).transformMaxBounds(pose)
+		val bounds = if (scissor != null) scissor.intersection(quad) else quad
+		// The radii ride where a rectangle's half size goes, the ends where its corner radii go.
+		val start = (from.coerceIn(0f, 1f) * TURN_STEPS).roundToInt()
+		val end = (to.coerceIn(0f, 1f) * TURN_STEPS).roundToInt()
+		graphics.guiRenderState.addGuiElement(
+			Element(
+				pose,
+				quadX0.toFloat(), quadY0.toFloat(), quadX1.toFloat(), quadY1.toFloat(),
+				cx, cy, color, color, color, color,
+				fixedPoint(outer), fixedPoint(inner), start, end,
+				0f, RING, scissor, bounds,
+			),
+		)
+	}
+
+	/** A ring slice's ends are sent in ten-thousandths of a turn. */
+	private const val TURN_STEPS = 10000f
+
 	private fun emit(
 		graphics: GuiGraphicsExtractor,
 		x0: Float, y0: Float, x1: Float, y1: Float,
@@ -103,6 +137,8 @@ object RoundRect {
 		pipeline: RenderPipeline,
 	) {
 		if ((topLeftColor or topRightColor or bottomRightColor or bottomLeftColor) and ALPHA_MASK == 0) return
+		// A zero-sized window (minimised, or its swapchain out of date) scales layouts to NaN.
+		if (!(x0 + y0 + x1 + y1).isFinite()) return
 
 		val left = min(x0, x1)
 		val top = min(y0, y1)

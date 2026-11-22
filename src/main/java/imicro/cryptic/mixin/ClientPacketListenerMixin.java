@@ -25,7 +25,7 @@ import imicro.cryptic.feature.SmoothTeleport;
 import imicro.cryptic.feature.MageBeam;
 import imicro.cryptic.feature.MelodyHud;
 import imicro.cryptic.feature.NucleusQol;
-import imicro.cryptic.feature.CookieReminder;
+import imicro.cryptic.feature.Reminders;
 import imicro.cryptic.feature.DailyRewards;
 import imicro.cryptic.feature.PartyFeatures;
 import imicro.cryptic.feature.PuzzleSolver;
@@ -119,6 +119,7 @@ public abstract class ClientPacketListenerMixin {
         imicro.cryptic.feature.Rift.onSound(packet);
         NucleusQol.onSound(packet.getSound().value(), packet.getPitch(), packet.getVolume());
         SoundLog.note(packet.getSound().value(), packet.getPitch(), packet.getVolume(), false);
+        imicro.cryptic.slayer.RiftIndicators.onSound(packet.getSound().value(), packet.getPitch());
         if (Etherwarp.replaceTeleportSound(packet)) {
             SoundLog.dropped(packet.getSound().value(), packet.getPitch(), packet.getVolume(), "Etherwarp");
             info.cancel();
@@ -136,6 +137,7 @@ public abstract class ClientPacketListenerMixin {
     private void cryptic$noteEntitySound(ClientboundSoundEntityPacket packet, CallbackInfo info) {
         NucleusQol.onSound(packet.getSound().value(), packet.getPitch(), packet.getVolume());
         SoundLog.note(packet.getSound().value(), packet.getPitch(), packet.getVolume(), true);
+        imicro.cryptic.slayer.RiftIndicators.onSound(packet.getSound().value(), packet.getPitch());
     }
 
     /**
@@ -175,6 +177,15 @@ public abstract class ClientPacketListenerMixin {
         if (!client.isSameThread() || client.level == null) return;
         PuzzleSolver.onBlockUpdate(packet.getPos(), client.level.getBlockState(packet.getPos()), packet.getBlockState());
         imicro.cryptic.feature.WitherDragons.onBlockChanged(packet.getPos(), client.level.getBlockState(packet.getPos()), packet.getBlockState());
+        imicro.cryptic.puzzle.WaterDynamic.onBlock(packet.getPos(), client.level.getBlockState(packet.getPos()), packet.getBlockState());
+    }
+
+    /** Several blocks in one section changing at once: the Water Board's water mostly comes this way. */
+    @Inject(method = "handleChunkBlocksUpdate", at = @At("HEAD"))
+    private void cryptic$noteSectionUpdate(net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket packet, CallbackInfo info) {
+        Minecraft client = Minecraft.getInstance();
+        if (!client.isSameThread() || client.level == null || !imicro.cryptic.puzzle.WaterDynamic.isWatching()) return;
+        packet.runUpdates((pos, state) -> imicro.cryptic.puzzle.WaterDynamic.onBlock(pos, client.level.getBlockState(pos), state));
     }
 
     /** The knock Hypixel plays on a finished puzzle's block, the only announcement several make. */
@@ -254,7 +265,8 @@ public abstract class ClientPacketListenerMixin {
         imicro.cryptic.debug.LaserDebug.onParticle(packet);
         imicro.cryptic.feature.WitherDragons.onParticle(packet);
         if (imicro.cryptic.feature.Mining.onParticle(packet) || imicro.cryptic.feature.Fishing.onParticle(packet) || MageBeam.onParticle(packet) || RenderOptimizer.blocksParticle(packet)
-            || imicro.cryptic.feature.SlayerFeatures.hidesParticle(packet) || NucleusQol.hidesParticle(packet)) info.cancel();
+            || imicro.cryptic.feature.SlayerFeatures.hidesParticle(packet) || imicro.cryptic.feature.Combat.hidesParticle(packet)
+            || NucleusQol.hidesParticle(packet)) info.cancel();
     }
 
     /**
@@ -280,6 +292,16 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = "handleMoveEntity", at = @At("TAIL"))
     private void cryptic$noteEntityStep(ClientboundMoveEntityPacket packet, CallbackInfo info) {
         BloodCamp.onEntityMove(packet);
+    }
+
+    /**
+     * The server's second, for the Hollows tick timer. On the network thread, so it stays in order
+     * with the tick count; it only sets a number.
+     */
+    @Inject(method = "handleSetTime", at = @At("HEAD"))
+    private void cryptic$noteSecond(ClientboundSetTimePacket packet, CallbackInfo info) {
+        if (Minecraft.getInstance().isSameThread()) return;
+        imicro.cryptic.feature.HollowsClock.onSecond();
     }
 
     /** Holds the sky at the chosen time, for Time Changer; the server's time packets would reset it. */
@@ -331,8 +353,10 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = "handleSetPlayerTeamPacket", at = @At("HEAD"))
     private void cryptic$noteScoreboardLine(ClientboundSetPlayerTeamPacket packet, CallbackInfo info) {
         if (Minecraft.getInstance().isSameThread()) return;
-        packet.getParameters().ifPresent(team ->
-            SmartTickTimer.onScoreboardLine(team.playerPrefix().getString(), team.playerSuffix().getString()));
+        packet.getParameters().ifPresent(team -> {
+            SmartTickTimer.onScoreboardLine(team.playerPrefix().getString(), team.playerSuffix().getString());
+            imicro.cryptic.feature.HollowsClock.onScoreboardLine(team.playerPrefix().getString(), team.playerSuffix().getString());
+        });
         // "Cleared: N%" is on the sidebar too.
         DungeonStats.markChanged();
     }
@@ -415,6 +439,7 @@ public abstract class ClientPacketListenerMixin {
     )
     private void cryptic$readSystemChat(ClientboundSystemChatPacket packet, CallbackInfo info) {
         DungeonRun.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.skyblock.PlayStats.onSystemChat(packet.content(), packet.overlay());
         if (packet.overlay()) imicro.cryptic.dungeon.RoomSecrets.onActionBar(packet.content());
         if (packet.overlay()) imicro.cryptic.feature.StatusBars.read(packet.content());
         BossTimings.onSystemChat(packet.content(), packet.overlay());
@@ -425,6 +450,7 @@ public abstract class ClientPacketListenerMixin {
         Secrets.onSystemChat(packet.content(), packet.overlay());
         PartyFeatures.onSystemChat(packet.content(), packet.overlay());
         DungeonWarpCooldown.onSystemChat(packet.content(), packet.overlay());
+        EtherwarpZeroPing.onSystemChat(packet.content(), packet.overlay());
         F7Qol.onSystemChat(packet.content(), packet.overlay());
         MelodyHud.onSystemChat(packet.content(), packet.overlay());
         AutoRequeue.onSystemChat(packet.content(), packet.overlay());
@@ -438,7 +464,7 @@ public abstract class ClientPacketListenerMixin {
         TerminalSolver.onSystemChat(packet.content(), packet.overlay());
         SpiritLeapOverlay.onSystemChat(packet.content(), packet.overlay());
         NucleusQol.onSystemChat(packet.content(), packet.overlay());
-        CookieReminder.onSystemChat(packet.content(), packet.overlay());
+        Reminders.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.feature.CroesusHelper.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.feature.Relics.onSystemChat(packet.content(), packet.overlay());
         DailyRewards.onSystemChat(packet.content(), packet.overlay());
@@ -456,6 +482,8 @@ public abstract class ClientPacketListenerMixin {
         imicro.cryptic.feature.ChatPrompts.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.feature.StorageOverlay.onSystemChat(packet.content(), packet.overlay());
         imicro.cryptic.feature.CustomScoreboard.onSystemChat(packet.content(), packet.overlay());
+        imicro.cryptic.feature.Combat.onSystemChat(packet.content(), packet.overlay());
+        BetterChat.onSystemChat(packet.content(), packet.overlay());
         // Last: Better Chat hides a line from the chat window, never from the mod.
         if (BetterChat.hidesChat(packet.content(), packet.overlay())
                 || AutoRequeue.hidesChat(packet.content(), packet.overlay())
@@ -510,7 +538,8 @@ public abstract class ClientPacketListenerMixin {
         cancellable = true
     )
     private void cryptic$replaceSubtitle(ClientboundSetSubtitleTextPacket packet, CallbackInfo info) {
-        if (F7Qol.hidesTitle(packet.text())) info.cancel();
+        imicro.cryptic.slayer.SlayerAutomation.onTitle(packet.text(), true);
+        if (F7Qol.hidesTitle(packet.text()) || imicro.cryptic.slayer.SlayerAutomation.hidesTitle(packet.text())) info.cancel();
     }
 
     @Inject(
@@ -523,6 +552,7 @@ public abstract class ClientPacketListenerMixin {
         cancellable = true
     )
     private void cryptic$replaceTitle(ClientboundSetTitleTextPacket packet, CallbackInfo info) {
-        if (F7Qol.hidesTitle(packet.text())) info.cancel();
+        imicro.cryptic.slayer.SlayerAutomation.onTitle(packet.text(), false);
+        if (F7Qol.hidesTitle(packet.text()) || imicro.cryptic.slayer.SlayerAutomation.hidesTitle(packet.text())) info.cancel();
     }
 }

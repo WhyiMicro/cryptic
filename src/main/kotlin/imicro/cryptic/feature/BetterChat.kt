@@ -1,11 +1,13 @@
 package imicro.cryptic.feature
 
+import imicro.cryptic.gui.ButtonModuleSetting
 import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.KeybindModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
+import imicro.cryptic.gui.TextModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
 import imicro.cryptic.gui.withMore
 import net.minecraft.network.chat.Component
@@ -42,6 +44,64 @@ object BetterChat {
 		label = "Hide profile ID",
 		defaultValue = false,
 		description = "Shows the \"Profile ID: ...\" line Hypixel sends on joining as \"Profile ID: HIDDEN\", for streams and screenshots.",
+	)
+
+	@JvmField
+	val mentionSound = ToggleModuleSetting(
+		id = "mention_sound",
+		label = "Sound on mention",
+		defaultValue = false,
+		description = "Plays a sound when someone says your name in chat. Your own messages don't count.",
+	)
+
+	@JvmField
+	val mentionSoundChoice = DropdownModuleSetting(
+		id = "mention_sound_choice",
+		label = "Sound",
+		options = SoundChoices.labels,
+		defaultIndex = SoundChoices.indexOf("Pling"),
+		visibleIf = { mentionSound.value },
+	)
+
+	private val mentionSoundId = SoundChoices.customField("mention_sound_id", mentionSoundChoice) { mentionSound.value }
+
+	@JvmField
+	val mentionVolume = SliderModuleSetting(
+		id = "mention_volume",
+		label = "Volume",
+		defaultValue = 1.0,
+		min = 0.1,
+		max = 2.0,
+		step = 0.1,
+		visibleIf = { mentionSound.value },
+	)
+
+	@JvmField
+	val mentionPitch = SliderModuleSetting(
+		id = "mention_pitch",
+		label = "Pitch",
+		defaultValue = 1.0,
+		min = 0.5,
+		max = 2.0,
+		step = 0.1,
+		visibleIf = { mentionSound.value },
+	)
+
+	@JvmField
+	val mentionNames = TextModuleSetting(
+		id = "mention_names",
+		label = "Other names",
+		maxLength = 128,
+		hint = "nick, other",
+		description = "More names that count as you, separated by commas. Your username always counts.",
+		visibleIf = { mentionSound.value },
+	)
+
+	private val mentionPreview = ButtonModuleSetting(
+		id = "mention_preview",
+		label = "Play it",
+		action = { playMentionSound() },
+		visibleIf = { mentionSound.value },
 	)
 
 	private val historySection = SectionModuleSetting("history_section", "History")
@@ -207,6 +267,25 @@ object BetterChat {
 		return client.gui.screen() == null && peekKey.isDown(client.window)
 	}
 
+	private var wasPeeking = false
+
+	/** The wheel scrolls the chat while peeking, as in an open chat (Shift for one line). */
+	@JvmStatic
+	fun onScroll(amount: Double): Boolean {
+		if (!peeking() || amount == 0.0) return false
+		val client = net.minecraft.client.Minecraft.getInstance()
+		val lines = amount.coerceIn(-1.0, 1.0) * if (client.hasShiftDown()) 1.0 else 7.0
+		client.gui.hud.chat.scrollChat(lines.toInt())
+		return true
+	}
+
+	/** Letting go of the peek key drops the chat back to the newest line. */
+	fun tick() {
+		val now = peeking()
+		if (wasPeeking && !now) net.minecraft.client.Minecraft.getInstance().gui.hud.chat.resetChatScroll()
+		wasPeeking = now
+	}
+
 	@JvmField
 	val module = Module(
 		id = "better_chat",
@@ -216,11 +295,59 @@ object BetterChat {
 		supportsKeybind = false,
 		settings = listOf(
 			hideGuild, ChatFilter.enabled, abbreviate, hideProfileId, noConfirm, ChatPrompts.enabled, CurrentChat.enabled,
+			mentionSound.withMore(mentionSoundChoice, mentionSoundId, mentionVolume, mentionPitch, mentionNames, mentionPreview),
 			historySection, keepHistory, longHistory.withMore(historyLength),
 			compact.withMore(compactMode, compactWindow, compactSkipClickable),
 			toolsSection, animate.withMore(animationTime), tabs.withMore(shortTabs), search.withMore(searchAlways), contextMenu.withMore(rightClickCopy), peekKey,
 		),
 	)
+
+	private var lastMentionAt = 0L
+
+	/** Plays the mention sound for a chat line that names you, said by someone else. */
+	@JvmStatic
+	fun onSystemChat(message: Component, overlay: Boolean) {
+		if (overlay || !module.enabled || !mentionSound.value) return
+		val plain = message.string.replace(FORMATTING, "").trim()
+		// Player lines read "<sender>: <text>"; system lines without one would ring on every
+		// party and lobby notice. "To ..." is your own outgoing PM.
+		val colon = plain.indexOf(": ")
+		if (colon < 0 || plain.startsWith("To ")) return
+		val sender = plain.substring(0, colon)
+		val said = plain.substring(colon + 2)
+		val names = myNames()
+		if (names.any { nameIn(sender, it) } || names.none { nameIn(said, it) }) return
+		// A burst of spam pings once.
+		val now = System.currentTimeMillis()
+		if (now - lastMentionAt < MENTION_COOLDOWN_MS) return
+		lastMentionAt = now
+		playMentionSound()
+	}
+
+	private fun myNames(): List<String> {
+		val own = net.minecraft.client.Minecraft.getInstance().user.name
+		return (listOf(own) + mentionNames.value.split(',')).map { it.trim() }.filter { it.isNotEmpty() }
+	}
+
+	/** Whole-word, ignoring case, so "imicro" doesn't ring on "imicros". */
+	private fun nameIn(text: String, name: String): Boolean {
+		var at = text.indexOf(name, ignoreCase = true)
+		while (at >= 0) {
+			val before = text.getOrNull(at - 1)
+			val after = text.getOrNull(at + name.length)
+			if (!isNameChar(before) && !isNameChar(after)) return true
+			at = text.indexOf(name, at + 1, ignoreCase = true)
+		}
+		return false
+	}
+
+	private fun isNameChar(c: Char?): Boolean = c != null && (c.isLetterOrDigit() || c == '_')
+
+	private fun playMentionSound() {
+		SoundChoices.play(mentionSoundChoice.selectedIndex, mentionVolume.value.toFloat(), mentionPitch.value.toFloat(), mentionSoundId.value)
+	}
+
+	private const val MENTION_COOLDOWN_MS = 500L
 
 	@JvmStatic
 	fun hidesChat(message: Component, overlay: Boolean): Boolean {

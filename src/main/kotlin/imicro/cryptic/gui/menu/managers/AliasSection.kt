@@ -26,20 +26,21 @@ class AliasSection : ManagerSection("Aliases") {
 
 	override fun draw(x: Float, y: Float, width: Float): Float {
 		var cy = y
-		cy += drawEditor(x, cy, width) + 14f
+		cy += drawEditor(x, cy, width) + Sections.HEADING_GAP
 
+		cy += Sections.heading(ui, "Your aliases", x, cy, x + width)
 		if (AliasManager.aliases.isEmpty()) {
-			ui.text("No aliases yet. Add one above and type it in chat like any command.", x + 2f, cy + 4f, 13f, MenuStyle.MUTED)
-			return cy + 24f - y
+			ui.text("No aliases yet. Add one above and type it in chat like any command.", x + 2f, cy, 13f, MenuStyle.MUTED)
+			return cy + 20f - y
 		}
-		Sections.heading(ui, "Your aliases", x, cy)
-		cy += Sections.HEADING
-		for (alias in AliasManager.aliases.toList()) cy += drawRow(alias, x, cy, width) + 2f
+		ui.beginGroup(x, cy, width)
+		for (alias in AliasManager.aliases.toList()) cy += drawRow(alias, x, cy, width)
+		ui.endGroup(cy)
 		return cy - y
 	}
 
 	private fun drawEditor(x: Float, y: Float, width: Float): Float {
-		val pad = 18f
+		val pad = 20f
 		val typed = name.text + "\u0000" + command.text
 		if (typed != errorFor) error = null
 		val height = 18f + 22f + 34f + 12f + (if (error != null) 20f else 0f) + 36f + 14f
@@ -78,10 +79,10 @@ class AliasSection : ManagerSection("Aliases") {
 	}
 
 	private fun drawRow(alias: Alias, x: Float, y: Float, width: Float): Float {
-		val h = 46f
+		val h = 54f
+		ui.row(Box(x, y, width, h), key = alias)
 		if (y + h < ui.area.y || y > ui.area.bottom) return h
-		ui.card(Box(x, y, width, h))
-		val pad = 18f
+		val pad = 20f
 		val cy = y + h / 2f
 
 		var right = x + width - pad

@@ -168,7 +168,7 @@ object SpringBootsHelper {
 		if (initialized) return
 		initialized = true
 
-		Hud.register(SpringElement())
+		Hud.register(SpringElement(), module, showHud)
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> reset() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> reset() }

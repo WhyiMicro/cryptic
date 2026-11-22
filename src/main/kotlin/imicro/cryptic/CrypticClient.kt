@@ -41,6 +41,7 @@ import imicro.cryptic.feature.AliasManager
 import imicro.cryptic.feature.SoundVolumes
 import imicro.cryptic.feature.LeapPreview
 import imicro.cryptic.feature.SmoothTeleport
+import imicro.cryptic.feature.EtherwarpZeroPing
 import imicro.cryptic.feature.UpdateChecker
 import imicro.cryptic.feature.CrosshairEditor
 import imicro.cryptic.feature.DoorFix
@@ -48,7 +49,7 @@ import imicro.cryptic.feature.LavaToWater
 import imicro.cryptic.feature.NoItemPlace
 import imicro.cryptic.feature.SbKick
 import imicro.cryptic.feature.TimeChanger
-import imicro.cryptic.feature.CookieReminder
+import imicro.cryptic.feature.Reminders
 import imicro.cryptic.feature.DailyRewards
 import imicro.cryptic.feature.LagDetector
 import imicro.cryptic.feature.NucleusQol
@@ -293,7 +294,7 @@ object CrypticClient : ClientModInitializer {
 		PuzzleSolver.initialize()
 		MageBeam.initialize()
 		NucleusQol.initialize()
-		CookieReminder.initialize()
+		Reminders.initialize()
 		imicro.cryptic.feature.Combat.initialize()
 		imicro.cryptic.feature.Trajectories.initialize()
 		imicro.cryptic.feature.ConfirmDisconnect.initialize()
@@ -302,7 +303,9 @@ object CrypticClient : ClientModInitializer {
 		imicro.cryptic.feature.Relics.initialize()
 		imicro.cryptic.feature.PartyFinder.initialize()
 		imicro.cryptic.feature.PartyBlacklist.initialize()
+		imicro.cryptic.feature.AuctionWatch.initialize()
 		imicro.cryptic.feature.ItemOutline.touch()
+		imicro.cryptic.feature.HidePlayers.touch()
 		imicro.cryptic.feature.CurrentChat.initialize()
 		imicro.cryptic.feature.ClientRestrictions.initialize()
 		imicro.cryptic.feature.PartyFinderPages.initialize()
@@ -331,6 +334,7 @@ object CrypticClient : ClientModInitializer {
 		imicro.cryptic.feature.StorageOverlay.initialize()
 		imicro.cryptic.feature.MediaController.initialize()
 		imicro.cryptic.feature.StatusBars.initialize()
+		imicro.cryptic.feature.ChunkCache.initialize()
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> ServerStats.forget() }
 
 		// Last, so every element and setting exists to be filled in.
@@ -582,6 +586,14 @@ object CrypticClient : ClientModInitializer {
 								}
 								1
 							})
+							.then(ClientCommands.literal("rift").executes { context ->
+								// What the Riftstalker automation reads, for finding Hypixel's exact texts.
+								imicro.cryptic.slayer.SlayerAutomation.describe(Minecraft.getInstance()).forEach {
+									context.source.sendFeedback(Component.literal(it))
+									imicro.cryptic.Cryptic.LOGGER.info("[rift] {}", it)
+								}
+								1
+							})
 							.then(ClientCommands.literal("slayer").executes { context ->
 								// The stands over a boss, which owners are read from, can only be
 								// checked in a lobby with one.
@@ -713,6 +725,12 @@ object CrypticClient : ClientModInitializer {
 								}
 								1
 							})
+							.then(ClientCommands.literal("areas").executes { context ->
+								imicro.cryptic.feature.HollowsBounds.describe().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
 							.then(ClientCommands.literal("sounds").executes { context ->
 								imicro.cryptic.debug.SoundLog.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
@@ -748,6 +766,17 @@ object CrypticClient : ClientModInitializer {
 										1
 									})
 									.then(
+										ClientCommands.literal("side").then(
+											ClientCommands.argument("side", StringArgumentType.word())
+												.suggests { _, builder -> SharedSuggestionProvider.suggest(imicro.cryptic.debug.StructureMeasure.sideIds, builder) }
+												.executes { context ->
+													imicro.cryptic.debug.StructureMeasure.select(StringArgumentType.getString(context, "side"))
+														.forEach { context.source.sendFeedback(Component.literal(it)) }
+													1
+												},
+										),
+									)
+									.then(
 										ClientCommands.literal("done")
 											.executes { context ->
 												imicro.cryptic.debug.StructureMeasure.done("").forEach { context.source.sendFeedback(Component.literal(it)) }
@@ -776,6 +805,18 @@ object CrypticClient : ClientModInitializer {
 								}
 								1
 							})
+							.then(ClientCommands.literal("clock").executes { context ->
+								imicro.cryptic.feature.HollowsClock.toggleRecording().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("balspawn").executes { context ->
+								imicro.cryptic.debug.BalRecorder.toggle().forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
 							.then(ClientCommands.literal("keepers").executes { context ->
 								NucleusQol.describeKeepers().forEach {
 									context.source.sendFeedback(Component.literal(it))
@@ -792,6 +833,12 @@ object CrypticClient : ClientModInitializer {
 							.then(BossTimings.bossLogCommand())
 							.then(ClientCommands.literal("cookie").executes { context ->
 								(BoosterCookie.describe() + imicro.cryptic.skyblock.GodPotion.describe()).forEach {
+									context.source.sendFeedback(Component.literal(it))
+								}
+								1
+							})
+							.then(ClientCommands.literal("calendar").executes { context ->
+								imicro.cryptic.feature.EventReminders.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								1
@@ -838,6 +885,41 @@ object CrypticClient : ClientModInitializer {
 								}
 								1
 							})
+							.then(
+								ClientCommands.literal("chunkcache")
+									.executes { context ->
+										imicro.cryptic.feature.ChunkCache.describe().forEach {
+											context.source.sendFeedback(Component.literal(it))
+										}
+										1
+									}
+									.then(ClientCommands.literal("island").executes { context ->
+										val on = DebugOverrides.toggleChunkCacheOneIsland()
+										context.source.sendFeedback(
+											Component.literal(
+												if (on) {
+													"Chunk Cache debug on: every world counts as one island, so its chunks are kept from world to world."
+												} else {
+													"Chunk Cache debug off: islands are read from Hypixel's tab list again."
+												},
+											),
+										)
+										1
+									})
+									.then(ClientCommands.argument("extra", IntegerArgumentType.integer(0, 24)).executes { context ->
+										val extra = DebugOverrides.setChunkCacheExtra(IntegerArgumentType.getInteger(context, "extra"))
+										context.source.sendFeedback(
+											Component.literal(
+												if (extra == 0) {
+													"Chunk Cache debug off: cached chunks stop at your render distance."
+												} else {
+													"Chunk Cache debug on: cached chunks reach $extra chunks past your render distance, in single player too."
+												},
+											),
+										)
+										1
+									}),
+							)
 							.then(ClientCommands.literal("pack").executes { context ->
 								imicro.cryptic.feature.PackTweaks.describe().forEach {
 									context.source.sendFeedback(Component.literal(it))
@@ -910,6 +992,7 @@ object CrypticClient : ClientModInitializer {
 									context.source.sendFeedback(Component.literal(it))
 								}
 								context.source.sendFeedback(Component.literal(imicro.cryptic.skyblock.AuctionPrices.describe))
+								imicro.cryptic.feature.AuctionWatch.debugLines().forEach { context.source.sendFeedback(Component.literal(it)) }
 								1
 							})
 							.then(ClientCommands.literal("requeue").executes { context ->
@@ -1151,6 +1234,7 @@ object CrypticClient : ClientModInitializer {
 						1
 					})
 					.then(imicro.cryptic.feature.PartyBlacklist.command())
+					.then(imicro.cryptic.feature.AuctionWatch.command())
 					.then(ClientCommands.literal("reward").executes {
 						DailyRewards.reopen()
 						1
@@ -1307,6 +1391,8 @@ object CrypticClient : ClientModInitializer {
 			dispatcher.register(ClientCommands.literal(SHORT_COMMAND).executes(cryptic.command).redirect(cryptic))
 		}
 
+		// Stats are saved once a minute; the last of them on the way out.
+		net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register { imicro.cryptic.skyblock.PlayStats.flush() }
 		ClientTickEvents.END_CLIENT_TICK.register { client ->
 			SkyblockLocation.tick(
 				client,
@@ -1314,10 +1400,14 @@ object CrypticClient : ClientModInitializer {
 					LoadoutManager.needsSkyblock || imicro.cryptic.feature.ItemProtection.module.enabled ||
 					imicro.cryptic.feature.Mining.needsSkyblock || RenderOptimizer.needsSkyblock || imicro.cryptic.feature.Fishing.needsSkyblock || imicro.cryptic.feature.Bazaar.needsSkyblock || imicro.cryptic.feature.TooltipFeatures.needsSkyblock ||
 					imicro.cryptic.feature.AuctionHouse.module.enabled || imicro.cryptic.feature.Farming.module.enabled || imicro.cryptic.feature.Rift.needsSkyblock ||
-					KeybindManager.needsSkyblock || AutoGfs.needsSkyblock || CookieReminder.needsSkyblock || imicro.cryptic.feature.Combat.module.enabled ||
+					KeybindManager.needsSkyblock || AutoGfs.needsSkyblock || Reminders.needsSkyblock || imicro.cryptic.feature.Combat.module.enabled ||
 					SmoothTeleport.predictive ||
-					DungeonWarpCooldown.module.enabled || imicro.cryptic.feature.QuickNav.module.enabled || imicro.cryptic.feature.CustomScoreboard.needsSkyblock || imicro.cryptic.feature.StorageOverlay.needsSkyblock || imicro.cryptic.feature.StatusBars.module.enabled,
+					DungeonWarpCooldown.module.enabled || imicro.cryptic.feature.QuickNav.module.enabled || imicro.cryptic.feature.CustomScoreboard.needsSkyblock || imicro.cryptic.feature.StorageOverlay.needsSkyblock || imicro.cryptic.feature.StatusBars.module.enabled ||
+					imicro.cryptic.feature.ChunkCache.needsSkyblock || imicro.cryptic.skyblock.PlayStats.needsSkyblock,
 			)
+			imicro.cryptic.skyblock.PlayStats.tick(client)
+			// After the island is read, which picks the store.
+			imicro.cryptic.feature.ChunkCache.tick(client)
 			Zoom.tick(client)
 			// One tab-list scan feeds every module that needs the party.
 			DungeonTeam.tick(
@@ -1374,9 +1464,12 @@ object CrypticClient : ClientModInitializer {
 			MageBeam.tick(client)
 			RenderOptimizer.tick(client)
 			SmoothTeleport.tick()
+			EtherwarpZeroPing.tick()
 			CroesusHelper.tick(client)
 			LoadoutManager.tick(client)
 			NucleusQol.tick(client)
+			imicro.cryptic.debug.BalRecorder.tick(client)
+			imicro.cryptic.feature.HollowsClock.tick(client)
 			GyroHelper.tick(client)
 			BossTimings.tick(client)
 			DungeonScore.tick(client)
@@ -1394,10 +1487,11 @@ object CrypticClient : ClientModInitializer {
 			SlotBinds.tick(client)
 			LeapPreview.tick()
 			imicro.cryptic.feature.ChatExtras.tick()
+			imicro.cryptic.feature.BetterChat.tick()
 			imicro.cryptic.feature.Relics.tick()
 			imicro.cryptic.debug.GuiLog.tick()
 			imicro.cryptic.feature.PartyFinderPages.tick()
-			CookieReminder.tick(client)
+			Reminders.tick(client)
 			imicro.cryptic.feature.Combat.tick(client)
 			imicro.cryptic.feature.Trajectories.tick(client)
 			TimeChanger.tick(client)

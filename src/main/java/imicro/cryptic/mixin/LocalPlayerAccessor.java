@@ -25,6 +25,10 @@ public interface LocalPlayerAccessor {
     @Accessor("xRotLast")
     float cryptic$serverXRot();
 
+    /** The keys the server last heard about: its idea of whether you're sneaking. */
+    @Accessor("lastSentInput")
+    net.minecraft.world.entity.player.Input cryptic$lastSentInput();
+
     /** What the client believes it last sent, so a rotation it sets itself isn't sent on. */
     @Accessor("yRotLast")
     void cryptic$setServerYRot(float yRot);

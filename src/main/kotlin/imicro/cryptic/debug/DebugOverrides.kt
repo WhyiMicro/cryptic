@@ -45,6 +45,17 @@ object DebugOverrides {
 	var previewPartyCommands = false
 		private set
 
+	/**
+	 * Chunks the Chunk Cache draws past the render distance. A single-player world sends as far as
+	 * the render distance, so without this there is nothing for the cache to show there.
+	 */
+	var chunkCacheExtra = 0
+		private set
+
+	/** Has the Chunk Cache treat every world as one island, so its keeping across worlds runs off Hypixel. */
+	var chunkCacheOneIsland = false
+		private set
+
 	var sampleHudValues = false
 		private set
 
@@ -80,6 +91,16 @@ object DebugOverrides {
 	fun toggleTerracottaAnywhere(): Boolean {
 		terracottaAnywhere = !terracottaAnywhere
 		return terracottaAnywhere
+	}
+
+	fun setChunkCacheExtra(chunks: Int): Int {
+		chunkCacheExtra = chunks
+		return chunks
+	}
+
+	fun toggleChunkCacheOneIsland(): Boolean {
+		chunkCacheOneIsland = !chunkCacheOneIsland
+		return chunkCacheOneIsland
 	}
 
 	fun toggleSlayerAnywhere(): Boolean {

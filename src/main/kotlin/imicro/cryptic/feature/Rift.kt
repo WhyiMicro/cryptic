@@ -17,6 +17,7 @@ import imicro.cryptic.gui.withMore
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
 import imicro.cryptic.render.WorldRender
+import imicro.cryptic.skyblock.SkyblockItem
 import imicro.cryptic.skyblock.SkyblockLocation
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
@@ -25,14 +26,18 @@ import net.minecraft.ChatFormatting
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+import net.minecraft.client.resources.sounds.SoundInstance
 import net.minecraft.core.component.DataComponents
 import net.minecraft.network.chat.Component
 import net.minecraft.network.chat.Style
 import net.minecraft.network.chat.TextColor
 import net.minecraft.network.protocol.game.ClientboundSoundPacket
 import net.minecraft.sounds.SoundEvents
+import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.animal.equine.AbstractHorse
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.player.Inventory
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.Vec3
 import net.minecraft.world.scores.DisplaySlot
@@ -42,11 +47,7 @@ import java.util.Optional
 import kotlin.math.abs
 
 /**
- * The Rift, in three tabs.
- *
- * Ubik's game can be played once each time you enter: Hypixel starts a new timeline on entry
- * ("Venturing in the Rift breaches spacetime."), and Ubik turns you away for the rest of that one.
- * The reminder goes out on entry, and stops once the game is played that visit.
+ * The Rift, in three tabs. Ubik's Cube reminder is in [Reminders]; his game's tips are here.
  *
  * The Rift time is read off the action bar ("44m 12sф Left"); souls, effigies, the dance steps and
  * the Mirrorverse paths come from the SkyHanni repository (MIT), in `assets/cryptic/rift/rift.json`.
@@ -56,9 +57,6 @@ object Rift {
 	private const val SOURCE = "Rift"
 	private const val RIFT_AREA = "The Rift"
 
-	/** Entry's own lines come in a burst; the reminder waits for them to pass. */
-	private const val ENTRY_DELAY_MILLIS = 4_000L
-
 	private const val LINE_WIDTH = 2f
 
 	// ---- General -------------------------------------------------------------------------------
@@ -66,34 +64,6 @@ object Rift {
 	private val generalTab = TabModuleSetting("general_tab", "General")
 
 	private val ubikSection = SectionModuleSetting("ubik_section", "Ubik's Cube")
-
-	@JvmField
-	val ubikRepeat = SliderModuleSetting(
-		id = "ubik_repeat",
-		label = "Remind again every",
-		unit = "min",
-		defaultValue = 0.0,
-		min = 0.0,
-		max = 30.0,
-		step = 1.0,
-		description = "Until you've played it, in the Rift and outside it. 0 reminds once: on entry, or when the wait runs out.",
-	)
-
-	@JvmField
-	val ubikOutside = ToggleModuleSetting(
-		id = "ubik_outside",
-		label = "Outside the Rift",
-		defaultValue = true,
-		description = "Also says when Ubik's game is ready again while you're elsewhere on SkyBlock, two hours after you last played it, even if the game was closed in between.",
-	)
-
-	@JvmField
-	val ubikReminder = ToggleModuleSetting(
-		id = "ubik_reminder",
-		label = "Ubik's Cube reminder",
-		defaultValue = true,
-		description = "Reminds you to play Ubik's game when you enter the Rift and it's off cooldown, until you've played it that visit. A notification, or a chat line with notifications off.",
-	).withMore(ubikRepeat, ubikOutside)
 
 	@JvmField
 	val ubikTips = ToggleModuleSetting(
@@ -123,6 +93,35 @@ object Rift {
 		defaultValue = true,
 		description = "A title and a sound when your Rift time runs down to the chosen seconds. Getting time back above it re-arms it.",
 	).withMore(timeWarnAt)
+
+	private val horsezookaSection = SectionModuleSetting("horsezooka_section", "Horsezooka")
+
+	@JvmField
+	val horsezookaOpacity = SliderModuleSetting(
+		id = "horsezooka_opacity",
+		label = "Opacity",
+		unit = "%",
+		defaultValue = 0.0,
+		min = 0.0,
+		max = 90.0,
+		step = 5.0,
+	)
+
+	@JvmField
+	val hideHorsezooka = ToggleModuleSetting(
+		id = "hide_horsezooka",
+		label = "Hide Horsezooka",
+		defaultValue = false,
+		description = "While you hold a Horsezooka, hides every horse, or draws them see-through at the chosen opacity.",
+	).withMore(horsezookaOpacity)
+
+	@JvmField
+	val muteHorsezooka = ToggleModuleSetting(
+		id = "mute_horsezooka",
+		label = "Mute Horsezooka",
+		defaultValue = false,
+		description = "While you hold a Horsezooka, silences horses, the firework launch and the ghast screech.",
+	)
 
 	// ---- Souls and effigies --------------------------------------------------------------------
 
@@ -262,8 +261,9 @@ object Rift {
 		supportsKeybind = false,
 		settings = listOf(
 			generalTab,
-			ubikSection, ubikReminder, ubikTips,
+			ubikSection, ubikTips,
 			timeSection, timeWarning,
+			horsezookaSection, hideHorsezooka, muteHorsezooka,
 			soulsTab,
 			soulSection, soulWaypoints, resetSouls,
 			effigySection, effigyWaypoints,
@@ -368,27 +368,6 @@ object Rift {
 
 	private val FORMATTING = Regex("§.")
 	private const val UBIK = "[NPC] Ubik Von Neumann: "
-	private const val ENTERED = "Venturing in the Rift breaches spacetime."
-
-	/** Lines that mean this visit's game is played, or under way. */
-	private val PLAYED = listOf(
-		"The game awaits your strategic touch.",
-		"Congratulations, you got the IQ Point.",
-		"Alas, the reward was not within your grasp this time.",
-		ALREADY_PLAYED,
-	)
-	private const val ALREADY_PLAYED = "You've already completed my game."
-
-	/** Facts from SkyHanni: the game's two-hour wait, and the line that says what's left of it. */
-	private const val UBIK_WAIT_MILLIS = 2L * 60 * 60 * 1000
-	private val UBIK_WAIT = Regex("""You need to wait (.+) before you can play again""")
-	/** The cube's split-or-steal match ends with this; it starts the two-hour wait. */
-	private val CUBE_MATCH_END = Regex("""^You earned [\d,]+ Motes in this match!$""")
-
-	/** When Ubik's game opens again, or 0 when that's unknown; and when that was last said outside the Rift. */
-	private var ubikReadyAt = 0L
-	private var ubikSaidAt = 0L
-	private val ubikFile get() = FabricLoader.getInstance().configDir.resolve("cryptic").resolve("rift-ubik.txt")
 	private const val KEEP_OR_SWITCH = "Will you keep the box you opened, or will you switch to the other?"
 	private val REVOLUTION = Regex("""^The previous revolution had [\d,]+ participants with an average choice of ([\d.]+)\.$""")
 
@@ -398,11 +377,6 @@ object Rift {
 	/** "44m 12sф Left" on the action bar. */
 	private val RIFT_TIME = Regex("""((?:\d+[hms]\s?)+)ф""")
 	private val TIME_PART = Regex("""(\d+)([hms])""")
-
-	/** When this visit began, or 0 outside the Rift; and whether Ubik's game is done in it. */
-	private var enteredAt = 0L
-	private var played = false
-	private var remindedAt = 0L
 
 	/** The Rift time last read, and whether the warning has gone out for this dip. */
 	private var timeLeft = -1
@@ -415,13 +389,39 @@ object Rift {
 		initialized = true
 		load()
 		loadFound()
-		runCatching {
-			val saved = java.nio.file.Files.readString(ubikFile).trim().lines()
-			ubikReadyAt = saved[0].trim().toLong()
-			ubikSaidAt = saved.getOrNull(1)?.trim()?.toLongOrNull() ?: 0L
-		}
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
-		Hud.register(DanceElement())
+		Hud.register(DanceElement(), module, danceHelper)
+	}
+
+	// ---- Horsezooka ----------------------------------------------------------------------------
+
+	/** Holding a Horsezooka, read each tick so the per-frame checks stay cheap. */
+	private var holdingHorsezooka = false
+
+	private val HORSEZOOKA_SOUNDS = setOf("entity.firework_rocket.launch", "entity.ghast.warn")
+
+	private fun isHorsezooka(stack: ItemStack): Boolean =
+		!stack.isEmpty && (SkyblockItem.id(stack) == "HORSEZOOKA" || stack.hoverName.string.replace(FORMATTING, "").contains("Horsezooka"))
+
+	private fun isHorsezooka(entity: Entity?): Boolean =
+		holdingHorsezooka && entity is AbstractHorse && hideHorsezooka.value && module.enabled
+
+	/** At 0% the horse isn't drawn at all. */
+	@JvmStatic
+	fun hidesHorse(entity: Entity): Boolean = isHorsezooka(entity) && horsezookaOpacity.value <= 0.0
+
+	/** The alpha a Horsezooka horse is drawn at, or -1 to draw it as usual. */
+	@JvmStatic
+	fun horseAlpha(entity: Entity?): Int {
+		if (!isHorsezooka(entity)) return -1
+		return (horsezookaOpacity.value / 100.0 * 255).toInt().coerceIn(0, 255)
+	}
+
+	@JvmStatic
+	fun mutes(instance: SoundInstance): Boolean {
+		if (!holdingHorsezooka || !muteHorsezooka.value || !module.enabled) return false
+		val path = instance.identifier.path
+		return path.startsWith("entity.horse.") || path in HORSEZOOKA_SOUNDS
 	}
 
 	@JvmStatic
@@ -430,12 +430,6 @@ object Rift {
 		val text = message.string.replace(FORMATTING, "").trim()
 		if (overlay) {
 			onActionBar(text)
-			return
-		}
-		if (text == ENTERED) {
-			enteredAt = System.currentTimeMillis()
-			played = false
-			remindedAt = 0L
 			return
 		}
 		if (text in SOUL_FOUND) {
@@ -447,31 +441,8 @@ object Rift {
 			upsidePath?.reached = -1
 			return
 		}
-		UBIK_WAIT.find(text)?.let { match ->
-			val seconds = TIME_PART.findAll(match.groupValues[1]).sumOf { part ->
-				part.groupValues[1].toLong() * when (part.groupValues[2]) {
-					"h" -> 3600L
-					"m" -> 60L
-					else -> 1L
-				}
-			}
-			if (seconds > 0) setUbikReady(System.currentTimeMillis() + seconds * 1000)
-			return
-		}
-		if (CUBE_MATCH_END.matches(text)) {
-			played = true
-			setUbikReady(System.currentTimeMillis() + UBIK_WAIT_MILLIS)
-			return
-		}
-		if (!text.startsWith(UBIK)) return
+		if (!text.startsWith(UBIK) || !ubikTips.value) return
 		val said = text.removePrefix(UBIK)
-		if (PLAYED.any { said.startsWith(it) || said.endsWith(it) }) {
-			played = true
-			if (!said.endsWith(ALREADY_PLAYED)) setUbikReady(System.currentTimeMillis() + UBIK_WAIT_MILLIS)
-			// A wait that has run out is wrong; better unknown than reminding about a game already played.
-			else if (ubikReadyAt <= System.currentTimeMillis()) setUbikReady(0L)
-		}
-		if (!ubikTips.value) return
 		if (said == KEEP_OR_SWITCH) {
 			title("§aSwitch!", "§7Switching wins 2 in 3")
 			return
@@ -575,8 +546,11 @@ object Rift {
 
 	fun tick(client: Minecraft) {
 		val player = client.player
-		if (!module.enabled || player == null) return
-		val now = System.currentTimeMillis()
+		if (!module.enabled || player == null) {
+			holdingHorsezooka = false
+			return
+		}
+		holdingHorsezooka = (hideHorsezooka.value || muteHorsezooka.value) && isHorsezooka(player.mainHandItem)
 
 		inDanceRoom = inRift && DANCE_ROOM.contains(player.position())
 		if (!inDanceRoom) {
@@ -589,55 +563,12 @@ object Rift {
 		if (inRift) {
 			readGuide(client)
 			for (path in listOfNotNull(lavaPath, upsidePath, tubePath)) advance(path, player.position())
-			effigyStates = if (effigyWaypoints.value) readEffigies() else emptyList()
+			inChateau = effigyWaypoints.value && SkyblockLocation.zone()?.contains("Stillgore", ignoreCase = true) == true
+			effigyStates = if (inChateau) readEffigies() else emptyList()
 		} else {
+			inChateau = false
 			timeLeft = -1
 		}
-
-		remindOutside(now)
-		if (enteredAt == 0L) return
-		// The area read lags the entry line, so it only counts once the burst has passed.
-		if (now - enteredAt < ENTRY_DELAY_MILLIS) return
-		// Out of the Rift, the visit is over; a new one starts with its entry line.
-		if (SkyblockLocation.area != RIFT_AREA) {
-			enteredAt = 0L
-			return
-		}
-		if (played || !ubikReminder.value) return
-		// Still waiting out the last game (saved, so it holds across restarts); reminds once it's over.
-		if (ubikReadyAt > now) return
-		val repeat = ubikRepeat.value.toLong() * 60_000L
-		val due = remindedAt == 0L || (repeat > 0 && now - remindedAt >= repeat)
-		if (!due) return
-		remindedAt = now
-		Toasts.show(SOURCE, "§dUbik's Cube §7is ready: play it this visit", life = 10.0, color = Toasts.Colors.RIFT)
-	}
-
-	private fun setUbikReady(at: Long) {
-		ubikReadyAt = at
-		saveUbik()
-	}
-
-	private fun saveUbik() {
-		runCatching {
-			java.nio.file.Files.createDirectories(ubikFile.parent)
-			java.nio.file.Files.writeString(ubikFile, "$ubikReadyAt\n$ubikSaidAt")
-		}.onFailure { Cryptic.LOGGER.warn("Could not save Ubik's timer", it) }
-	}
-
-	/**
-	 * Says when the game has opened again, unless you're in the Rift to see it for yourself; then
-	 * again every [ubikRepeat] minutes until it's played.
-	 */
-	private fun remindOutside(now: Long) {
-		if (ubikReadyAt == 0L || now < ubikReadyAt || inRift || !SkyblockLocation.onSkyblock) return
-		if (!ubikReminder.value || !ubikOutside.value) return
-		val repeat = ubikRepeat.value.toLong() * 60_000L
-		val due = ubikSaidAt < ubikReadyAt || (repeat > 0 && now - ubikSaidAt >= repeat)
-		if (!due) return
-		ubikSaidAt = now
-		saveUbik()
-		Toasts.show(SOURCE, "§dUbik's Cube §7is ready in the Rift", life = 10.0, color = Toasts.Colors.RIFT)
 	}
 
 	/** The furthest point along [path] you've stood on; leaving its area starts it over. */
@@ -662,6 +593,9 @@ object Rift {
 
 	/** Each effigy's colour on the sidebar: '7' standing, 'c' broken. Empty when the line isn't there. */
 	private var effigyStates: List<Char> = emptyList()
+
+	/** The sidebar puts you in Stillgore Château; nearby zones are within range of the effigies too. */
+	private var inChateau = false
 
 	private val EFFIGY_RESPAWN = Regex("""^Respawn (.+?) \(or click!\)$""")
 
@@ -752,7 +686,7 @@ object Rift {
 		}
 
 		val level = client.level
-		if (level != null && effigyWaypoints.value && effigies.any { it.distanceTo(player.position()) < 120 }) {
+		if (level != null && effigyWaypoints.value && inChateau) {
 			effigies.forEachIndexed { index, at ->
 				val state = effigyStates.getOrNull(index)
 				val broken = state == 'c'

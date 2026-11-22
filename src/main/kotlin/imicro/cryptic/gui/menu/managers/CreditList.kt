@@ -42,7 +42,7 @@ object CreditList {
 					"Tic Tac Toe, Ice Path and the Water Board's previews, Lights On, Smooth teleport, the Booster Cookie reading, " +
 						"Nucleus Features's lock picks and Crystal Hollows map, the Pickobulus overlay, Item Protection's protected menus, " +
 						"Farming's visitor list and the pests' head textures, the slayer bosses' names, health and mini-bosses, the Demonlord's attunements and fire pillars, " +
-						"the Riftstalker's alerts, and the ideas of the Party Finder, Quick Navigation and the drill fuel bar.",
+						"the Riftstalker's alerts, and the ideas of the Party Finder, Quick Navigation, the drill fuel bar and clearing the Crimson Isle's fog.",
 					"LGPL-3.0", "https://github.com/SkyblockerMod/Skyblocker",
 				),
 				Credit(
@@ -59,7 +59,8 @@ object CreditList {
 				Credit("dtMap", "The dungeon map, its room database and the score.", "BSD 3-Clause", "https://github.com/ricedotwho/dtMap"),
 				Credit(
 					"Devonian",
-					"Door highlighting, the Puzzle HUD, the Dungeon Warp Cooldown and Dungeon Waypoints' secret spots.",
+					"Door highlighting, the Puzzle HUD, the Dungeon Warp Cooldown, Dungeon Waypoints' secret spots, " +
+						"and the fact that night vision turns the Crimson Isle's fog red.",
 					"GPL-3.0", "https://github.com/Synnerz/Devonian",
 				),
 				Credit(
@@ -74,7 +75,7 @@ object CreditList {
 				),
 				Credit(
 					"IQ",
-					"Slayer Features' Fire Veil overlay: the wand's ring, and its hidden flames.",
+					"Combat's Fire Veil overlay: the wand's ring, and its hidden flames.",
 					"Apache-2.0", "https://github.com/iqaddons/IQ",
 				),
 				Credit(
@@ -90,6 +91,7 @@ object CreditList {
 				Credit("RSM", "Spirit Leap Features' two rotate fixes.", "BSD 3-Clause", "https://github.com/rs-mod/rsm"),
 				Credit("Ping Offset Miner", "Mining's ping offset timing and block hardness.", "CC0", "https://github.com/Revvilon/PingOffsetMiner"),
 				Credit("SkyOcean", "Fishing's hotspot highlight: finding, sizing and hiding the hotspot ring. Text Outline's look, from its Full Text Shadow.", "MIT", "https://github.com/meowdding/SkyOcean"),
+				Credit("SBO", "The Chunk Cache's fake chunks and their light, by Bobby's technique.", "Apache-2.0", "https://github.com/SkyblockOverhaul/SBO"),
 				Credit(
 					"Custom Block Highlight",
 					"Block Overlay's advanced highlight.",
@@ -119,7 +121,7 @@ object CreditList {
 			listOf(
 				Credit("Essential", "The look and feel of the notifications.", url = "https://essential.gg"),
 				Credit("RewardClaim", "How the daily reward picker should behave.", url = "https://github.com/meowdding/RewardClaim"),
-				Credit("ADM", "Spirit Leap's teammate views.", url = "https://github.com/undonecoffee/adm"),
+				Credit("ADM", "Spirit Leap's teammate views, Fake zpew's re-chained clicks, and the dynamic Water Board solver (its teleport and water rules as facts only).", url = "https://github.com/undonecoffee/adm"),
 				Credit("Firmament", "The resource pack format Pack Tweaks reads (as facts only).", "GPL-3.0", "https://github.com/FirmamentMC/Firmament"),
 				Credit("quoi", "The blocks that give each Crystal Hollows place away to the structure scanner (after GumTuneClient), the Bazaar's escrow fix, the autoclicker blacklist, and the Chocolate Factory's Time Tower and Coach upgrades.", "GPL-3.0", "https://github.com/jcnlk/quoi"),
 				Credit("Enhanced Chat","Better Chat's tabs, search, right-click menu, merged repeats and longer history.", "GPL-3.0", "https://github.com/KdGaming0/Enhanced-Chat"),
@@ -132,12 +134,14 @@ object CreditList {
 				),
 				Credit("Coflnet", "The price history data behind the Bazaar's chart.", url = "https://sky.coflnet.com"),
 				Credit("FlipperX", "The idea of the Flipping module's step-by-step guide, and the look of its panels.", url = "https://github.com/Miloldr/flipperx-assist"),
+				Credit("Bazaar Meta", "The idea of Flipping's NPC, shop and craft flips, from its NPC, Reverse NPC and Crafts lists.", url = "https://skyblock.bz"),
+				Credit("NotEnoughUpdates REPO", "What NPC shops charge and the crafting recipes, for Flipping's shop and craft flips; names of items Hypixel's list leaves out, such as dyes and skins.", "MIT", "https://github.com/NotEnoughUpdates/NotEnoughUpdates-REPO"),
 				Credit("Feesh", "Fishing's hotspot found message and gone alert.", "Apache-2.0", "https://github.com/Sleepy-Panda/Feesh"),
 				Credit("Debugify", "Camera's riding input fix.", "LGPL-3.0", "https://github.com/isXander/Debugify"),
 				Credit("Zoomify", "What a zoom ought to offer.", "LGPL-3.0", "https://modrinth.com/mod/zoomify"),
 				Credit("RavenB++", "How the Auto Clicker holds and paces its clicks.", url = "https://github.com/OlziYT/RavenBS-Plus-Plus"),
 				Credit("RBDT V5", "How the Experiment Solver works the table between games.", url = "https://github.com/V5-Client/V5"),
-				Credit("NoJumpDelay", "Which cooldown to clear."),
+				Credit("NoJumpDelay", "Which cooldown Movement's No Jump Delay clears."),
 				Credit("VanillaHUD", "The Hotbar module's animations.", "GPL-3.0", "https://github.com/Polyfrost/VanillaHUD"),
 				Credit("SlayerXPOverlay", "Slayer Features' XP overlay.", "AGPL-3.0", "https://github.com/oblongboot/SlayerXPOverlayFabric"),
 				Credit("CustomScoreboard", "The Custom Scoreboard.", "LGPL-2.1", "https://github.com/meowdding/CustomScoreboard"),
@@ -189,7 +193,7 @@ object CreditList {
 			"Fonts and icons",
 			"",
 			listOf(
-				Credit("Poppins", "The menu's text.", "SIL OFL", "https://github.com/itfoundry/Poppins"),
+				Credit("Inter", "The menu's text.", "SIL OFL", "https://github.com/rsms/inter"),
 				Credit("Font Awesome Free", "The icons.", "CC BY 4.0", "https://fontawesome.com"),
 			),
 		),

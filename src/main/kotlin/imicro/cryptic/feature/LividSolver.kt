@@ -191,7 +191,7 @@ object LividSolver {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(TimerElement())
+		Hud.register(TimerElement(), module, timer)
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> reset() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> reset() }

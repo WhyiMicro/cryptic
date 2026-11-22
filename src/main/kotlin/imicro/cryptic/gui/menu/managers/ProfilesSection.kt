@@ -18,7 +18,7 @@ import net.minecraft.client.Minecraft
  * a profile on the clipboard, Import adds one, and Import here replaces the active profile's
  * settings.
  */
-class ProfilesSection : ManagerSection("Profiles") {
+class ProfilesSection : ManagerSection("Config") {
 	private val deletes = DeleteConfirm()
 
 	private var renaming: ProfileEntry? = null
@@ -28,9 +28,9 @@ class ProfilesSection : ManagerSection("Profiles") {
 		var cy = y
 		val headH = 60f
 		ui.card(Box(x, cy, width, headH))
-		ui.text("Your setups", x + 18f, cy + 14f, 15f, MenuStyle.TEXT, UiText.Face.MEDIUM)
-		ui.text("Changes save to the active profile as you make them.", x + 18f, cy + 36f, 12f, MenuStyle.MUTED)
-		var right = x + width - 18f
+		ui.text("Your setups", x + 20f, cy + 14f, 15f, MenuStyle.TEXT, UiText.Face.MEDIUM)
+		ui.text("Changes save to the active profile as you make them.", x + 20f, cy + 36f, 12f, MenuStyle.MUTED)
+		var right = x + width - 20f
 		val buttonY = cy + (headH - 34f) / 2f
 		for ((label, primary, action) in listOf<Triple<String, Boolean, () -> Unit>>(
 			Triple("New profile", true) { report(ConfigManager.createProfile().map { "Created §f$it" }) },
@@ -41,18 +41,19 @@ class ProfilesSection : ManagerSection("Profiles") {
 			ui.button(Box(right - w, buttonY, w, 34f), label, primary, action)
 			right -= w + 8f
 		}
-		cy += headH + 14f
+		cy += headH + Sections.HEADING_GAP
 
-		Sections.heading(ui, "Profiles", x, cy)
-		cy += Sections.HEADING
-		for (entry in ConfigManager.profiles()) cy += drawRow(entry, x, cy, width) + 2f
+		cy += Sections.heading(ui, "Profiles", x, cy, x + width)
+		ui.beginGroup(x, cy, width)
+		for (entry in ConfigManager.profiles()) cy += drawRow(entry, x, cy, width)
+		ui.endGroup(cy)
 		return cy - y
 	}
 
 	private fun drawRow(entry: ProfileEntry, x: Float, y: Float, width: Float): Float {
-		val h = 54f
-		ui.card(Box(x, y, width, h), if (entry.active) MenuStyle.scale(MenuStyle.accent(), 0.28f) or 0xFF000000.toInt() else MenuStyle.ROW)
-		val pad = 18f
+		val h = 58f
+		ui.row(Box(x, y, width, h), if (entry.active) MenuStyle.rowSelected() else MenuStyle.ROW, entry.path)
+		val pad = 20f
 		val cy = y + h / 2f
 
 		var right = x + width - pad
@@ -95,11 +96,11 @@ class ProfilesSection : ManagerSection("Profiles") {
 			ui.button(Box(x + pad + 262f, cy - 16f, saveW, 32f), "Save", primary = true) { finishRename(entry) }
 			return h
 		}
-		ui.text(entry.name, x + pad, y + 10f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
+		ui.text(entry.name, x + pad, y + 12f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
 		var tx = x + pad + ui.width(entry.name, 14f, UiText.Face.MEDIUM) + 10f
-		if (entry.active) tx += ui.badge("Active", tx, y + 8f, lit = true) + 6f
-		if (entry.builtIn) ui.badge("Built in", tx, y + 8f)
-		ui.text(edited(entry.modifiedAt), x + pad, y + 32f, 12f, MenuStyle.MUTED)
+		if (entry.active) tx += ui.badge("Active", tx, y + 10f, lit = true) + 6f
+		if (entry.builtIn) ui.badge("Built in", tx, y + 10f)
+		ui.text(edited(entry.modifiedAt), x + pad, y + 34f, 12f, MenuStyle.MUTED)
 		return h
 	}
 
@@ -146,13 +147,13 @@ class ProfilesSection : ManagerSection("Profiles") {
 	}
 
 	companion object {
-		private const val SOURCE = "Profiles"
+		private const val SOURCE = "Config"
 		private const val COPY = ""
 
-		/** The card in Settings the Profiles page hangs from. */
+		/** The card the Config page hangs from. */
 		val module = Module(
 			id = "profiles",
-			name = "Profiles",
+			name = "Config",
 			description = "Save and share setups",
 			category = ModuleCategory.MISC,
 			supportsToggle = false,

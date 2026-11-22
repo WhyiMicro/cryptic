@@ -60,6 +60,26 @@ class BakedFont(private val face: Font, val pixelSize: Int, name: String, refere
 		return width
 	}
 
+	/** Where [text]'s drawn pixels start and end, measured from its pen position. */
+	fun inkSpan(text: String): Pair<Float, Float> {
+		var pen = 0f
+		var left = Float.NaN
+		var right = 0f
+		var index = 0
+		while (index < text.length) {
+			val codePoint = text.codePointAt(index)
+			index += Character.charCount(codePoint)
+			val glyph = glyph(codePoint) ?: continue
+			if (glyph.width > 0) {
+				// The glyph's box has a pixel of room either side.
+				if (left.isNaN()) left = pen + glyph.offsetX + 1
+				right = pen + glyph.offsetX + glyph.width - 1
+			}
+			pen += glyph.advance
+		}
+		return if (left.isNaN()) 0f to 0f else left to right
+	}
+
 	/**
 	 * Draws [text] at [x] on [baseline], in screen pixels. Glyphs land on whole pixels, which keeps
 	 * them sharp.

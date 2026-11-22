@@ -5,6 +5,8 @@ import com.google.gson.reflect.TypeToken
 import imicro.cryptic.Cryptic
 import imicro.cryptic.hud.Hud
 import imicro.cryptic.hud.HudElement
+import imicro.cryptic.skyblock.BazaarMarket
+import imicro.cryptic.skyblock.NpcShops
 import imicro.cryptic.skyblock.SkyblockLocation
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
@@ -29,10 +31,6 @@ import kotlin.math.roundToInt
  * look follows FlipperX's panels; the code is Cryptic's own.
  */
 object BazaarFlips {
-	/** The module the HUD editor files the panel under. */
-	@JvmField
-	val module = Flipping.module
-
 	/** How many of an item you bought on the Bazaar and still hold, and what they cost all together. */
 	private class Held(var units: Long = 0, var cost: Double = 0.0)
 
@@ -62,7 +60,7 @@ object BazaarFlips {
 	fun initialize() {
 		load()
 		loadHistory()
-		Hud.register(FlipsElement())
+		Hud.register(FlipsElement(), Flipping.module, Flipping.flipHud)
 	}
 
 	fun reset() {
@@ -89,6 +87,29 @@ object BazaarFlips {
 		sold.find(line)?.let { m ->
 			// Taxed the way the daily limit counts instant sells.
 			sell(name(m.groupValues[2]), count(m.groupValues[1]), coins(m.groupValues[3]) * (1 - Bazaar.tax.value / 100))
+		}
+	}
+
+	private val npcSold = Regex("""^You sold (.+?) x([\d,]+) for ([\d,.]+) Coins?!$""")
+	private val npcBought = Regex("""^You bought (.+?)(?: x([\d,]+))? for ([\d,.]+) Coins?!$""")
+
+	/**
+	 * A sale to an NPC or a purchase from one, formatting stripped: what NPC flips end with and shop
+	 * flips start with. Only what the Bazaar trades is kept as bought. Runs on the client thread.
+	 */
+	fun onNpcLine(line: String) {
+		npcSold.find(line)?.let { m ->
+			val coins = coins(m.groupValues[3])
+			NpcShops.noteSold(coins)
+			sell(name(m.groupValues[1]), count(m.groupValues[2]), coins)
+			return
+		}
+		npcBought.find(line)?.let { m ->
+			val name = name(m.groupValues[1])
+			val id = BazaarMarket.idForName(name) ?: return
+			val units = m.groupValues[2].ifEmpty { "1" }.let(::count)
+			NpcShops.noteBought(id, units.toInt())
+			buy(name, units, coins(m.groupValues[3]))
 		}
 	}
 
@@ -134,6 +155,27 @@ object BazaarFlips {
 		trim(now)
 		weekAt = 0L
 		saveHistory()
+	}
+
+	/**
+	 * [units] of [name] were crafted from things bought on the Bazaar: what each ingredient in
+	 * [used] (a test of its name, and how many) cost moves over, so selling [name] counts.
+	 */
+	fun crafted(name: String, units: Long, used: List<Pair<(String) -> Boolean, Long>>) {
+		var cost = 0.0
+		for ((matches, amount) in used) {
+			val key = held.keys.firstOrNull(matches) ?: continue
+			val item = held.getValue(key)
+			val taken = minOf(amount, item.units)
+			if (taken <= 0) continue
+			val share = item.cost * taken / item.units
+			item.units -= taken
+			item.cost -= share
+			if (item.units <= 0) held.remove(key)
+			cost += share
+		}
+		if (cost <= 0 || units <= 0) return
+		buy(name, units, cost)
 	}
 
 	private fun signed(value: Double) = (if (value < 0) "-" else "") + Bazaar.short(abs(value))
@@ -231,6 +273,12 @@ object BazaarFlips {
 	private var week: Week? = null
 	private var weekAt = 0L
 	private var weekWidth = 0
+
+	/** What the week's sales made, for the menu's Profile page. */
+	fun weekProfit(): Double {
+		val now = System.currentTimeMillis()
+		return gains.filter { now - it.at <= WEEK }.sumOf { it.amount }
+	}
 
 	private fun week(width: Int): Week? {
 		val now = System.currentTimeMillis()

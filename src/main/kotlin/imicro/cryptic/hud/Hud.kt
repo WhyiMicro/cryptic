@@ -17,7 +17,13 @@ object Hud {
 
 	private var initialized = false
 
-	fun register(element: HudElement) {
+	/**
+	 * Adds [element]. [module] is the card whose settings a right click in the editor opens, and
+	 * [setting] the one that turns the element on, when the card has tabs or "⋯" panels to find it in.
+	 */
+	fun register(element: HudElement, module: imicro.cryptic.gui.Module, setting: imicro.cryptic.gui.ModuleSetting? = null) {
+		element.owner = module
+		element.ownerSetting = setting
 		if (registered.none { it.id == element.id }) registered.add(element)
 	}
 

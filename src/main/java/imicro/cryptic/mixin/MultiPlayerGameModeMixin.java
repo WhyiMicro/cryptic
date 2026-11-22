@@ -57,8 +57,8 @@ public abstract class MultiPlayerGameModeMixin {
     }
 
     private void cryptic$noteUsed(Player player) {
-        imicro.cryptic.feature.SlayerFeatures.onItemUsed(player.getMainHandItem());
         imicro.cryptic.feature.SpiritLeapOverlay.onItemUsed(player.getMainHandItem());
+        imicro.cryptic.feature.Combat.onItemUsed(player.getMainHandItem());
     }
 
     /** A terminal's stand being clicked, which Terminal ESP flashes. */
@@ -83,6 +83,8 @@ public abstract class MultiPlayerGameModeMixin {
     @Inject(method = "attack", at = @At("HEAD"))
     private void cryptic$noteEntityAttack(Player player, Entity entity, CallbackInfo info) {
         imicro.cryptic.feature.SlayerFeatures.beforeAttack(player, entity);
+        // NPCs take a left click as well as a right one.
+        imicro.cryptic.feature.NucleusQol.beforeInteract(player, entity, InteractionHand.MAIN_HAND);
         TerminalEsp.onClicked(entity);
     }
 }

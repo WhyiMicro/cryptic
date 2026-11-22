@@ -73,6 +73,7 @@ object CustomScoreboard {
 		PURSE("purse", "Purse", "Purse: 12,546,978", Source.SIDEBAR),
 		BANK("bank", "Bank", "Bank: 931M/0", Source.TAB, "Bank"),
 		MOTES("motes", "Motes", "Motes: 5,200", Source.SIDEBAR),
+		RIFT_TIME("rift_time", "Rift time", "Rift Time: 44m 12s", Source.CRYPTIC),
 		BITS("bits", "Bits", "Bits: 44,037", Source.SIDEBAR),
 		COPPER("copper", "Copper", "Copper: 1,800", Source.SIDEBAR),
 		SOWDUST("sowdust", "Sowdust", "Sowdust: 250", Source.SIDEBAR),
@@ -109,7 +110,7 @@ object CustomScoreboard {
 	/** The lines to begin with: the layout of CustomScoreboard as set up here. */
 	private val DEFAULT_LINES = listOf(
 		Line.BLANK, Line.DATE, Line.TIME, Line.ISLAND, Line.AREA, Line.BLANK,
-		Line.PURSE, Line.BANK, Line.MOTES, Line.BITS, Line.COPPER, Line.SOWDUST, Line.KERNELS,
+		Line.PURSE, Line.BANK, Line.MOTES, Line.RIFT_TIME, Line.BITS, Line.COPPER, Line.SOWDUST, Line.KERNELS,
 		Line.HEAT, Line.COLD, Line.NORTH_STARS, Line.SOULFLOW, Line.BLANK,
 		Line.OBJECTIVE, Line.SLAYER, Line.EVENTS, Line.TAB_EVENT, Line.POWDER, Line.PARTY,
 	)
@@ -127,7 +128,12 @@ object CustomScoreboard {
 		"North Stars: " to Line.NORTH_STARS, "Heat: " to Line.HEAT, "Cold: " to Line.COLD,
 	)
 
-	private val SEASON_COLOURS = mapOf("Spring" to "§a", "Summer" to "§e", "Autumn" to "§6", "Winter" to "§b")
+	/** Lines that mean nothing in the Rift, where coins, pets and the mayor don't follow you. */
+	private val NOT_IN_RIFT = setOf(Line.BANK, Line.GEMS, Line.SOULFLOW, Line.PET, Line.MAYOR, Line.GOD_POTION)
+
+	private const val RIFT_AREA = "The Rift"
+
+	private val SEASON_COLOURS =mapOf("Spring" to "§a", "Summer" to "§e", "Autumn" to "§6", "Winter" to "§b")
 
 	/**
 	 * While a line is edited each § code is one stand-in character, so a code's own digit (the 7
@@ -180,6 +186,10 @@ object CustomScoreboard {
 	/** Set once CustomScoreboard's settings have been copied in on their own, so it happens once. */
 	@JvmField
 	val copiedOnce = ToggleModuleSetting(id = "copied_customscoreboard", label = "Copied", defaultValue = false, visibleIf = { false })
+
+	/** Set once Rift Time has been put into a list saved before it existed. */
+	@JvmField
+	val riftTimeAdded = ToggleModuleSetting(id = "rift_time_added", label = "Rift time added", defaultValue = false, visibleIf = { false })
 
 	@JvmField
 	val tidyBlanks = ToggleModuleSetting(
@@ -357,7 +367,7 @@ object CustomScoreboard {
 		category = ModuleCategory.VISUAL,
 		settings = listOf(
 			linesTab,
-			lineOrder, copiedOnce, tidyBlanks, extraLabels,
+			lineOrder, copiedOnce, riftTimeAdded, tidyBlanks, extraLabels,
 			titleMode.withMore(customTitle),
 			footer,
 			formatTab,
@@ -446,10 +456,14 @@ object CustomScoreboard {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(ScoreboardElement())
+		Hud.register(ScoreboardElement(), module)
 		// Another account or server may be on another profile; the join message says which.
 		net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
-			Minecraft.getInstance().execute { profile = null }
+			Minecraft.getInstance().execute {
+				profile = null
+				slayerActive = false
+				slayerLines = emptyList()
+			}
 		}
 	}
 
@@ -484,6 +498,7 @@ object CustomScoreboard {
 		if (!copiedOnce.value && client.player != null && Files.exists(customScoreboardConfig())) {
 			copyFromCustomScoreboard(announce = false)
 		}
+		if (!riftTimeAdded.value && client.player != null) addRiftTime()
 		val objective = if (applies()) objective(client) else null
 		if (objective == null) {
 			rows = emptyList()
@@ -501,9 +516,12 @@ object CustomScoreboard {
 		val bySidebar = sort(sidebar)
 		val tab = lazy { tabRows(client) }
 		val out = ArrayList<Component?>()
+		val rift = inRift()
 		for (line in lines()) {
 			when {
 				line == Line.BLANK -> out += null
+				rift && line in NOT_IN_RIFT -> {}
+				line == Line.SLAYER -> out.addAll(slayer(bySidebar[line], tab))
 				line.source == Source.SIDEBAR -> bySidebar[line]?.let { out.addAll(it) }
 				else -> out.addAll(built(line, tab))
 			}
@@ -514,6 +532,20 @@ object CustomScoreboard {
 			else -> objective.displayName
 		}?.let { Row(it, font.width(it)) }
 		rows = tidy(out, title != null).map { Row(it, font.width(it)) }
+	}
+
+	private fun inRift() = SkyblockLocation.area == RIFT_AREA
+
+	/** Puts Rift Time under Motes (or at the end) in a list saved before the line existed. */
+	private fun addRiftTime() {
+		riftTimeAdded.value = true
+		val tokens = lineOrder.value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+		if (Line.RIFT_TIME.id !in tokens) {
+			val motes = tokens.indexOf(Line.MOTES.id)
+			if (motes >= 0) tokens.add(motes + 1, Line.RIFT_TIME.id) else tokens += Line.RIFT_TIME.id
+			lineOrder.value = tokens.joinToString(",")
+		}
+		imicro.cryptic.config.ConfigManager.flush()
 	}
 
 	/**
@@ -673,6 +705,8 @@ object CustomScoreboard {
 				DATE.matches(text) -> Line.DATE
 				TIME.containsMatchIn(text) -> Line.TIME
 				WEBSITE.containsMatchIn(text) -> Line.WEBSITE
+				// The Rift's island line has no icon; its area (ф) follows.
+				text.endsWith("Rift Dimension") -> Line.ISLAND
 				// Hypixel writes the island on one line and the area under it, each behind its icon.
 				previous == Line.ISLAND && (text.first().isLetter() || text.first().code in 0xE000..0xF8FF || hasAreaIcon(text)) -> Line.AREA
 				hasAreaIcon(text) -> Line.ISLAND
@@ -729,8 +763,108 @@ object CustomScoreboard {
 
 	@JvmStatic
 	fun onSystemChat(message: Component, overlay: Boolean) {
-		if (overlay || !module.enabled) return
-		PROFILE_CHAT.find(plain(message))?.let { profile = it.groupValues[1] }
+		if (!module.enabled) return
+		if (overlay) {
+			readRiftTime(message)
+			return
+		}
+		val text = plain(message)
+		PROFILE_CHAT.find(text)?.let { profile = it.groupValues[1] }
+		onSlayerChat(text)
+	}
+
+	// ---- Rift time -----------------------------------------------------------------------------
+
+	/** "44m 12sф Left" on the action bar, with its colour: grey while the clock stands still. */
+	private val RIFT_TIME = Regex("""(?:§([0-9a-f]))?(?:§[k-o])*((?:\d+[hms]\s?)+)(?:§.)*ф""")
+
+	/** The time left as last read, coloured, and when. */
+	private var riftTime: String? = null
+	private var riftTimeAt = 0L
+
+	private fun readRiftTime(message: Component) {
+		if (!inRift()) return
+		val coded = (legacy(message) ?: message.string).replace("§r", "")
+		val match = RIFT_TIME.find(coded) ?: return
+		riftTime = "§" + match.groupValues[1].ifEmpty { "a" } + match.groupValues[2].trim()
+		riftTimeAt = System.currentTimeMillis()
+	}
+
+	private fun riftTimeLine(): Component? {
+		val time = riftTime ?: return null
+		if (!inRift() || System.currentTimeMillis() - riftTimeAt > 5_000) return null
+		return Component.literal("§fRift Time: $time")
+	}
+
+	// ---- Slayer quest --------------------------------------------------------------------------
+
+	/** Each slayer's boss, by the mobs its quest asks for. */
+	private val SLAYER_BOSSES = mapOf(
+		"Zombies" to "Revenant Horror", "Spiders" to "Tarantula Broodfather", "Wolves" to "Sven Packmaster",
+		"Endermen" to "Voidgloom Seraph", "Blazes" to "Inferno Demonlord", "Vampires" to "Riftstalker Bloodfiend",
+	)
+
+	/** Sent just after "SLAYER QUEST STARTED!". */
+	private val SLAY = Regex("""^» Slay ([\d,]+) (.+?) worth of (\w+)""")
+	private val QUEST_OVER = setOf("SLAYER QUEST COMPLETE!", "SLAYER QUEST FAILED!", "Your Slayer Quest has been cancelled!")
+
+	/**
+	 * The quest as last shown (heading, boss, progress). Hypixel drops it from the sidebar between
+	 * kills, so it's kept until the quest ends.
+	 */
+	private var slayerLines: List<Component> = emptyList()
+	private var slayerActive = false
+	private var questEndedAt = 0L
+
+	private fun onSlayerChat(text: String) {
+		when {
+			text in QUEST_OVER -> {
+				slayerActive = false
+				slayerLines = emptyList()
+				questEndedAt = System.currentTimeMillis()
+			}
+			text == "SLAYER QUEST STARTED!" -> {
+				slayerActive = true
+				// The boss stays until the "Slay" line says otherwise; the old progress goes.
+				slayerLines = slayerLines.take(2)
+			}
+			slayerActive -> SLAY.find(text)?.let { match ->
+				val (amount, unit, mobs) = match.destructured
+				val name = SLAYER_BOSSES[mobs]
+				val boss = slayerLines.getOrNull(1)?.takeIf { name != null && name in plain(it) }
+					?: Component.literal(if (name != null) "§c$name" else "§7$mobs")
+				val heading = slayerLines.getOrNull(0) ?: Component.literal("Slayer Quest")
+				slayerLines = listOf(heading, boss, Component.literal("§7(§e0§7/§c$amount§7) $unit"))
+			}
+		}
+	}
+
+	/**
+	 * The quest from the sidebar when it's there, else from the tab list's Slayer widget, else as
+	 * last shown while the quest still runs.
+	 */
+	private fun slayer(sidebar: List<Component>?, tab: Lazy<List<Component>>): List<Component> {
+		val fresh = sidebar ?: tabSlayer(tab.value)
+		if (fresh.isNotEmpty()) {
+			// A finished quest can linger a moment ("Boss slain!"); that isn't kept.
+			val justEnded = !slayerActive && System.currentTimeMillis() - questEndedAt < 5_000
+			if (!justEnded && fresh.none { "Boss slain" in plain(it) }) {
+				slayerLines = fresh
+				slayerActive = true
+			}
+			return fresh
+		}
+		return if (slayerActive) slayerLines else emptyList()
+	}
+
+	/** The tab list's Slayer widget, when it names a boss. */
+	private fun tabSlayer(rows: List<Component>): List<Component> {
+		val at = rows.indexOfFirst { plain(it).let { text -> text == "Slayer:" || text == "Slayer Quest" } }
+		if (at < 0) return emptyList()
+		// Its rows run to a blank one or the next widget's heading.
+		val body = rows.subList(at + 1, minOf(rows.size, at + 3)).takeWhile { plain(it).isNotEmpty() && !plain(it).endsWith(":") }
+		if (body.none { row -> SLAYER_BOSSES.values.any { it in plain(row) } }) return emptyList()
+		return listOf(Component.literal("Slayer Quest")) + body.map { formatted(it, Line.SLAYER, plain(it)) }
 	}
 
 	/**
@@ -776,6 +910,7 @@ object CustomScoreboard {
 			}
 			listOf(Component.literal("§7Real time: §f$text"))
 		}
+		Line.RIFT_TIME -> listOfNotNull(riftTimeLine())
 		Line.FOOTER -> if (footer.value.isBlank()) emptyList() else listOf(Component.literal(DungeonScore.colored(footer.value, "§e")))
 		// Each powder on its own line, as the tab list has it under "Powders:".
 		Line.POWDER -> listOf("Mithril", "Gemstone", "Glacite").mapNotNull { name ->

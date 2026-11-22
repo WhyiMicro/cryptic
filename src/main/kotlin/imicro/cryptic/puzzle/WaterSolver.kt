@@ -101,6 +101,7 @@ object WaterSolver {
 	 * second in the room.
 	 */
 	fun scan() {
+		if (PuzzleSolver.waterDynamic.value) return
 		if (awaitingSolve) {
 			solve(loud = waitingForDrain)
 			return
@@ -120,6 +121,8 @@ object WaterSolver {
 
 	/** Watches the gates each tick: a gate leaving or returning to its start is a pull, by anyone. */
 	fun tick() {
+		WaterDynamic.tick()
+		if (PuzzleSolver.waterDynamic.value) return
 		if (solution.isEmpty()) return
 		val room = PuzzleRooms.named(PUZZLE) ?: return
 		val level = Minecraft.getInstance().level ?: return
@@ -189,18 +192,9 @@ object WaterSolver {
 		}
 		val openKey = open.joinToString("") { it.ordinal.toString() }
 
-		fun blockAt(x: Int, y: Int, z: Int) =
-			room.getRealCoords(BlockPos(x, y, z))?.let { level.getBlockState(it).block }
-
-		val read = when {
-			blockAt(14, 77, 27) == Blocks.TERRACOTTA -> 0
-			blockAt(16, 78, 27) == Blocks.EMERALD_BLOCK -> 1
-			blockAt(14, 78, 27) == Blocks.DIAMOND_BLOCK -> 2
-			blockAt(14, 78, 27) == Blocks.QUARTZ_BLOCK -> 3
-			else -> {
-				if (loud) say("§cCould not read the water board's layout.")
-				return
-			}
+		val read = readLayout(room, level) ?: run {
+			if (loud) say("§cCould not read the water board's layout.")
+			return
 		}
 
 		PuzzleAssets.ensureLoaded()
@@ -272,6 +266,30 @@ object WaterSolver {
 	private fun answersFor(pattern: Int, optimised: Boolean, openKey: String): Map<String, List<Double>>? =
 		PuzzleAssets.water[optimised.toString()]?.get(pattern.toString())?.get(openKey)
 
+	/** Which of the four boards this is, from a block each has parked in its own place. */
+	private fun readLayout(room: imicro.cryptic.dungeon.map.DungeonRoom, level: net.minecraft.world.level.Level): Int? {
+		fun blockAt(x: Int, y: Int, z: Int) =
+			room.getRealCoords(BlockPos(x, y, z))?.let { level.getBlockState(it).block }
+		return when {
+			blockAt(14, 77, 27) == Blocks.TERRACOTTA -> 0
+			blockAt(16, 78, 27) == Blocks.EMERALD_BLOCK -> 1
+			blockAt(14, 78, 27) == Blocks.DIAMOND_BLOCK -> 2
+			blockAt(14, 78, 27) == Blocks.QUARTZ_BLOCK -> 3
+			else -> null
+		}
+	}
+
+	/**
+	 * Odin's safe answer for this board with gates [closed] (a bit per outlet), for the dynamic
+	 * solver to start its search from, or null. Only right on a board nobody has touched.
+	 */
+	fun sheetAnswer(room: imicro.cryptic.dungeon.map.DungeonRoom, level: net.minecraft.world.level.Level, closed: Int): Map<String, List<Double>>? {
+		val layout = readLayout(room, level) ?: return null
+		val key = (0 until 5).filter { closed and (1 shl it) != 0 }.joinToString("")
+		PuzzleAssets.ensureLoaded()
+		return answersFor(layout, false, key)
+	}
+
 	/** The shortest wait between two timed pulls; pulls at zero don't count. */
 	private fun tightestGap(answers: Map<String, List<Double>>): Double {
 		val timed = answers.values.flatten().filter { it > 0.0 }.sorted()
@@ -329,6 +347,10 @@ object WaterSolver {
 
 	fun render(context: LevelRenderContext) {
 		if (!PuzzleSolver.waterEnabled.value) return
+		if (PuzzleSolver.waterDynamic.value) {
+			WaterDynamic.render(context)
+			return
+		}
 		if (!PuzzleRooms.inside(PUZZLE)) return
 		if (waitingForDrain) {
 			Lever.WATER.pos?.let { PuzzleRender.text(context, "§eWaiting for the water to drain", Vec3(it.x + 0.5, it.y + 1.5, it.z + 0.5)) }
@@ -404,6 +426,10 @@ object WaterSolver {
 
 	/** Solves again from the board as it stands; nothing from the last attempt is kept. */
 	fun reset() {
+		if (PuzzleSolver.waterDynamic.value) {
+			WaterDynamic.reset()
+			return
+		}
 		pattern = -1
 		solution.clear()
 		gateMoved.clear()
@@ -423,6 +449,7 @@ object WaterSolver {
 	}
 
 	fun forget() {
+		WaterDynamic.forget()
 		pattern = -1
 		solution.clear()
 		gateMoved.clear()
@@ -434,6 +461,7 @@ object WaterSolver {
 
 	/** Each gate against its start, and each lever's owed pulls, for `/cryptic debug room`. */
 	fun describe(): List<String> {
+		if (PuzzleSolver.waterDynamic.value) return WaterDynamic.describe()
 		val lines = mutableListOf("Water board: layout $pattern, ${if (solution.isEmpty()) "not solved" else "solved"}")
 		val room = PuzzleRooms.named(PUZZLE)
 		val level = Minecraft.getInstance().level

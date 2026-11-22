@@ -50,6 +50,7 @@ abstract class ManagerSection(
 			KeybindManager.module -> KeybindsSection()
 			CarryManager.module -> CarrySection()
 			imicro.cryptic.feature.PartyBlacklist.module -> imicro.cryptic.gui.menu.managers.BlacklistSection()
+			imicro.cryptic.feature.AuctionHouse.module -> imicro.cryptic.gui.menu.managers.AuctionWatchSection()
 			CrosshairEditor.module -> CrosshairSection()
 			imicro.cryptic.feature.CustomScoreboard.module -> imicro.cryptic.gui.menu.managers.ScoreboardSection()
 			imicro.cryptic.gui.menu.managers.ProfilesSection.module -> imicro.cryptic.gui.menu.managers.ProfilesSection()

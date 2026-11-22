@@ -162,7 +162,7 @@ object PositionalMessages {
 		initialized = true
 		load()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
-		imicro.cryptic.hud.Hud.register(LeapCountElement())
+		imicro.cryptic.hud.Hud.register(LeapCountElement(), module)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> forget() }
 	}

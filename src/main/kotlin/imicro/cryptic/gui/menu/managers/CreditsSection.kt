@@ -19,8 +19,8 @@ class CreditsSection : ManagerSection("Credits") {
 		var cy = y
 		val headH = 76f
 		ui.card(Box(x, cy, width, headH))
-		ui.text("Made with help", x + 18f, cy + 14f, 15f, MenuStyle.TEXT, UiText.Face.MEDIUM)
-		var right = x + width - 18f
+		ui.text("Made with help", x + 20f, cy + 14f, 15f, MenuStyle.TEXT, UiText.Face.MEDIUM)
+		var right = x + width - 20f
 		val buttonY = cy + (headH - 34f) / 2f
 		for ((label, url) in listOf("Notices" to CreditList.NOTICES_URL, "Licence" to CreditList.LICENCE_URL)) {
 			val w = ui.buttonWidth(label)
@@ -30,35 +30,36 @@ class CreditsSection : ManagerSection("Credits") {
 		val blurb = "Cryptic grew out of what these projects worked out first. Thank you to everyone behind them."
 		var ty = cy + 36f
 		for (line in UiText.wrap(blurb, 12f, right - x - 34f)) {
-			ui.text(line, x + 18f, ty, 12f, MenuStyle.MUTED)
+			ui.text(line, x + 20f, ty, 12f, MenuStyle.MUTED)
 			ty += 16f
 		}
-		cy += headH + 14f
+		cy += headH
 
 		for (group in CreditList.groups) {
-			Sections.heading(ui, group.title, x, cy)
-			cy += Sections.HEADING
+			cy += Sections.HEADING_GAP
+			cy += Sections.heading(ui, group.title, x, cy, x + width)
 			if (group.blurb.isNotEmpty()) {
-				ui.text(group.blurb, x + 2f, cy - 6f, 12f, MenuStyle.MUTED)
-				cy += 18f
+				ui.text(group.blurb, x + 2f, cy - 4f, 12f, MenuStyle.MUTED)
+				cy += 20f
 			}
-			for (credit in group.credits) cy += drawRow(credit, x, cy, width) + 2f
-			cy += 14f
+			ui.beginGroup(x, cy, width)
+			for (credit in group.credits) cy += drawRow(credit, x, cy, width)
+			ui.endGroup(cy)
 		}
-		return cy - y
+		return cy + 8f - y
 	}
 
 	private fun drawRow(credit: Credit, x: Float, y: Float, width: Float): Float {
-		val pad = 18f
+		val pad = 20f
 		val buttonW = if (credit.url != null) ui.buttonWidth("Open") else 0f
 		val textW = width - pad * 2 - (if (buttonW > 0f) buttonW + 16f else 0f)
 		val lines = UiText.wrap(credit.what, 12f, textW)
-		val h = 40f + lines.size * 16f
-		ui.card(Box(x, y, width, h))
+		val h = 46f + lines.size * 16f
+		ui.row(Box(x, y, width, h))
 
-		ui.text(credit.name, x + pad, y + 12f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
-		credit.licence?.let { ui.badge(it, x + pad + ui.width(credit.name, 14f, UiText.Face.MEDIUM) + 10f, y + 10f) }
-		var ty = y + 33f
+		ui.text(credit.name, x + pad, y + 15f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
+		credit.licence?.let { ui.badge(it, x + pad + ui.width(credit.name, 14f, UiText.Face.MEDIUM) + 10f, y + 12f) }
+		var ty = y + 36f
 		for (line in lines) {
 			ui.text(line, x + pad, ty, 12f, MenuStyle.MUTED)
 			ty += 16f

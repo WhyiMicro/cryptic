@@ -23,6 +23,20 @@ object MenuLogo {
 		runCatching { MenuLogo::class.java.getResourceAsStream(SOURCE)?.use(ImageIO::read) }.getOrNull()
 	}
 
+	/** Where the mark's pixels start and end across its square, as fractions: the image has empty margins. */
+	val inkSpan: Pair<Float, Float> by lazy {
+		val image = original ?: return@lazy 0f to 1f
+		var left = image.width
+		var right = -1
+		for (y in 0 until image.height) for (x in 0 until image.width) {
+			if ((image.getRGB(x, y) ushr 24) > 40) {
+				if (x < left) left = x
+				if (x > right) right = x
+			}
+		}
+		if (right < left) 0f to 1f else left.toFloat() / image.width to (right + 1f) / image.width
+	}
+
 	private var bakedSize = 0
 	private var id: Identifier? = null
 

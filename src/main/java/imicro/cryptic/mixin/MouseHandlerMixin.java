@@ -45,7 +45,7 @@ public abstract class MouseHandlerMixin {
             ci.cancel();
             return;
         }
-        if (Zoom.onScroll(yoffset) || imicro.cryptic.feature.Freecam.onScroll(yoffset)) {
+        if (Zoom.onScroll(yoffset) || imicro.cryptic.feature.Freecam.onScroll(yoffset) || imicro.cryptic.feature.BetterChat.onScroll(yoffset)) {
             ci.cancel();
             return;
         }

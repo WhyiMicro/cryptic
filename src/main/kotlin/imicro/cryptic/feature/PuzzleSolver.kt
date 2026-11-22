@@ -59,11 +59,51 @@ object PuzzleSolver {
 	)
 
 	@JvmField
+	val waterDynamic = ToggleModuleSetting(
+		id = "water_dynamic",
+		label = "Dynamic solver",
+		defaultValue = false,
+		description = "Simulates the water and plans the pulls from the board as it really is, planning again when a pull is late, early, missed or extra, or the server lags.",
+		visibleIf = { waterEnabled.value },
+	)
+
+	@JvmField
+	val waterGoal = DropdownModuleSetting(
+		id = "water_goal",
+		label = "Plan for",
+		options = imicro.cryptic.puzzle.water.WaterPlanner.Goal.entries.map { it.label },
+		description = "Safest: the soonest solve that still works when the server's water or your click is a tick or two off. Fastest: the soonest solve if nothing is. Fewest clicks: few pulls, well spaced.",
+		visibleIf = { waterEnabled.value && waterDynamic.value },
+	)
+
+	@JvmField
+	val waterReaction = SliderModuleSetting(
+		id = "water_reaction",
+		label = "Reaction time",
+		unit = "ms",
+		defaultValue = 400.0,
+		min = 150.0,
+		max = 1000.0,
+		step = 50.0,
+		description = "How long you need between seeing a new plan and clicking: nothing is planned sooner.",
+		visibleIf = { waterEnabled.value && waterDynamic.value },
+	)
+
+	@JvmField
+	val waterClickSound = ToggleModuleSetting(
+		id = "water_click_sound",
+		label = "Click sound",
+		defaultValue = true,
+		description = "A ding when it's time to pull.",
+		visibleIf = { waterEnabled.value && waterDynamic.value },
+	)
+
+	@JvmField
 	val waterOptimized = ToggleModuleSetting(
 		id = "water_optimized",
 		label = "Optimized route",
 		description = "Faster solutions that leave less room for a late pull.",
-		visibleIf = { waterEnabled.value },
+		visibleIf = { waterEnabled.value && !waterDynamic.value },
 	)
 
 	@JvmField
@@ -75,7 +115,7 @@ object PuzzleSolver {
 		max = 3.0,
 		step = 0.1,
 		description = "How close two timed pulls may be before the safe route is used instead.",
-		visibleIf = { waterEnabled.value && waterOptimized.value },
+		visibleIf = { waterEnabled.value && !waterDynamic.value && waterOptimized.value },
 	)
 
 	@JvmField
@@ -127,7 +167,7 @@ object PuzzleSolver {
 		label = "Warn when off plan",
 		defaultValue = true,
 		description = "After the water is in, says at once when a pull is missed, made well early, or was not in the plan, so the board can be reset instead of waited out.",
-		visibleIf = { waterEnabled.value },
+		visibleIf = { waterEnabled.value && !waterDynamic.value },
 	)
 
 	@JvmField
@@ -709,6 +749,7 @@ object PuzzleSolver {
 		),
 		ticTacToeEnabled.withMore(ticTacToeColor, ticTacToeStyle, ticTacToeBlockWrong, ticTacToePreAim),
 		waterEnabled.withMore(
+			waterDynamic, waterGoal, waterReaction, waterClickSound,
 			waterOptimized, waterMinGap, waterTracer, waterTracerFirst, waterTracerSecond,
 			waterLeverHighlight, waterLeverStyle, waterOffPlan, waterPreviewPath, waterPreviewLevers,
 			waterReset,
@@ -755,7 +796,7 @@ object PuzzleSolver {
 		if (initialized) return
 		initialized = true
 
-		Hud.register(QuizTimerElement())
+		Hud.register(QuizTimerElement(), module, quizTimer)
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientReceiveMessageEvents.GAME.register { message, overlay ->
 			if (!overlay) onMessage(message.string)
@@ -971,7 +1012,6 @@ object PuzzleSolver {
 				keys = mapOf(
 					org.lwjgl.glfw.GLFW.GLFW_KEY_Y to {
 						Minecraft.getInstance().connection?.sendCommand("gfs architect's first draft 1")
-						Unit
 					},
 					org.lwjgl.glfw.GLFW.GLFW_KEY_N to {},
 				),

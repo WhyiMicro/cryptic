@@ -129,8 +129,8 @@ object SmartTickTimer {
 		if (initialized) return
 		initialized = true
 
-		Hud.register(TimerElement())
-		Hud.register(SecretSpawnElement())
+		Hud.register(TimerElement(), module)
+		Hud.register(SecretSpawnElement(), module)
 		// Chat is read in [onSystemChat] from the packet, since boss dialogue is often hidden by
 		// other mods.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> forget() }

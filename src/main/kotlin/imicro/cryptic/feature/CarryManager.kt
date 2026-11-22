@@ -254,7 +254,7 @@ object CarryManager {
 
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
-		imicro.cryptic.hud.Hud.register(CounterElement())
+		imicro.cryptic.hud.Hud.register(CounterElement(), module, counterHud)
 	}
 
 	/** Whether [name] has an unfinished carry. */
@@ -270,6 +270,8 @@ object CarryManager {
 
 		override val width: Int get() = (lines(carries.isEmpty()).maxOfOrNull { font.width(text(it)) } ?: 60).coerceAtLeast(60)
 		override val height: Int get() = font.lineHeight * maxOf(1, lines(carries.isEmpty()).size)
+
+		override val slayer get() = true
 
 		override fun isVisible(): Boolean = module.enabled && counterHud.value && carries.any { !it.finished }
 

@@ -287,7 +287,7 @@ object AutoGfs {
 
 	private fun terrorPieces(client: Minecraft): Int {
 		val player = client.player ?: return 0
-		return ARMOR.count { slot -> SkyblockItem.id(player.getItemBySlot(slot))?.contains("TERROR_") == true }
+		return ARMOR.count { slot -> SkyblockItem.id(player.getItemBySlot(slot)).contains("TERROR_") }
 	}
 
 	private fun pending(client: Minecraft): List<String> {

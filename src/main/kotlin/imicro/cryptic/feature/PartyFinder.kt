@@ -349,6 +349,7 @@ object PartyFinder {
 		if (!takesOver(screen)) return false
 		val chest = screen as AbstractContainerScreen<*>
 		read(chest)
+		if (client.window.screenHeight <= 0 || screen.width <= 0 || screen.height <= 0) return true
 		// The menu font is baked for the real pixel size; set here too, as the menu may not have opened yet.
 		UiText.pixelsPerUnit = client.window.screenHeight / DESIGN_HEIGHT
 		graphics.fill(0, 0, screen.width, screen.height, 0xA0000000.toInt())
@@ -516,13 +517,6 @@ object PartyFinder {
 		}
 		if (line.isNotEmpty()) lines += line
 		return lines.map { UiText.fit(it, size, width) }
-	}
-
-	private fun memberTag(graphics: GuiGraphicsExtractor, member: Member, x: Float, y: Float) {
-		val clazz = DungeonClass.entries.firstOrNull { it.name.equals(member.clazz, ignoreCase = true) }
-		val color = clazz?.let { 0xFF000000.toInt() or ClassColors.getClassColor(it) } ?: MenuStyle.MUTED
-		val text = "${member.clazz.take(1).uppercase(Locale.ROOT)}${if (member.level >= 0) " ${member.level}" else ""}"
-		UiText.draw(graphics, text, x, y + 1f, 15f, color, UiText.Face.MEDIUM)
 	}
 
 	/** A player's face, from the skin cache (a default face until it loads). */

@@ -47,6 +47,12 @@ object Capes {
 	@JvmField
 	val chooseImage = ButtonModuleSetting("choose_image", "Choose image…", { chooseImage() }, visibleIf = { ownCape.value })
 
+	@JvmField
+	val editOptifine = ButtonModuleSetting("edit_optifine", "Edit OptiFine cape…", { editOptifineCape() })
+
+	@JvmField
+	val reload = ButtonModuleSetting("reload", "Reload capes", { reloadCapes() })
+
 	private val othersSection = SectionModuleSetting("others_section", "Cape mods")
 
 	@JvmField
@@ -73,7 +79,7 @@ object Capes {
 		description = "Capes from cape mods",
 		category = ModuleCategory.VISUAL,
 		supportsKeybind = false,
-		settings = listOf(ownSection, ownCape, chooseImage, othersSection, optifine, labymod, minecraftCapes, preferOfficial),
+		settings = listOf(ownSection, ownCape, chooseImage, editOptifine, reload, othersSection, optifine, labymod, minecraftCapes, preferOfficial),
 	)
 
 	private val ownFile get() = FabricLoader.getInstance().configDir.resolve("cryptic").resolve("cape.png")
@@ -172,12 +178,64 @@ object Capes {
 		}
 	}
 
+	/**
+	 * OptiFine's cape editor is a web page. It trusts the browser once Mojang confirms this account
+	 * just joined a "server" with the id in the link, so join one first. The token only goes to Mojang.
+	 */
+	private fun editOptifineCape() {
+		val client = Minecraft.getInstance()
+		val user = client.user
+		note("§7Signing in to OptiFine…")
+		Thread({
+			// 128 bits, the length OptiFine's own button sends; its site refused a 160-bit one.
+			val serverId = java.math.BigInteger(128, java.security.SecureRandom()).toString(16)
+			val joined = try {
+				client.services().sessionService().joinServer(user.profileId, user.accessToken, serverId)
+				true
+			} catch (error: Exception) {
+				Cryptic.LOGGER.warn("Capes: Mojang sign-in for OptiFine's cape editor failed", error)
+				false
+			}
+			client.execute {
+				if (!joined) {
+					note("§cMojang didn't accept the sign-in. Try again in a moment.")
+					return@execute
+				}
+				val uuid = user.profileId.toString().replace("-", "")
+				net.minecraft.util.Util.getPlatform().openUri("https://optifine.net/capeChange?u=$uuid&n=${user.name}&s=$serverId")
+				note("§7OptiFine's cape editor is open in your browser. Use §fReload capes §7once you've saved.")
+				// TEMP diagnostic: does Mojang still hold this sign-in once OptiFine has checked it?
+				Cryptic.LOGGER.info("Capes: OptiFine sign-in serverId={} name={}", serverId, user.name)
+				CompletableFuture.delayedExecutor(5, java.util.concurrent.TimeUnit.SECONDS).execute {
+					val check = HttpRequest.newBuilder(URI.create("https://sessionserver.mojang.com/session/minecraft/hasJoined?username=${user.name}&serverId=$serverId"))
+						.timeout(Duration.ofSeconds(10)).GET().build()
+					val result = runCatching { http.send(check, HttpResponse.BodyHandlers.ofString()) }
+						.map { "HTTP ${it.statusCode()}, ${it.body().length} bytes" }.getOrElse { "failed: ${it.message}" }
+					Cryptic.LOGGER.info("Capes: Mojang hasJoined after 5 s: {}", result)
+					client.execute { note("§8[debug] Mojang hasJoined: $result") }
+				}
+			}
+		}, "Cryptic OptiFine sign-in").apply { isDaemon = true }.start()
+	}
+
+	/** Forgets every cape so each player, you included, is looked up again. */
+	private fun reloadCapes() {
+		generation++
+		for ((uuid, entry) in players) if (entry is Entry.Ready) release(capeId(uuid), entry)
+		players.clear()
+		own?.let { release(OWN_ID, it) }
+		own = null
+		ownLoaded = false
+		note("§7Capes reloaded.")
+	}
+
 	// ---- Other players ------------------------------------------------------------------------
 
 	private fun lookUp(uuid: UUID, name: String) {
 		if (inFlight.get() >= MAX_IN_FLIGHT) return
 		players[uuid] = Entry.Loading
 		inFlight.incrementAndGet()
+		val asked = generation
 		val providers = buildList<() -> CompletableFuture<List<NativeImage>?>> {
 			// Only a real account name; Hypixel's fake players can have spaces and symbols in theirs.
 			if (optifine.value && ACCOUNT_NAME.matches(name)) add { png("http://s.optifine.net/capes/$name.png") }
@@ -186,16 +244,21 @@ object Capes {
 		}
 		firstOf(providers.iterator()).whenComplete { frames, _ ->
 			inFlight.decrementAndGet()
-			if (frames.isNullOrEmpty()) {
-				players[uuid] = Entry.None
-				return@whenComplete
-			}
 			Minecraft.getInstance().execute {
-				players[uuid] = runCatching { register(Cryptic.id("capes/${uuid.toString().replace("-", "")}"), frames) }
-					.getOrElse { Entry.None }
+				// A reload since this lookup started: its answer may be the old cape.
+				if (asked != generation) {
+					frames?.forEach { it.close() }
+					return@execute
+				}
+				players[uuid] = if (frames.isNullOrEmpty()) Entry.None
+				else runCatching { register(capeId(uuid), frames) }.getOrElse { Entry.None }
 			}
 		}
 	}
+
+	private var generation = 0
+
+	private fun capeId(uuid: UUID) = Cryptic.id("capes/${uuid.toString().replace("-", "")}")
 
 	/** The first provider with a cape, asked one after another. */
 	private fun firstOf(providers: Iterator<() -> CompletableFuture<List<NativeImage>?>>): CompletableFuture<List<NativeImage>?> {

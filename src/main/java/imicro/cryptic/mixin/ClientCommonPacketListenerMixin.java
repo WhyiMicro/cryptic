@@ -19,4 +19,15 @@ public abstract class ClientCommonPacketListenerMixin {
         EtherwarpZeroPing.onPacketSent(packet);
         imicro.cryptic.debug.GuiLog.onPacketSent(packet);
     }
+
+    /**
+     * Hypixel's per-tick ping, on the client thread, in order with the block packets around it: the
+     * Water Board solver tags each change with the tick it came in. (ConnectionMixin counts the same
+     * pings straight off the network for timers.)
+     */
+    @Inject(method = "handlePing", at = @At("HEAD"))
+    private void cryptic$tickInOrder(net.minecraft.network.protocol.common.ClientboundPingPacket packet, CallbackInfo info) {
+        if (packet.getId() == 0 || !net.minecraft.client.Minecraft.getInstance().isSameThread()) return;
+        imicro.cryptic.puzzle.WaterDynamic.onPing();
+    }
 }

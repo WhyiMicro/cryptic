@@ -95,12 +95,44 @@ object ChatExtras {
 		if (BetterChat.hideGuild.value && isGuild(text) && shownTab != Tab.GUILD) return true
 		if (ChatFilter.hides(text)) return true
 		// Hypixel's channels; elsewhere the tab is kept but doesn't filter.
-		if (shownTab != Tab.ALL && HypixelServer.connected && tabOf(text) != shownTab) return true
+		if (shownTab != Tab.ALL && HypixelServer.connected && !inShownTab(message, text)) return true
 		if (query.isNotBlank()) {
 			val lower = text.lowercase()
 			if (query.lowercase().split(' ').filter { it.isNotEmpty() }.any { it !in lower }) return true
 		}
 		return false
+	}
+
+	private fun allMessages(): List<GuiMessage> = (client.gui.hud.chat as ChatComponentAccessor).`cryptic$allMessages`()
+
+	private fun inTab(message: GuiMessage?): Boolean = message != null && tabOf(plain(message.content())) == shownTab
+
+	/**
+	 * Hypixel often sends the rules round a party notice as lines of their own, so a rule belongs to
+	 * the tab of the line just above or below it. A new line isn't in the history yet; the newest
+	 * one there is the line above it.
+	 */
+	private fun inShownTab(message: GuiMessage, text: String): Boolean {
+		if (!isRule(text)) return tabOf(text) == shownTab
+		val all = allMessages()
+		val at = all.indexOfFirst { it === message }
+		if (at < 0) return inTab(all.firstOrNull())
+		return ruleShown(at, all)
+	}
+
+	private fun ruleShown(at: Int, all: List<GuiMessage>): Boolean = inTab(all.getOrNull(at + 1)) || inTab(all.getOrNull(at - 1))
+
+	private var refreshPending = false
+
+	/** A new line, before it joins the history: the rule just above it may now belong to the tab. */
+	@JvmStatic
+	fun onNewLine(message: GuiMessage) {
+		if (!BetterChat.module.enabled || shownTab == Tab.ALL || !HypixelServer.connected) return
+		val text = plain(message.content())
+		if (isRule(text) || tabOf(text) != shownTab) return
+		val all = allMessages()
+		val above = all.firstOrNull() ?: return
+		if (isRule(plain(above.content())) && !ruleShown(0, all)) refreshPending = true
 	}
 
 	/** What the filters were when the window was last rebuilt. */
@@ -109,8 +141,9 @@ object ChatExtras {
 	private fun refreshIfChanged() {
 		val enabled = BetterChat.module.enabled
 		val now = listOf(enabled && BetterChat.hideGuild.value, shownTab, query, if (enabled) ChatFilter.state() else false)
-		if (now == applied) return
+		if (now == applied && !refreshPending) return
 		applied = now
+		refreshPending = false
 		// A tab's lines are already there; only lines that arrive slide in.
 		slideFrom = 0f
 		(client.gui.hud.chat as ChatComponentAccessor).`cryptic$refresh`()

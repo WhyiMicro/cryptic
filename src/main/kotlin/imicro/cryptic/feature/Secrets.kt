@@ -369,7 +369,7 @@ object Secrets {
 	private val FORMATTING = Regex("§.")
 
 	fun initialize() {
-		Hud.register(CounterElement())
+		Hud.register(CounterElement(), module)
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> onWorldChange() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> onWorldChange() }

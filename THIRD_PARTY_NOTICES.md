@@ -50,7 +50,7 @@ Several features are ported from other mods, whose licences travel with them:
   from Loadout Keybinds, and its key that opens it, from Command Keybinds.
   Sharp Shooter's Terminator mode, from its Arrows Device's aim positions
   between two lights.
-  Auto Sprint, which holds the sprint key where the game reads it.
+  Movement's Auto Sprint, which holds the sprint key where the game reads it.
   The new menu's rounded shapes and shadows: its `RoundedRectRenderer` and
   its rounded-rectangle shaders, which draw through Minecraft's own GUI
   renderer and so work on Vulkan as well as OpenGL.
@@ -95,8 +95,8 @@ Several features are ported from other mods, whose licences travel with them:
   2026 ChillyPine) — the Carry Manager's fallback for a boss's owner: the nearest
   player when it spawns, and nobody owning two bosses at once. Licence in
   [`licenses/Meridian-LICENSE.txt`](licenses/Meridian-LICENSE.txt).
-- **[IQ](https://github.com/iqaddons/IQ)** (Apache 2.0) — Slayer Features' Fire
-  Veil overlay: the wand's 3.5-block ring for the five seconds it burns, drawn as
+- **[IQ](https://github.com/iqaddons/IQ)** (Apache 2.0) — Combat's Fire Veil
+  overlay: the wand's 3.5-block ring for the five seconds it burns, drawn as
   a circle or a low wall, and its flames hidden for nine seconds from a cast.
   Rewritten for Cryptic's settings and renderer. Licence in
   [`licenses/IQ-LICENSE.txt`](licenses/IQ-LICENSE.txt).
@@ -120,6 +120,15 @@ Several features are ported from other mods, whose licences travel with them:
   a cap per island, hiding those particles, the perk colours, and a filled circle
   with a low rim; and Text Outline's look, its Full Text Shadow (the shadow drawn
   on every side of a letter). Licence in [`licenses/SkyOcean-LICENSE.txt`](licenses/SkyOcean-LICENSE.txt).
+- **[SBO](https://github.com/SkyblockOverhaul/SBO)** (Apache-2.0) — the Chunk
+  Cache's fake chunks, ported from SBO's Chunk Cache and changed to fit: serving
+  them from the client chunk cache, answering for their light and swapping it
+  for the server's in one step, copying a chunk as vanilla lets go of it, filling
+  in the sky light the server leaves out, and keeping Sodium's chunk list in
+  step. The technique is [Bobby](https://github.com/Johni0702/bobby)'s, as SBO
+  says; no Bobby code is used. The packed store, its worker threads, the
+  lock-free lookups and the memory limit are Cryptic's own. Licence in
+  [`licenses/SBO-LICENSE.txt`](licenses/SBO-LICENSE.txt).
 
 Lumen, DailyRewards, Devonian, Custom Block Highlight, Skyblocker, SkyHanni and
 NotEnoughUpdates each had features ported into Cryptic. Those features have
@@ -128,8 +137,9 @@ left. What is still theirs is data and artwork, kept as it is:
 
 - **[Devonian](https://github.com/Synnerz/Devonian)** (GPL-3.0) — the table of
   every dungeon room's secret spots (`dungeon/secret_waypoints.json`), behind
-  Dungeon Waypoints and the Default waypoint pack. Licence in
-  [`licenses/Devonian-LICENSE.txt`](licenses/Devonian-LICENSE.txt).
+  Dungeon Waypoints and the Default waypoint pack; and, as a fact only, that
+  night vision is what turns the Crimson Isle's fog red (Render Optimizer).
+  Licence in [`licenses/Devonian-LICENSE.txt`](licenses/Devonian-LICENSE.txt).
 - **[quoi](https://github.com/jcnlk/quoi)** (GPL-3.0) — as facts only, the
   column of blocks that marks each Crystal Hollows place, the quarter it lies in
   and the step from it to the place, for Nucleus Features' scanner (quoi has them
@@ -145,7 +155,8 @@ left. What is still theirs is data and artwork, kept as it is:
   what each zone's compass leads to, the Jungle Temple door's offset, and for
   Slayer Features each boss's names and health by tier, the mini-bosses' names,
   the Demonlord's attunement words and colours, the fire pillar's stand text,
-  and the Riftstalker's steak mark and Twinclaws and Mania stands. Licence in
+  and the Riftstalker's steak mark and Twinclaws and Mania stands; and the idea
+  of clearing the Crimson Isle's fog for Render Optimizer. Licence in
   [`licenses/Skyblocker-LICENSE.txt`](licenses/Skyblocker-LICENSE.txt).
 - **[SkyHanni](https://github.com/hannibal002/SkyHanni)** (LGPL-2.1) — as facts
   only, for Slayer Features: the Conjoined Brood's egg sac stands (`SHOOT ME!` and
@@ -161,6 +172,14 @@ left. What is still theirs is data and artwork, kept as it is:
   overlay and the Superpairs panel); and for Combat: the power orbs' names and
   ranges, how long a flare lasts, and the idea of the flare and orb timer. No code
   was taken.
+- **[NotEnoughUpdates REPO](https://github.com/NotEnoughUpdates/NotEnoughUpdates-REPO)**
+  (MIT, Copyright (c) 2020 Moulberry) — which Bazaar products NPC shops sell, at
+  what price and where (`assets/cryptic/bazaar/npc_shops.json`), and the crafting
+  recipes that turn Bazaar products into another
+  (`assets/cryptic/bazaar/recipes.json`), for Flipping's shop and craft flips;
+  and the names of items Hypixel's items list leaves out, such as dyes and skins
+  (`assets/cryptic/bazaar/item_names.json`). Licence in
+  [`licenses/NotEnoughUpdates-REPO-LICENSE.txt`](licenses/NotEnoughUpdates-REPO-LICENSE.txt).
 - **[SkyHanni repository](https://github.com/hannibal002/SkyHanni-REPO)** (MIT,
   Copyright (c) 2022 hannibal2) — the 39 places the Mines of Divan treasure
   turns up, for Nucleus Features' Metal Detector solver; and for Rift
@@ -203,7 +222,7 @@ their size, colours, timer bar and how they slide, stack and are dismissed;
 riding input fix in Camera — MC-206540, whose fix is one paragraph of turning
 the rider with its mount in the same tick;
 **[Zoomify](https://modrinth.com/mod/zoomify)** (LGPL-3.0), for what a zoom
-ought to offer; **NoJumpDelay** (1.8.9), for which cooldown to clear; and
+ought to offer; **NoJumpDelay** (1.8.9), for which cooldown Movement clears; and
 **[RavenB++](https://github.com/OlziYT/RavenBS-Plus-Plus)** (1.8.9), for the
 Auto Clicker — holding the button for part of the gap, drifting the rate
 rather than drawing it flat, and running straight off the attack and use
@@ -211,6 +230,15 @@ buttons instead of a bind of its own; and
 **[RBDT V5](https://github.com/V5-Client/V5)** (ChatTriggers, 1.8.9), for how
 the Experiment Solver works the table between games — the stakes, the renew and
 the bottle shop.
+
+**[ADM](https://github.com/undonecoffee/adm)** (no licence, so all rights
+reserved) was read rather than ported; no code of it is in Cryptic. From it come
+the ideas of Spirit Leap's teammate views, Fake zpew casting waiting clicks again
+from each real landing, its refusal lines and ping-timed expiry, and the dynamic
+Water Board solver; and, as facts only, its measured teleport rules (where a blink
+stops and lands, which blocks stop or refuse an etherwarp), the Water Board's
+order of events within a tick and its piston timing, the rate of Hypixel's random
+water ticks, and the four boards' layouts, which Cryptic's tests use.
 
 Five more gave only the idea of a feature. Their code was not read, and Cryptic's
 versions are its own: **[VanillaHUD](https://github.com/Polyfrost/VanillaHUD)**
@@ -223,4 +251,4 @@ versions are its own: **[VanillaHUD](https://github.com/Polyfrost/VanillaHUD)**
 for the idea of a storage overview; and **[Skyblocker](https://github.com/SkyblockerMod/Skyblocker)**
 (LGPL-3.0), for Better Chat's key for chat prompts and for the Status Bars.
 
-Bundled fonts: Poppins (SIL OFL; licence in [`licenses/Poppins-OFL.txt`](licenses/Poppins-OFL.txt)), and Font Awesome Free Solid and Regular (CC BY 4.0; licence in `META-INF/licenses/font-awesome-free.txt`).
+Bundled fonts: Inter (SIL OFL; licence in [`licenses/Inter-OFL.txt`](licenses/Inter-OFL.txt)), and Font Awesome Free Solid and Regular (CC BY 4.0; licence in `META-INF/licenses/font-awesome-free.txt`).

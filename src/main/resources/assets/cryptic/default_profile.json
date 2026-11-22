@@ -3,8 +3,12 @@
   "version": 1,
   "profile": "Default",
   "modules": {
-    "auto_sprint": {
-      "enabled": false
+    "movement": {
+      "enabled": false,
+      "settings": {
+        "auto_sprint": true,
+        "no_jump_delay": false
+      }
     },
     "zoom": {
       "enabled": false,
@@ -15,9 +19,6 @@
         "cinematic_camera": false,
         "affect_hand_fov": true
       }
-    },
-    "no_jump_delay": {
-      "enabled": false
     },
     "auto_clicker": {
       "enabled": false,
@@ -831,13 +832,14 @@
         "pearl_trajectory": true
       }
     },
-    "cookie_reminder": {
+    "reminders": {
       "enabled": false,
       "settings": {
         "announce_expired": true,
         "god_potion": true,
         "warn_minutes": 10.0,
-        "seconds": 30.0
+        "seconds": 30.0,
+        "ubik_reminder": true
       }
     },
     "daily_rewards": {
@@ -1010,6 +1012,10 @@
     },
     "update_checker": {
       "enabled": true,
+      "settings": {}
+    },
+    "changelog": {
+      "enabled": false,
       "settings": {}
     },
     "scrollable_tooltips": {
@@ -1212,11 +1218,10 @@
     },
     "click_gui": {
       "settings": {
-        "accent_color": "#36865B",
+        "accent_color": "#A78BFA",
         "background_blur": false,
         "blur_strength": 5.0,
         "sorting": "A-Z",
-        "left_click_toggles": true,
         "right_click_edits": true,
         "remember_search": true,
         "reset_buttons": true

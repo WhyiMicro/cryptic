@@ -70,6 +70,7 @@ object Toasts {
 		options = listOf("Top left", "Top right", "Bottom left", "Bottom right"),
 		defaultIndex = 3,
 		description = "Which corner notifications stack in.",
+		visibleIf = { module.storedEnabled },
 	)
 
 	@JvmField
@@ -82,6 +83,7 @@ object Toasts {
 		step = 0.5,
 		unit = "s",
 		description = "How long one stays up once it has slid in.",
+		visibleIf = { module.storedEnabled },
 	)
 
 	@JvmField
@@ -93,15 +95,16 @@ object Toasts {
 		max = 2.0,
 		step = 0.1,
 		description = "Their size, where 1 is the size of the rest of your interface.",
+		visibleIf = { module.storedEnabled },
 	)
 
 	/** Raises one so the look can be checked while setting it. */
-	private val test = ButtonModuleSetting("test", "Show toast", action = {
+	val test = ButtonModuleSetting("test", "Show toast", action = {
 		show("Toast Notifications", "Click to dismiss, or §fdrag it away§7.", color = Colors.CRYPTIC)
-	})
+	}, visibleIf = { module.storedEnabled })
 
 	@JvmField
-	val module = Module(
+	val module: Module = Module(
 		id = "toasts",
 		name = "Toast Notifications",
 		description = "Cryptic's own notifications",
@@ -308,6 +311,7 @@ object Toasts {
 		const val BAZAAR = 0xFFFFAA00.toInt()
 		const val AUCTION = 0xFFFFD866.toInt()
 		const val RIFT = 0xFFFF55FF.toInt()
+		const val EVENT = 0xFFFF9F5A.toInt()
 
 		/** Cryptic itself (settings and profiles), in your accent colour. */
 		val CRYPTIC: Int get() = imicro.cryptic.gui.menu.MenuStyle.accent()
@@ -337,36 +341,24 @@ object Toasts {
 	}
 
 	/**
-	 * A keyboard key, answered only where it can't be typing: in the world, in a chest, or in
-	 * Cryptic's menu with no field taking text. A Y in chat must never accept an invite.
+	 * A keyboard key, answered only where it can't be typing: in the world or in a chest. A Y in
+	 * chat must never accept an invite.
 	 */
 	@JvmStatic
 	fun onKeyPressed(key: Int): Boolean {
-		swallowChar = false
 		if (shown.none { it.keys.isNotEmpty() && !it.done }) return false
 		val screen = Minecraft.getInstance().gui.screen()
-		val menu = screen as? imicro.cryptic.gui.menu.MenuScreen
-		// Cryptic's menu too, while nothing in it is taking text or a keybind.
-		if (screen != null && screen !is ContainerScreen && menu?.takesNotificationKeys != true) return false
-		val taken = handleKey(key)
-		// The menu sends typing to its search; the answer's letter mustn't land there.
-		if (taken && menu != null) swallowChar = true
-		return taken
+		if (screen != null && screen !is ContainerScreen) return false
+		return handleKey(key)
 	}
 
-	private var swallowChar = false
-
-	/** True once for the character of a key a notification just took, so the screen drops it. */
-	@JvmStatic
-	fun takeAnsweredChar(): Boolean {
-		val swallow = swallowChar
-		swallowChar = false
-		return swallow
-	}
+	/** Cryptic's menu is open: notifications wait, hidden and paused, until it closes. */
+	private val held: Boolean get() = Minecraft.getInstance().gui.screen() is imicro.cryptic.gui.menu.MenuScreen
 
 	/** The left button going down. A press on a notification is kept from what's under it. */
 	@JvmStatic
 	fun onMousePressed(): Boolean {
+		if (held) return false
 		val (mx, my) = pointer() ?: return false
 		val toast = shown.lastOrNull { !it.done && mx >= it.left && mx < it.right && my >= it.top && my < it.bottom } ?: return false
 		pressed = toast
@@ -411,6 +403,7 @@ object Toasts {
 			shown.clear()
 			return
 		}
+		if (held) return
 
 		val minecraft = Minecraft.getInstance()
 		val font = minecraft.font

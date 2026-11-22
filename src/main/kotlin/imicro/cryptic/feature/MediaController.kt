@@ -199,7 +199,7 @@ object MediaController {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(MediaElement())
+		Hud.register(MediaElement(), module)
 	}
 
 	fun tick(client: Minecraft) {

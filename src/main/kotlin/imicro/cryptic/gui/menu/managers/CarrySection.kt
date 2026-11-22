@@ -40,12 +40,14 @@ class CarrySection : ManagerSection("Carries") {
 
 	private fun drawOverview(x: Float, y: Float, width: Float): Float {
 		var cy = y
-		val pad = 18f
+		val pad = 20f
 		val active = CarryManager.activeCarry
 
-		val currentH = 96f
-		ui.card(Box(x, cy, width, currentH))
-		Sections.heading(ui, "Current carry", x + pad - 2f, cy + 4f)
+		// The current carry, the totals and the warps, as one group.
+		ui.beginGroup(x, cy, width)
+		val currentH = 100f
+		ui.row(Box(x, cy, width, currentH))
+		ui.text("Current carry", x + pad, cy + 12f, 12f, MenuStyle.MUTED, UiText.Face.MEDIUM)
 		if (active == null) {
 			ui.text("Nothing on the list", x + pad, cy + 34f, 16f, MenuStyle.TEXT, UiText.Face.MEDIUM)
 			ui.text("Add somebody under Voidgloom Seraph, or with /cryptic carry add.", x + pad, cy + 60f, 12f, MenuStyle.MUTED)
@@ -68,11 +70,11 @@ class CarrySection : ManagerSection("Carries") {
 			val onBoss = CarryManager.currentBossMillis(active)
 			ui.text(if (onBoss > 0) "Boss up for ${Sections.duration(onBoss)}" else "Waiting for a boss", x + pad, cy + 74f, 12f, MenuStyle.MUTED)
 		}
-		cy += currentH + 2f
+		cy += currentH
 
 		// The running totals, in five columns.
 		val statsH = 72f
-		ui.card(Box(x, cy, width, statsH))
+		ui.row(Box(x, cy, width, statsH))
 		val totals = CarryStore.totals
 		val stats = listOf(
 			totals.carriesCompleted.toString() to "Carries done",
@@ -100,37 +102,39 @@ class CarrySection : ManagerSection("Carries") {
 				ui.iconButton(Box(right - 24f, cy + 6f, 24f, 24f), Sections.UNDO, MenuStyle.MUTED) { deletes.click(FASTEST_KEY) }
 			}
 		}
-		cy += statsH + 2f
+		cy += statsH
 
 		// The two warps a carry goes between.
 		val warpH = 58f
-		ui.card(Box(x, cy, width, warpH))
-		ui.text("Warp", x + pad, cy + (warpH - 14f) / 2f, 14f, MenuStyle.TEXT)
+		ui.row(Box(x, cy, width, warpH))
+		ui.text("Warp", x + pad, cy + (warpH - 14f) / 2f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
 		val buttonW = 150f
 		ui.button(Box(x + width - pad - buttonW, cy + 12f, buttonW, 34f), "Voidgloom") { warp("warp void") }
 		ui.button(Box(x + width - pad - buttonW * 2f - 8f, cy + 12f, buttonW, 34f), "Island") { warp("warp island") }
 		cy += warpH
+		ui.endGroup(cy)
 
 		val history = CarryStore.history
 		if (history.isNotEmpty()) {
-			cy += 14f
-			Sections.heading(ui, "Finished", x, cy)
-			cy += Sections.HEADING
+			cy += Sections.HEADING_GAP
+			cy += Sections.heading(ui, "Finished", x, cy, x + width)
+			ui.beginGroup(x, cy, width)
 			for (entry in history.asReversed().take(8)) {
-				val h = 42f
-				ui.card(Box(x, cy, width, h))
+				val h = 46f
+				ui.row(Box(x, cy, width, h))
 				val ty = cy + (h - 13f) / 2f
 				ui.text(entry.name, x + pad, ty, 13f, MenuStyle.TEXT, UiText.Face.MEDIUM)
 				var tx = x + pad + ui.width(entry.name, 13f, UiText.Face.MEDIUM) + 10f
-				tx += ui.badge("T${entry.tier}", tx, cy + 10f) + 10f
+				tx += ui.badge("T${entry.tier}", tx, cy + 12f) + 10f
 				ui.text(entry.bossType, tx, ty, 12f, MenuStyle.MUTED)
 				val took = Sections.duration(entry.durationMillis)
 				val tookW = ui.width(took, 13f)
 				ui.text(took, x + width - pad - tookW, ty, 13f, MenuStyle.MUTED)
 				val got = "${entry.count}/${entry.orderedOrCount}"
 				ui.text(got, x + width - pad - tookW - 24f - ui.width(got, 13f), ty, 13f, MenuStyle.TEXT)
-				cy += h + 2f
+				cy += h
 			}
+			ui.endGroup(cy)
 		}
 		return cy - y
 	}
@@ -150,7 +154,7 @@ class CarrySection : ManagerSection("Carries") {
 
 	private fun drawVoidgloom(x: Float, y: Float, width: Float): Float {
 		var cy = y
-		val pad = 18f
+		val pad = 20f
 		val suggestions = lobbyMatches()
 		val addH = 18f + 22f + 34f + 18f + if (suggestions.isEmpty()) 0f else 8f + 24f
 		ui.card(Box(x, cy, width, addH))
@@ -176,22 +180,25 @@ class CarrySection : ManagerSection("Carries") {
 				sx += ui.chip(sx, sy, player, false) { name.set(player) } + 6f
 			}
 		}
-		cy += addH + 14f
+		cy += addH + Sections.HEADING_GAP
 
 		val carries = CarryManager.carries
+		cy += Sections.heading(ui, "Carries (${carries.size})", x, cy, x + width)
 		if (carries.isEmpty()) {
-			ui.text("No carries yet.", x + 2f, cy + 4f, 13f, MenuStyle.MUTED)
-			return cy + 24f - y
+			ui.text("No carries yet.", x + 2f, cy, 13f, MenuStyle.MUTED)
+			return cy + 20f - y
 		}
-		for (carry in carries.toList()) cy += drawCarry(carry, x, cy, width) + 2f
+		ui.beginGroup(x, cy, width)
+		for (carry in carries.toList()) cy += drawCarry(carry, x, cy, width)
+		ui.endGroup(cy)
 		return cy - y
 	}
 
 	private fun drawCarry(carry: Carry, x: Float, y: Float, width: Float): Float {
-		val h = 62f
-		ui.card(Box(x, y, width, h))
-		val pad = 18f
-		val top = y + 12f
+		val h = 66f
+		ui.row(Box(x, y, width, h), key = carry)
+		val pad = 20f
+		val top = y + 14f
 
 		ui.text(carry.name, x + pad, top + 2f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
 		ui.badge("T${carry.tier}", x + pad + ui.width(carry.name, 14f, UiText.Face.MEDIUM) + 10f, top - 2f)

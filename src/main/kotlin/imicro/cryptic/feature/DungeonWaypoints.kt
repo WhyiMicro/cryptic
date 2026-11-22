@@ -319,7 +319,7 @@ object DungeonWaypoints {
 		if (initialized) return
 		initialized = true
 		WaypointPacks.load()
-		Hud.register(EditorElement())
+		Hud.register(EditorElement(), module, editMode)
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> found.clear() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> found.clear() }

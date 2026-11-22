@@ -76,7 +76,7 @@ object ClassAbilities {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(SheepElement())
+		Hud.register(SheepElement(), module, sheepTimer)
 	}
 
 	fun tick(client: Minecraft) {

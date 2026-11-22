@@ -55,11 +55,13 @@ class CrosshairSection : ManagerSection("Editor") {
 		val sideX = x + canvasCard + 12f
 		val sideW = width - canvasCard - 12f
 		var sy = cy
-		sy += drawPalette(sideX, sy, sideW) + 2f
-		sy += drawTools(sideX, sy, sideW) + 2f
-		sy += drawSizes(sideX, sy, sideW) + 2f
+		ui.beginGroup(sideX, sy, sideW)
+		sy += drawPalette(sideX, sy, sideW)
+		sy += drawTools(sideX, sy, sideW)
+		sy += drawSizes(sideX, sy, sideW)
 		sy += drawPresets(sideX, sy, sideW)
-		cy += max(canvasCard, sy - cy) + 12f
+		ui.endGroup(sy)
+		cy += max(canvasCard, sy - cy) + 14f
 
 		cy += drawPreview(x, cy, width)
 		return cy - y
@@ -106,13 +108,13 @@ class CrosshairSection : ManagerSection("Editor") {
 	}
 
 	private fun drawPalette(x: Float, y: Float, width: Float): Float {
-		val h = 76f
-		ui.card(Box(x, y, width, h))
-		ui.text("Colour", x + 18f, y + 12f, 14f, MenuStyle.TEXT)
-		ui.text("Click the chosen one again to change it", x + width - 18f - ui.width("Click the chosen one again to change it", 12f), y + 13f, 12f, MenuStyle.MUTED)
+		val h = 80f
+		ui.row(Box(x, y, width, h))
+		ui.text("Colour", x + 18f, y + 14f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
+		ui.text("Click the chosen one again to change it", x + width - 18f - ui.width("Click the chosen one again to change it", 12f), y + 15f, 12f, MenuStyle.MUTED)
 		val swatch = 30f
 		var sx = x + 18f
-		val sy = y + 36f
+		val sy = y + 38f
 		for (index in 1..CrosshairEditor.PALETTE_SIZE) {
 			val box = Box(sx, sy, swatch, swatch)
 			val selected = colour == index
@@ -131,8 +133,8 @@ class CrosshairSection : ManagerSection("Editor") {
 
 	private fun drawTools(x: Float, y: Float, width: Float): Float {
 		val h = 64f
-		ui.card(Box(x, y, width, h))
-		ui.text("Tools", x + 18f, y + (h - 14f) / 2f, 14f, MenuStyle.TEXT)
+		ui.row(Box(x, y, width, h))
+		ui.text("Tools", x + 18f, y + (h - 14f) / 2f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
 		var bx = x + 120f
 		val by = y + (h - 32f) / 2f
 		bx += tool(bx, by, PENCIL, !fillTool) { fillTool = false } + 6f
@@ -165,8 +167,8 @@ class CrosshairSection : ManagerSection("Editor") {
 
 	private fun drawSizes(x: Float, y: Float, width: Float): Float {
 		val h = 58f
-		ui.card(Box(x, y, width, h))
-		ui.text("Canvas", x + 18f, y + (h - 14f) / 2f, 14f, MenuStyle.TEXT)
+		ui.row(Box(x, y, width, h))
+		ui.text("Canvas", x + 18f, y + (h - 14f) / 2f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
 		var cx = x + 120f
 		for (size in CrosshairGrid.SIZES) {
 			cx += ui.chip(cx, y + (h - 24f) / 2f, "${size}x$size", grid.size == size) {
@@ -184,8 +186,8 @@ class CrosshairSection : ManagerSection("Editor") {
 		val labels = CrosshairPreset.entries.map { it.title }
 		val chipsW = width - 120f - 18f
 		val h = max(58f, ui.chipsHeight(chipsW, labels) + 34f)
-		ui.card(Box(x, y, width, h))
-		ui.text("Presets", x + 18f, y + 17f, 14f, MenuStyle.TEXT)
+		ui.row(Box(x, y, width, h))
+		ui.text("Presets", x + 18f, y + 17f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
 		ui.chips(x + 120f, y + 17f, chipsW, CrosshairPreset.entries, { it.title }, { false }) { preset ->
 			pushUndo()
 			preset.paint(grid, colour)
@@ -197,7 +199,7 @@ class CrosshairSection : ManagerSection("Editor") {
 	private fun drawPreview(x: Float, y: Float, width: Float): Float {
 		val h = 150f
 		ui.card(Box(x, y, width, h))
-		ui.text("In game", x + 18f, y + 12f, 14f, MenuStyle.TEXT)
+		ui.text("In game", x + 18f, y + 12f, 14f, MenuStyle.TEXT, UiText.Face.MEDIUM)
 		val boxY = y + 36f
 		val boxH = h - 50f
 		val half = (width - 36f - 10f) / 2f

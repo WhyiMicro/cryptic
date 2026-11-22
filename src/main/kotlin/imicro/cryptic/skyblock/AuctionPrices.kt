@@ -113,10 +113,14 @@ object AuctionPrices {
 	 */
 	fun key(stack: ItemStack): String? {
 		if (stack.isEmpty) return null
-		val data = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag()
+		return key(stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag(), stack.hoverName.string)
+	}
+
+	/** The NEU key from an item's SkyBlock data ("ExtraAttributes") and its name. */
+	fun key(data: CompoundTag, name: String): String? {
 		val id = data.getString("id").orElse("").ifEmpty { return null }
 		return when (id) {
-			"PET" -> petKey(data, stack.hoverName.string)
+			"PET" -> petKey(data, name)
 			"ENCHANTED_BOOK" -> data.getCompoundOrEmpty("enchantments").single()?.let { (name, level) -> "ENCHANTED_BOOK-${name.uppercase(Locale.ROOT)}-$level" } ?: id
 			"RUNE", "UNIQUE_RUNE" -> data.getCompoundOrEmpty("runes").single()?.let { (name, level) -> "RUNE-${name.uppercase(Locale.ROOT)}-$level" } ?: id
 			"NEW_YEAR_CAKE" -> data.getIntOr("new_years_cake", 0).takeIf { it > 0 }?.let { "NEW_YEAR_CAKE-$it" } ?: id

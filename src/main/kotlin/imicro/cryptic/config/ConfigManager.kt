@@ -408,8 +408,10 @@ object ConfigManager {
         mergeRetiredModules(modules)
         migrateTerminatorOnly(modules)
         migrateFireFreeze(modules)
+        migrateFireVeil(modules)
         migrateSuggestBuy(modules)
         migrateFlipHud(modules)
+        migrateReminders(modules)
         ModuleRegistry.byId.forEach { (id, module) ->
             val value = modules.objectOrNull(id) ?: return@forEach
             if (module.supportsToggle) value.boolean("enabled")?.let { module.enabled = it }
@@ -464,7 +466,42 @@ object ConfigManager {
             RetiredModule("arrow_hit_sound", enabledAs = "hit_sound", prefix = "hit_sound_"),
             RetiredModule("arrow_hitboxes", enabledAs = "arrow_hitboxes", prefix = "hitbox_"),
         ),
+        "movement" to listOf(
+            RetiredModule("auto_sprint", enabledAs = "auto_sprint", prefix = ""),
+            RetiredModule("no_jump_delay", enabledAs = "no_jump_delay", prefix = ""),
+        ),
     )
+
+    /**
+     * Cookie Reminder became Reminders, and took Rift's Ubik's Cube reminder with it. Whoever had
+     * only the Rift on keeps the Ubik reminder, without the buffs suddenly speaking up.
+     */
+    private fun migrateReminders(modules: JsonObject) {
+        if (modules.has("reminders")) return
+        val cookie = modules.objectOrNull("cookie_reminder")
+        val rift = modules.objectOrNull("rift")
+        if (cookie == null && rift == null) return
+        modules.remove("cookie_reminder")
+        val settings = cookie?.objectOrNull("settings")?.deepCopy() ?: JsonObject()
+        val riftSettings = rift?.objectOrNull("settings")
+        for (key in listOf("ubik_reminder", "ubik_repeat", "ubik_outside")) {
+            riftSettings?.remove(key)?.let { settings.add(key, it) }
+        }
+        // The God Potion used to start off.
+        if (!settings.has("god_potion")) settings.addProperty("god_potion", false)
+        val cookieOn = cookie?.boolean("enabled") ?: false
+        val ubikOn = (rift?.boolean("enabled") ?: false) && (settings.boolean("ubik_reminder") ?: true)
+        if (!cookieOn) {
+            settings.addProperty("cookie", false)
+            settings.addProperty("god_potion", false)
+            if (!ubikOn) settings.addProperty("ubik_reminder", false)
+        }
+        if (cookieOn && !(rift?.boolean("enabled") ?: false)) settings.addProperty("ubik_reminder", false)
+        modules.add("reminders", JsonObject().also {
+            it.addProperty("enabled", cookieOn || ubikOn)
+            it.add("settings", settings)
+        })
+    }
 
     /** Bazaar's Flips HUD, which moved to Flipping: on there for whoever had it on. */
     private fun migrateFlipHud(modules: JsonObject) {
@@ -484,6 +521,40 @@ object ConfigManager {
         val nucleus = modules.objectOrNull("nucleus_qol") ?: JsonObject().also { modules.add("nucleus_qol", it) }
         val settings = nucleus.objectOrNull("settings") ?: JsonObject().also { nucleus.add("settings", it) }
         if (!settings.has("suggest_buy")) settings.addProperty("suggest_buy", on)
+    }
+
+    /**
+     * Slayer Features' Fire Veil settings, which moved to Combat. They only ran with Slayer Features
+     * on, so with it off they arrive off; a new Combat card is on only for them.
+     */
+    private fun migrateFireVeil(modules: JsonObject) {
+        val slayer = modules.objectOrNull("slayer_features") ?: return
+        val old = slayer.objectOrNull("settings") ?: return
+        val keys = listOf("fire_veil", "veil_style", "veil_color", "veil_width", "veil_through_walls", "hide_veil_flames")
+        if (keys.none { old.has(it) }) return
+        val moved = JsonObject()
+        keys.forEach { key -> old.remove(key)?.let { moved.add(key, it) } }
+        old.remove("veil_section")
+        val slayerOn = slayer.boolean("enabled") ?: false
+        if (!slayerOn) {
+            moved.addProperty("fire_veil", false)
+            moved.addProperty("hide_veil_flames", false)
+        }
+        val existing = modules.objectOrNull("combat")
+        if (existing == null) {
+            val veilOn = (moved.boolean("fire_veil") ?: false) || (moved.boolean("hide_veil_flames") ?: true)
+            if (!slayerOn || !veilOn) return
+            moved.addProperty("timer_hud", false)
+            moved.addProperty("expiry_warning", false)
+            moved.addProperty("pearl_trajectory", false)
+            modules.add("combat", JsonObject().also {
+                it.addProperty("enabled", true)
+                it.add("settings", moved)
+            })
+            return
+        }
+        val settings = existing.objectOrNull("settings") ?: JsonObject().also { existing.add("settings", it) }
+        moved.entrySet().forEach { (key, value) -> if (!settings.has(key)) settings.add(key, value) }
     }
 
     /** Smart Tick Timer's Fire Freeze switch, which moved to F3/M3 Features with its own element. */

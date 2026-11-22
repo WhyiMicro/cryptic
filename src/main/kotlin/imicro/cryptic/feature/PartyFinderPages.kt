@@ -616,6 +616,7 @@ object PartyFinderPages {
 	@JvmStatic
 	fun render(screen: Screen, graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int): Boolean {
 		val page = coveredPage(screen) ?: return false
+		if (client.window.screenHeight <= 0 || screen.width <= 0 || screen.height <= 0) return true
 		// The menu font is baked for the real pixel size; set here too, as the menu may not have opened yet.
 		UiText.pixelsPerUnit = client.window.screenHeight / 1080f
 		if (pageOf(screen) == page) {

@@ -166,7 +166,7 @@ object TwitchChat {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(TwitchElement())
+		Hud.register(TwitchElement(), module, showHud)
 	}
 
 	fun tick() {

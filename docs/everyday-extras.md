@@ -55,8 +55,15 @@ add more from **Add a line** underneath (a blank line as often as you like).
   bank is the exception: the last bank the tab list showed is kept for each
   SkyBlock profile, so it shows on every island, and updates whenever the tab
   list shows it again.
-- Cryptic's own: the real time, blank lines, and **Your footer**, the text set
-  on the Text tab.
+- Cryptic's own: the real time, **Rift time** (the time left in the Rift, from
+  the action bar; grey while it stands still), blank lines, and **Your
+  footer**, the text set on the Text tab.
+
+The **slayer quest** stays up for the whole quest, not only while Hypixel's
+sidebar shows it: from the tab list's Slayer widget when that's on, else as last
+seen, and it goes when the quest is completed, failed or cancelled. In the Rift,
+the island line reads Rift Dimension with the area under it, and the bank,
+gems, soulflow, pet, mayor and god potion lines are left out.
 
 **Copying CustomScoreboard**: if meowdding's CustomScoreboard is (or was)
 installed, its settings are copied in once on their own: its lines in its order,
@@ -81,6 +88,98 @@ smooth rounded corners, a border with its colour and width, and a thin top line.
 
 **Behaviour tab**: **Only on SkyBlock** (on by default) leaves every other
 sidebar alone; hide it while chat is open, with F3, or while the tab list shows.
+
+## Slayer boss stats and Boss HUD (Slayer Features, General tab)
+
+**Stats on boss** puts a slayer boss's stage, what it's doing, its health and
+its fight's time on the boss itself. **Whose bosses** picks which get it: your
+own, carried players' (both on at first) and everyone else's. **Boss HUD** shows the same for your
+own boss (or, with no boss of your own up, the nearest carried player's) as a
+small HUD element, with a health bar and the time left before it despawns;
+place it with `/cryptic hud`.
+
+- Voidgloom: stage 1/3 to 3/3 (1/6 to 6/6 for tier IV) by health, the hits
+  shield, and the laser's time left.
+- Inferno Demonlord: stage 1/2 to 2/2 (1/3 to 3/3 for tiers III and IV) by
+  health, the attunement and its hits, IMMUNE while its demons are up, and the
+  nearest fire pillar.
+- Tarantula: 1/2 for the Broodfather V and 2/2 for the Conjoined Brood, timed
+  as one fight; "Kill the hatchlings" while yours can't be hurt.
+- Sven: "Pups!" while it calls its pups and can't be hurt.
+- Revenant: the Atoned Horror's "Boom!".
+- Riftstalker: the health left until it can be staked (20%), "Steak!" once it
+  can, Twinclaws, and Mania's time left.
+
+**Health colour** picks whether a staged boss's health goes green to red over
+each stage or over the whole fight.
+
+**Highlight your boss** marks your own boss in the colour beside it. Its "⋯"
+picks the **Style**: Glow (the game's own outline, always through walls),
+Outline, Fill or Fill + Outline, a box around the boss with its own fill colour,
+line width and **Through walls**. On the Riftstalker tab, **Stakeable colour**
+switches the highlight to another colour once your Bloodfiend is under 20%
+health and can be staked.
+
+Also on the Riftstalker tab:
+
+- **Hide boss particles** hides the dripping lava, purple spell and portal
+  particles around Bloodfiends, the hearts flying between you and yours, and the
+  dark smoke puffs anywhere within 16 blocks of yours.
+- **Impel display** (on by default) replaces Hypixel's Impel title with a
+  bigger one: the order flashing, `↑ CLICK UP ↑` or `↓ CLICK DOWN ↓` for the
+  clicks, and the seconds left under it. It's a HUD element, so move or scale it
+  with `/cryptic hud`. Orders the Mania helper answers and hides aren't shown.
+- **Line to Ichor** draws a line (red, or the colour beside it) from your tier
+  V Bloodfiend to the Blood Ichor it spawned. Only the Ichor that appears as
+  your boss's `ICHOR` countdown runs out counts, so another boss's never does.
+- **Twinclaws path** draws a line from your Bloodfiend towards you, at your
+  chest height (so it stays level with you while the boss floats in Mania),
+  while it counts down `TWINCLAWS`; when the count ends, the line stays where
+  it was for a moment, showing where the claws go.
+- **Stonewrath lock-on** puts a box at your feet where your Bloodfiend locked
+  on for Stonewrath. The `STONEWRATH` count runs down to the boss rising; it
+  then hangs in the air until three quick, rising note-block plings play, and
+  that's where you stood then. The box goes once the boss is back down to the
+  height it rose from (or after eight seconds, whatever happens).
+
+## Slayer automation (Slayer Features, Cheat)
+
+Each of these finds its item in your hotbar, uses it and selects the slot you
+were on again the tick after. Nothing is used while a menu is open.
+
+- **Auto stake** (Riftstalker tab): a hit on your Bloodfiend, or on a thrall,
+  splatter or fledgling, at 20% health or less goes out with the Steak Stake,
+  and **Swap back after** (300 ms at first) you're back on what you held. Hits
+  in between are the stake's too. A mob still alive and stakeable after that
+  gets the stake again on your next hit, to finish it. The first hit after a
+  stake kill also takes the stake out, for the Sharp Steak Stake's Bloodcrave.
+  **Double hit without Bloodcrave** (on by default): when no Bloodcrave is
+  stored, the stake stays out for a second hit once the mob can be hit again
+  (about half a second), so the kill is the stake's and stores one for the next
+  kill. It goes back after 1.2 seconds even without that second hit.
+- **Auto Holy Ice**: uses Holy Ice when the Twinclaws countdown over your boss
+  (`TWINCLAWS 0.6s`) reaches **Use at**. The ice protects for 1.5 seconds, so
+  the claws land inside it.
+- **Auto heal**: while your Bloodfiend is up, eats a Healing Melon when your
+  health drops below the share you set.
+- **Mania helper**: jumps or sneaks for your Bloodfiend's Impel title
+  (`Impel: SNEAK 1.1s`), the **Delay** you set after it first shows (2.5
+  seconds are given at tier III, two after). **Impel prompts** hides the jump
+  and sneak titles it answers (the default), every Impel title, or none.
+- **Auto Killer Spring**: while you look at the Killer Spring, clicks it left or
+  right as it asks, or alternately when it doesn't say.
+- **Auto tuba**: when your Bloodfiend spawns, blows the Weirder or Weird Tuba,
+  then again every **Every** seconds while it's up. That's 30 at first: the
+  Weirder Tuba's buff lasts 30 seconds and its cooldown is 20, so blowing it as
+  the buff ends saves the most mana.
+
+Thralls, splatters and fledglings are found by those words in their names, Impel by its
+title, and the Killer Spring by its head. If one isn't picked up, run
+`/cryptic debug rift` while looking at it (or just after the prompt) and send
+the output.
+
+The HUD editor (`/cryptic hud`) has a **Slayer** tab with the slayer elements:
+Slayer Boss, Impel Display, Slayer XP and the Carry Counter.
 
 ## Slayer XP overlay (Slayer Features, General tab)
 
@@ -190,6 +289,38 @@ rather than 16, and an underline's outline is a single rectangle. Even so,
 Square makes building text about three times the work of plain text, and
 Rounded about twice.
 
+## Chunk Cache (Render tab)
+
+Keeps drawing the chunks Hypixel has unloaded, out to your own render distance
+instead of the server's. Walk away from a place and it stays on the horizon;
+without the module the game forgets a chunk the moment the server does.
+
+A chunk is copied as the server lets go of it. While it is in view it stands
+there as a cached chunk; once it is out of view only its bytes are kept,
+deflated, and it is unpacked again when you come back within range. A chunk is
+replaced by the server's own as soon as that arrives, so what you stand in and
+interact with is always the real thing. Cached chunks show the blocks as they
+were when you last saw them, without chests, skulls, signs or mobs.
+
+- **Keep across lobbies** (on) keeps an island's chunks until you leave
+  Hypixel, so swapping lobby or warping back shows the whole island at once.
+  Its "⋯" lists the islands this applies to: the ones built the same on every
+  server. Anything else (dungeons, the Crystal Hollows, private islands, the
+  Garden, other game modes) is only kept for as long as you stay on that
+  server. Off, every island is dropped with the server.
+- **Distance** caps how far cached chunks are drawn. They never reach further
+  than your render distance, which Hypixel otherwise cuts short.
+- **Memory limit** is the most memory spent on chunks out of view. Past it,
+  islands you have left go first, the longest gone first, and then the chunks
+  furthest from you.
+- **Clear cache** forgets everything.
+
+F3's chunk line ends with `Cryptic: F` (cached chunks shown) and `S` (chunks
+stored). Raising the render distance now costs frames on Hypixel, as far
+chunks are really drawn. With Bobby installed the module stays off, since both
+do the same job with the same hooks. It does nothing in a single-player world,
+which already sends as far as you render.
+
 ## Anti-AFK (General tab, Cheat)
 
 Once you've been idle a while, it does something small now and then so Hypixel
@@ -239,6 +370,17 @@ renderer.
 - **Range** (32 blocks), **Coal color** and **Fill** (25%): the boxes drawn
   round each target. Gemstones are boxed in their own colour.
 
+## Movement (General tab)
+
+Auto Sprint and No Jump Delay, once two modules, are switches in one card.
+Profiles that had either on carry over.
+
+- **Auto sprint** (on by default): holds the sprint key for you. The game's
+  own rules still apply, so you don't sprint while sneaking, hungry, blind,
+  using an item or walking backwards.
+- **No jump delay** (Semi-legit): jump again the moment you land, instead of
+  vanilla's ten-tick wait.
+
 ## Combat (General tab)
 
 - **Flare & orb timer**: a HUD element with the flare and the power orb you are
@@ -246,14 +388,24 @@ renderer.
   each kind in range is shown: flares reach 40 blocks, Radiant, Mana Flux and
   Overflux 18 and Plasmaflux 20. Under its "⋯", **Flares** and **Power orbs**
   turn each row off. Move it with `/cryptic hud`.
-- **Warn when it runs out**: one notification per flare or orb, **Warn ahead**
-  (10 s) before it ends; at 0 it says when it has ended. With Notifications off
-  it is a chat line instead.
+- **Warn when it runs out**: one notification for the flare or orb you placed
+  yourself (not other players'), **Warn ahead** (10 s) before it ends; at 0 it
+  says when it has ended. Yours is the one that appears next to you just after
+  you use the item, or after "Your previous ... was removed!". Replacing it, or
+  it disappearing because you went too far away, doesn't count as running out. With Notifications off it is a chat line
+  instead.
 
 - **Pearl trajectory** (on with the module): while you hold an ender pearl, a
   line shows where it would fly and a box where it would land. If a mob is in
   the way, the line stops there and the mob is outlined. Under its "⋯", the
   **Line** and **Mob it hits** colours.
+
+- **Fire Veil overlay** (off by default): a 3.5-block ring round you for the
+  five seconds the Fire Veil Wand burns, on any island. Under its "⋯",
+  **Style** (Circle or a low Wall), **Colour**, **Line width** and **Through
+  walls**.
+- **Hide Fire Veil flames** (on): hides the wand's flame particles near you for
+  nine seconds from the cast.
 
 A flare's three minutes are counted from when your game first sees it, so one
 that was up before you arrived reads longer than it has.
@@ -277,6 +429,35 @@ don't stop the line, since SkyBlock's arrows pass through them; Hypixel's
 player-shaped mobs do. `/cryptic debug bow` checks the prediction against real
 shots.
 
+## Reminders (General tab)
+
+Was Cookie Reminder. It now holds every reminder, as notifications:
+
+- **Buffs:** the Booster Cookie and the God Potion, as before: running low,
+  none running, and a countdown through the last minute.
+- **Rift:** Ubik's Cube, moved here from the Rift module (his game's tips stay
+  there). Its repeat and "outside the Rift" options are under its "⋯".
+- **Events:** the **New Year Cake** (on by default) reminds you to grab the free
+  cake from the Baker during the New Year Celebration, again every 10 minutes
+  until a cake of that year is in your inventory. The rest start off: the
+  **Dark Auction**, **Jacob's Farming Contest**, the **Traveling Zoo**, the
+  **Spooky Festival**, the **Season of Jerry**, **Hoppity's Hunt** and the
+  **Mayor election** (booth opens and closes). Each is said **Warn ahead**
+  minutes before it starts, and again when it does.
+
+Times come from SkyBlock's calendar, worked out from the clock, so nothing is
+fetched. Fishing Festivals and Fallen Stars no longer keep to the calendar, so
+they are left out.
+`/cryptic debug calendar` prints the SkyBlock date and when each event is next.
+
+## Horsezooka (Rift, General tab)
+
+- **Hide Horsezooka** hides every horse while you hold a Horsezooka. Its "⋯"
+  has **Opacity**: 0% (the default) leaves them undrawn, more draws them
+  see-through.
+- **Mute Horsezooka** silences horse sounds, the firework launch and the ghast
+  screech while you hold one.
+
 ## Flipping (General tab)
 
 Bazaar flipping: buy with a buy order, sell with a sell offer, keep the
@@ -292,6 +473,34 @@ Bazaar data; nothing about you is sent anywhere, and every click is yours.
   within **Fill within** (from the week's instant buys and sells). Hover a row
   for the numbers; click it to open the product and have the guide take it.
   Enchanted books, essences and shards are left out.
+- **Flips shown**: which flips the finder lists and the guide picks. The
+  panel's tabs (Orders, NPC, Shops, Crafts) change it too.
+  - **Order flips**: the above.
+  - **NPC flips**: a buy order under what NPCs pay for the item, then a sale
+    to an NPC. What NPCs pay doesn't move, so only the buy order has to fill;
+    the size goes by the week's instant sells. The guide has you place and
+    claim the order, then sell at any NPC shop or the Trades menu; in a shop
+    it outlines the items to click. Sales count against Hypixel's 500M coins
+    a day, which the tooltip shows what's left of.
+  - **Shop flips**: buy from an NPC's shop, then a sell offer on the Bazaar.
+    NPCs sell 640 of an item a day. The guide names the NPC and where it is,
+    outlines the item in its shop, and once you close the shop walks you
+    through the sell offer. Shop prices ship with the mod and are put right
+    by what a shop's own menu shows whenever you open one.
+  - **Craft flips**: buy orders for a recipe's ingredients, craft, then a sell
+    offer for what's made. Only recipes made wholly of Bazaar products count
+    (314 of them). A flip is sized in whole crafts, to what your budget buys,
+    what each ingredient's trading allows, and what your inventory holds, as
+    the ingredients have to be on you. The guide places one buy order per
+    ingredient, has you claim them, then shows `/craft`; in the crafting menu
+    it outlines the product in the quick-craft slots. Once the product is on
+    you it walks you through the sell offer. The tooltip lists the ingredients
+    and, where the recipe needs unlocking, what it needs ("Diamond VIII");
+    Cryptic can't tell whether you have it. What the ingredients cost carries
+    over to the product, so the sale counts in the Flips HUD's profit. A
+    product you already carry isn't offered.
+  - Purchases from NPCs and sales to them are read from chat ("You bought",
+    "You sold") and count in the Flips HUD's profit like Bazaar trades.
 - **Flips at once** (4), **Budget** (80% of your purse, split between the free
   flips), **Fill within** (30 min) and **Largest margin** (35%: wider gaps are
   usually a price about to move) decide what the finder offers.
@@ -341,6 +550,64 @@ are a ranking, not a promise: prices move, and a flip can end at a loss.
 - **Auction House**: **Reopen after a failed buy** (on by default): when someone
   else buys an item first, Hypixel closes the menu and refunds the escrow; this
   opens `/ah` and presses the Auctions Browser (the gold block) for you.
+- **Auction House**: a **Watch list** (its own tab on the module's page, or
+  `/cryptic ahwatch`). Add items with the most you'd pay (`800m`, `1.5b`,
+  `250k`, or empty for any price) and whether BIN only; when one is put up for
+  sale at or under that, you get a notification, and with **Also in chat** a
+  line with an **[Open]** that runs `/viewauction` for it. A name the items
+  list knows (`Hyperion`, or `Pure Black Dye` and other dyes and skins, whose
+  names come from the NEU item repo) is matched by its ID, so reforges and stars don't
+  matter; anything else matches listings whose name contains it. **Watch
+  hovered item** (a key, behind **Notify on new listings**'s "⋯") puts the item
+  under the mouse in any menu on the list, or takes it off; a pet is watched at
+  every level. Hypixel's newest auctions are read about once a minute (about
+  1 MB each time), only while something is watched and you're on Hypixel. Your
+  own auctions are never reported. Listings that went up while you were away
+  (the game closed, another server, or more than five minutes without a read)
+  are reported when you're back: the first read after a gap goes through every
+  page of the Auction House once (about 40 pages, some 50 MB, read a page at a time), and a
+  notification says how many went up meanwhile. Only auctions started after the
+  watch was added count. Each auction is told about once, even across restarts;
+  what was already told is kept in `config/cryptic/auction-watch-seen.json`.
+
+  **Filters** narrow a watch down, and all of them must match. Each is
+  `field:condition`, typed into the filter box (suggestions show as you type)
+  or added after the item in the command. Values complete from the items list
+  in both: `dye:DYE_PURE` offers `DYE_PURE_BLACK`, and `skin:`, `pet_skin:`,
+  `pet_item:`, `power_scroll:`, `ability_scroll:`, `id:` and `enchant.` work
+  the same way. Leave the item empty to watch any item that passes the
+  filters. Some examples:
+
+  - `skin:GOLDOR_CELESTIAL`: the Celestial Goldor skin applied
+  - `quality:50 tier:10`: a 50/50 drop from M7
+  - `stars:>=5`, `hot_potato:15`, `recombobulated:yes`, `reforge:!heroic`
+  - `enchant.ultimate_wise:5`, `gem.combat_0:PERFECT`, `rune.music:3`
+  - `pet_level:100 pet_item:PET_ITEM_TIER_BOOST candy:0`
+  - `ability_scroll:IMPLOSION_SCROLL,SHADOW_WARP_SCROLL,WITHER_SHIELD_SCROLL`
+  - `rarity:>=MYTHIC`, `price:1b-2b`, `seller:<name>`, `id:*_CELESTIAL`
+  - `attr.<key>` for anything else Hypixel stores on an item
+
+  Conditions take a value, several (`a,b`, any of them; for lists, all of
+  them), `>=n`, `<=n`, `>n`, `<n`, `n+`, a range `n-m`, `any`, `none`, `yes`
+  or `no`, with `!` in front for the opposite. Text takes `*` as a wildcard, and
+  a missing number counts as 0. `/cryptic ahwatch filters` lists every field,
+  grouped, with what each reads on hover. The fields cover what Coflnet's
+  filters do: stars, reforge, rarity, recombobulator, potato books, skins, dyes
+  and colours, enchantments (and `no_other_enchants`), attributes, runes, gem
+  slots and counts, dungeon quality, floor tier and requirement, pet level, held
+  item, skin, candy and exp, scrolls, enrichments, drill and rod parts, kill and
+  crop counters, cake and party hat years, raffle items, editions, creation
+  date, seller, count, price per unit and the item's name and description.
+
+  | Command | Does |
+  |---|---|
+  | `/cryptic ahwatch` | Opens the watch list |
+  | `/cryptic ahwatch add <item> [max price] [filters]` | Watches an item, e.g. `add Storm's Helmet skin:GOLDOR_CELESTIAL` |
+  | `/cryptic ahwatch remove <item>` | Stops watching it |
+  | `/cryptic ahwatch list` | Lists what you watch |
+  | `/cryptic ahwatch filters` | Lists every filter |
+
+  The list is kept in `config/cryptic/auction-watch.json`.
 - **Bazaar**: the reopen button for a cancelled order first looks for that
   product in your inventory and clicks it, which opens its Buy/Sell page
   directly (a cancelled sell offer's items come back to you). Searching the
@@ -364,10 +631,11 @@ are a ranking, not a promise: prices move, and a flip can end at a loss.
 
 **Answer prompts with a key** (Better Chat, off by default): when Hypixel asks
 something in chat with a clickable **[YES]** (or "Click here to accept"), or an
-NPC asks you to "Select an option", a notification shows the question and the
-answer; press the **Accept key** (Y to begin with) to give it. For NPCs that is
-their first option, the one that goes along with them ("[Sure thing,
-partner!]"). The key is only taken while a prompt waits, in the world or in a
+NPC offers an answer that agrees ("[Yes]", "[Sure thing, partner!]", "[Aye sure
+do!]"), a notification shows the question and the answer; press the **Accept
+key** (Y to begin with) to give it. NPC options that aren't a yes ("[Why?]",
+"[Enter Time Chamber]", questions about Cold) never pop up, so the key can't
+pick one by accident. The key is only taken while a prompt waits, in the world or in a
 chest, never while you type. Party and friend invites are left to Party
 Features' own notifications. With notifications off, the question comes as a
 chat line with a clickable answer instead.
@@ -378,3 +646,13 @@ chat line with a clickable answer instead.
 Hypixel sends when you join a server shows as "Profile ID: HIDDEN", for streams
 and screenshots. Any player's profile ID is hidden, and a click or hover on that
 line that would give the ID away is dropped. Only the chat window changes.
+
+## Better Chat: sound on mention
+
+**Sound on mention** (Better Chat, off by default): plays a sound when someone
+says your username in chat (party, guild, all chat, PMs). It matches whole
+words, ignoring case, and only in the message itself, so your own messages and
+lobby notices don't ring; a burst of mentions rings once. Behind its "⋯": the
+sound (Pling to begin with, or Custom for any sound id, resource packs
+included), volume, pitch, **Other names** (nicknames that count as you,
+separated by commas) and a button to hear it.

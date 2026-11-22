@@ -33,6 +33,10 @@ object SkyblockLocation {
 	val inCrystalHollows: Boolean
 		get() = (onSkyblock && area == "Crystal Hollows") || DebugOverrides.hollowsZone != null
 
+	/** Ticks since the last world change. The old lobby's Area row lingers for a moment after a warp. */
+	var ticksInWorld = 0
+		private set
+
 	fun tick(client: Minecraft, active: Boolean) {
 		if (!active || client.level == null) {
 			clear()
@@ -42,7 +46,9 @@ object SkyblockLocation {
 		if (client.level !== lastLevel) {
 			lastLevel = client.level
 			ticksUntilRefresh = 0
+			ticksInWorld = 0
 		}
+		ticksInWorld++
 		if (ticksUntilRefresh-- > 0) return
 		ticksUntilRefresh = REFRESH_INTERVAL_TICKS
 

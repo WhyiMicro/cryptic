@@ -221,7 +221,7 @@ object WitherDragons {
 		initialized = true
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
-		Hud.register(TimerElement())
+		Hud.register(TimerElement(), module)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> reset() }
 	}
 

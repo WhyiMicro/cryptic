@@ -127,6 +127,8 @@ object SlayerXp {
 
 		override val layer get() = SlayerFeatures.module.category
 
+		override val slayer get() = true
+
 		override fun isVisible(): Boolean =
 			SlayerFeatures.module.enabled && SlayerFeatures.xpOverlay.value && latest != null &&
 				(SkyblockLocation.onSkyblock || DebugOverrides.slayerAnywhere)

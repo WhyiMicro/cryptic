@@ -198,6 +198,11 @@ public abstract class AbstractContainerScreenMixin {
             return;
         }
 
+        if (imicro.cryptic.feature.AuctionWatch.handleKey((AbstractContainerScreen<?>) (Object) this, event.key())) {
+            info.setReturnValue(true);
+            return;
+        }
+
         // Before the hotbar keys: in the loadout menu, 1 to 0 put on a loadout.
         if (LoadoutManager.handleKeyPress((AbstractContainerScreen<?>) (Object) this, event.key())) {
             info.setReturnValue(true);

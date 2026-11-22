@@ -119,7 +119,7 @@ object SpiritBear {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(BearElement())
+		Hud.register(BearElement(), module, hud)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> reset() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> reset() }
 	}

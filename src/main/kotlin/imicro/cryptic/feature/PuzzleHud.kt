@@ -71,7 +71,7 @@ object PuzzleHud {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(PuzzleElement())
+		Hud.register(PuzzleElement(), module)
 	}
 
 	private class Row(val name: String, val mark: Char, val failedBy: String = "")

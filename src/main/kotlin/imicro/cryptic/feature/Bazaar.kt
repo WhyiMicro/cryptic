@@ -229,7 +229,7 @@ object Bazaar {
 		load()
 		loadDaily()
 		BazaarMarket.onUpdate = ::updateStatuses
-		Hud.register(OrdersElement())
+		Hud.register(OrdersElement(), module, ordersHud)
 		BazaarFlips.initialize()
 		ItemTooltipCallback.EVENT.register { stack, _, _, lines -> addTooltip(stack, lines) }
 	}
@@ -386,6 +386,7 @@ object Bazaar {
 			}
 			return
 		}
+		if (line.startsWith("You sold ") || line.startsWith("You bought ")) client.execute { BazaarFlips.onNpcLine(line) }
 		if (!line.startsWith("[Bazaar]")) return
 		client.execute { BazaarFlips.onBazaarLine(line) }
 		instant.find(line)?.let { match ->
@@ -867,64 +868,103 @@ object Bazaar {
 
 	// ---- The orders breakdown ------------------------------------------------------------------
 
-	private const val BREAKDOWN_GAP = 8
+	// The price history panel's look: same gap from the menu, padding and edge.
+	private const val BREAKDOWN_GAP = 6
+	private const val BREAKDOWN_PADDING = 6
 	private const val COLUMN_GAP = 12
 	private const val MIN_SCALE = 0.5f
-	private const val RULE_COLOR = 0x40FFFFFF
+	private const val RULE_COLOR = 0x30FFFFFF
+	private const val TOTAL_RULE_SPACE = 3
+	private const val ICON_BACK = 0x20FFFFFF
+	private const val ICON_ROW = 18
 
-	/** A line of the breakdown: words, and a value on the right; null words make a rule. */
-	private class Line(val left: String?, val right: String? = null)
+	/** A line of the breakdown: words, and a value on the right; null words make a rule, totals sit under a divider. */
+	private class Line(
+		val left: String?, val right: String? = null, val total: Boolean = false,
+		val icon: ItemStack? = null, val status: Status? = null,
+	)
 
 	/**
 	 * Right of the orders menu, the orders it shows now: each one's worth and the totals. A sell
 	 * offer counts whole, filled or not, since its coins are yours either way once it fills.
 	 */
 	private fun drawBreakdown(screen: AbstractContainerScreen<*>, accessor: ContainerScreenAccessor, graphics: GuiGraphicsExtractor) {
+		val icons = java.util.IdentityHashMap<Order, ItemStack>()
 		val shown = screen.menu.slots
 			.filter { it.container !is Inventory }
-			.mapNotNull { slot -> parsed.getOrPut(slot.item) { parseOrder(slot.item) ?: NOT_AN_ORDER }.takeIf { it !== NOT_AN_ORDER } }
+			.mapNotNull { slot ->
+				parsed.getOrPut(slot.item) { parseOrder(slot.item) ?: NOT_AN_ORDER }.takeIf { it !== NOT_AN_ORDER }?.also { icons[it] = slot.item }
+			}
 		if (shown.isEmpty()) return
 		val keep = 1 - tax.value / 100
 		val (sells, buys) = shown.partition { it.sell }
 		val lines = ArrayList<Line>()
-		// A square in the order's status colour, as its slot is tinted.
 		fun row(order: Order, worth: Double) =
-			Line("${statusFor(order).code}■ §7${order.amount}x ${named(order.name)}", "§6${short(worth)}")
+			Line("§7${order.amount}x ${named(order.name)}", "§6${short(worth)}", icon = icons[order], status = statusFor(order))
 		if (sells.isNotEmpty()) {
-			lines += Line("§7Sell offers")
+			lines += Line("§6Sell offers", "§8${sells.size}")
 			sells.forEach { lines += row(it, it.amount * it.price * keep) }
-			lines += Line("§fAll sold", "§6${short(sells.sumOf { it.amount * it.price * keep })}")
+			lines += Line("§fAll sold", "§6${short(sells.sumOf { it.amount * it.price * keep })}", total = true)
 		}
 		if (buys.isNotEmpty()) {
 			if (lines.isNotEmpty()) lines += Line(null)
-			lines += Line("§7Buy orders")
+			lines += Line("§6Buy orders", "§8${buys.size}")
 			buys.forEach { lines += row(it, it.amount * it.price) }
-			lines += Line("§fCost", "§6${short(buys.sumOf { it.amount * it.price })}")
+			lines += Line("§fCost", "§6${short(buys.sumOf { it.amount * it.price })}", total = true)
 		}
 
 		val font = client.font
-		val height = font.lineHeight + 2
+		val height = font.lineHeight + 3
+		fun heightOf(line: Line) = when {
+			line.icon != null -> ICON_ROW
+			line.total -> height + TOTAL_RULE_SPACE
+			else -> height
+		}
+		fun leftWidth(line: Line) = font.width(line.left ?: "") + if (line.icon != null) ICON_ROW + 2 else 0
 		val valued = lines.filter { it.right != null }
 		val width = maxOf(
-			lines.filter { it.right == null }.maxOfOrNull { font.width(it.left ?: "") } ?: 0,
-			(valued.maxOfOrNull { font.width(it.left!!) } ?: 0) + COLUMN_GAP + (valued.maxOfOrNull { font.width(it.right!!) } ?: 0),
+			lines.filter { it.right == null }.maxOfOrNull(::leftWidth) ?: 0,
+			(valued.maxOfOrNull(::leftWidth) ?: 0) + COLUMN_GAP + (valued.maxOfOrNull { font.width(it.right!!) } ?: 0),
 		)
+		val boxWidth = width + BREAKDOWN_PADDING * 2
+		val boxHeight = lines.sumOf(::heightOf) - 3 + BREAKDOWN_PADDING * 2
 		val right = accessor.`cryptic$leftPos`() + accessor.`cryptic$imageWidth`() + BREAKDOWN_GAP
 		val room = (graphics.guiWidth() - right - 2).toFloat()
-		val scale = if (width <= room) 1f else (room / width.coerceAtLeast(1)).coerceAtLeast(MIN_SCALE)
-		val y = accessor.`cryptic$topPos`() + accessor.`cryptic$imageHeight`() / 2f - (lines.size * height - 2) * scale / 2f
+		val scale = if (boxWidth <= room) 1f else (room / boxWidth).coerceAtLeast(MIN_SCALE)
+		val y = accessor.`cryptic$topPos`() + accessor.`cryptic$imageHeight`() / 2f - boxHeight * scale / 2f
 		val pose = graphics.pose()
 		pose.pushMatrix()
 		pose.translate(right.toFloat(), maxOf(2f, y))
 		pose.scale(scale, scale)
-		lines.forEachIndexed { i, line ->
-			val rowY = i * height
+		BazaarHistory.panelBox(graphics, 0, 0, boxWidth, boxHeight)
+		val x = BREAKDOWN_PADDING
+		var rowY = BREAKDOWN_PADDING
+		for (line in lines) {
+			val lineHeight = heightOf(line)
+			val top = rowY
+			rowY += lineHeight
 			if (line.left == null) {
-				graphics.fill(0, rowY + (height - 2) / 2, width, rowY + (height - 2) / 2 + 1, RULE_COLOR)
-				return@forEachIndexed
+				val ruleY = top + (height - 3) / 2
+				graphics.fill(1, ruleY, boxWidth - 1, ruleY + 1, RULE_COLOR)
+				continue
 			}
-			graphics.text(font, line.left, 0, rowY, -1)
-			line.right?.let { graphics.text(font, it, width - font.width(it), rowY, -1) }
+			var textX = x
+			var textY = top
+			if (line.total) {
+				graphics.fill(x, top, x + width, top + 1, RULE_COLOR)
+				textY += TOTAL_RULE_SPACE
+			}
+			line.icon?.let { icon ->
+				// Tinted in the order's status colour, as its slot is.
+				val status = line.status
+				val tint = if (status == null || status == Status.UNKNOWN) ICON_BACK else (0x50 shl 24) or status.color
+				graphics.fill(x, top - 1, x + ICON_ROW, top + ICON_ROW - 1, tint)
+				graphics.item(icon, x + 1, top)
+				textX += ICON_ROW + 3
+				textY += (ICON_ROW - font.lineHeight) / 2
+			}
+			graphics.text(font, line.left, textX, textY, -1)
+			line.right?.let { graphics.text(font, it, x + width - font.width(it), textY, -1) }
 		}
 		pose.popMatrix()
 	}
@@ -1025,5 +1065,5 @@ object Bazaar {
 
 	fun describe(): List<String> = listOf(
 		"Bazaar: ${BazaarMarket.products.size} products, updated ${(System.currentTimeMillis() - BazaarMarket.updatedAt) / 1000}s ago",
-	) + orders.map { "${it.kind} ${it.amount}x ${it.name} @ ${it.price}: ${statusFor(it).label} (id ${BazaarMarket.idForName(it.name) ?: "unknown"})" } + BazaarFlips.describe() + Flipping.describe()
+	) + orders.map { "${it.kind} ${it.amount}x ${it.name} @ ${it.price}: ${statusFor(it).label} (id ${BazaarMarket.idForName(it.name) ?: "unknown"})" } + BazaarFlips.describe() + Flipping.describe() + imicro.cryptic.skyblock.NpcShops.describe()
 }

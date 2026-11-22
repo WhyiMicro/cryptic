@@ -44,5 +44,6 @@ public abstract class ConnectionMixin {
         F7Qol.onServerTick();
         imicro.cryptic.feature.WitherDragons.onServerTick();
         ServerStats.onServerTick();
+        imicro.cryptic.feature.HollowsClock.onServerTick();
     }
 }

@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Slayer Features' Fade others: the model drawn the way vanilla draws an invisible mob a spectator
+ * Slayer Features' Fade others and the Rift's see-through Horsezooka horses: the model drawn the way vanilla draws an invisible mob a spectator
  * can see, at the chosen opacity, and without its layers (armour, eyes, held items), which would
  * stay solid.
  */
@@ -31,7 +31,13 @@ public abstract class LivingEntityRendererMixin {
     @Inject(method = SUBMIT, at = @At("HEAD"))
     private void cryptic$readFade(LivingEntityRenderState state, PoseStack poseStack, SubmitNodeCollector collector, CameraRenderState camera, CallbackInfo info) {
         // An invisible mob stays invisible; fading it would show it.
-        cryptic$fade = state.isInvisible ? -1 : SlayerFeatures.fadeAlpha(((EntityRenderStateHolder) state).cryptic$entity());
+        if (state.isInvisible) {
+            cryptic$fade = -1;
+            return;
+        }
+        net.minecraft.world.entity.Entity entity = ((EntityRenderStateHolder) state).cryptic$entity();
+        int fade = SlayerFeatures.fadeAlpha(entity);
+        cryptic$fade = fade >= 0 ? fade : imicro.cryptic.feature.Rift.horseAlpha(entity);
     }
 
     @ModifyVariable(method = SUBMIT, at = @At("STORE"), ordinal = 1)

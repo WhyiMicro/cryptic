@@ -2,8 +2,11 @@ package imicro.cryptic.feature
 
 import imicro.cryptic.dungeon.DungeonLocation
 import imicro.cryptic.mixin.AbstractArrowAccessor
+import imicro.cryptic.gui.ColorModuleSetting
+import imicro.cryptic.gui.DropdownModuleSetting
 import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
+import imicro.cryptic.gui.withMore
 import imicro.cryptic.gui.SectionModuleSetting
 import imicro.cryptic.gui.SliderModuleSetting
 import imicro.cryptic.gui.ToggleModuleSetting
@@ -31,7 +34,8 @@ import net.minecraft.world.item.Items
 /**
  * Stops drawing things a dungeon run doesn't need. Mostly works on packets (an entity never added
  * costs nothing); the rest is decided as render states are built. Everything is off by default.
- * From Odin's and NoammAddons' Render Optimizer, with ideas from NoFrills' No Render.
+ * From Odin's and NoammAddons' Render Optimizer, with ideas from NoFrills' No Render. The
+ * Crimson Isle fog ideas are Skyblocker's and Devonian's (facts only; the code is Cryptic's own).
  */
 object RenderOptimizer {
 	/** Hypixel's skull textures, the only way to identify these armour stands. Odin's three. */
@@ -56,6 +60,7 @@ object RenderOptimizer {
 	private val entitiesSection = SectionModuleSetting("entities_section", "Entities")
 	private val abilitiesSection = SectionModuleSetting("abilities_section", "Abilities")
 	private val fireSection = SectionModuleSetting("fire_section", "Fire")
+	private val fogSection = SectionModuleSetting("fog_section", "Fog and sky")
 	private val worldSection = SectionModuleSetting("world_section", "World")
 	private val screenSection = SectionModuleSetting("screen_section", "Screen")
 
@@ -250,6 +255,54 @@ object RenderOptimizer {
 	)
 
 	@JvmField
+	val fogWhere = DropdownModuleSetting(
+		id = "fog_where",
+		label = "Where",
+		options = listOf("Everywhere", "Crimson Isle only"),
+		description = "Clears the fog on every island, or only on the Crimson Isle, where it is thickest.",
+	)
+
+	@JvmField
+	val keepEdgeFade = ToggleModuleSetting(
+		id = "keep_edge_fade",
+		label = "Keep edge fade",
+		defaultValue = true,
+		description = "Still fades the world out at your render distance, so it doesn't stop at a hard line. " +
+			"Chunk Cache moves that edge out to your full render distance.",
+	)
+
+	@JvmField
+	val removeFog = ToggleModuleSetting(
+		id = "remove_fog",
+		label = "Remove fog",
+		description = "Clears the haze over far blocks: the Crimson Isle's thick fog, rain and boss fog. " +
+			"Water, lava and blindness keep theirs.",
+	).withMore(fogWhere, keepEdgeFade)
+
+	@JvmField
+	val crimsonNoRed = ToggleModuleSetting(
+		id = "crimson_no_red",
+		label = "No red on the Crimson Isle",
+		description = "Night vision brightens the Crimson Isle's dark fog and sky to a glaring red. " +
+			"This paints them the colour beside it instead.",
+	)
+
+	@JvmField
+	val crimsonSkyColour = ColorModuleSetting(
+		id = "crimson_sky_colour",
+		label = "Sky colour",
+		defaultRgb = 0x3C4250,
+		inlineWith = crimsonNoRed,
+	)
+
+	@JvmField
+	val hideAmbientParticles = ToggleModuleSetting(
+		id = "hide_ambient_particles",
+		label = "Hide floating spores",
+		description = "Hides the spores and ash drifting through the air, like the Crimson Isle's red specks.",
+	)
+
+	@JvmField
 	val module = Module(
 		id = "render_optimizer",
 		name = "Render Optimizer",
@@ -277,6 +330,11 @@ object RenderOptimizer {
 			hideFireOnEntities,
 			hideFireOverlay,
 			fireOverlayOpacity,
+			fogSection,
+			removeFog,
+			crimsonNoRed,
+			crimsonSkyColour,
+			hideAmbientParticles,
 			worldSection,
 			hideBreakParticles,
 			hideTreeBits,
@@ -362,7 +420,36 @@ object RenderOptimizer {
 		return listOf(packet.xDist, packet.yDist, packet.zDist).all { it != 0f && it > -0.1f && it < 0.1f }
 	}
 
-	val needsSkyblock: Boolean get() = module.enabled && hideTreeBits.value
+	val needsSkyblock: Boolean
+		get() = module.enabled && (hideTreeBits.value || crimsonNoRed.value || (removeFog.value && fogWhere.selectedIndex == 1))
+
+	private val onCrimsonIsle: Boolean get() = SkyblockLocation.onSkyblock && SkyblockLocation.area == "Crimson Isle"
+
+	@JvmStatic
+	fun removesFog(): Boolean = module.enabled && removeFog.value && (fogWhere.selectedIndex == 0 || onCrimsonIsle)
+
+	@JvmStatic
+	fun removesEdgeFade(): Boolean = removesFog() && !keepEdgeFade.value
+
+	@JvmStatic
+	fun hidesAmbientParticles(): Boolean = module.enabled && hideAmbientParticles.value
+
+	/**
+	 * Open-air fog, once vanilla has set it up; water, lava and blindness never get here. The
+	 * colour is set after night vision has brightened it, which is what turns the Crimson Isle red.
+	 */
+	@JvmStatic
+	fun adjustFog(fog: net.minecraft.client.renderer.fog.FogData) {
+		if (!module.enabled) return
+		if (removesFog()) {
+			fog.environmentalStart = Float.MAX_VALUE
+			fog.environmentalEnd = Float.MAX_VALUE
+		}
+		if (crimsonNoRed.value && onCrimsonIsle) {
+			val argb = crimsonSkyColour.argb
+			fog.color.set(((argb shr 16) and 0xFF) / 255f, ((argb shr 8) and 0xFF) / 255f, (argb and 0xFF) / 255f, 1f)
+		}
+	}
 
 	private val TREE_AREAS = setOf("Galatea", "Hub", "The Park")
 

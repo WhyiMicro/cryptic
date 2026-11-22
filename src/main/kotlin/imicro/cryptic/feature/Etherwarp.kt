@@ -17,6 +17,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.network.protocol.game.ClientboundSoundPacket
 import net.minecraft.sounds.SoundEvents
+import net.minecraft.sounds.SoundSource
 
 /**
  * Shows where a sneak-click would etherwarp to, while a merged Aspect of the End or Void is held
@@ -266,7 +267,7 @@ object Etherwarp {
 		min = 300.0,
 		max = 1000.0,
 		step = 50.0,
-		description = "How long a prediction is believed. Also used by no rotate.",
+		description = "How long a prediction is believed until a few teleports have been timed; after that it follows your ping. Also used by no rotate.",
 		visibleIf = { predicts() },
 	)
 
@@ -332,6 +333,15 @@ object Etherwarp {
 	)
 
 	@JvmField
+	val soundOnClick = ToggleModuleSetting(
+		id = "sound_on_click",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
+		label = "Sound on click",
+		defaultValue = false,
+		description = "Plays the etherwarp sound as you click, when the warp will land, instead of when the server's sound arrives.",
+	)
+
+	@JvmField
 	val previewSound = ButtonModuleSetting(
 		id = "preview_sound",
 		label = "Play sound",
@@ -367,6 +377,7 @@ object Etherwarp {
 			smoothKinds,
 			SectionModuleSetting("sound_section", "Sound"),
 			customSound.withMore(sound, customSoundId, volume, pitch, previewSound),
+			soundOnClick,
 		),
 	)
 
@@ -391,13 +402,32 @@ object Etherwarp {
 	/** True when Hypixel's teleport sound should be swallowed because Cryptic plays its own. */
 	@JvmStatic
 	fun replaceTeleportSound(packet: ClientboundSoundPacket): Boolean {
-		if (!module.enabled || !customSound.value) return false
+		if (!module.enabled) return false
 		if (packet.sound.value() != SoundEvents.ENDER_DRAGON_HURT) return false
 		if (packet.pitch != TELEPORT_SOUND_PITCH) return false
+		if (!customSound.value && !soundOnClick.value) return false
 
-		// Possibly on the network thread; the sound manager wants the client thread.
-		Minecraft.getInstance().execute(::playCustomSound)
+		// Possibly on the network thread; the sound manager and the click queue want the client
+		// thread. The packet is dropped either way and the sound played (or not) there.
+		Minecraft.getInstance().execute {
+			if (!EtherwarpZeroPing.owesSound()) {
+				if (customSound.value) playCustomSound() else playVanillaTeleportSound()
+			}
+		}
 		return true
+	}
+
+	/** The etherwarp sound, played on the click for Sound on click: the custom one if set. */
+	fun playTeleportSoundNow() {
+		if (customSound.value) playCustomSound() else playVanillaTeleportSound()
+	}
+
+	private fun playVanillaTeleportSound() {
+		val client = Minecraft.getInstance()
+		val player = client.player ?: return
+		client.level?.playLocalSound(
+			player.x, player.y, player.z, SoundEvents.ENDER_DRAGON_HURT, SoundSource.PLAYERS, 1f, TELEPORT_SOUND_PITCH, false,
+		)
 	}
 
 	/** Whether the overlay drew a block last frame; [BlockOverlay] steps aside while it does. */
@@ -416,7 +446,10 @@ object Etherwarp {
 		val held = player.mainHandItem.takeUnless { it.isEmpty } ?: return
 		val range = EtherwarpHelper.etherwarpRange(held) ?: return
 
-		val target = EtherwarpHelper.target(player.position(), player.lookAngle, range)
+		// While Fake zpew has teleports on their way, the next warp is cast from where they end.
+		val from = EtherwarpZeroPing.castFrom()
+		val target = if (from != null) EtherwarpHelper.target(from, player.lookAngle, range, EtherwarpHelper.SNEAK_EYE_HEIGHT)
+		else EtherwarpHelper.target(player.position(), player.lookAngle, range)
 		if (!target.valid && !showFail.value) return
 		val pos = target.pos ?: return
 		overlayShown = true
@@ -433,14 +466,6 @@ object Etherwarp {
 			lineWidth = lineWidth.value.toFloat(),
 			fullBlock = fullBlock.value,
 		)
-	}
-
-	/** Whether you're lining up an etherwarp (crouching with a warp item). */
-	fun isAiming(): Boolean {
-		val client = Minecraft.getInstance()
-		if (!client.options.keyShift.isDown) return false
-		val held = client.player?.mainHandItem?.takeUnless { it.isEmpty } ?: return false
-		return EtherwarpHelper.etherwarpRange(held) != null
 	}
 
 	/** Command-friendly names for [soundOptions], e.g. "experience_orb". */

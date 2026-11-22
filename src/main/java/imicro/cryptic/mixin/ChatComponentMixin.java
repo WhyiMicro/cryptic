@@ -52,6 +52,7 @@ public abstract class ChatComponentMixin {
         at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/components/ChatComponent;addMessageToDisplayQueue(Lnet/minecraft/client/multiplayer/chat/GuiMessage;)V")
     )
     private boolean cryptic$showNewLine(ChatComponent self, GuiMessage message) {
+        ChatExtras.onNewLine(message);
         if (ChatExtras.hides(message)) return false;
         ChatExtras.onLineShown(message);
         return true;

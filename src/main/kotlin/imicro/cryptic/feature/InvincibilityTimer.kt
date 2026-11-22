@@ -313,7 +313,7 @@ object InvincibilityTimer {
 		if (initialized) return
 		initialized = true
 
-		Hud.register(TimerElement())
+		Hud.register(TimerElement(), module)
 		ClientReceiveMessageEvents.GAME.register { message, overlay ->
 			if (!overlay) onMessage(message.string)
 		}

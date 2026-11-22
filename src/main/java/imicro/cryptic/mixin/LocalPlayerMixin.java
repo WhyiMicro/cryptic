@@ -1,7 +1,7 @@
 package imicro.cryptic.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
-import imicro.cryptic.feature.AutoSprint;
+import imicro.cryptic.feature.Movement;
 import imicro.cryptic.feature.ItemProtection;
 import net.minecraft.client.player.LocalPlayer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -10,8 +10,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Auto Sprint, Odin's way: the sprint key reads as held where movement asks for it, so the game's
- * own rules decide.
+ * Movement's Auto Sprint, Odin's way: the sprint key reads as held where movement asks for it, so
+ * the game's own rules decide.
  */
 @Mixin(LocalPlayer.class)
 public abstract class LocalPlayerMixin {
@@ -20,7 +20,7 @@ public abstract class LocalPlayerMixin {
         at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Input;sprint()Z")
     )
     private boolean cryptic$autoSprint(boolean held) {
-        return held || AutoSprint.holdsSprint();
+        return held || Movement.holdsSprint();
     }
 
     /** The drop key on a protected item does nothing. */

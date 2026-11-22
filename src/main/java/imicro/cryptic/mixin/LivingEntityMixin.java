@@ -1,7 +1,7 @@
 package imicro.cryptic.mixin;
 
 import imicro.cryptic.feature.Animations;
-import imicro.cryptic.feature.NoJumpDelay;
+import imicro.cryptic.feature.Movement;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.Holder;
 import net.minecraft.world.effect.MobEffect;
@@ -37,7 +37,7 @@ public abstract class LivingEntityMixin extends Entity {
      */
     @Inject(method = "aiStep", at = @At("HEAD"))
     private void cryptic$clearJumpDelay(CallbackInfo ci) {
-        if (!NoJumpDelay.module.getEnabled()) return;
+        if (!Movement.skipsJumpDelay()) return;
 
         var player = Minecraft.getInstance().player;
         if (player == null || !this.is(player)) return;

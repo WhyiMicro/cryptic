@@ -183,9 +183,15 @@ class ToggleModuleSetting(
 	val description: String = "",
 	visibleIf: () -> Boolean = { true },
 	val restriction: Restriction = Restriction.LEGIT,
+	/** A module's own switch shown as a row (the Settings tab's), held there rather than here. */
+	private val backing: Module? = null,
 ): ModuleSetting(id, label, visibleIf) {
 	/** The switch as set, kept while Client Restrictions hides it. Saved as is. */
 	var storedValue: Boolean = defaultValue
+		get() = if (backing != null) backing.storedEnabled else field
+		set(value) {
+			if (backing != null) backing.storedEnabled = value else field = value
+		}
 
 	/** On, and allowed by Client Restrictions. */
 	var value: Boolean
@@ -463,6 +469,10 @@ class DropdownModuleSetting(
 	private fun allowed(index: Int): Boolean =
 		optionRestrictions[options.getOrNull(index)]?.let(Restrictions::allows) ?: true
 
+	/** The options past legit that Client Restrictions still lets show, for the menu's notice. */
+	val restrictedOptions: Map<String, Restriction>
+		get() = optionRestrictions.filter { (option, level) -> level != Restriction.LEGIT && Restrictions.allows(level) && option in options }
+
 	override var selectedIndex: Int
 		get() = when {
 			allowed(storedIndex) -> storedIndex
@@ -650,18 +660,9 @@ class TabModuleSetting(
  * can change without breaking profiles.
  */
 object ModuleRegistry {
-	val autoSprint = Module(
-		id = "auto_sprint",
-		name = "Auto Sprint",
-		description = "Holds sprint for you",
-		category = ModuleCategory.GENERAL,
-		supportsKeybind = false,
-	)
-
 	val modules = listOf(
-		autoSprint,
+		imicro.cryptic.feature.Movement.module,
 		imicro.cryptic.feature.Zoom.module,
-		imicro.cryptic.feature.NoJumpDelay.module,
 		imicro.cryptic.feature.AutoClicker.module,
 		imicro.cryptic.feature.AntiAfk.module,
 		imicro.cryptic.feature.ExperimentSolver.module,
@@ -682,6 +683,7 @@ object ModuleRegistry {
 		imicro.cryptic.feature.Highlight.module,
 		imicro.cryptic.feature.Secrets.module,
 		imicro.cryptic.feature.RenderOptimizer.module,
+		imicro.cryptic.feature.ChunkCache.module,
 		imicro.cryptic.feature.HidePlayers.module,
 		imicro.cryptic.feature.TerminalSolver.module,
 		imicro.cryptic.feature.TerminalTimes.module,
@@ -712,7 +714,7 @@ object ModuleRegistry {
 		imicro.cryptic.feature.DungeonWarpCooldown.module,
 		imicro.cryptic.feature.ILoveGlass.module,
 		imicro.cryptic.feature.TextOutline.module,
-		imicro.cryptic.feature.CookieReminder.module,
+		imicro.cryptic.feature.Reminders.module,
 		imicro.cryptic.feature.Combat.module,
 		imicro.cryptic.feature.ConfirmDisconnect.module,
 		imicro.cryptic.feature.WitherDragons.module,

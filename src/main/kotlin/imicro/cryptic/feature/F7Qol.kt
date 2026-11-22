@@ -331,10 +331,10 @@ object F7Qol {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(BigTitleElement())
-		Hud.register(TaskTitleElement())
-		Hud.register(CrystalTimerElement())
-		Hud.register(CrystalAlertElement())
+		Hud.register(BigTitleElement(), module)
+		Hud.register(TaskTitleElement(), module)
+		Hud.register(CrystalTimerElement(), module, crystalSpawnTimer)
+		Hud.register(CrystalAlertElement(), module, crystalAlert)
 		ClientEntityEvents.ENTITY_LOAD.register { entity, _ -> onEntityLoad(entity) }
 		net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> reset() }

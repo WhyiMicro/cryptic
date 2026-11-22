@@ -39,27 +39,20 @@ object UpdateChecker {
 		label = "Install updates automatically",
 		defaultValue = false,
 		description = "Downloads a new release, then installs it when you close the game. Off, you're asked first.",
+		visibleIf = { module.storedEnabled },
 	)
 
-	@JvmField
-	val whatsNew = ToggleModuleSetting(
-		id = "whats_new",
-		label = "Show what's new after an update",
-		defaultValue = true,
-		description = "The first time you join after Cryptic updates, a notification offers its changelog.",
-	)
-
-	private val checkNow = ButtonModuleSetting("check_now", "Check now", action = { check(manual = true) })
+	val checkNow = ButtonModuleSetting("check_now", "Check now", action = { check(manual = true) })
 
 	@JvmField
-	val module = Module(
+	val module: Module = Module(
 		id = "update_checker",
 		name = "Update Checker",
 		description = "Says when an update is out",
 		category = ModuleCategory.MISC,
 		enabled = true,
 		supportsKeybind = false,
-		settings = listOf(autoUpdate, whatsNew, checkNow),
+		settings = listOf(autoUpdate, checkNow),
 	)
 
 	private val http: HttpClient by lazy {
@@ -110,7 +103,8 @@ object UpdateChecker {
 			Files.createDirectories(lastVersionFile.parent)
 			Files.writeString(lastVersionFile, installed)
 		}.onFailure { Cryptic.LOGGER.warn("Could not save {}", lastVersionFile, it) }
-		if (!updated || !module.enabled || !whatsNew.value) return
+		// The Changelog card's switch alone decides; the version is recorded either way.
+		if (!updated || !imicro.cryptic.gui.menu.managers.ChangelogSection.module.enabled) return
 		Toasts.ask(
 			source = SOURCE,
 			id = WHATS_NEW_ID,

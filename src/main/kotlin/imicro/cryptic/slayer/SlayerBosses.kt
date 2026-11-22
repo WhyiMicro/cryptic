@@ -6,13 +6,13 @@ import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.decoration.ArmorStand
 
 /** The slayer bosses, under every name Hypixel gives them (tier V of some has its own). */
-enum class SlayerType(val title: String, val names: List<String>) {
-	REVENANT("Revenant Horror", listOf("Revenant Horror", "Atoned Horror")),
-	TARANTULA("Tarantula Broodfather", listOf("Tarantula Broodfather", "Conjoined Brood")),
-	SVEN("Sven Packmaster", listOf("Sven Packmaster")),
-	VOIDGLOOM("Voidgloom Seraph", listOf("Voidgloom Seraph")),
-	INFERNO("Inferno Demonlord", listOf("Inferno Demonlord")),
-	RIFTSTALKER("Riftstalker Bloodfiend", listOf("Riftstalker Bloodfiend", "Bloodfiend")),
+enum class SlayerType(val title: String, val names: List<String>, val colour: String) {
+	REVENANT("Revenant Horror", listOf("Revenant Horror", "Atoned Horror"), "§2"),
+	TARANTULA("Tarantula Broodfather", listOf("Tarantula Broodfather", "Conjoined Brood"), "§7"),
+	SVEN("Sven Packmaster", listOf("Sven Packmaster"), "§f"),
+	VOIDGLOOM("Voidgloom Seraph", listOf("Voidgloom Seraph"), "§5"),
+	INFERNO("Inferno Demonlord", listOf("Inferno Demonlord"), "§6"),
+	RIFTSTALKER("Riftstalker Bloodfiend", listOf("Riftstalker Bloodfiend", "Bloodfiend"), "§4"),
 }
 
 /**
@@ -44,8 +44,8 @@ object SlayerBosses {
 	private val ownerPattern = Regex("""^(\w{1,16})['’]s SLAYER BOSS$""", RegexOption.IGNORE_CASE)
 	private val oldOwnerPattern = Regex("""Spawned by:\s*(\w{1,16})""")
 
-	/** "03:56": how long is left before the boss despawns. */
-	private val timerPattern = Regex("""^(\d{1,2}):(\d{2})$""")
+	/** "03:56": how long is left before the boss despawns, with any skill after it ("03:51 TWINCLAWS 0.1s"). */
+	private val timerPattern = Regex("""^(\d{1,2}):(\d{2})(?:\s|$)""")
 
 	/** Slayer mini-bosses, which spawn while the quest's kills are being made. */
 	private val MINIBOSSES = listOf(
@@ -138,7 +138,7 @@ object SlayerBosses {
 				}
 				continue
 			}
-			val left = timerPattern.matchEntire(text)?.let { it.groupValues[1].toInt() * 60 + it.groupValues[2].toInt() } ?: continue
+			val left = timerPattern.find(text)?.let { it.groupValues[1].toInt() * 60 + it.groupValues[2].toInt() } ?: continue
 			if (distance < timerDistance) {
 				timeLeft = left
 				timerDistance = distance

@@ -92,7 +92,7 @@ object PerformanceHud {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(PerformanceElement())
+		Hud.register(PerformanceElement(), module)
 	}
 
 	private fun metrics(): List<Pair<String, String>> {

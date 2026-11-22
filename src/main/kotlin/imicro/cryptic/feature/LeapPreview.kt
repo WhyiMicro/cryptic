@@ -131,9 +131,6 @@ object LeapPreview {
 		}
 	}
 
-	/** Whether [corner] has a view drawn behind it this frame, after [submit]. */
-	fun showing(corner: Int): Boolean = enabled && targets.getOrNull(corner) != null && ready[corner]
-
 	/** The render half, between your own view and the GUI: renders this frame's share of the views. */
 	@JvmStatic
 	fun renderFeeds(deltaTracker: DeltaTracker) {
@@ -212,7 +209,7 @@ object LeapPreview {
 			camera.update(deltaTracker)
 			// Where they look now. Easing from the head's previous angle spun the view of players
 			// standing still, whose previous angle can lag far behind.
-			if (target is net.minecraft.world.entity.LivingEntity) cameraFields.`cryptic$setRotation`(target.yHeadRot, target.xRot)
+			cameraFields.`cryptic$setRotation`(target.yHeadRot, target.xRot)
 			// Vanilla rebuilds its whole visibility graph for a new camera; holding the frustum keeps
 			// your own, so the view shows the terrain you can see. Sodium culls cheaply from any
 			// camera, so it's left to cull from theirs.

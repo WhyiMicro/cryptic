@@ -29,6 +29,23 @@ public abstract class ClientLevelMixin {
         if (imicro.cryptic.feature.RenderOptimizer.hidesBreakParticles()) info.cancel();
     }
 
+    /** Render Optimizer's floating spores: the biome's ambient particles, asked for once per block tried. */
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(
+        method = "doAnimateTick",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/world/attribute/EnvironmentAttributeSystem;getValue(Lnet/minecraft/world/attribute/EnvironmentAttribute;Lnet/minecraft/core/BlockPos;)Ljava/lang/Object;"
+        )
+    )
+    private Object cryptic$hideAmbientParticles(net.minecraft.world.attribute.EnvironmentAttributeSystem system,
+                                                net.minecraft.world.attribute.EnvironmentAttribute<?> attribute, BlockPos pos,
+                                                com.llamalad7.mixinextras.injector.wrapoperation.Operation<Object> original) {
+        if (attribute == net.minecraft.world.attribute.EnvironmentAttributes.AMBIENT_PARTICLES && imicro.cryptic.feature.RenderOptimizer.hidesAmbientParticles()) {
+            return java.util.List.of();
+        }
+        return original.call(system, attribute, pos);
+    }
+
     /** Each particle as it is added, after a packet's count and spread are worked out. */
     @org.spongepowered.asm.mixin.injection.Inject(method = "doAddParticle", at = @At("HEAD"))
     private void cryptic$onParticle(net.minecraft.core.particles.ParticleOptions particle, boolean overrideLimiter, boolean alwaysShowParticles,

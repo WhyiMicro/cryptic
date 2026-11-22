@@ -1,5 +1,6 @@
 package imicro.cryptic.gui
 
+import imicro.cryptic.feature.ClickGui
 import imicro.cryptic.feature.DailyRewards
 import imicro.cryptic.gui.menu.Box
 import imicro.cryptic.gui.menu.MenuStyle
@@ -30,7 +31,7 @@ import kotlin.math.sin
 
 /**
  * The daily reward picker: Hypixel's three cards, turned over and claimed in game, in the menu's
- * style. Laid out in 1080p design pixels and scaled to the window.
+ * style. Laid out in the menu's design pixels and scaled to the window.
  */
 class RewardScreen private constructor() : Screen(Component.literal("Daily Reward")) {
 	private sealed class State {
@@ -66,6 +67,7 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 	private var closeBox = Box.NONE
 	private var browserBox = Box.NONE
 	private var closeHover = 0f
+	private var browserHover = 0f
 
 	fun show(offer: RewardOffer) {
 		state = State.Ready(offer)
@@ -104,7 +106,9 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 	}
 
 	override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, a: Float) {
-		graphics.fill(0, 0, width, height, 0x99000000.toInt())
+		// As the menu: blurred when Click GUI asks for it (see MenuScreen.blurRadius).
+		if (ClickGui.backgroundBlur.value) graphics.blurBeforeThisStratum()
+		graphics.fill(0, 0, width, height, 0x88000000.toInt())
 	}
 
 	private fun scale(): Float {
@@ -116,9 +120,11 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		val now = System.nanoTime()
 		val dt = if (lastFrame == 0L) 0f else ((now - lastFrame) / 1e9f).coerceIn(0f, 0.05f)
 		lastFrame = now
-		opening = min(1f, opening + dt / 0.18f)
+		opening = min(1f, opening + dt / OPEN_SECONDS)
 		val alpha = MenuStyle.easeOut(opening)
 
+		// A minimised window has no size to lay out in.
+		if (minecraft.window.screenHeight <= 0 || width <= 0 || height <= 0) return
 		UiText.pixelsPerUnit = minecraft.window.screenHeight / DESIGN_HEIGHT
 		val k = scale()
 		val mx = mouseX / k
@@ -130,28 +136,39 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		graphics.pose().scale(k, k)
 
 		val winW = min(WIN_W, viewW - 40f)
-		val winH = min(WIN_H, viewH - 40f)
+		val winH = HEADER_H + PANEL_GAP + CONTENT_H
 		val winX = (viewW - winW) / 2f
 		val winY = (viewH - winH) / 2f + (1f - alpha) * 14f
+		val header = Box(winX, winY, winW, HEADER_H)
+		val content = Box(winX, header.bottom + PANEL_GAP, winW, CONTENT_H)
 
-		RoundRect.shadow(graphics, winX, winY, winX + winW, winY + winH, fade(0xB4000000.toInt(), alpha), 8f, 24f)
-		RoundRect.fill(graphics, winX, winY, winX + winW, winY + winH, fade(MenuStyle.WINDOW_BG, alpha), 8f)
-		RoundRect.outline(graphics, winX, winY, winX + winW, winY + winH, fade(MenuStyle.WINDOW_EDGE, alpha), 8f, 1f)
+		// Both shadows before either panel, so neither darkens the other's edge.
+		for (panel in listOf(header, content)) {
+			RoundRect.shadow(graphics, panel.x, panel.y, panel.right, panel.bottom, fade(PANEL_SHADOW, alpha), PANEL_RADIUS, 28f)
+		}
+		for (panel in listOf(header, content)) {
+			RoundRect.fill(graphics, panel.x, panel.y, panel.right, panel.bottom, fade(MenuStyle.WINDOW_BG, alpha), PANEL_RADIUS)
+			RoundRect.outline(graphics, panel.x, panel.y, panel.right, panel.bottom, fade(MenuStyle.WINDOW_EDGE, alpha), PANEL_RADIUS, 1f)
+		}
 
-		drawHeader(graphics, winX, winY, winW, mx, my, dt, alpha)
+		drawHeader(graphics, header, mx, my, dt, alpha)
 
 		when (val current = state) {
-			State.Loading -> drawLoading(graphics, winX, winY, winW, winH, alpha)
-			is State.Failed -> drawFailed(graphics, current, winX, winY, winW, winH, mx, my, alpha)
-			is State.Ready -> drawOffer(graphics, current.offer, winX, winY, winW, mx, my, dt, alpha)
+			State.Loading -> drawLoading(graphics, content, alpha)
+			is State.Failed -> drawFailed(graphics, current, content, mx, my, dt, alpha)
+			is State.Ready -> drawOffer(graphics, current.offer, content, mx, my, dt, alpha)
 		}
 
 		graphics.pose().popMatrix()
 	}
 
-	private fun drawHeader(graphics: GuiGraphicsExtractor, winX: Float, winY: Float, winW: Float, mx: Float, my: Float, dt: Float, alpha: Float) {
-		UiText.drawIcon(graphics, GIFT, winX + 28f, winY + 26f, 22f, fade(MenuStyle.accent(), alpha))
-		UiText.draw(graphics, "Daily Reward", winX + 60f, winY + 24f, 22f, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
+	/** The menu's heading: title, a hairline, then the subtitle; the close button at the right. */
+	private fun drawHeader(graphics: GuiGraphicsExtractor, box: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
+		val x = box.x + HEADER_PAD
+		val titleSize = 22f
+		UiText.draw(graphics, "Daily Reward", x, box.y + (box.h - titleSize) / 2f, titleSize, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
+		val barX = x + UiText.width("Daily Reward", titleSize, UiText.Face.MEDIUM) + 14f
+		RoundRect.fill(graphics, barX, box.y + box.h / 2f - 9f, barX + 1f, box.y + box.h / 2f + 9f, fade(MenuStyle.FIELD_EDGE_HOVER, alpha), 0f)
 
 		val subtitle: Pair<String, Int> = when (val current = state) {
 			State.Loading -> "Reading today's cards from Hypixel" to MenuStyle.MUTED
@@ -164,65 +181,61 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 				else -> "Turn the cards over and claim one" to MenuStyle.MUTED
 			}
 		}
-		UiText.draw(graphics, UiText.fit(subtitle.first, 13f, winW - 120f), winX + 28f, winY + 56f, 13f, fade(subtitle.second, alpha))
 
-		closeBox = Box(winX + winW - 52f, winY + 20f, 30f, 30f)
-		val hovered = closeBox.contains(mx, my)
-		closeHover = approach(closeHover, if (hovered) 1f else 0f, dt * 10f)
-		val color = MenuStyle.blend(MenuStyle.MUTED, MenuStyle.DANGER, closeHover)
-		UiText.drawIconCentered(graphics, MenuStyle.Icons.XMARK, closeBox.x, closeBox.y, closeBox.w, 18f, fade(color, alpha))
+		closeBox = Box(box.right - HEADER_PAD - CLOSE_SIZE, box.y + (box.h - CLOSE_SIZE) / 2f, CLOSE_SIZE, CLOSE_SIZE)
+		val room = closeBox.x - 16f - (barX + 14f)
+		UiText.draw(graphics, UiText.fit(subtitle.first, 14f, room), barX + 14f, box.y + (box.h - 14f) / 2f, 14f, fade(subtitle.second, alpha))
+
+		closeHover = approach(closeHover, if (closeBox.contains(mx, my)) 1f else 0f, dt * 10f)
+		if (closeHover > 0f) {
+			RoundRect.fill(graphics, closeBox.x, closeBox.y, closeBox.right, closeBox.bottom, fade(MenuStyle.BUTTON_HOVER, alpha * closeHover), 6f)
+		}
+		UiText.drawIconCentered(graphics, MenuStyle.Icons.XMARK, closeBox.x, closeBox.y, closeBox.w, 13f,
+			fade(MenuStyle.blend(MenuStyle.TAB_HOVER, MenuStyle.TEXT, closeHover), alpha))
+
+		// Hypixel's ad, as a hairline progress along the header's foot.
+		val offer = (state as? State.Ready)?.offer
+		if (offer != null && offer.adSeconds > 0 && claimed < 0) {
+			val done = (1f - adRemaining(offer) / offer.adSeconds.toFloat()).coerceIn(0f, 1f)
+			val bar = Box(box.x + PANEL_RADIUS, box.bottom - 4f, box.w - PANEL_RADIUS * 2f, 2f)
+			RoundRect.fill(graphics, bar.x, bar.y, bar.right, bar.bottom, fade(MenuStyle.TRACK, alpha), 1f)
+			RoundRect.fill(graphics, bar.x, bar.y, bar.x + bar.w * done, bar.bottom, fade(MenuStyle.STAR, alpha), 1f)
+		}
 	}
 
-	private fun drawLoading(graphics: GuiGraphicsExtractor, winX: Float, winY: Float, winW: Float, winH: Float, alpha: Float) {
-		val cx = winX + winW / 2f
-		val cy = winY + winH / 2f
+	private fun drawLoading(graphics: GuiGraphicsExtractor, content: Box, alpha: Float) {
+		val cx = content.x + content.w / 2f
+		val cy = content.y + content.h / 2f - 12f
 		val time = System.currentTimeMillis() / 1000.0
 		for (i in 0 until 3) {
 			val pulse = ((sin(time * 5.0 - i * 0.8) + 1.0) / 2.0).toFloat()
-			val r = 5f + pulse * 2f
-			val x = cx - 24f + i * 24f
+			val r = 4f + pulse * 2f
+			val x = cx - 22f + i * 22f
 			RoundRect.fill(graphics, x - r, cy - r, x + r, cy + r, fade(MenuStyle.blend(MenuStyle.TRACK, MenuStyle.accent(), pulse), alpha), r)
 		}
-		centered(graphics, "Fetching your reward…", cx, cy + 24f, 14f, fade(MenuStyle.MUTED, alpha))
+		centered(graphics, "Fetching your reward…", cx, cy + 22f, 13f, fade(MenuStyle.MUTED, alpha))
 	}
 
-	private fun drawFailed(
-		graphics: GuiGraphicsExtractor, failed: State.Failed,
-		winX: Float, winY: Float, winW: Float, winH: Float, mx: Float, my: Float, alpha: Float,
-	) {
-		val cx = winX + winW / 2f
-		val cy = winY + winH / 2f - 30f
+	private fun drawFailed(graphics: GuiGraphicsExtractor, failed: State.Failed, content: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
+		val cx = content.x + content.w / 2f
+		val cy = content.y + content.h / 2f - 60f
+		UiText.drawIconCentered(graphics, MenuStyle.Icons.WARNING, cx - 20f, cy - 52f, 40f, 26f, fade(MenuStyle.DANGER, alpha))
 		centered(graphics, "Couldn't read today's reward", cx, cy, 18f, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
-		wrap(failed.reason, 13f, winW - 160f, 3).forEachIndexed { line, text ->
-			centered(graphics, text, cx, cy + 32f + line * 18f, 13f, fade(MenuStyle.MUTED, alpha))
+		wrap(failed.reason, 13f, content.w - 200f, 3).forEachIndexed { line, text ->
+			centered(graphics, text, cx, cy + 30f + line * 18f, 13f, fade(MenuStyle.CARD_DESC, alpha))
 		}
-		browserBox = if (failed.link != null) Box(cx - 100f, cy + 100f, 200f, 36f) else Box.NONE
+		browserBox = if (failed.link != null) Box(cx - 100f, cy + 100f, 200f, BUTTON_H) else Box.NONE
 		if (failed.link != null) {
-			val hovered = browserBox.contains(mx, my)
-			RoundRect.fill(graphics, browserBox.x, browserBox.y, browserBox.x + browserBox.w, browserBox.y + browserBox.h,
-				fade(if (hovered) MenuStyle.cardOnHover() else MenuStyle.cardOn(), alpha), 8f)
-			centered(graphics, "Open in your browser", cx, browserBox.y + 10f, 14f, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
+			browserHover = approach(browserHover, if (browserBox.contains(mx, my)) 1f else 0f, dt * 10f)
+			primaryButton(graphics, browserBox, "Open in your browser", browserHover, alpha)
 		}
 	}
 
-	private fun drawOffer(
-		graphics: GuiGraphicsExtractor, offer: RewardOffer,
-		winX: Float, winY: Float, winW: Float, mx: Float, my: Float, dt: Float, alpha: Float,
-	) {
-		val adTotal = offer.adSeconds
-		if (adTotal > 0 && claimed < 0) {
-			val left = adRemaining(offer)
-			val done = 1f - left / adTotal.toFloat()
-			val barX = winX + 28f
-			val barW = winW - 56f
-			RoundRect.fill(graphics, barX, winY + 80f, barX + barW, winY + 84f, fade(MenuStyle.TRACK, alpha), 2f)
-			RoundRect.fill(graphics, barX, winY + 80f, barX + barW * done.coerceIn(0f, 1f), winY + 84f, fade(MenuStyle.STAR, alpha), 2f)
-		}
-
+	private fun drawOffer(graphics: GuiGraphicsExtractor, offer: RewardOffer, content: Box, mx: Float, my: Float, dt: Float, alpha: Float) {
 		val count = offer.cards.size.coerceAtMost(3)
 		val total = count * CARD_W + (count - 1) * CARD_GAP
-		val left = winX + (winW - total) / 2f
-		val top = winY + 100f
+		val left = content.x + (content.w - total) / 2f
+		val top = content.y + CONTENT_PAD
 		val best = bestRevealed(offer)
 
 		for (i in 0 until count) {
@@ -243,7 +256,7 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 			drawCard(graphics, offer, i, box, mx, my, dt, alpha, i == best)
 		}
 
-		drawStreak(graphics, offer, left, top + CARD_H + 30f, total, alpha)
+		drawStreak(graphics, offer, Box(left, top + CARD_H + 18f, total, STREAK_H), alpha)
 	}
 
 	private fun drawCard(
@@ -251,9 +264,10 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		mx: Float, my: Float, dt: Float, alpha: Float, best: Boolean,
 	) {
 		val card = offer.cards[index]
-		val y = box.y - MenuStyle.easeOut(lift[index]) * 6f
+		val hover = lift[index]
+		val y = box.y - MenuStyle.easeOut(hover) * 4f
 		val x0 = box.x
-		val x1 = box.x + box.w
+		val x1 = box.right
 		val y1 = y + box.h
 		val cx = box.x + box.w / 2f
 		val dim = if (claimed >= 0 && claimed != index) 0.45f else 1f
@@ -269,56 +283,78 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		pose.translate(-cx, 0f)
 
 		val faceUp = turn >= 0.5f
-		if (faceUp && best && DailyRewards.highlightBest.value) {
-			RoundRect.shadow(graphics, x0, y, x1, y1, fade((card.rarity.color and 0xFFFFFF) or 0x99000000.toInt(), a), CARD_RADIUS, 26f)
-		} else {
-			RoundRect.shadow(graphics, x0, y, x1, y1, fade(0x66000000, a), CARD_RADIUS, 14f)
-		}
-
 		if (!faceUp) {
-			val hover = lift[index]
-			RoundRect.fill(graphics, x0, y, x1, y1, fade(MenuStyle.blend(MenuStyle.CARD_OFF, MenuStyle.CARD_OFF_HOVER, hover), a), CARD_RADIUS)
-			RoundRect.gradient(graphics, x0, y, x1, y1, fade((MenuStyle.accent() and 0xFFFFFF) or 0x30000000, a), 0x00000000, CARD_RADIUS)
-			RoundRect.outline(graphics, x0, y, x1, y1, fade((MenuStyle.accent() and 0xFFFFFF) or ((0x55 + (hover * 0x60).toInt()) shl 24), a), CARD_RADIUS, 1.5f)
-			val iconWidth = UiText.width(GIFT, 52f, UiText.Face.ICON)
-			UiText.drawIcon(graphics, GIFT, cx - iconWidth / 2f, y + box.h / 2f - 74f, 52f, fade(MenuStyle.accent(), a))
-			centered(graphics, "Card ${index + 1}", cx, y + box.h / 2f + 6f, 16f, fade(MenuStyle.TEXT, a), UiText.Face.MEDIUM)
-			centered(graphics, "Click to turn over", cx, y + box.h / 2f + 30f, 12f, fade(MenuStyle.MUTED, a))
-			keyHint(graphics, index, x1, y, a)
+			RoundRect.fill(graphics, x0, y, x1, y1, fade(MenuStyle.blend(MenuStyle.CARD_OFF, MenuStyle.cardTintHover(), hover), a), CARD_RADIUS)
+			RoundRect.outline(graphics, x0, y, x1, y1, fade(MenuStyle.blend(MenuStyle.CARD_EDGE, MenuStyle.cardOnEdge(), hover), a), CARD_RADIUS, 1f)
+			val mid = y + box.h / 2f
+			UiText.drawIconCentered(graphics, GIFT, cx - 30f, mid - 76f, 60f, 40f, fade(MenuStyle.blend(MenuStyle.CARD_ICON, MenuStyle.accent(), hover), a))
+			centered(graphics, "Card ${index + 1}", cx, mid + 2f, 16f, fade(MenuStyle.TEXT, a), UiText.Face.MEDIUM)
+			centered(graphics, "Click to turn over", cx, mid + 26f, 12f, fade(MenuStyle.CARD_DESC, a))
+			keyBadge(graphics, "${index + 1}", x1 - 14f, y + 14f, a)
 			buttonBoxes[index] = Box.NONE
 		} else {
 			val rarity = card.rarity.color
-			RoundRect.fill(graphics, x0, y, x1, y1, fade(0xFF18181B.toInt(), a), CARD_RADIUS)
-			RoundRect.gradient(graphics, x0, y, x1, y + 150f, fade((rarity and 0xFFFFFF) or 0x48000000, a), 0x00000000, CARD_RADIUS)
-			RoundRect.outline(graphics, x0, y, x1, y1, fade((rarity and 0xFFFFFF) or 0xAA000000.toInt(), a), CARD_RADIUS, 1.5f)
+			val highlight = best && DailyRewards.highlightBest.value
+			if (highlight) {
+				RoundRect.shadow(graphics, x0, y, x1, y1, fade((rarity and 0xFFFFFF) or 0x66000000, a), CARD_RADIUS, 22f)
+			}
+			RoundRect.fill(graphics, x0, y, x1, y1, fade(MenuStyle.CARD_OFF, a), CARD_RADIUS)
+			RoundRect.gradient(graphics, x0, y, x1, y + 140f, fade((rarity and 0xFFFFFF) or 0x1E000000, a), 0x00000000, CARD_RADIUS)
+			val edge = if (highlight) rarity else MenuStyle.blend(MenuStyle.CARD_EDGE, rarity, 0.45f)
+			RoundRect.outline(graphics, x0, y, x1, y1, fade(edge, a), CARD_RADIUS, 1f)
 
-			centered(graphics, card.rarity.label.uppercase(), cx, y + 16f, 12f, fade(rarity, a), UiText.Face.MEDIUM)
-			drawIcon(graphics, card, cx, y + 42f, a)
+			rarityBadge(graphics, card.rarity, cx, y + 16f, a)
+			val button = Box(x0 + 16f, y1 - 16f - BUTTON_H, box.w - 32f, BUTTON_H)
 
-			var textY = y + 104f
+			// The icon and text, centred between the badge and the button.
+			val name = wrap(card.name, 15f, box.w - 28f, 2, UiText.Face.MEDIUM)
+			val description = wrap(card.description, 12f, box.w - 32f, 3)
+			val amountH = if (card.amount > 1) 30f else 0f
+			val blockH = 48f + 16f + amountH + name.size * 19f + 4f + description.size * 16f
+			val areaTop = y + 46f
+			var textY = areaTop + ((button.y - 8f - areaTop) - blockH) / 2f
+			drawIcon(graphics, card, cx, textY, a)
+			textY += 48f + 16f
 			if (card.amount > 1) {
 				centered(graphics, "%,d".format(card.amount), cx, textY, 22f, fade(MenuStyle.TEXT, a), UiText.Face.MEDIUM)
-				textY += 30f
+				textY += amountH
 			}
-			wrap(card.name, 15f, box.w - 28f, 2, UiText.Face.MEDIUM).forEach { line ->
+			for (line in name) {
 				centered(graphics, line, cx, textY, 15f, fade(rarity, a), UiText.Face.MEDIUM)
 				textY += 19f
 			}
 			textY += 4f
-			wrap(card.description, 12f, box.w - 32f, 3).forEach { line ->
-				centered(graphics, line, cx, textY, 12f, fade(MenuStyle.MUTED, a))
+			for (line in description) {
+				centered(graphics, line, cx, textY, 12f, fade(MenuStyle.CARD_DESC, a))
 				textY += 16f
 			}
 
-			drawClaimButton(graphics, offer, index, Box(x0 + 18f, y1 - 52f, box.w - 36f, 34f), mx, my, dt, a)
+			drawClaimButton(graphics, offer, index, button, mx, my, dt, a)
 		}
 		pose.popMatrix()
 	}
 
-	/** The card's number, top right, for the 1, 2 and 3 keys. */
-	private fun keyHint(graphics: GuiGraphicsExtractor, index: Int, x1: Float, y: Float, a: Float) {
-		RoundRect.fill(graphics, x1 - 34f, y + 12f, x1 - 12f, y + 34f, fade(MenuStyle.TAB_PILL, a), 6f)
-		centered(graphics, "${index + 1}", x1 - 23f, y + 15f, 12f, fade(MenuStyle.MUTED, a), UiText.Face.MEDIUM)
+	/** A key's name in a small box, as the menu's keybind badges; [right] is its right edge. */
+	private fun keyBadge(graphics: GuiGraphicsExtractor, text: String, right: Float, y: Float, a: Float) {
+		val size = 11f
+		val w = max(24f, UiText.width(text, size, UiText.Face.MEDIUM) + 14f)
+		val h = 22f
+		RoundRect.fill(graphics, right - w, y, right, y + h, fade(MenuStyle.FIELD, a), 5f)
+		RoundRect.outline(graphics, right - w, y, right, y + h, fade(MenuStyle.FIELD_EDGE, a), 5f, 1f)
+		centered(graphics, text, right - w / 2f, y + (h - size) / 2f, size, fade(MenuStyle.MUTED, a), UiText.Face.MEDIUM)
+	}
+
+	/** The rarity as a small tinted pill, centred on [cx]. */
+	private fun rarityBadge(graphics: GuiGraphicsExtractor, rarity: RewardRarity, cx: Float, y: Float, a: Float) {
+		val label = rarity.label.uppercase()
+		val size = 11f
+		val tracking = 1f
+		val w = UiText.trackedWidth(label, size, UiText.Face.MEDIUM, tracking) + 20f
+		val h = 22f
+		val color = rarity.color
+		RoundRect.fill(graphics, cx - w / 2f, y, cx + w / 2f, y + h, fade((color and 0xFFFFFF) or 0x24000000, a), h / 2f)
+		RoundRect.outline(graphics, cx - w / 2f, y, cx + w / 2f, y + h, fade((color and 0xFFFFFF) or 0x55000000, a), h / 2f, 1f)
+		UiText.drawTracked(graphics, label, cx - w / 2f + 10f, y + (h - size) / 2f, size, fade(color, a), UiText.Face.MEDIUM, tracking)
 	}
 
 	private fun drawClaimButton(
@@ -326,32 +362,39 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		mx: Float, my: Float, dt: Float, a: Float,
 	) {
 		val ad = adRemaining(offer)
-		val label: String
-		val fill: Int
-		val text: Int
 		val usable = claimed < 0 && claiming < 0 && ad <= 0
+		buttonBoxes[index] = if (usable) box else Box.NONE
 		when {
-			claimed == index -> { label = "Claimed"; fill = 0xFF2E6B34.toInt(); text = MenuStyle.TEXT }
-			claimed >= 0 -> { buttonBoxes[index] = Box.NONE; return }
-			claiming == index -> { label = "Claiming…"; fill = MenuStyle.TRACK; text = MenuStyle.MUTED }
-			ad > 0 -> { label = "Claim in ${ad}s"; fill = MenuStyle.TRACK; text = MenuStyle.MUTED }
+			claimed == index -> {
+				RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade((MenuStyle.accent() and 0xFFFFFF) or 0x2E000000, a), 6f)
+				RoundRect.outline(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.cardOnEdge(), a), 6f, 1f)
+				val label = "Claimed"
+				val width = UiText.width(label, 13f, UiText.Face.MEDIUM) + 20f
+				val start = box.x + (box.w - width) / 2f
+				val textY = box.y + (box.h - 13f) / 2f
+				UiText.drawIcon(graphics, MenuStyle.Icons.CHECK, start, textY, 13f, fade(MenuStyle.onMuted(), a))
+				UiText.draw(graphics, label, start + 20f, textY, 13f, fade(MenuStyle.onMuted(), a), UiText.Face.MEDIUM)
+			}
+			claimed >= 0 -> Unit
+			claiming == index -> disabledButton(graphics, box, "Claiming…", a)
+			ad > 0 -> disabledButton(graphics, box, "Claim in ${ad}s", a)
 			else -> {
-				label = "Claim"
 				buttonHover[index] = approach(buttonHover[index], if (box.contains(mx, my)) 1f else 0f, dt * 10f)
-				fill = MenuStyle.blend(MenuStyle.cardOn(), MenuStyle.accent(), buttonHover[index])
-				text = MenuStyle.TEXT
+				primaryButton(graphics, box, "Claim", buttonHover[index], a)
 			}
 		}
-		buttonBoxes[index] = if (usable) box else Box.NONE
-		RoundRect.fill(graphics, box.x, box.y, box.x + box.w, box.y + box.h, fade(fill, a), 8f)
-		if (claimed == index) {
-			val width = UiText.width(label, 14f, UiText.Face.MEDIUM) + 22f
-			val start = box.x + (box.w - width) / 2f
-			UiText.drawIcon(graphics, MenuStyle.Icons.CHECK, start, box.y + 9f, 14f, fade(text, a))
-			UiText.draw(graphics, label, start + 22f, box.y + 9f, 14f, fade(text, a), UiText.Face.MEDIUM)
-		} else {
-			centered(graphics, label, box.x + box.w / 2f, box.y + 9f, 14f, fade(text, a), UiText.Face.MEDIUM)
-		}
+	}
+
+	/** The menu's primary button: the accent, a shade lighter while hovered. */
+	private fun primaryButton(graphics: GuiGraphicsExtractor, box: Box, label: String, hover: Float, a: Float) {
+		val fill = MenuStyle.blend(MenuStyle.accent(), MenuStyle.scale(MenuStyle.accent(), 1.15f), hover)
+		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(fill, a), 6f)
+		centered(graphics, label, box.x + box.w / 2f, box.y + (box.h - 13f) / 2f, 13f, fade(0xFFFFFFFF.toInt(), a), UiText.Face.MEDIUM)
+	}
+
+	private fun disabledButton(graphics: GuiGraphicsExtractor, box: Box, label: String, a: Float) {
+		MenuStyle.drawField(graphics, box, false, false, a)
+		centered(graphics, label, box.x + box.w / 2f, box.y + (box.h - 13f) / 2f, 13f, fade(MenuStyle.MUTED, a), UiText.Face.MEDIUM)
 	}
 
 	private fun drawIcon(graphics: GuiGraphicsExtractor, card: RewardCard, cx: Float, y: Float, a: Float) {
@@ -364,27 +407,33 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		pose.popMatrix()
 	}
 
-	private fun drawStreak(graphics: GuiGraphicsExtractor, offer: RewardOffer, x: Float, y: Float, width: Float, alpha: Float) {
-		UiText.drawIcon(graphics, FIRE, x, y, 15f, fade(MenuStyle.STAR, alpha))
-		UiText.draw(graphics, "Daily streak", x + 22f, y, 15f, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
+	/** The streak, in a group panel like the menu's settings: its name and counts, then the steps to the next box. */
+	private fun drawStreak(graphics: GuiGraphicsExtractor, offer: RewardOffer, box: Box, alpha: Float) {
+		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.ROW, alpha), GROUP_RADIUS)
+		RoundRect.outline(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.GROUP_EDGE, alpha), GROUP_RADIUS, 1f)
+
+		val x = box.x + ROW_PAD
+		val inner = box.w - ROW_PAD * 2f
+		val y = box.y + 16f
+		UiText.drawIcon(graphics, FIRE, x, y, 14f, fade(MenuStyle.STAR, alpha))
+		UiText.draw(graphics, "Daily streak", x + 22f, y, 14f, fade(MenuStyle.TEXT, alpha), UiText.Face.MEDIUM)
 		val streak = if (claimed >= 0 && !offer.sample) offer.streak + 1 else offer.streak
-		val right = "Current §f$streak  §7Best §f${max(streak, offer.bestStreak)}"
-		val plain = right.replace(Regex("§."), "")
-		val rightX = x + width - UiText.width(plain, 13f)
-		var penX = rightX
-		for ((text, color) in listOf("Current " to MenuStyle.MUTED, "$streak" to MenuStyle.TEXT, "   Best " to MenuStyle.MUTED, "${max(streak, offer.bestStreak)}" to MenuStyle.TEXT)) {
+		val parts = listOf("Current " to MenuStyle.MUTED, "$streak" to MenuStyle.TEXT, "   Best " to MenuStyle.MUTED, "${max(streak, offer.bestStreak)}" to MenuStyle.TEXT)
+		var penX = x + inner - parts.sumOf { UiText.width(it.first, 13f).toDouble() }.toFloat()
+		for ((text, color) in parts) {
 			UiText.draw(graphics, text, penX, y + 1f, 13f, fade(color, alpha))
 			penX += UiText.width(text, 13f)
 		}
 
 		val steps = 9
-		val gap = 8f
-		val pip = (width - gap * (steps - 1)) / steps
+		val gap = 6f
+		val pip = (inner - gap * (steps - 1)) / steps
 		val filled = (if (claimed >= 0 && !offer.sample) offer.streakStep + 1 else offer.streakStep).coerceIn(0, steps)
+		val pipY = box.bottom - 22f
 		for (i in 0 until steps) {
 			val px = x + i * (pip + gap)
 			val color = if (i < filled) MenuStyle.accent() else MenuStyle.TRACK
-			RoundRect.fill(graphics, px, y + 28f, px + pip, y + 36f, fade(color, alpha), 4f)
+			RoundRect.fill(graphics, px, pipY, px + pip, pipY + 6f, fade(color, alpha), 3f)
 		}
 	}
 
@@ -523,13 +572,27 @@ class RewardScreen private constructor() : Screen(Component.literal("Daily Rewar
 		if (value < target) min(target, value + step) else max(target, value - step)
 
 	companion object {
-		private const val DESIGN_HEIGHT = 1080f
-		private const val WIN_W = 780f
-		private const val WIN_H = 520f
-		private const val CARD_W = 220f
-		private const val CARD_H = 300f
-		private const val CARD_GAP = 22f
-		private const val CARD_RADIUS = 10f
+		// The menu's design height and panel style, so the two look alike.
+		private const val DESIGN_HEIGHT = 1350f
+		private const val OPEN_SECONDS = 0.22f
+		private const val PANEL_GAP = 12f
+		private const val PANEL_RADIUS = 10f
+		private const val PANEL_SHADOW = 0x38000000
+		private const val HEADER_H = 58f
+		private const val HEADER_PAD = 16f
+		private const val CLOSE_SIZE = 30f
+		private const val CONTENT_PAD = 24f
+		private const val GROUP_RADIUS = 8f
+		private const val ROW_PAD = 20f
+		private const val BUTTON_H = 34f
+
+		private const val CARD_W = 240f
+		private const val CARD_H = 330f
+		private const val CARD_GAP = 16f
+		private const val CARD_RADIUS = 8f
+		private const val STREAK_H = 76f
+		private const val WIN_W = 3 * CARD_W + 2 * CARD_GAP + 2 * CONTENT_PAD
+		private const val CONTENT_H = CONTENT_PAD + CARD_H + 18f + STREAK_H + CONTENT_PAD
 		private const val FLIP_SECONDS = 0.38f
 		private const val CLOSE_DELAY_MS = 800L
 

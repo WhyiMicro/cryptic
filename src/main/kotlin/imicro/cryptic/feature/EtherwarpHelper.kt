@@ -7,7 +7,13 @@ import net.minecraft.core.SectionPos
 import net.minecraft.core.component.DataComponents
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.component.CustomData
+import net.minecraft.world.level.block.AbstractBannerBlock
+import net.minecraft.world.level.block.BasePressurePlateBlock
 import net.minecraft.world.level.block.BubbleColumnBlock
+import net.minecraft.world.level.block.ChestBlock
+import net.minecraft.world.level.block.EnderChestBlock
+import net.minecraft.world.level.block.TripWireHookBlock
+import net.minecraft.world.level.block.WallBannerBlock
 import net.minecraft.world.level.block.ButtonBlock
 import net.minecraft.world.level.block.ComparatorBlock
 import net.minecraft.world.level.block.FlowerPotBlock
@@ -70,9 +76,16 @@ object EtherwarpHelper {
 	fun landing(pos: BlockPos): Vec3 =
 		Vec3(pos.x + 0.5, feetHeight(pos) + LANDING_GAP, pos.z + 0.5)
 
+	/** The 1.8 sneaking eye height, which the server always casts an etherwarp from. */
+	const val SNEAK_EYE_HEIGHT = EYE_HEIGHT - SNEAK_OFFSET
+
 	fun target(position: Vec3, lookAngle: Vec3, range: Double): EtherwarpTarget {
 		val player = Minecraft.getInstance().player ?: return EtherwarpTarget.NONE
-		val start = position.add(0.0, EYE_HEIGHT - if (player.isCrouching) SNEAK_OFFSET else 0.0, 0.0)
+		return target(position, lookAngle, range, EYE_HEIGHT - if (player.isCrouching) SNEAK_OFFSET else 0.0)
+	}
+
+	fun target(position: Vec3, lookAngle: Vec3, range: Double, eyeHeight: Double): EtherwarpTarget {
+		val start = position.add(0.0, eyeHeight, 0.0)
 		return traverseVoxels(start, start.add(lookAngle.scale(range)))
 	}
 
@@ -153,13 +166,28 @@ object EtherwarpHelper {
 	private fun isValidTarget(pos: BlockPos, chunk: LevelChunk): Boolean {
 		val level = Minecraft.getInstance().level ?: return false
 		if (isPassable(pos, chunk)) return false
+		if (noFloor(pos, chunk)) return false
 
 		val feetY = feetHeight(pos)
 		val feet = BlockPos(pos.x, feetY, pos.z)
-		if (!isPassable(feet, chunk) || blocksFeet(feet, chunk)) return false
+		if (!roomFor(feet, chunk)) return false
 
 		val head = BlockPos(pos.x, feetY + 1, pos.z)
-		return isPassable(head, chunk) && !blocksFeet(head, chunk)
+		return roomFor(head, chunk)
+	}
+
+	/** Blocks that stop the ray but can't be stood on: the warp is refused (ADM's measured rule). */
+	private fun noFloor(pos: BlockPos, chunk: LevelChunk): Boolean =
+		when (chunk.getBlockState(pos).block) {
+			is SignBlock, is WallBannerBlock, is TripWireHookBlock -> true
+			else -> false
+		}
+
+	/** Whether a landing has room in this cell: nothing to collide with, though a chest is let by. */
+	private fun roomFor(pos: BlockPos, chunk: LevelChunk): Boolean {
+		val block = chunk.getBlockState(pos).block
+		if (block is ChestBlock || block is EnderChestBlock) return true
+		return isPassable(pos, chunk) && !blocksFeet(pos, chunk)
 	}
 
 	/**
@@ -184,8 +212,8 @@ object EtherwarpHelper {
 		val level = Minecraft.getInstance().level ?: return true
 		val state = chunk.getBlockState(pos)
 		return when (state.block) {
-			// Signs have no collision but still stop the ray.
-			is SignBlock -> false
+			// These have no collision but still stop the ray.
+			is SignBlock, is AbstractBannerBlock, is TripWireHookBlock, is BasePressurePlateBlock -> false
 			is ButtonBlock, is SkullBlock, is WallSkullBlock, is LadderBlock,
 			is BubbleColumnBlock, is FlowerPotBlock, is PistonHeadBlock, is LeverBlock,
 			is NetherWartBlock, is ComparatorBlock, is RedstoneTorchBlock, is RepeaterBlock,

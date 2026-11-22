@@ -37,7 +37,6 @@ import kotlin.math.roundToInt
  */
 object ChocolateFactory {
 	private const val MENU = "Chocolate Factory"
-	private const val SOURCE = "Chocolate Factory"
 
 	/** The menu's slots: the cookie, the seven rabbits, the Time Tower, the Coach, the multiplier. */
 	private const val COOKIE = 13

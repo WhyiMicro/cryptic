@@ -217,7 +217,7 @@ object BossWaypoints {
 		if (initialized) return
 		initialized = true
 		Packs.load()
-		Hud.register(EditorElement())
+		Hud.register(EditorElement(), module, editMode)
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 	}
 

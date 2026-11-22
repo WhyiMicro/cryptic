@@ -215,7 +215,7 @@ object ExampleModule {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(ExampleElement())
+		Hud.register(ExampleElement(), module)
 	}
 
 	private fun lines(): List<Pair<String, Int>> = listOf(

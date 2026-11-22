@@ -16,7 +16,7 @@ object HudSettings {
 		description = "The line of controls along the bottom of the editor.",
 	)
 
-	private val open = ButtonModuleSetting("open", "Edit HUD", action = {
+	val open = ButtonModuleSetting("open", "Edit HUD", action = {
 		val parent = Minecraft.getInstance().gui.screen()
 		Minecraft.getInstance().execute { Hud.openEditor(parent) }
 	})

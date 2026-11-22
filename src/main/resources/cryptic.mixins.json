@@ -18,6 +18,10 @@
 		"ChatComponentAccessor",
 		"ChatHistoryMixins$KeepHistory",
 		"ChatHistoryMixins$NoConfirm",
+		"HidePlayersMixins$Skin",
+		"HidePlayersMixins$WornSkull",
+		"HidePlayersMixins$Armour",
+		"ModelPartAccessor",
 		"TextOutlineMixins$Sheet",
 		"TextOutlineMixins$Glyph",
 		"TextOutlineMixins$Effect",
@@ -62,6 +66,8 @@
 		"KeyMappingAccessor",
 		"KeyboardHandlerMixin",
 		"LavaFogEnvironmentMixin",
+		"AtmosphericFogEnvironmentMixin",
+		"FogRendererMixin",
 		"LevelChunkMixin",
 		"LightmapRenderStateExtractorMixin",
 		"LivingEntityMixin",
@@ -115,7 +121,14 @@
 		"XrayMixins$SodiumBlocks",
 		"XrayMixins$SodiumFaces",
 		"XrayMixins$SodiumFluids",
-		"XrayMixins$SodiumLight"
+		"XrayMixins$SodiumLight",
+		"ChunkCacheMixins$Chunks",
+		"ChunkCacheMixins$Light",
+		"ChunkCacheMixins$LightColumns",
+		"ChunkCacheMixins$Packets",
+		"ChunkCacheMixins$Unload",
+		"ChunkCacheMixins$Distance",
+		"ChunkCacheMixins$Disconnect"
 	],
 	"injectors": {
 		"defaultRequire": 1

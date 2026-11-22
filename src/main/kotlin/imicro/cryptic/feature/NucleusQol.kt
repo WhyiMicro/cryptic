@@ -161,8 +161,8 @@ object NucleusQol {
 		id = "phase_until_set_up",
 		label = "Auto hide when cobblestone",
 		defaultValue = true,
-		description = "Each waypoint shows through walls only until its block is dug out. Once it's empty or " +
-			"filled with cobblestone it's drawn like a normal block, so the rest stand out as you set them up.",
+		description = "Each waypoint shows through walls only until its block is filled with cobblestone. Then it's " +
+			"drawn like a normal block, so the rest stand out as you set them up.",
 		visibleIf = { phase.value },
 	)
 
@@ -203,6 +203,17 @@ object NucleusQol {
 			"or Precursor Apparatus in your hotbar first, so the click hands it over.",
 		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
 	)
+
+	@JvmField
+	val warpOnCrystal = ToggleModuleSetting(
+		id = "warp_on_crystal",
+		label = "Warp to Nucleus on crystal pickup",
+		defaultValue = false,
+		description = "Picking up a crystal (the \"CRYSTAL FOUND\" message) warps you to the Nucleus to place it.",
+		restriction = imicro.cryptic.gui.Restriction.SEMI_LEGIT,
+	)
+
+	private val CRYSTAL_FOUND = Regex("""CRYSTAL FOUND \(\d+/5\)""")
 
 	@JvmField
 	val suggestBuy = ToggleModuleSetting(
@@ -321,11 +332,30 @@ object NucleusQol {
 	)
 
 	@JvmField
+	val balSpawnSound = ToggleModuleSetting(
+		id = "bal_spawn_sound",
+		label = "Spawn sound",
+		defaultValue = true,
+		description = "A sound when Bal reaches 25/25 and the fight starts, while you're in Khazad-dûm or within 10 blocks of it.",
+	)
+
+	@JvmField
+	val balSound = DropdownModuleSetting(
+		id = "bal_sound",
+		label = "Sound",
+		options = SoundChoices.labels,
+		defaultIndex = SoundChoices.indexOf("Level Up"),
+		visibleIf = { balSpawnSound.value },
+	)
+
+	private val balCustomSound = SoundChoices.customField("bal_custom_sound", balSound) { balSpawnSound.value }
+
+	@JvmField
 	val hideKhazadMobs = ToggleModuleSetting(
 		id = "hide_khazad_mobs",
 		label = "Hide Fire Bats and Bald Blazes",
 		defaultValue = true,
-		description = "In Khazad-dûm, leaves the Fire Bats and Bald Blazes and their nameplates undrawn.",
+		description = "In Khazad-dûm and within 10 blocks of it, leaves the Fire Bats and Bald Blazes and their nameplates undrawn.",
 	)
 
 	private val treasureSection = SectionModuleSetting("treasure_section", "Mines of Divan")
@@ -632,13 +662,14 @@ object NucleusQol {
 			crystalSlots.withMore(crystalPickups, crystalStyle, amberColor, amethystColor, topazColor, jadeColor, sapphireColor),
 			CrystalStatus.setting,
 			qolSection,
-			NucleusXray.setting, hideLootParticles, npcItemSwap, suggestBuy, angles,
+			NucleusXray.setting, HollowsBounds.borders.withMore(HollowsBounds.borderPlaces, HollowsBounds.borderTint),
+			HollowsClock.setting, hideLootParticles, npcItemSwap, warpOnCrystal, suggestBuy, angles,
 			treasureSection,
 			metalDetector.withMore(
 				detectorMode, detectorFill, detectorOutline, detectorPhase, detectorTracer, detectorTracerColor, detectorLabel,
 			),
 			muteMetalDetector, moleReminder, allToolsAlert, fullInventoryAlert, keeperOutlines,
-			balSection, balStages, hideKhazadMobs,
+			balSection, balStages.withMore(balSpawnSound, balSound, balCustomSound), BalTimer.setting, hideKhazadMobs,
 			chestsSection,
 			treasureChests.withMore(
 				chestMode, chestTimeColors, chestFill, chestOutline, chestTimeFillAlpha, chestPhase,
@@ -723,6 +754,9 @@ object NucleusQol {
 	/** The marked blocks, fixed when they were calculated. */
 	private var waypoints: List<BlockPos> = emptyList()
 
+	/** Whether [waypoints] came from the temple door, so turning that off clears them but keeps calculated ones. */
+	private var waypointsFromDoor = false
+
 	private var initialized = false
 
 	fun initialize() {
@@ -732,11 +766,12 @@ object NucleusQol {
 		CrypticRenderPipelines.touch()
 		LevelRenderEvents.COLLECT_SUBMITS.register(::render)
 		HollowsMap.initialize()
+		HollowsClock.initialize()
 		CrystalStatus.initialize()
 		WishingCompass.initialize()
-		imicro.cryptic.hud.Hud.register(AnglesElement())
-		imicro.cryptic.hud.Hud.register(AngleElement("hollows_yaw", "Yaw", 0.46, 0.4, yaw = true))
-		imicro.cryptic.hud.Hud.register(AngleElement("hollows_pitch", "Pitch", 0.46, 0.43, yaw = false))
+		imicro.cryptic.hud.Hud.register(AnglesElement(), module)
+		imicro.cryptic.hud.Hud.register(AngleElement("hollows_yaw", "Yaw", 0.46, 0.4, yaw = true), module)
+		imicro.cryptic.hud.Hud.register(AngleElement("hollows_pitch", "Pitch", 0.46, 0.43, yaw = false), module)
 		// Each server hop is a new lobby, where waypoints, mines, treasure and chests mean nothing.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> resetLobby() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> resetLobby() }
@@ -792,6 +827,8 @@ object NucleusQol {
 		locks.clear()
 		sparks.clear()
 		NucleusXray.reset()
+		HollowsBounds.reset()
+		BalTimer.reset()
 	}
 
 	/** Whether the warp key was down last tick, so holding it warps once. */
@@ -802,6 +839,10 @@ object NucleusQol {
 	/** Warps on the tick the key goes down, with no menu open. Silent outside the Hollows. */
 	fun tick(client: Minecraft) {
 		NucleusXray.tick(client, module.enabled)
+		if (waypointsFromDoor && (!autoWaypoints.value || !module.enabled)) {
+			waypoints = emptyList()
+			waypointsFromDoor = false
+		}
 		if (!module.enabled) {
 			warpKeyDown = false
 			hiddenMobs.clear()
@@ -821,19 +862,25 @@ object NucleusQol {
 		HollowsMap.tick(client)
 		CrystalStatus.tick(client)
 		scanChunks(client)
+		// Every tick, so the detector and the Mole reminder start the moment you step in.
+		updateInMines(client)
 		notePosition(client)
 		trackBal()
+		BalTimer.tick(client)
+		HollowsBounds.tick(client)
 
 		if (ticksUntilScan-- > 0) return
 		ticksUntilScan = 10
+		client.level?.let(::checkSpacesByGlass)
+		findKeeperCenter(client)
 		updateKeepers(client)
 		if (autoWaypoints.value && waypoints.isEmpty()) templeDoor(client)?.let { door ->
 			waypoints = OFFSETS.map { (x, y, z) -> door.offset(x, y, z) }
+			waypointsFromDoor = true
 			Toasts.show(SOURCE, "Set §f${waypoints.size} §7waypoints from the Jungle Temple's door", color = Toasts.Colors.MINING)
 		}
 		inNucleus = isInNucleus(client)
 		inKhazad = SkyblockLocation.zone() == KHAZAD_DUM
-		updateInMines(client)
 		scanArea(client)
 		pickups = if (crystalPickups.value && !inNucleus) findPickups(client) else emptyList()
 		updateBal(client)
@@ -848,6 +895,7 @@ object NucleusQol {
 			else -> {
 				val origin = player.blockPosition()
 				waypoints = OFFSETS.map { (x, y, z) -> origin.offset(x, y, z) }
+				waypointsFromDoor = false
 				Toasts.show(SOURCE, "Set §f${waypoints.size} §7waypoints", color = Toasts.Colors.MINING)
 			}
 		}
@@ -868,9 +916,13 @@ object NucleusQol {
 
 	private fun updateHiddenMobs(client: Minecraft) {
 		hiddenMobs.clear()
-		if (!hideKhazadMobs.value || !inKhazad || !SkyblockLocation.inCrystalHollows) return
+		if (!hideKhazadMobs.value || !SkyblockLocation.inCrystalHollows) return
+		val player = client.player ?: return
+		val area = HollowsBounds.inside(HollowsMap.Place.KHAZAD_DUM)?.inflate(KHAZAD_REACH)
+		if (if (area != null) !area.contains(player.position()) else !inKhazad) return
 		val level = client.level ?: return
 		for (entity in level.entitiesForRendering()) {
+			if (area != null && !area.contains(entity.position())) continue
 			val hide = when (entity) {
 				// Khazad-dûm has no other bats or blazes.
 				is net.minecraft.world.entity.ambient.Bat, is net.minecraft.world.entity.monster.Blaze -> true
@@ -928,8 +980,8 @@ object NucleusQol {
 	}
 
 	/**
-	 * A right click on an entity about to go out. Runs before the game sends the held slot, so the
-	 * swap reaches the server ahead of the click.
+	 * A click on an entity about to go out, left or right. Runs before the game sends the held slot,
+	 * so the swap reaches the server ahead of the click.
 	 */
 	@JvmStatic
 	fun beforeInteract(player: net.minecraft.world.entity.player.Player, entity: Entity, hand: net.minecraft.world.InteractionHand) {
@@ -1170,9 +1222,22 @@ object NucleusQol {
 		val last = balSizes.lastOrNull()
 		if (size == last) return
 		if (last != null) balShrinking = size < last
+		// Seen growing into its last stage, not found already there.
+		if (last != null && last < BAL_GROWTH_STAGES && size >= BAL_GROWTH_STAGES) playBalSpawn()
 		// The newest stay, since the size above is read from the last of them.
 		if (balSizes.size >= MAX_BAL_SIZES) balSizes.removeAt(0)
 		balSizes += size
+	}
+
+	/** How far outside Khazad-dûm the spawn sound and mob hiding still apply. */
+	private const val KHAZAD_REACH = 10.0
+
+	private fun playBalSpawn() {
+		if (!balSpawnSound.value) return
+		val player = Minecraft.getInstance().player ?: return
+		val area = HollowsBounds.inside(HollowsMap.Place.KHAZAD_DUM)
+		val near = if (area != null) area.inflate(KHAZAD_REACH).contains(player.position()) else inKhazad
+		if (near) SoundChoices.play(balSound.selectedIndex, 1f, 1f, balCustomSound.value)
 	}
 
 	private fun renderBal(context: LevelRenderContext) {
@@ -1210,7 +1275,7 @@ object NucleusQol {
 			lines += "id ${cube.id} size ${cube.size} (first ${cubeSizes[cube.id] ?: "?"}), width %.2f, %.1f %.1f %.1f, \"${nameplateOf(client, cube) ?: "-"}\""
 				.format(cube.bbWidth, cube.x, cube.y, cube.z)
 		}
-		return lines
+		return lines + BalTimer.describe()
 	}
 
 	/**
@@ -1314,6 +1379,59 @@ object NucleusQol {
 		return found
 	}
 
+	/** Each crystal is built of its gemstone's glass. */
+	private val GLASS_COLOURS = mapOf(
+		"orange" to Crystal.AMBER,
+		"purple" to Crystal.AMETHYST,
+		"yellow" to Crystal.TOPAZ,
+		"lime" to Crystal.JADE,
+		"light_blue" to Crystal.SAPPHIRE,
+	)
+
+	/** Glass blocks of one colour that make it a crystal rather than a stray. */
+	private const val GLASS_NEEDED = 4
+
+	/** Counts of each crystal's glass inside [space]. */
+	private fun glassCounts(level: net.minecraft.world.level.Level, space: AABB): IntArray {
+		val counts = IntArray(Crystal.entries.size)
+		val probe = BlockPos.MutableBlockPos()
+		for (x in Math.floor(space.minX + 0.01).toInt() until Math.ceil(space.maxX - 0.01).toInt()) {
+			for (y in Math.floor(space.minY + 0.01).toInt() until Math.ceil(space.maxY - 0.01).toInt()) {
+				for (z in Math.floor(space.minZ + 0.01).toInt() until Math.ceil(space.maxZ - 0.01).toInt()) {
+					val state = level.getBlockState(probe.set(x, y, z))
+					if (state.isAir || state.`is`(Blocks.BARRIER)) continue
+					val path = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.block).path
+					val colour = path.substringBefore("_stained_glass", "")
+					if (colour.isEmpty()) continue
+					GLASS_COLOURS[colour]?.let { counts[it.ordinal]++ }
+				}
+			}
+		}
+		return counts
+	}
+
+	/**
+	 * The crystal standing in [space], by its glass: sure where position only guesses (Khazad-dûm
+	 * can rise past the Magma Fields into any quarter). Null once taken, or not loaded.
+	 */
+	private fun crystalByGlass(level: net.minecraft.world.level.Level, space: AABB): Crystal? {
+		val counts = glassCounts(level, space)
+		val best = counts.indices.maxBy { counts[it] }
+		return if (counts[best] >= GLASS_NEEDED) Crystal.entries[best] else null
+	}
+
+	/** Spaces filed under the wrong crystal are moved to the one their glass shows. */
+	private fun checkSpacesByGlass(level: net.minecraft.world.level.Level) {
+		for ((crystal, space) in crystalSpaces.entries.toList()) {
+			val glass = crystalByGlass(level, space) ?: continue
+			if (glass == crystal || crystalSpaces[glass] == space) continue
+			val wasFromAfar = fromAfar.remove(crystal)
+			assign(glass, space)
+			if (wasFromAfar) fromAfar += glass
+			CRYSTAL_PLACES[glass]?.let { announceFound(it, "crystal glass") }
+		}
+	}
+
 	/** Each crystal's space once found, kept for the lobby (taking a crystal leaves its space). */
 	private val crystalSpaces = HashMap<Crystal, AABB>()
 
@@ -1337,8 +1455,18 @@ object NucleusQol {
 		if (now - lastAreaScan < AREA_SCAN_MS) return
 		lastAreaScan = now
 		val player = client.player ?: return
-		barrierClusters(client.level ?: return, player.blockPosition(), 48, 32)
+		val level = client.level ?: return
+		barrierClusters(level, player.blockPosition(), 48, 32)
 			.mapNotNull { it.crystal }
+			.filter { space ->
+				// Another crystal's in sight (Khazad-dûm's under every quarter): filed as that one.
+				val glass = crystalByGlass(level, space)
+				if (glass != null && glass != crystal && crystalSpaces[glass] != space) {
+					fromAfar.remove(glass)
+					assign(glass, space)
+				}
+				canBe(crystal, space) && (glass == null || glass == crystal)
+			}
 			.minByOrNull { it.center.distanceToSqr(player.position()) }
 			?.let {
 				fromAfar.remove(crystal)
@@ -1412,6 +1540,16 @@ object NucleusQol {
 	/** Below this height is the Magma Fields, whatever the quadrant. */
 	private const val MAGMA_TOP = 64.0
 
+	/**
+	 * Khazad-dûm rises past the Magma Fields to y 98, so its Topaz can stand above [MAGMA_TOP]:
+	 * a crystal's middle up to here may be Topaz. Divan's Jade (98.5) stays above it.
+	 */
+	private const val TOPAZ_TOP = 92.0
+
+	/** Below the Magma Fields' top only Topaz; Khazad-dûm can lie under any place. */
+	private fun canBe(crystal: Crystal, space: AABB): Boolean =
+		if (crystal == Crystal.TOPAZ) space.center.y < TOPAZ_TOP else space.center.y >= MAGMA_TOP
+
 	/** The quadrants meet here on both axes. */
 	private const val HOLLOWS_MIDDLE = 513.0
 
@@ -1472,7 +1610,7 @@ object NucleusQol {
 				net.minecraft.world.level.ChunkPos.getZ(packed),
 				net.minecraft.world.level.chunk.status.ChunkStatus.FULL,
 				false,
-			) as? net.minecraft.world.level.chunk.LevelChunk
+			)
 			// Not here yet: looked at again when it arrives.
 			if (chunk == null) {
 				scannedChunks.remove(packed)
@@ -1509,7 +1647,8 @@ object NucleusQol {
 					continue
 				}
 				val space = barrierCluster(level, probe.immutable(), seen).crystal ?: continue
-				pendingSpaces += space
+				val glass = crystalByGlass(level, space)
+				if (glass != null) settleFromAfar(glass, space) else pendingSpaces += space
 			}
 		}
 		resolvePending()
@@ -1529,10 +1668,18 @@ object NucleusQol {
 	 * scanner found by its own blocks. The rest wait, for the sidebar once you're there.
 	 */
 	private fun resolvePending() {
+		val level = Minecraft.getInstance().level
 		val iterator = pendingSpaces.iterator()
 		val settled = ArrayList<Pair<Crystal, AABB>>()
+		val byGlass = ArrayList<Pair<Crystal, AABB>>()
 		while (iterator.hasNext()) {
 			val space = iterator.next()
+			val glass = level?.let { crystalByGlass(it, space) }
+			if (glass != null) {
+				iterator.remove()
+				byGlass += glass to space
+				continue
+			}
 			val open = crystalsAt(space.center).filter { it !in crystalSpaces }
 			val crystal = open.singleOrNull()
 				?: open.singleOrNull { crystal ->
@@ -1546,15 +1693,22 @@ object NucleusQol {
 		}
 		for ((crystal, space) in settled) {
 			if (crystal in crystalSpaces) continue
-			assign(crystal, space)
-			fromAfar += crystal
-			CRYSTAL_PLACES[crystal]?.let { announceFound(it, "crystal scan") }
+			settleFromAfar(crystal, space)
 		}
+		// The glass is sure, so it replaces a guess made for that crystal elsewhere.
+		for ((crystal, space) in byGlass) settleFromAfar(crystal, space)
+	}
+
+	private fun settleFromAfar(crystal: Crystal, space: AABB) {
+		assign(crystal, space)
+		fromAfar += crystal
+		CRYSTAL_PLACES[crystal]?.let { announceFound(it, "crystal scan") }
 	}
 
 	/**
 	 * The crystals whose place a box could be, by where it lies. A quarter's places can sit up to
-	 * four chunks past the middle, so near it a box may be either side's.
+	 * four chunks past the middle, so near it a box may be either side's; and up to [TOPAZ_TOP] it
+	 * may be Khazad-dûm's.
 	 */
 	private fun crystalsAt(at: Vec3): List<Crystal> {
 		if (at.y < MAGMA_TOP) return listOf(Crystal.TOPAZ)
@@ -1563,6 +1717,7 @@ object NucleusQol {
 		val north = at.z <= HOLLOWS_MIDDLE + QUARTER_SLACK
 		val south = at.z > HOLLOWS_MIDDLE - QUARTER_SLACK
 		return buildList {
+			if (at.y < TOPAZ_TOP) add(Crystal.TOPAZ)
 			if (west && north) add(Crystal.AMETHYST)
 			if (east && north) add(Crystal.JADE)
 			if (west && south) add(Crystal.AMBER)
@@ -1590,8 +1745,12 @@ object NucleusQol {
 		debugBarriersUntil = System.currentTimeMillis() + 60_000
 		return listOf(
 			"Barriers and glass joined to it: ${if (cluster.crystal == null && cluster.blocks > MAX_ROOM_BLOCKS) "over $MAX_ROOM_BLOCKS" else cluster.blocks} blocks, ${describeBox(cluster.box)}",
-			cluster.crystal?.let { "A crystal's space: ${describeBox(it)} (outlined for 60s)" }
-				?: "Not a crystal's space (${CRYSTAL_WIDTH}x${CRYSTAL_HEIGHT}x$CRYSTAL_WIDTH)",
+			cluster.crystal?.let { space ->
+				val glass = glassCounts(level, space)
+				"A crystal's space: ${describeBox(space)} (outlined for 60s), glass: " +
+					Crystal.entries.joinToString { "${it.title} ${glass[it.ordinal]}" } +
+					", filed as ${crystalSpaces.entries.firstOrNull { it.value == space }?.key?.title ?: "none"}"
+			} ?: "Not a crystal's space (${CRYSTAL_WIDTH}x${CRYSTAL_HEIGHT}x$CRYSTAL_WIDTH)",
 		)
 	}
 
@@ -1822,17 +1981,21 @@ object NucleusQol {
 
 	@JvmStatic
 	fun onSystemChat(content: Component, overlay: Boolean) {
+		HollowsClock.onChat(content, overlay)
 		if (overlay) {
 			onActionBar(content)
 			return
 		}
+		imicro.cryptic.debug.BalRecorder.onChat(content)
 		if (!module.enabled || !SkyblockLocation.inCrystalHollows) return
 		HollowsMap.onSystemChat(content, false)
 		WishingCompass.onSystemChat(content, false)
 		val text = content.string.replace(FORMATTING, "").trim()
 		CrystalStatus.onChat(text)
+		BalTimer.onChat(text)
 		onKeeperChat(text)
 		if (suggestBuy.value) offerBazaar(text)
+		if (warpOnCrystal.value && CRYSTAL_FOUND.containsMatchIn(text)) Minecraft.getInstance().connection?.sendCommand("warp nucleus")
 		TREASURE_FOUND.matchEntire(text)?.let { found ->
 			// The treasure dug up, so the next reading is new. Until then it stays marked.
 			predicted = emptyList()
@@ -1949,7 +2112,7 @@ object NucleusQol {
 	 * The mines' middle, x and z. A Keeper's nameplate gives it exactly, and the Jade space gives it
 	 * from further away, since the bodies load before their nameplates.
 	 */
-	private fun minesMiddle(): Vec3? {
+	internal fun minesMiddle(): Vec3? {
 		val center = keeperCenter
 		if (center != null) return Vec3(center.x + 0.5, 0.0, center.z + 0.5)
 		return crystalSpaces[Crystal.JADE]?.center
@@ -2051,11 +2214,15 @@ object NucleusQol {
 	 */
 	private fun updateInMines(client: Minecraft) {
 		val player = client.player ?: return
-		findKeeperCenter(client)
-		fun near(center: BlockPos?) = center != null &&
+		// The measured area once the Jade or a Keeper places it: exactly where the detector works.
+		val area = HollowsBounds.inside(HollowsMap.Place.MINES_OF_DIVAN)
+		// The Magma Fields run under the mines, so being beneath their middle isn't being in them.
+		fun near(center: BlockPos?) = center != null && player.y >= MAGMA_TOP &&
 			Math.abs(player.x - center.x) <= MINES_REACH && Math.abs(player.z - center.z) <= MINES_REACH
-		val now = near(minesBase) || near(keeperCenter) || SkyblockLocation.zone() == MINES_OF_DIVAN ||
-			readingRecent()
+		// The TREASURE meter shows everywhere in the mines, so a reading beats the measured area,
+		// which misses the lowest floor.
+		val now = readingRecent() || if (area != null) area.contains(player.position()) else
+			near(minesBase) || near(keeperCenter) || SkyblockLocation.zone() == MINES_OF_DIVAN
 		if (now && !inMines) {
 			inMines = true
 			fillBucketFromInventory(player)
@@ -2084,9 +2251,16 @@ object NucleusQol {
 	 * Entering the mines: the Mole reminder (from the tab list's Pet widget, which not everyone
 	 * shows), and a search for the Jade pedestal.
 	 */
+	private var lastMoleReminder = 0L
+	private const val MOLE_REMINDER_GAP_MS = 20_000L
+
 	private fun onEnterMines() {
 		if (minesBase == null && crystalPickups.value) findMinesBase()
 		if (!moleReminder.value) return
+		// Stepping back and forth over the edge is one visit.
+		val now = System.currentTimeMillis()
+		if (now - lastMoleReminder < MOLE_REMINDER_GAP_MS) return
+		lastMoleReminder = now
 		val pet = EquippedPet.name()
 		when {
 			pet != null && pet.contains("Mole", ignoreCase = true) -> Unit
@@ -2123,6 +2297,7 @@ object NucleusQol {
 		for ((center, reach) in searches) {
 			val space = barrierClusters(level, center, reach, PEDESTAL_HEIGHT)
 				.mapNotNull { it.crystal }
+				.filter { canBe(Crystal.JADE, it) }
 				.minByOrNull { Math.abs(it.center.x - center.x) + Math.abs(it.center.z - center.z) } ?: continue
 			fromAfar.remove(Crystal.JADE)
 			assign(Crystal.JADE, space)
@@ -2301,6 +2476,7 @@ object NucleusQol {
 	@JvmStatic
 	fun onParticle(packet: ClientboundLevelParticlesPacket) {
 		if (!Minecraft.getInstance().isSameThread) return
+		imicro.cryptic.debug.BalRecorder.onParticle(packet)
 		if (!module.enabled || !lockHelper.value || chests.isEmpty()) return
 		if (packet.particle.type != ParticleTypes.CRIT) return
 		val now = System.currentTimeMillis()
@@ -2434,6 +2610,8 @@ object NucleusQol {
 		renderMetalDetector(context)
 		renderChests(context)
 		renderBal(context)
+		BalTimer.render(context)
+		HollowsBounds.render(context)
 		NucleusXray.render(context)
 	}
 
@@ -2444,10 +2622,8 @@ object NucleusQol {
 		val level = Minecraft.getInstance().level
 
 		for (pos in waypoints) {
-			// Dug out or filled with cobblestone means this spot is set up.
-			val setUp = phaseUntilSetUp.value && level != null && level.getBlockState(pos).let {
-				it.isAir || it.`is`(Blocks.COBBLESTONE)
-			}
+			// Filled with cobblestone means this spot is set up.
+			val setUp = phaseUntilSetUp.value && level != null && level.getBlockState(pos).`is`(Blocks.COBBLESTONE)
 			WorldRender.drawBlock(
 				poseStack = context.poseStack(),
 				collector = context.submitNodeCollector(),

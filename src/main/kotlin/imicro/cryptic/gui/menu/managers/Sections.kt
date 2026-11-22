@@ -33,7 +33,9 @@ class DeleteConfirm {
 
 /** What the managers share: headings, the delete button, a few glyphs and colours. */
 object Sections {
-	const val HEADING = 30f
+	/** A heading's height, and the room left above one that follows other things. */
+	const val HEADING = 31f
+	const val HEADING_GAP = 26f
 
 	const val DANGER = MenuStyle.DANGER
 
@@ -46,9 +48,18 @@ object Sections {
 	const val MINUS = ""
 	const val CHECK = ""
 
-	/** A small uppercase heading over a group of rows. */
-	fun heading(ui: UiKit, text: String, x: Float, y: Float) =
-		ui.text(text.uppercase(), x + 2f, y + 8f, 11f, MenuStyle.MUTED, UiText.Face.MEDIUM)
+	/**
+	 * A heading over a group of rows, as the settings list has: its name, then a hairline to [right]
+	 * (or as far as [trailing] leaves free, for something drawn after it). Returns [HEADING].
+	 */
+	fun heading(ui: UiKit, text: String, x: Float, y: Float, right: Float, trailing: Float = 0f): Float {
+		val size = 17f
+		ui.text(text, x + 2f, y, size, MenuStyle.TEXT, UiText.Face.MEDIUM)
+		val lineX = x + 2f + ui.width(text, size, UiText.Face.MEDIUM) + 14f
+		val lineRight = right - (if (trailing > 0f) trailing + 14f else 0f)
+		if (lineRight > lineX) RoundRect.fill(ui.graphics, lineX, y + size / 2f, lineRight, y + size / 2f + 1f, MenuStyle.fade(MenuStyle.HEADING_LINE, ui.alpha), 0f)
+		return HEADING
+	}
 
 	/**
 	 * A bin that becomes "Delete?" when clicked, right-aligned at [right] and centred on [cy]; a

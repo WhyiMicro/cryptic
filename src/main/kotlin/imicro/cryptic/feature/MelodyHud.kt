@@ -210,7 +210,7 @@ object MelodyHud {
 		if (initialized) return
 		initialized = true
 
-		Hud.register(MelodyElement())
+		Hud.register(MelodyElement(), TerminalSolver.module)
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> forget() }
 	}

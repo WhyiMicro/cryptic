@@ -11,6 +11,7 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.client.gui.screens.inventory.AbstractSignEditScreen
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.core.component.DataComponents
+import net.minecraft.network.chat.Component
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.inventory.ContainerInput
@@ -122,11 +123,16 @@ object BazaarPresets {
 	private fun maximum(screen: AbstractContainerScreen<*>, product: String?, instant: Boolean): Int? {
 		val lore = customAmountSlot(screen)?.item?.get(DataComponents.LORE)?.lines()?.map { it.string.replace(FORMATTING, "") }
 		val limit = lore?.firstNotNullOfOrNull { buyUpTo.find(it)?.groupValues?.get(1)?.replace(",", "")?.toIntOrNull() } ?: ORDER_LIMIT
-		val market = product?.let(BazaarMarket::idForName)?.let(BazaarMarket::product)
-		val price = if (instant) market?.instantBuy?.takeIf { it > 0 } else market?.buyOrders?.firstOrNull()?.price?.plus(0.1)
+		val price = unitPrice(product, instant)
 		val purse = SkyblockLocation.purse()
 		val affordable = if (price != null && purse != null && price > 0) (purse / price).toInt() else null
 		return listOfNotNull(limit, affordable).minOrNull()?.takeIf { it > 0 }
+	}
+
+	/** What one costs: a coin tenth over the top buy order, or buying instantly, the cheapest offer. */
+	private fun unitPrice(product: String?, instant: Boolean): Double? {
+		val market = product?.let(BazaarMarket::idForName)?.let(BazaarMarket::product) ?: return null
+		return if (instant) market.instantBuy.takeIf { it > 0 } else market.buyOrders.firstOrNull()?.price?.plus(0.1)
 	}
 
 	@JvmStatic
@@ -146,49 +152,79 @@ object BazaarPresets {
 		val sections = ArrayList<Section>()
 		// A relist is a buy order again, never an instant buy.
 		if (instant == null) relist?.takeIf { now - it.at < RELIST_MILLIS && sameName(it.name, product) }?.let {
-			sections += Section("§aRelisting", SUGGESTED_ACCENT, SUGGESTED_FILL, listOf("§aLast order" to it.amount))
+			sections += Section("§aRelisting", SUGGESTED_FILL, listOf("§aLast order" to it.amount))
 		}
 		Farming.presetsFor(product).takeIf { it.isNotEmpty() }?.let {
-			sections += Section("§2Visitors", SUGGESTED_ACCENT, SUGGESTED_FILL, it)
+			sections += Section("§2Visitors", SUGGESTED_FILL, it)
 		}
 		val max = maximum(chest, product, instant != null)
 		val amounts = listOfNotNull(max?.let { "§eMax" to it }) + configured().filter { max == null || it <= max }.map { "" to it }
-		if (amounts.isNotEmpty()) sections += Section("§7Amount", 0x60FFFFFF, 0xC0101418.toInt(), amounts)
+		if (amounts.isNotEmpty()) sections += Section("§6Amount", AMOUNT_FILL, amounts)
 		if (sections.isEmpty()) {
 			buttons = emptyList()
 			return
 		}
 
 		val font = client.font
-		val height = font.lineHeight + 6
-		val width = sections.flatMap { it.entries }.maxOf { (label, amount) -> font.width(label) + font.width(amountText(amount)) } + 20
-		val x = accessor.`cryptic$leftPos`() + accessor.`cryptic$imageWidth`() + 6
-		var y = accessor.`cryptic$topPos`() + 4
+		val rowHeight = font.lineHeight + 5
+		val headingHeight = font.lineHeight + 2
+		val rowWidth = maxOf(
+			sections.flatMap { it.entries }.maxOf { (label, amount) -> font.width(label) + font.width(amountText(amount)) } + 20,
+			sections.maxOf { font.width(it.heading) },
+		)
+		val panelHeight = PADDING * 2 - SECTION_GAP +
+			sections.sumOf { headingHeight + it.entries.size * (rowHeight + ROW_GAP) - ROW_GAP + SECTION_GAP }
+		val panelX = accessor.`cryptic$leftPos`() + accessor.`cryptic$imageWidth`() + GAP
+		val panelY = accessor.`cryptic$topPos`()
+		BazaarHistory.panelBox(graphics, panelX, panelY, rowWidth + PADDING * 2, panelHeight)
+
+		val x = panelX + PADDING
+		var y = panelY + PADDING
 		val placed = ArrayList<Button>()
+		var hoveredButton: Button? = null
 		for (section in sections) {
 			graphics.text(font, section.heading, x, y, -1)
-			y += font.lineHeight + 3
+			y += headingHeight
 			for ((label, amount) in section.entries) {
-				val button = Button(label, amount, x, y, width, height)
+				val button = Button(label, amount, x, y, rowWidth, rowHeight)
 				val hovered = button.contains(mouseX.toDouble(), mouseY.toDouble())
-				graphics.fill(x, y, x + width, y + height, if (hovered) 0xD0303A44.toInt() else section.fill)
-				graphics.fill(x, y, x + 1, y + height, if (hovered) 0xFFFFFFFF.toInt() else section.accent)
-				graphics.text(font, label, x + 6, y + 3, -1)
+				if (hovered) hoveredButton = button
+				graphics.fill(x, y, x + rowWidth, y + rowHeight, if (hovered) ROW_HOVER else section.fill)
+				graphics.text(font, label, x + 5, y + 3, -1)
 				val text = amountText(amount)
-				graphics.text(font, text, x + width - 6 - font.width(text), y + 3, -1)
+				graphics.text(font, text, x + rowWidth - 5 - font.width(text), y + 3, -1)
 				placed += button
-				y += height + 2
+				y += rowHeight + ROW_GAP
 			}
-			y += 4
+			y += SECTION_GAP - ROW_GAP
 		}
 		buttons = placed
+
+		val hovered = hoveredButton ?: return
+		val each = unitPrice(product, instant != null) ?: return
+		val cost = hovered.amount * each
+		val purse = SkyblockLocation.purse()
+		graphics.setComponentTooltipForNextFrame(
+			font,
+			listOf(
+				Component.literal("§f${String.format(Locale.US, "%,d", hovered.amount)}x §7for ${if (purse != null && cost > purse) "§c" else "§6"}${Bazaar.coins(cost)} coins"),
+				Component.literal("§8${Bazaar.coins(each)} each, ${if (instant != null) "the cheapest sell offer" else "a tenth over the top buy order"}"),
+			),
+			mouseX, mouseY,
+		)
 	}
 
 	/** A group of buttons under a heading; suggestions (a relist, visitors) are tinted apart from your amounts. */
-	private class Section(val heading: String, val accent: Int, val fill: Int, val entries: List<Pair<String, Int>>)
+	private class Section(val heading: String, val fill: Int, val entries: List<Pair<String, Int>>)
 
-	private const val SUGGESTED_ACCENT = 0xFF55FF55.toInt()
-	private const val SUGGESTED_FILL = 0xC0102A16.toInt()
+	// The price history panel's look: same gap from the menu, padding and edge.
+	private const val GAP = 6
+	private const val PADDING = 6
+	private const val ROW_GAP = 2
+	private const val SECTION_GAP = 6
+	private const val AMOUNT_FILL = 0x18FFFFFF
+	private const val ROW_HOVER = 0x40FFFFFF
+	private const val SUGGESTED_FILL = 0x2855FF55
 
 	private fun amountText(amount: Int) = "§f" + String.format(Locale.US, "%,d", amount)
 

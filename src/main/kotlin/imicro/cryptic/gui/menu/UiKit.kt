@@ -66,8 +66,48 @@ class UiKit {
 		targets += Target(box, press, drag)
 	}
 
-	fun card(box: Box, color: Int = MenuStyle.ROW) =
-		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(color, alpha), 0f)
+	/** A panel on its own, rounded and edged like a group of settings. */
+	fun card(box: Box, color: Int = MenuStyle.ROW) {
+		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(color, alpha), GROUP_RADIUS)
+		RoundRect.outline(graphics, box.x, box.y, box.right, box.bottom, fade(MenuStyle.GROUP_EDGE, alpha), GROUP_RADIUS, 1f)
+	}
+
+	/** The top of the open group of rows, NaN when none is open, and its sides. */
+	private var groupTop = Float.NaN
+	private var groupX = 0f
+	private var groupW = 0f
+
+	/** Opens a group of [row]s at [y], as the settings list draws them: one panel, hairlines between rows. */
+	fun beginGroup(x: Float, y: Float, w: Float) {
+		groupTop = y
+		groupX = x
+		groupW = w
+	}
+
+	/**
+	 * One row of the open group, lit while hovered when it has a [key]. Call it for rows scrolled out
+	 * of sight too (it draws nothing there), or after [beginGroup] the first visible row is taken
+	 * for the top one.
+	 */
+	fun row(box: Box, color: Int = MenuStyle.ROW, key: Any? = null) {
+		if (box.bottom < area.y || box.y > area.bottom) return
+		val lift = if (key == null) 0f else lift(key, hovered(box))
+		RoundRect.fill(graphics, box.x, box.y, box.right, box.bottom, fade(blend(color, MenuStyle.ROW_HOVER, lift), alpha), 0f)
+		if (box.y > groupTop + 0.5f) {
+			RoundRect.fill(graphics, box.x + ROW_PAD, box.y, box.right - ROW_PAD, box.y + 1f, fade(MenuStyle.ROW_LINE, alpha), 0f)
+		}
+	}
+
+	/** Closes the open group at [bottom]: rounds its corners by laying the window's colour outside them, then edges it. */
+	fun endGroup(bottom: Float) {
+		val top = groupTop
+		groupTop = Float.NaN
+		if (top.isNaN() || bottom <= top) return
+		val r = GROUP_RADIUS
+		val k = r * 0.5f
+		RoundRect.outline(graphics, groupX - k, top - k, groupX + groupW + k, bottom + k, fade(MenuStyle.WINDOW_BG, alpha), r + k, k)
+		RoundRect.outline(graphics, groupX, top, groupX + groupW, bottom, fade(MenuStyle.GROUP_EDGE, alpha), r, 1f)
+	}
 
 	fun text(text: String, x: Float, y: Float, size: Float, color: Int, face: UiText.Face = UiText.Face.REGULAR) =
 		UiText.draw(graphics, text, x, y, size, fade(color, alpha), face)
@@ -264,7 +304,13 @@ class UiKit {
 		focused = null
 	}
 
+	fun isFocused(field: TextField) = focused === field
+
 	companion object {
 		const val CHIP_HEIGHT = 24f
+
+		/** As the settings list: a group's corners, and how far in a row's hairline stops. */
+		const val GROUP_RADIUS = 8f
+		const val ROW_PAD = 20f
 	}
 }

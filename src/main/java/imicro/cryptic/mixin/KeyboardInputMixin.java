@@ -21,8 +21,8 @@ public abstract class KeyboardInputMixin extends ClientInput {
             this.moveVector = Vec2.ZERO;
             return;
         }
-        // Anti-AFK's jump, sneak and strafe ride on the input, not the key mappings.
-        Input keys = AntiAfk.input(this.keyPresses);
+        // Anti-AFK's and the Mania helper's jump, sneak and strafe ride on the input, not the key mappings.
+        Input keys = imicro.cryptic.slayer.SlayerAutomation.input(AntiAfk.input(this.keyPresses));
         if (keys == this.keyPresses) return;
         this.keyPresses = keys;
         float left = keys.left() == keys.right() ? 0.0F : keys.left() ? 1.0F : -1.0F;

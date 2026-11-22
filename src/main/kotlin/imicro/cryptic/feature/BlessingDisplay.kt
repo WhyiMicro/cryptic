@@ -113,7 +113,7 @@ object BlessingDisplay {
 		if (initialized) return
 		initialized = true
 
-		Hud.register(BlessingElement())
+		Hud.register(BlessingElement(), module)
 		// Blessings belong to the run.
 		ClientPlayConnectionEvents.JOIN.register { _, _, _ -> forget() }
 		ClientPlayConnectionEvents.DISCONNECT.register { _, _ -> forget() }

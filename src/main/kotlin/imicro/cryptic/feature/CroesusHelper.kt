@@ -323,6 +323,7 @@ object CroesusHelper {
 		if (DungeonRun.ended && DungeonLocation.inDungeon) {
 			if (!endRecorded && DungeonLocation.floor > 0) {
 				CroesusRuns.onRunFinished((if (DungeonLocation.masterMode) "M" else "F") + DungeonLocation.floor)
+				imicro.cryptic.skyblock.PlayStats.onRunFinished()
 			}
 			endRecorded = true
 		} else if (!DungeonRun.ended) {
@@ -543,7 +544,10 @@ object CroesusHelper {
 		// The line can arrive twice; one run is one entry.
 		if (now - kuudraDownAt < 60_000L) return
 		kuudraDownAt = now
-		Minecraft.getInstance().execute { CroesusRuns.onRunFinished(KUUDRA_FLOOR) }
+		Minecraft.getInstance().execute {
+			CroesusRuns.onRunFinished(KUUDRA_FLOOR)
+			imicro.cryptic.skyblock.PlayStats.onRunFinished()
+		}
 	}
 
 	/** A click in the run list: remembers which run is opening. */

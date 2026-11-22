@@ -40,6 +40,11 @@ public abstract class SoundManagerMixin {
             cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
             return;
         }
+        if (imicro.cryptic.feature.Rift.mutes(instance)) {
+            imicro.cryptic.debug.SoundLog.muted(instance, "Rift");
+            cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
+            return;
+        }
         // For the Sound Manager's Recent list.
         SoundVolumes.onPlay(instance);
     }

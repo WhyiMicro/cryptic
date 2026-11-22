@@ -49,7 +49,12 @@ This file is the map. Read only what a task needs; don't re-survey the repo.
 4. Call `Foo.initialize()` in `CrypticClient.kt` (before `ConfigManager.initialize()`), and its
    `tick` in the end-of-tick loop. If it needs to know the island, add it to the list passed to
    `SkyblockLocation.tick`.
-5. Update `docs/`, and credits if anything came from another project (see Licensing).
+5. A HUD element: register it with `Hud.register(element, module, setting)`. `module` is the card
+   that holds its settings (the feature's own, or the host card's for a module-less feature, e.g.
+   `NucleusQol.module`); `setting` is the toggle that turns the element on. A right click in the
+   HUD editor opens that card on the setting's tab with its "⋯" open, and the editor files the
+   element under the card's category.
+6. Update `docs/`, and credits if anything came from another project (see Licensing).
 
 Settings style:
 - Show only settings that apply: `visibleIf = { ... }`.

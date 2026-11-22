@@ -28,12 +28,14 @@ public final class ChatHistoryMixins {
 
     /**
      * A command from a clicked chat line is sent straight away, the way it is when the game finds
-     * nothing to ask about, instead of opening "Are you sure?" first.
+     * nothing to ask about, instead of opening "Are you sure?" first. Hooked at the prompt rather
+     * than at the head of sendUnattendedCommand, so Fabric's client commands (SkyHanni's /shaction)
+     * still get the first look.
      */
     @Mixin(ClientPacketListener.class)
     public abstract static class NoConfirm {
-        @Inject(method = "sendUnattendedCommand", at = @At("HEAD"), cancellable = true)
-        private void cryptic$skipConfirmation(String command, @Nullable Screen screenAfterCommand, CallbackInfo info) {
+        @Inject(method = "openCommandSendConfirmationWindow", at = @At("HEAD"), cancellable = true)
+        private void cryptic$skipConfirmation(String command, String messageKey, @Nullable Screen screenAfterCommand, CallbackInfo info) {
             if (!ChatExtras.skipsConfirmation()) return;
             ClientPacketListener self = (ClientPacketListener) (Object) this;
             self.send(new ServerboundChatCommandPacket(command));

@@ -30,11 +30,19 @@ abstract class HudElement(
 
 	abstract fun isVisible(): Boolean
 
-	/**
-	 * The editor layer (a menu tab) this element sits in. Null finds it from the module of the
-	 * feature that declares the element.
-	 */
+	/** The module whose settings a right click in the HUD editor opens; set by [Hud.register]. */
+	var owner: imicro.cryptic.gui.Module? = null
+		internal set
+
+	/** The setting that turns it on, so that right click lands on its tab with its "⋯" open. */
+	var ownerSetting: imicro.cryptic.gui.ModuleSetting? = null
+		internal set
+
+	/** The editor layer (a menu tab) this element sits in. Null takes its [owner]'s. */
 	open val layer: imicro.cryptic.gui.ModuleCategory? get() = null
+
+	/** Listed under the editor's Slayer tab instead of its module's. */
+	open val slayer: Boolean get() = false
 
 	/**
 	 * Whether the editor offers this element. False for elements drawn as part of another one (a

@@ -151,6 +151,31 @@ object WorldRender {
 		poseStack.popPose()
 	}
 
+	/**
+	 * Flat rectangles facing up, in one submit: [rects] holds minX, y, minZ, maxX, maxZ for each.
+	 * Rectangles that only meet don't overlap, so no seams show between them.
+	 */
+	fun drawTops(poseStack: PoseStack, collector: SubmitNodeCollector, rects: DoubleArray, argb: Int, phase: Boolean) {
+		if (rects.isEmpty()) return
+		val camera = Minecraft.getInstance().gameRenderer.mainCamera().position()
+		poseStack.pushPose()
+		poseStack.translate(-camera.x, -camera.y, -camera.z)
+		val layer = if (phase) CrypticRenderLayers.FILLED_THROUGH_WALLS else CrypticRenderLayers.FILLED
+		collector.submitCustomGeometry(poseStack, layer) { pose, consumer ->
+			var i = 0
+			while (i + 4 < rects.size) {
+				val minX = rects[i].toFloat()
+				val y = rects[i + 1].toFloat() + SURFACE_OFFSET
+				val minZ = rects[i + 2].toFloat()
+				val maxX = rects[i + 3].toFloat()
+				val maxZ = rects[i + 4].toFloat()
+				consumer.addQuad(pose, minX, y, minZ, minX, y, maxZ, maxX, y, maxZ, maxX, y, minZ, argb)
+				i += 5
+			}
+		}
+		poseStack.popPose()
+	}
+
 	/** A filled four-cornered panel, seen from both sides, corners in order around its edge. */
 	fun drawPanel(
 		poseStack: PoseStack,

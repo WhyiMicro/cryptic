@@ -115,7 +115,7 @@ object CrystalStatus {
 	fun initialize() {
 		if (initialized) return
 		initialized = true
-		Hud.register(OwnElement())
+		Hud.register(OwnElement(), NucleusQol.module, missingCrystals)
 	}
 
 	fun tick(client: Minecraft) {

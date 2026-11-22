@@ -5,14 +5,15 @@ import java.awt.Font
 import kotlin.math.roundToInt
 
 /**
- * Menu text in Poppins and Font Awesome, in design pixels. Each size is baked by a [BakedFont] at
+ * Menu text in Inter and Font Awesome, in design pixels. Each size is baked by a [BakedFont] at
  * its real pixel size and drawn on whole pixels. A line gets a box [size] tall with its capitals
  * centred, which lines labels up with their controls.
  */
 object UiText {
 	enum class Face(internal val path: String, internal val reference: String) {
-		REGULAR("/assets/cryptic/font/poppins-regular.ttf", "H"),
-		MEDIUM("/assets/cryptic/font/poppins-medium.ttf", "H"),
+		REGULAR("/assets/cryptic/font/inter-regular.ttf", "H"),
+		MEDIUM("/assets/cryptic/font/inter-medium.ttf", "H"),
+		BOLD("/assets/cryptic/font/inter-bold.ttf", "H"),
 
 		ICON("/assets/cryptic/font/fa-solid-900.ttf", ""),
 
@@ -35,8 +36,10 @@ object UiText {
 
 	fun draw(graphics: GuiGraphicsExtractor, text: String, x: Float, y: Float, size: Float, color: Int, face: Face = Face.REGULAR) {
 		if ((color ushr 24) == 0) return
-		val font = bake(face, size)
 		val ppu = pixelsPerUnit
+		// A minimised window reports zero height, which turns every position into NaN.
+		if (!(ppu > 0f) || !x.isFinite() || !y.isFinite()) return
+		val font = bake(face, size)
 		val pose = graphics.pose()
 		pose.pushMatrix()
 		// One unit becomes one real pixel.
@@ -44,6 +47,16 @@ object UiText {
 		val baseline = (y + size / 2f) * ppu + font.capHeight / 2f
 		font.draw(graphics, text, x * ppu, baseline, color)
 		pose.popMatrix()
+	}
+
+	/** [text] with [tracking] design pixels added after each letter: small spaced-out capitals. */
+	fun drawTracked(graphics: GuiGraphicsExtractor, text: String, x: Float, y: Float, size: Float, color: Int, face: Face, tracking: Float) {
+		var cx = x
+		for (char in text) {
+			val letter = char.toString()
+			draw(graphics, letter, cx, y, size, color, face)
+			cx += width(letter, size, face) + tracking
+		}
 	}
 
 	fun drawIcon(graphics: GuiGraphicsExtractor, glyph: String, x: Float, y: Float, size: Float, color: Int, outline: Boolean = false) =
@@ -55,6 +68,20 @@ object UiText {
 	}
 
 	fun width(text: String, size: Float, face: Face = Face.REGULAR): Float = bake(face, size).width(text) / pixelsPerUnit
+
+	/** The width [drawTracked] gives [text]. */
+	fun trackedWidth(text: String, size: Float, face: Face, tracking: Float): Float =
+		text.sumOf { width(it.toString(), size, face).toDouble() }.toFloat() + tracking * (text.length - 1).coerceAtLeast(0)
+
+	/** Where [drawTracked]'s letters really start and end, from its x: side bearings left out. */
+	fun trackedInk(text: String, size: Float, face: Face, tracking: Float): Pair<Float, Float> {
+		if (text.isEmpty()) return 0f to 0f
+		val font = bake(face, size)
+		val first = font.inkSpan(text.first().toString()).first / pixelsPerUnit
+		val last = text.last().toString()
+		val lastStart = trackedWidth(text, size, face, tracking) - width(last, size, face)
+		return first to lastStart + font.inkSpan(last).second / pixelsPerUnit
+	}
 
 	/** [text] shortened with an ellipsis to fit [maxWidth]. */
 	fun fit(text: String, size: Float, maxWidth: Float, face: Face = Face.REGULAR): String {

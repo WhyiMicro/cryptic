@@ -7,7 +7,6 @@ import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.network.chat.Component
-import imicro.cryptic.gui.Module
 import imicro.cryptic.gui.ModuleCategory
 
 /**
@@ -104,7 +103,7 @@ class HudEditorScreen(
 
 	// ---- Layers -------------------------------------------------------------------
 
-	private enum class Layer(val label: String) { ALL("All"), DUNGEON("Dungeon"), BOSS("Boss"), GENERAL("General"), RENDER("Render"), NOW("Showing now") }
+	private enum class Layer(val label: String) { ALL("All"), DUNGEON("Dungeon"), BOSS("Boss"), SLAYER("Slayer"), GENERAL("General"), RENDER("Render"), NOW("Showing now") }
 
 	/** The elements in the current layer that the editor offers. */
 	private fun shown(): List<HudElement> = Hud.elements.filter { element ->
@@ -113,10 +112,11 @@ class HudEditorScreen(
 		element.showInEditor() && when (layer) {
 			Layer.ALL -> true
 			Layer.NOW -> element.isVisible()
-			Layer.DUNGEON -> categoryOf(element) == ModuleCategory.DUNGEON
-			Layer.BOSS -> categoryOf(element) == ModuleCategory.FLOOR_7
-			Layer.GENERAL -> categoryOf(element) == ModuleCategory.GENERAL || categoryOf(element) == ModuleCategory.MISC
-			Layer.RENDER -> categoryOf(element) == ModuleCategory.VISUAL
+			Layer.SLAYER -> element.slayer
+			Layer.DUNGEON -> !element.slayer && categoryOf(element) == ModuleCategory.DUNGEON
+			Layer.BOSS -> !element.slayer && categoryOf(element) == ModuleCategory.FLOOR_7
+			Layer.GENERAL -> !element.slayer && (categoryOf(element) == ModuleCategory.GENERAL || categoryOf(element) == ModuleCategory.MISC)
+			Layer.RENDER -> !element.slayer && categoryOf(element) == ModuleCategory.VISUAL
 		}
 	}
 
@@ -159,8 +159,8 @@ class HudEditorScreen(
 		// Right-click opens the settings of the module the element belongs to.
 		if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
 			topmostAt(event.x(), event.y())?.let { element ->
-				moduleOf(element)?.let { module ->
-					imicro.cryptic.gui.menu.MenuScreen.request(module, settings = true)
+				element.owner?.let { module ->
+					imicro.cryptic.gui.menu.MenuScreen.request(module, settings = true, reveal = element.ownerSetting)
 					imicro.cryptic.gui.menu.MenuScreen.openIfRequested(minecraft)
 				}
 				return true
@@ -309,23 +309,8 @@ class HudEditorScreen(
 		/** Kept for the session, so the editor opens on the layer last used. */
 		var layer = Layer.ALL
 
-		private val modules = HashMap<String, Module?>()
-
-		/**
-		 * The module an element belongs to, found from the feature object that declares it (its
-		 * `module` field), so elements don't each have to say.
-		 */
-		fun moduleOf(element: HudElement): Module? = modules.getOrPut(element.id) {
-			runCatching {
-				val owner = element.javaClass.enclosingClass ?: element.javaClass
-				val instance = owner.getField("INSTANCE").get(null)
-				(runCatching { owner.getField("module").get(instance) }.getOrNull()
-					?: owner.getDeclaredField("module").apply { isAccessible = true }.get(instance)) as? Module
-			}.getOrNull()
-		}
-
 		/** The menu tab of the module an element belongs to. */
-		fun categoryOf(element: HudElement): ModuleCategory = element.layer ?: moduleOf(element)?.category ?: ModuleCategory.GENERAL
+		fun categoryOf(element: HudElement): ModuleCategory = element.layer ?: element.owner?.category ?: ModuleCategory.GENERAL
 
 		const val HINT = "Drag to move  •  Arrows nudge  •  Scroll to resize  •  Right-click for settings  •  R resets one  •  Shift-R resets the layer"
 		const val EMPTY_LAYER = "Nothing in this layer"
